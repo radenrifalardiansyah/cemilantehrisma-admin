@@ -5,7 +5,7 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon,
+  ChevronLeft, ChevronRight, ImageIcon, ArrowUp, ArrowDown, ListOrdered,
 } from 'lucide-react';
 
 const API       = '';
@@ -15,7 +15,7 @@ interface FireProduct {
   id: string; name: string; description: string; details: string[];
   price: number; originalPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
-  bgColor: string; weight: string; stockQty?: number;
+  bgColor: string; weight: string; stockQty?: number; order?: number;
 }
 
 const EMPTY: Omit<FireProduct, 'id'> = {
@@ -72,7 +72,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [catFilter,    setCatFilter]    = useState('semua');
   const [page,         setPage]         = useState(1);
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
-  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleting,   setBulkDeleting]   = useState(false);
+  const [savingOrder,    setSavingOrder]    = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
@@ -171,6 +172,45 @@ export default function ProductsTab({ creds }: { creds: string }) {
     setBulkDeleting(false);
   };
 
+  const saveOrder = async (orders: { id: string; order: number }[]) => {
+    await fetch(`${API}/api/products/reorder`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orders }),
+    });
+  };
+
+  const initOrder = async () => {
+    setSavingOrder(true);
+    const sorted = [...products].sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+    const orders = sorted.map((p, i) => ({ id: p.id, order: i + 1 }));
+    setProducts(sorted.map((p, i) => ({ ...p, order: i + 1 })));
+    await saveOrder(orders);
+    setSavingOrder(false);
+  };
+
+  const moveItem = async (id: string, dir: 'up' | 'down') => {
+    // operate on the currently filtered+sorted list
+    const list = [...filtered];
+    const idx  = list.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= list.length) return;
+
+    const aOrder = list[idx].order   ?? idx + 1;
+    const bOrder = list[swapIdx].order ?? swapIdx + 1;
+    const aId    = list[idx].id;
+    const bId    = list[swapIdx].id;
+
+    setProducts(prev => prev.map(p => {
+      if (p.id === aId) return { ...p, order: bOrder };
+      if (p.id === bId) return { ...p, order: aOrder };
+      return p;
+    }));
+
+    await saveOrder([{ id: aId, order: bOrder }, { id: bId, order: aOrder }]);
+  };
+
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -185,12 +225,15 @@ export default function ProductsTab({ creds }: { creds: string }) {
     });
   };
 
-  // Filter + pagination
-  const filtered = products.filter(p => {
-    const matchCat = catFilter === 'semua' || p.category === catFilter;
-    const matchQ   = !search || p.name.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchQ;
-  });
+  // Filter + sort by order + pagination
+  const hasOrder = products.some(p => p.order !== undefined);
+  const filtered = products
+    .filter(p => {
+      const matchCat = catFilter === 'semua' || p.category === catFilter;
+      const matchQ   = !search || p.name.toLowerCase().includes(search.toLowerCase());
+      return matchCat && matchQ;
+    })
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);
   const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -224,6 +267,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
             <button onClick={syncImages} disabled={syncing} className="btn-ghost text-xs py-2">
               {syncing ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
               {syncing ? 'Sync…' : 'Sync Gambar'}
+            </button>
+          )}
+          {products.length > 0 && !hasOrder && (
+            <button onClick={initOrder} disabled={savingOrder} className="btn-ghost text-xs py-2">
+              {savingOrder ? <Loader2 size={13} className="animate-spin" /> : <ListOrdered size={13} />}
+              Atur Urutan
             </button>
           )}
           <button onClick={openNew} className="btn-primary text-xs py-2">
@@ -303,6 +352,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
             ) : paginated.map((p, idx) => {
               const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
               const isSelected = selected.has(p.id);
+              // position in the full filtered list
+              const globalIdx  = filtered.findIndex(x => x.id === p.id);
+              const isFirst    = globalIdx === 0;
+              const isLast     = globalIdx === filtered.length - 1;
               return (
                 <div key={p.id}
                   style={{
@@ -310,8 +363,34 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     background: isSelected ? 'rgba(217,119,6,0.05)' : undefined,
                     transition: 'background 0.1s',
                   }}>
-                  <div className="flex items-center gap-3 px-4 py-3.5">
+                  <div className="flex items-center gap-2 px-4 py-3.5">
                     <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
+
+                    {/* Order number */}
+                    {hasOrder && (
+                      <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                        <button
+                          onClick={() => moveItem(p.id, 'up')}
+                          disabled={isFirst}
+                          className="w-5 h-5 rounded flex items-center justify-center transition-colors disabled:opacity-20"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <ArrowUp size={11} />
+                        </button>
+                        <span className="text-[10px] font-black tabular leading-none"
+                          style={{ color: 'var(--text-muted)', minWidth: 16, textAlign: 'center' }}>
+                          {globalIdx + 1}
+                        </span>
+                        <button
+                          onClick={() => moveItem(p.id, 'down')}
+                          disabled={isLast}
+                          className="w-5 h-5 rounded flex items-center justify-center transition-colors disabled:opacity-20"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <ArrowDown size={11} />
+                        </button>
+                      </div>
+                    )}
 
                     {/* Thumbnail */}
                     <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
@@ -453,113 +532,143 @@ export default function ProductsTab({ creds }: { creds: string }) {
         </div>
       )}
 
-      {/* Edit drawer */}
+      {/* Edit modal — mobile: bottom sheet, desktop: centered wide dialog */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(19,12,3,0.6)', backdropFilter: 'blur(4px)' }}
-          onClick={closeEdit}>
-          <div className="mt-auto lg:m-auto lg:rounded-2xl lg:w-full lg:max-w-lg max-h-[92vh] overflow-y-auto thin-scrollbar"
-            style={{ background: 'var(--surface)', borderRadius: '24px 24px 0 0' }}
-            onClick={e => e.stopPropagation()}>
-
-            <div className="sticky top-0 flex items-center justify-between px-5 py-4"
-              style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border-2)', borderRadius: 'inherit' }}>
+        <div
+          className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-6"
+          style={{ background: 'rgba(19,12,3,0.55)', backdropFilter: 'blur(6px)' }}
+          onClick={closeEdit}
+        >
+          <div
+            className="w-full lg:max-w-3xl max-h-[92vh] lg:max-h-[88vh] flex flex-col"
+            style={{ background: 'var(--surface)', borderRadius: '20px 20px 0 0', ...(window.innerWidth >= 1024 ? { borderRadius: 20 } : {}) }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4"
+              style={{ borderBottom: '1px solid var(--border-2)' }}>
               <p className="font-bold text-[15px]" style={{ color: 'var(--text-primary)' }}>
                 {isNew ? 'Tambah Produk' : 'Edit Produk'}
               </p>
               <button onClick={closeEdit} className="btn-ghost p-2"><X size={16} /></button>
             </div>
 
-            <div className="px-5 py-5 space-y-5 pb-8">
-              {/* Images */}
-              <div>
-                <p className="section-label mb-3">Foto Produk</p>
-                <div className="flex gap-2 flex-wrap">
-                  {editing.imageUrls.map((u, i) => (
-                    <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
-                      <Image src={u} alt="" fill className="object-cover" sizes="80px" unoptimized />
-                      <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
-                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X size={11} />
-                      </button>
-                    </div>
-                  ))}
-                  <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                    className="w-20 h-20 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors"
-                    style={{ border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                    {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
-                    {uploading ? 'Upload…' : 'Tambah'}
-                  </button>
-                </div>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0])} />
-              </div>
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto thin-scrollbar">
+              <div className="p-6 space-y-6">
 
-              {/* Fields */}
-              {([
-                { label: 'Nama Produk *', key: 'name' as const, type: 'text' },
-                { label: 'Emoji', key: 'emoji' as const, type: 'text' },
-                { label: 'Berat / Ukuran', key: 'weight' as const, type: 'text' },
-                { label: 'Harga (Rp)', key: 'price' as const, type: 'number' },
-                { label: 'Harga Coret (Rp, opsional)', key: 'originalPrice' as const, type: 'number' },
-                { label: 'Warna BG (hex)', key: 'bgColor' as const, type: 'text' },
-                { label: 'Gradient Tailwind', key: 'gradient' as const, type: 'text' },
-              ] as const).map(f => (
-                <div key={f.key}>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
-                  <input type={f.type} value={(editing[f.key] as string | number | undefined) ?? ''}
-                    onChange={e => setEditing({ ...editing, [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value })}
-                    className="input" />
-                </div>
-              ))}
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Deskripsi</label>
-                <textarea rows={3} value={editing.description}
-                  onChange={e => setEditing({ ...editing, description: e.target.value })}
-                  className="input resize-none" />
-              </div>
-
-              {/* Details */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Detail Produk</label>
-                  <button onClick={addDetail} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                    <Plus size={11} /> Tambah
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {editing.details.map((d, i) => (
-                    <div key={i} className="flex gap-2">
-                      <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1 text-sm" />
-                      {editing.details.length > 1 && (
-                        <button onClick={() => removeDetail(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
-                          <X size={13} />
+                {/* Images */}
+                <div>
+                  <p className="section-label mb-3">Foto Produk</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {editing.imageUrls.map((u, i) => (
+                      <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
+                        <Image src={u} alt="" fill className="object-cover" sizes="80px" unoptimized />
+                        <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X size={11} />
                         </button>
-                      )}
+                      </div>
+                    ))}
+                    <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                      className="w-20 h-20 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors"
+                      style={{ border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                      {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+                      {uploading ? 'Upload…' : 'Tambah'}
+                    </button>
+                  </div>
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0])} />
+                </div>
+
+                {/* 2-column grid on desktop */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Col 1 */}
+                  <div className="space-y-4">
+                    {([
+                      { label: 'Nama Produk *',  key: 'name'     as const, type: 'text'   },
+                      { label: 'Emoji',           key: 'emoji'    as const, type: 'text'   },
+                      { label: 'Berat / Ukuran',  key: 'weight'   as const, type: 'text'   },
+                      { label: 'Warna BG (hex)',  key: 'bgColor'  as const, type: 'text'   },
+                      { label: 'Gradient Tailwind',key:'gradient' as const, type: 'text'   },
+                    ] as const).map(f => (
+                      <div key={f.key}>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
+                        <input type={f.type} value={(editing[f.key] as string) ?? ''}
+                          onChange={e => setEditing({ ...editing, [f.key]: e.target.value })}
+                          className="input w-full" />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Col 2 */}
+                  <div className="space-y-4">
+                    {([
+                      { label: 'Harga (Rp)',              key: 'price'         as const, type: 'number' },
+                      { label: 'Harga Coret (Rp, opsional)', key: 'originalPrice' as const, type: 'number' },
+                    ] as const).map(f => (
+                      <div key={f.key}>
+                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
+                        <input type="number" value={(editing[f.key] as number | undefined) ?? ''}
+                          onChange={e => setEditing({ ...editing, [f.key]: Number(e.target.value) })}
+                          className="input w-full" />
+                      </div>
+                    ))}
+
+                    {/* Selects */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { label: 'Kategori', key: 'category' as const, opts: CAT_OPTS   },
+                        { label: 'Stok',     key: 'stock'    as const, opts: STOCK_OPTS },
+                        { label: 'Badge',    key: 'badge'    as const, opts: BADGE_OPTS },
+                      ] as const).map(f => (
+                        <div key={f.key}>
+                          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
+                          <select value={(editing[f.key] as string | undefined) ?? ''}
+                            onChange={e => setEditing({ ...editing, [f.key]: e.target.value })}
+                            className="input text-xs">
+                            {f.opts.map(o => <option key={o} value={o}>{o || '–'}</option>)}
+                          </select>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+
+                    {/* Description */}
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Deskripsi</label>
+                      <textarea rows={4} value={editing.description}
+                        onChange={e => setEditing({ ...editing, description: e.target.value })}
+                        className="input resize-none w-full" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detail points — full width */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Detail Produk</label>
+                    <button onClick={addDetail} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                      <Plus size={11} /> Tambah baris
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                    {editing.details.map((d, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1 text-sm" />
+                        {editing.details.length > 1 && (
+                          <button onClick={() => removeDetail(i)} className="btn-ghost p-2 flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Selects */}
-              <div className="grid grid-cols-3 gap-3">
-                {([
-                  { label: 'Kategori', key: 'category' as const, opts: CAT_OPTS },
-                  { label: 'Stok',     key: 'stock'    as const, opts: STOCK_OPTS },
-                  { label: 'Badge',    key: 'badge'    as const, opts: BADGE_OPTS },
-                ] as const).map(f => (
-                  <div key={f.key}>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
-                    <select value={(editing[f.key] as string | undefined) ?? ''}
-                      onChange={e => setEditing({ ...editing, [f.key]: e.target.value })}
-                      className="input text-sm">
-                      {f.opts.map(o => <option key={o} value={o}>{o || '(kosong)'}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-
+            {/* Footer */}
+            <div className="flex-shrink-0 px-6 py-4" style={{ borderTop: '1px solid var(--border-2)' }}>
               <button onClick={save} disabled={saving || !editing.name}
                 className="btn-primary w-full justify-center py-3 text-sm">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
