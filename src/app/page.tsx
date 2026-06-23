@@ -887,14 +887,14 @@ export default function AdminPage() {
       <div className="card p-4 space-y-3">
         <p className="section-label">Data Customer</p>
         <div className="relative">
-          <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          <User size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input type="text" value={custName} onChange={e => setCustName(e.target.value)}
-            className="input pl-9" placeholder="Nama customer" />
+            className="input" style={{ paddingLeft: 38 }} placeholder="Nama customer" />
         </div>
         <div className="relative">
-          <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          <Phone size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)}
-            className="input pl-9" placeholder="Nomor WhatsApp (08xxx)" />
+            className="input" style={{ paddingLeft: 38 }} placeholder="Nomor WhatsApp (08xxx)" />
         </div>
       </div>
 

@@ -5,7 +5,7 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon, RefreshCw,
+  ChevronLeft, ChevronRight, ImageIcon,
 } from 'lucide-react';
 
 const API       = '';
@@ -36,6 +36,27 @@ const CAT_FILTER = ['semua', ...CAT_OPTS];
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
+function Checkbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate?: boolean; onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{
+        background:   checked || indeterminate ? 'var(--accent)' : 'transparent',
+        borderColor:  checked || indeterminate ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked
+          ? <Check size={11} color="#fff" strokeWidth={3} />
+          : null}
+    </button>
+  );
+}
+
 export default function ProductsTab({ creds }: { creds: string }) {
   const [products,   setProducts]   = useState<FireProduct[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -46,10 +67,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [editing,    setEditing]    = useState<FireProduct | null>(null);
   const [isNew,      setIsNew]      = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [uploading,  setUploading]  = useState(false);
-  const [search,     setSearch]     = useState('');
-  const [catFilter,  setCatFilter]  = useState('semua');
-  const [page,       setPage]       = useState(1);
+  const [uploading,    setUploading]    = useState(false);
+  const [search,       setSearch]       = useState('');
+  const [catFilter,    setCatFilter]    = useState('semua');
+  const [page,         setPage]         = useState(1);
+  const [selected,     setSelected]     = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
@@ -128,6 +151,38 @@ export default function ProductsTab({ creds }: { creds: string }) {
     if (!confirm(`Hapus "${name}"?`)) return;
     await fetch(`${API}/api/products/${id}`, { method: 'DELETE', headers });
     setProducts(p => p.filter(x => x.id !== id));
+    setSelected(s => { const n = new Set(s); n.delete(id); return n; });
+  };
+
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Hapus ${selected.size} produk yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+    setBulkDeleting(true);
+    const ids = [...selected];
+    const r = await fetch(`${API}/api/products/bulk-delete`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (r.ok) {
+      setProducts(p => p.filter(x => !selected.has(x.id)));
+      setSelected(new Set());
+    }
+    setBulkDeleting(false);
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const togglePageAll = () => {
+    const pageIds = paginated.map(p => p.id);
+    const allSelected = pageIds.every(id => selected.has(id));
+    setSelected(s => {
+      const n = new Set(s);
+      if (allSelected) pageIds.forEach(id => n.delete(id));
+      else pageIds.forEach(id => n.add(id));
+      return n;
+    });
   };
 
   // Filter + pagination
@@ -202,9 +257,17 @@ export default function ProductsTab({ creds }: { creds: string }) {
           {/* Search + Category filter */}
           <div className="flex gap-2 flex-col sm:flex-row">
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-              <input value={search} onChange={e => { setSearch(e.target.value); resetPage(); }}
-                className="input pl-9 text-sm w-full" placeholder="Cari produk…" />
+              <Search size={14} style={{
+                position: 'absolute', left: 14, top: '50%',
+                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+              }} />
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); resetPage(); }}
+                className="input text-sm w-full"
+                style={{ paddingLeft: 38 }}
+                placeholder="Cari produk…"
+              />
             </div>
             <div className="flex gap-1.5 flex-wrap">
               {CAT_FILTER.map(c => (
@@ -217,16 +280,39 @@ export default function ProductsTab({ creds }: { creds: string }) {
           </div>
 
           {/* Product list */}
-          <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+          <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+            {/* Select-all header */}
+            {paginated.length > 0 && (
+              <div className="flex items-center gap-3 px-4 py-2.5"
+                style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                <Checkbox
+                  checked={paginated.every(p => selected.has(p.id))}
+                  indeterminate={paginated.some(p => selected.has(p.id)) && !paginated.every(p => selected.has(p.id))}
+                  onChange={togglePageAll}
+                />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                  {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} produk di halaman ini`}
+                </span>
+              </div>
+            )}
+
             {paginated.length === 0 ? (
               <div className="py-12 text-center">
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada produk yang cocok.</p>
               </div>
-            ) : paginated.map(p => {
-              const stock = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
+            ) : paginated.map((p, idx) => {
+              const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
+              const isSelected = selected.has(p.id);
               return (
-                <div key={p.id}>
+                <div key={p.id}
+                  style={{
+                    borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined,
+                    background: isSelected ? 'rgba(217,119,6,0.05)' : undefined,
+                    transition: 'background 0.1s',
+                  }}>
                   <div className="flex items-center gap-3 px-4 py-3.5">
+                    <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
+
                     {/* Thumbnail */}
                     <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
                       style={{ background: `${p.bgColor}22` }}>
@@ -336,6 +422,35 @@ export default function ProductsTab({ creds }: { creds: string }) {
             </div>
           )}
         </>
+      )}
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div
+          className="fixed bottom-20 lg:bottom-6 left-1/2 z-40 animate-fade-up"
+          style={{ transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}
+        >
+          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-xl"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold">{selected.size} dipilih</span>
+            <div className="w-px h-4 rounded-full" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button
+              onClick={bulkDelete}
+              disabled={bulkDeleting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors"
+              style={{ background: 'var(--danger)', color: '#fff' }}
+            >
+              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus {selected.size} Produk
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Edit drawer */}
