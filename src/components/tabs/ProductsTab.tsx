@@ -72,13 +72,21 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
   const syncImages = async () => {
     setSyncing(true); setSyncResult('');
-    const r = await fetch(`${API}/api/products/sync-images`, { method: 'POST', headers });
-    if (r.ok) {
-      const d = await r.json() as { updated: number; skipped: number; errors: string[] };
-      setSyncResult(`✓ ${d.updated} produk diupdate, ${d.skipped} dilewati${d.errors.length ? `. Gagal: ${d.errors.length}` : ''}`);
-      await load();
-    } else {
-      setSyncResult('✗ Gagal sync gambar');
+    try {
+      const r = await fetch(`${API}/api/products/sync-images`, { method: 'POST', headers });
+      const text = await r.text();
+      if (r.ok) {
+        const d = JSON.parse(text) as { updated: number; skipped: number; errors: string[]; log?: string[]; total?: number };
+        const parts = [`✓ ${d.updated} diupdate, ${d.skipped} dilewati dari ${d.total ?? '?'} produk`];
+        if (d.errors.length) parts.push(`Error: ${d.errors.join(' | ')}`);
+        if (d.log?.length)   parts.push(`Info: ${d.log.join(' | ')}`);
+        setSyncResult(parts.join(' · '));
+        if (d.updated > 0) await load();
+      } else {
+        setSyncResult(`✗ HTTP ${r.status}: ${text.slice(0, 200)}`);
+      }
+    } catch (e) {
+      setSyncResult(`✗ ${String(e)}`);
     }
     setSyncing(false);
   };
