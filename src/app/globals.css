@@ -2,12 +2,12 @@
 
 /* ── Design Tokens ─────────────────────────────────────────── */
 :root {
-  /* Sidebar — brand cream, sesuai identitas Cemilan Teh Risma */
-  --sidebar:        #FBF0D5;
-  --sidebar-hover:  #F0DEB4;
-  --sidebar-border: #E5CFA0;
-  --sidebar-text:   #5C2E08;
-  --sidebar-muted:  #A8793D;
+  /* Sidebar — warm amber-brown, sesuai warna invoice brand */
+  --sidebar:        #8C3D0D;
+  --sidebar-hover:  rgba(255,255,255,0.1);
+  --sidebar-border: rgba(0,0,0,0.15);
+  --sidebar-text:   #FDECD0;
+  --sidebar-muted:  #D49060;
 
   /* Ground & surface */
   --ground:   #F5F0E8;
@@ -82,7 +82,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 14px 9px 16px;
+  padding: 9px 14px 9px 14px;
   border-radius: 12px;
   font-size: 13px;
   font-weight: 500;
@@ -93,12 +93,10 @@ body {
   overflow: hidden;
 }
 .sidebar-nav-item:hover {
-  background: rgba(0,0,0,0.06);
-  color: #3D1505;
+  background: rgba(255,255,255,0.12);
 }
 .sidebar-nav-item.active {
-  background: rgba(217, 119, 6, 0.14);
-  color: var(--accent-dark);
+  background: rgba(255,255,255,0.18);
   font-weight: 700;
 }
 .sidebar-nav-item.active::before {
@@ -107,7 +105,7 @@ body {
   left: 0; top: 50%;
   transform: translateY(-50%);
   width: 3px; height: 60%;
-  background: var(--accent);
+  background: #FDE68A;
   border-radius: 0 3px 3px 0;
 }
 

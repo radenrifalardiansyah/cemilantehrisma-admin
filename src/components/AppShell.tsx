@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
   BarChart2, ShoppingCart, Package, Receipt,
   Users, Warehouse, Settings, LogOut, Home,
-  ChevronRight, MoreHorizontal,
+  ChevronRight, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 
 export type TabId = 'dashboard' | 'pos' | 'products' | 'orders' | 'resellers' | 'stock' | 'settings';
@@ -36,10 +36,14 @@ const NAV_GROUPS = [
 ];
 
 const ALL_TABS     = NAV_GROUPS.flatMap(g => g.tabs);
-const PRIMARY_TABS = ALL_TABS.slice(0, 4);  // Analitik, Kasir, Produk, Pesanan
-const MORE_TABS    = ALL_TABS.slice(4);     // Reseller, Gudang, Pengaturan
+const PRIMARY_TABS = ALL_TABS.slice(0, 4);
+const MORE_TABS    = ALL_TABS.slice(4);
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
+
+const SIDEBAR_BG   = 'linear-gradient(175deg, #9B4418 0%, #7A3008 100%)';
+const SIDEBAR_FULL = 240;
+const SIDEBAR_MINI = 64;
 
 interface AppShellProps {
   activeTab: TabId;
@@ -55,9 +59,25 @@ export default function AppShell({
   activeTab, setActiveTab, onLogout,
   hasCart, cartCount, children, topbarActions,
 }: AppShellProps) {
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreOpen,   setMoreOpen]   = useState(false);
+  const [collapsed,  setCollapsed]  = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('sb-collapsed');
+    if (saved === 'true') setCollapsed(true);
+  }, []);
+
+  const toggleCollapse = () => {
+    setCollapsed(c => {
+      const next = !c;
+      localStorage.setItem('sb-collapsed', String(next));
+      return next;
+    });
+  };
+
   const currentTab   = ALL_TABS.find(t => t.id === activeTab);
   const isMoreActive = MORE_TABS.some(t => t.id === activeTab);
+  const sw           = collapsed ? SIDEBAR_MINI : SIDEBAR_FULL;
 
   const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); };
 
@@ -68,34 +88,66 @@ export default function AppShell({
       <aside
         className="hidden lg:flex flex-col flex-shrink-0 h-full"
         style={{
-          width: 240,
-          background: 'linear-gradient(175deg, #F5E5C0 0%, #FBF0D5 100%)',
-          borderRight: '1px solid var(--sidebar-border)',
+          width: sw,
+          minWidth: sw,
+          background: SIDEBAR_BG,
+          boxShadow: '4px 0 24px rgba(0,0,0,0.14)',
+          transition: 'width 0.26s cubic-bezier(0.4,0,0.2,1), min-width 0.26s cubic-bezier(0.4,0,0.2,1)',
+          overflow: 'hidden',
+          position: 'relative',
+          zIndex: 10,
         }}
       >
         {/* Brand */}
-        <div className="px-5 pt-6 pb-5" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
-          <div className="flex items-center gap-3">
-            <div className="relative flex-shrink-0">
-              <Image src="/icon-192.png" alt="logo" width={42} height={42} className="rounded-2xl" style={{ boxShadow: '0 2px 8px rgba(139,69,19,0.18)' }} />
-              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-[2.5px]"
-                style={{ borderColor: '#FBF0D5' }} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[13.5px] font-extrabold leading-tight truncate" style={{ color: 'var(--sidebar-text)' }}>Cemilan Teh Risma</p>
-              <p className="text-[11px] mt-0.5 font-medium" style={{ color: 'var(--sidebar-muted)' }}>Admin Dashboard</p>
-            </div>
+        <div
+          className="flex-shrink-0 flex items-center px-3 pt-5 pb-4"
+          style={{
+            height: 72,
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            gap: collapsed ? 0 : 10,
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            paddingLeft: collapsed ? 0 : 16,
+            transition: 'gap 0.26s, padding 0.26s',
+          }}
+        >
+          <div className="relative flex-shrink-0">
+            <Image
+              src="/icon-192.png" alt="logo" width={36} height={36}
+              className="rounded-xl"
+              style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}
+            />
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2"
+              style={{ borderColor: '#7A3008' }}
+            />
           </div>
+          {!collapsed && (
+            <div className="min-w-0 overflow-hidden">
+              <p className="text-[13px] font-extrabold leading-tight truncate" style={{ color: '#FDECD0' }}>
+                Cemilan Teh Risma
+              </p>
+              <p className="text-[10.5px] mt-0.5 font-medium truncate" style={{ color: '#D49060' }}>
+                Admin Dashboard
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-5 overflow-y-auto thin-scrollbar">
+        <nav className="flex-1 px-2 py-4 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: 'none' }}>
           {NAV_GROUPS.map((group, gi) => (
-            <div key={group.label} className={gi > 0 ? 'mt-5' : ''}>
-              <p className="px-3 mb-2 text-[10px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: 'var(--sidebar-muted)' }}>
-                {group.label}
-              </p>
+            <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+              {!collapsed && (
+                <p
+                  className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
+                  style={{ color: 'rgba(212,144,96,0.7)' }}
+                >
+                  {group.label}
+                </p>
+              )}
+              {collapsed && gi > 0 && (
+                <div className="mx-auto mb-2 w-6" style={{ height: 1, background: 'rgba(255,255,255,0.12)' }} />
+              )}
               <div className="space-y-0.5">
                 {group.tabs.map(tab => {
                   const isActive = activeTab === tab.id;
@@ -103,17 +155,29 @@ export default function AppShell({
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
+                      title={collapsed ? tab.label : undefined}
                       className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
+                      style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
                     >
                       <tab.Icon
-                        size={16}
-                        style={{ color: isActive ? 'var(--accent)' : 'var(--sidebar-muted)', flexShrink: 0 }}
+                        size={17}
+                        strokeWidth={isActive ? 2.5 : 1.8}
+                        style={{ color: isActive ? '#FDE68A' : '#D49060', flexShrink: 0 }}
                       />
-                      <span className="flex-1 text-left">{tab.label}</span>
-                      {tab.id === 'pos' && hasCart && (
+                      {!collapsed && (
+                        <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#FFFFFF' : '#FDECD0' }}>
+                          {tab.label}
+                        </span>
+                      )}
+                      {!collapsed && tab.id === 'pos' && hasCart && (
                         <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
                           {cartCount}
                         </span>
+                      )}
+                      {collapsed && tab.id === 'pos' && hasCart && (
+                        <span
+                          className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
+                        />
                       )}
                     </button>
                   );
@@ -124,15 +188,46 @@ export default function AppShell({
         </nav>
 
         {/* Footer */}
-        <div className="px-3 pb-5 pt-3 space-y-1" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
-          <a href={MAIN_APP} target="_blank" rel="noopener noreferrer" className="sidebar-nav-item w-full">
-            <Home size={15} style={{ color: 'var(--sidebar-muted)', flexShrink: 0 }} />
-            <span>Lihat Toko</span>
-            <ChevronRight size={11} style={{ color: 'var(--sidebar-muted)', marginLeft: 'auto' }} />
+        <div
+          className="flex-shrink-0 px-2 pb-4 pt-2 space-y-0.5"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
+        >
+          <a
+            href={MAIN_APP} target="_blank" rel="noopener noreferrer"
+            title={collapsed ? 'Lihat Toko' : undefined}
+            className="sidebar-nav-item w-full"
+            style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+          >
+            <Home size={15} style={{ color: '#D49060', flexShrink: 0 }} />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left whitespace-nowrap overflow-hidden" style={{ color: '#FDECD0' }}>Lihat Toko</span>
+                <ChevronRight size={11} style={{ color: '#D49060', flexShrink: 0 }} />
+              </>
+            )}
           </a>
-          <button onClick={onLogout} className="sidebar-nav-item w-full">
-            <LogOut size={15} style={{ color: 'var(--danger)', flexShrink: 0 }} />
-            <span style={{ color: 'var(--danger)' }}>Keluar</span>
+          <button
+            onClick={onLogout}
+            title={collapsed ? 'Keluar' : undefined}
+            className="sidebar-nav-item w-full"
+            style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+          >
+            <LogOut size={15} style={{ color: '#FF9090', flexShrink: 0 }} />
+            {!collapsed && <span className="whitespace-nowrap" style={{ color: '#FF9090' }}>Keluar</span>}
+          </button>
+
+          {/* Collapse toggle */}
+          <button
+            onClick={toggleCollapse}
+            title={collapsed ? 'Perlebar menu' : 'Perkecil menu'}
+            className="sidebar-nav-item w-full mt-1"
+            style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.7 }}
+          >
+            {collapsed
+              ? <PanelLeftOpen  size={14} style={{ color: '#D49060', flexShrink: 0 }} />
+              : <PanelLeftClose size={14} style={{ color: '#D49060', flexShrink: 0 }} />
+            }
+            {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: '#D49060' }}>Perkecil</span>}
           </button>
         </div>
       </aside>
@@ -146,20 +241,28 @@ export default function AppShell({
           style={{
             height: 58,
             background: 'rgba(255,255,255,0.88)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
             borderBottom: '1px solid var(--border-2)',
             boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
           }}
         >
           <div className="flex items-center gap-3">
             <Image src="/icon-192.png" alt="logo" width={30} height={30} className="rounded-xl flex-shrink-0 lg:hidden" />
-            <div>
+            {/* Desktop: show collapse toggle only when fully collapsed and sidebar visible */}
+            <div className="hidden lg:flex items-center gap-3">
+              <div>
+                <p className="text-[15px] font-extrabold leading-tight" style={{ color: 'var(--text-primary)' }}>
+                  {currentTab?.label ?? 'Dashboard'}
+                </p>
+                <p className="text-[11px] leading-tight mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Cemilan Teh Risma · Admin
+                </p>
+              </div>
+            </div>
+            <div className="lg:hidden">
               <p className="text-[15px] font-extrabold leading-tight" style={{ color: 'var(--text-primary)' }}>
                 {currentTab?.label ?? 'Dashboard'}
-              </p>
-              <p className="text-[11px] leading-tight hidden lg:block mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Cemilan Teh Risma
               </p>
             </div>
           </div>
@@ -175,7 +278,7 @@ export default function AppShell({
           </div>
         </header>
 
-        {/* Scrollable content — extra bottom padding on mobile for bottom nav */}
+        {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto thin-scrollbar mobile-content-pad">
           {children}
         </main>
@@ -259,13 +362,11 @@ export default function AppShell({
       {/* ═══ More Bottom Sheet ═════════════════════════════════ */}
       {moreOpen && (
         <>
-          {/* Backdrop */}
           <div
             className="lg:hidden fixed inset-0 z-40"
             style={{ background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setMoreOpen(false)}
           />
-          {/* Sheet */}
           <div
             className="lg:hidden fixed left-0 right-0 z-50 animate-slide-up"
             style={{
@@ -276,7 +377,6 @@ export default function AppShell({
               paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
             }}
           >
-            {/* Drag handle */}
             <div className="flex justify-center pt-3 pb-5">
               <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} />
             </div>
