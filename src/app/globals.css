@@ -2,12 +2,12 @@
 
 /* ── Design Tokens ─────────────────────────────────────────── */
 :root {
-  /* Sidebar — warm brown, readable and inviting */
-  --sidebar:        #3D2B1A;
-  --sidebar-hover:  #4A3421;
-  --sidebar-border: #5A3F28;
-  --sidebar-text:   #E8D5B5;
-  --sidebar-muted:  #A8896A;
+  /* Sidebar — brand cream, sesuai identitas Cemilan Teh Risma */
+  --sidebar:        #FBF0D5;
+  --sidebar-hover:  #F0DEB4;
+  --sidebar-border: #E5CFA0;
+  --sidebar-text:   #5C2E08;
+  --sidebar-muted:  #A8793D;
 
   /* Ground & surface */
   --ground:   #F5F0E8;
@@ -93,13 +93,13 @@ body {
   overflow: hidden;
 }
 .sidebar-nav-item:hover {
-  background: rgba(255,255,255,0.08);
-  color: #F0DEC0;
+  background: rgba(0,0,0,0.06);
+  color: #3D1505;
 }
 .sidebar-nav-item.active {
-  background: rgba(217, 119, 6, 0.18);
-  color: #FFD98A;
-  font-weight: 600;
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--accent-dark);
+  font-weight: 700;
 }
 .sidebar-nav-item.active::before {
   content: '';

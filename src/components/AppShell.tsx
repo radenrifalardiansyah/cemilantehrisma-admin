@@ -69,20 +69,20 @@ export default function AppShell({
         className="hidden lg:flex flex-col flex-shrink-0 h-full"
         style={{
           width: 240,
-          background: 'linear-gradient(175deg, #261508 0%, #3D2B1A 100%)',
+          background: 'linear-gradient(175deg, #F5E5C0 0%, #FBF0D5 100%)',
           borderRight: '1px solid var(--sidebar-border)',
         }}
       >
         {/* Brand */}
-        <div className="px-5 pt-6 pb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-5 pt-6 pb-5" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
           <div className="flex items-center gap-3">
             <div className="relative flex-shrink-0">
-              <Image src="/icon-192.png" alt="logo" width={42} height={42} className="rounded-2xl" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }} />
-              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-[2.5px]"
-                style={{ borderColor: '#261508' }} />
+              <Image src="/icon-192.png" alt="logo" width={42} height={42} className="rounded-2xl" style={{ boxShadow: '0 2px 8px rgba(139,69,19,0.18)' }} />
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-[2.5px]"
+                style={{ borderColor: '#FBF0D5' }} />
             </div>
             <div className="min-w-0">
-              <p className="text-[13.5px] font-extrabold text-white leading-tight truncate">Cemilan Teh Risma</p>
+              <p className="text-[13.5px] font-extrabold leading-tight truncate" style={{ color: 'var(--sidebar-text)' }}>Cemilan Teh Risma</p>
               <p className="text-[11px] mt-0.5 font-medium" style={{ color: 'var(--sidebar-muted)' }}>Admin Dashboard</p>
             </div>
           </div>
@@ -124,15 +124,15 @@ export default function AppShell({
         </nav>
 
         {/* Footer */}
-        <div className="px-3 pb-5 pt-3 space-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="px-3 pb-5 pt-3 space-y-1" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
           <a href={MAIN_APP} target="_blank" rel="noopener noreferrer" className="sidebar-nav-item w-full">
             <Home size={15} style={{ color: 'var(--sidebar-muted)', flexShrink: 0 }} />
             <span>Lihat Toko</span>
             <ChevronRight size={11} style={{ color: 'var(--sidebar-muted)', marginLeft: 'auto' }} />
           </a>
           <button onClick={onLogout} className="sidebar-nav-item w-full">
-            <LogOut size={15} style={{ color: '#F87171', flexShrink: 0 }} />
-            <span style={{ color: '#F87171' }}>Keluar</span>
+            <LogOut size={15} style={{ color: 'var(--danger)', flexShrink: 0 }} />
+            <span style={{ color: 'var(--danger)' }}>Keluar</span>
           </button>
         </div>
       </aside>
