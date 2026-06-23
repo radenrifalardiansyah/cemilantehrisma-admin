@@ -6,12 +6,17 @@ import {
   LogOut, RefreshCw, MessageCircle, Eye, Smartphone,
   TrendingUp, BarChart2, Home, ShoppingCart, Plus, Minus,
   ChevronLeft, CheckCircle2, Loader2, User, Phone, Trash2, Tag,
-  Send,
+  Send, Package, Receipt, Users, Warehouse, Settings,
 } from 'lucide-react';
-import { products } from '@/lib/products';
+import { products as hardcodedProducts } from '@/lib/products';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
+import ProductsTab from '@/components/tabs/ProductsTab';
+import OrdersTab from '@/components/tabs/OrdersTab';
+import ResellersTab from '@/components/tabs/ResellersTab';
+import StockTab from '@/components/tabs/StockTab';
+import SettingsTab from '@/components/tabs/SettingsTab';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
+const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // ─── Analytics helpers ───────────────────────────────────────────────────────
 
@@ -86,9 +91,7 @@ function formatWAMessage(custName: string, invoiceNo: string, total: number, pdf
   return `Halo *${custName}*! 👋\n\nBerikut invoice pesanan Anda dari *Cemilan Teh Risma* 🧾\n\nNo. Invoice : *${invoiceNo}*\nTotal Bayar : *${formatCurrency(total)}*\n\n📄 *Lihat Invoice PDF:*\n${pdfUrl}\n\nTerima kasih sudah pesan! 🙏\n_Cemilan Teh Risma · 📞 ${tel}_`.trim();
 }
 
-// ─── POS Product Card ────────────────────────────────────────────────────────
-
-type Product = (typeof products)[0];
+type Product = (typeof hardcodedProducts)[0];
 
 function ProductCard({ product, qty, onAdd, onMinus }: {
   product: Product; qty: number; onAdd: () => void; onMinus: () => void;
@@ -96,42 +99,27 @@ function ProductCard({ product, qty, onAdd, onMinus }: {
   const img = product.images?.[0];
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-md flex flex-col select-none border border-gray-100 active:scale-[0.97] transition-transform">
-      {/* Photo area */}
       <div className="relative w-full aspect-square overflow-hidden cursor-pointer" onClick={onAdd}>
         {img ? (
-          <Image
-            src={img}
-            alt={product.name}
-            fill
-            className="object-cover"
-            sizes="(max-width: 640px) 50vw, 200px"
-          />
+          <Image src={img} alt={product.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 200px" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl"
             style={{ background: `linear-gradient(135deg,${product.bgColor}cc,${product.bgColor}88)` }}>
             {product.emoji}
           </div>
         )}
-
-        {/* Dark scrim when item in cart */}
         {qty > 0 && <div className="absolute inset-0 bg-black/20" />}
-
-        {/* Qty badge */}
         {qty > 0 && (
           <div className="absolute top-2 right-2 min-w-[26px] h-[26px] rounded-full bg-amber-500 text-white text-xs font-black flex items-center justify-center px-1.5 shadow-lg ring-2 ring-white">
             {qty}
           </div>
         )}
-
-        {/* Add hint overlay */}
         {qty === 0 && (
           <div className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
             <Plus size={15} className="text-white" strokeWidth={2.5} />
           </div>
         )}
       </div>
-
-      {/* Info */}
       <div className="px-3 pt-2.5 pb-3 flex flex-col flex-1">
         <p className="text-[11px] font-bold text-gray-800 leading-snug line-clamp-2 flex-1 mb-1">{product.name}</p>
         <p className="text-[10px] text-gray-400 mb-2">{product.weight}</p>
@@ -162,6 +150,10 @@ function ProductCard({ product, qty, onAdd, onMinus }: {
   );
 }
 
+// ─── Tab type ─────────────────────────────────────────────────────────────────
+
+type TabId = 'dashboard' | 'pos' | 'products' | 'orders' | 'resellers' | 'stock' | 'settings';
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -177,12 +169,12 @@ export default function AdminPage() {
   const [statsErr, setStatsErr] = useState('');
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'pos'>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
 
   // POS state
   const [posView,       setPosView]       = useState<PosView>('products');
   const [activeCat,     setActiveCat]     = useState<Category>('semua');
-  const [cart,          setCart]          = useState<CartEntry[]>(() => products.map(p => ({ productId: p.id, qty: 0 })));
+  const [cart,          setCart]          = useState<CartEntry[]>(() => hardcodedProducts.map(p => ({ productId: p.id, qty: 0 })));
   const [custName,      setCustName]      = useState('');
   const [custPhone,     setCustPhone]     = useState('');
   const [discountType,  setDiscountType]  = useState<'percent' | 'nominal'>('percent');
@@ -195,7 +187,7 @@ export default function AdminPage() {
   const cartItems    = cart.filter(i => i.qty > 0);
   const cartCount    = cartItems.reduce((s, i) => s + i.qty, 0);
   const cartSubtotal = cartItems.reduce((s, i) => {
-    const p = products.find(pr => pr.id === i.productId);
+    const p = hardcodedProducts.find(pr => pr.id === i.productId);
     return s + (p?.price ?? 0) * i.qty;
   }, 0);
   const discountNum    = parseFloat(discountRaw) || 0;
@@ -208,10 +200,9 @@ export default function AdminPage() {
   const hasCart       = cartItems.length > 0;
   const canSend       = hasCart && custName.trim() && custPhone.trim();
 
-  // Cart actions
-  const addToCart     = (id: string) => setCart(p => p.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i));
-  const removeFromCart= (id: string) => setCart(p => p.map(i => i.productId === id ? { ...i, qty: Math.max(0, i.qty - 1) } : i));
-  const clearCart     = () => setCart(products.map(p => ({ productId: p.id, qty: 0 })));
+  const addToCart      = (id: string) => setCart(p => p.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i));
+  const removeFromCart = (id: string) => setCart(p => p.map(i => i.productId === id ? { ...i, qty: Math.max(0, i.qty - 1) } : i));
+  const clearCart      = () => setCart(hardcodedProducts.map(p => ({ productId: p.id, qty: 0 })));
 
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); clearCart();
@@ -220,7 +211,7 @@ export default function AdminPage() {
     setSending(false); setSendErr(''); setInvoiceNo('');
   };
 
-  // Generate PDF → upload ke Firebase Storage → kirim link via WA
+  // Save order to Firebase and send invoice
   const sendInvoice = async () => {
     if (!canSend) return;
     setSending(true); setSendErr('');
@@ -231,11 +222,12 @@ export default function AdminPage() {
       const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
       const items = cartItems.map(i => {
-        const p = products.find(pr => pr.id === i.productId)!;
+        const p = hardcodedProducts.find(pr => pr.id === i.productId)!;
         return { name: p.name, weight: p.weight, qty: i.qty, price: p.price, subtotal: p.price * i.qty };
       });
 
-      const res = await fetch(`${API}/api/admin/invoice-pdf`, {
+      // Generate PDF via main app
+      const res = await fetch(`${MAIN_APP}/api/admin/invoice-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
         body: JSON.stringify({
@@ -246,11 +238,22 @@ export default function AdminPage() {
         }),
       });
       if (!res.ok) throw new Error('Gagal generate PDF');
-
       const { url: pdfUrl } = await res.json() as { url: string };
+
+      // Save order to Firebase
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
+        body: JSON.stringify({
+          invoiceNo: invNo, date: dateStr,
+          customerName: custName, customerPhone: custPhone,
+          items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
+          pdfUrl,
+        }),
+      });
+
       const phone  = normalizePhone(custPhone);
       const waText = formatWAMessage(custName, invNo, cartTotal, pdfUrl);
-
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(waText)}`, '_blank');
 
       setInvoiceNo(invNo);
@@ -267,7 +270,7 @@ export default function AdminPage() {
     setLoading(true); setStatsErr('');
     try {
       const token = authHeader ?? creds;
-      const res = await fetch(`${API}/api/admin/stats`, { headers: token ? { 'x-admin-auth': token } : {} });
+      const res = await fetch(`${MAIN_APP}/api/admin/stats`, { headers: token ? { 'x-admin-auth': token } : {} });
       if (res.ok) setStats(await res.json());
       else if (res.status === 500) setStatsErr('Gagal memuat data.');
       else setStatsErr('Sesi habis. Silakan login ulang.');
@@ -278,18 +281,23 @@ export default function AdminPage() {
   useEffect(() => {
     const saved = localStorage.getItem('admin_creds');
     if (!saved) { setChecking(false); return; }
-    fetch(`${API}/api/admin/stats`, { headers: { 'x-admin-auth': saved } })
-      .then(r => {
-        if (r.ok) { setCreds(saved); setAuthed(true); r.json().then(setStats); }
-        else localStorage.removeItem('admin_creds');
-        setChecking(false);
-      })
-      .catch(() => setChecking(false));
+    // Validate against local login endpoint
+    const [u, ...rest] = saved.split(':');
+    const p = rest.join(':');
+    fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p }),
+    }).then(r => {
+      if (r.ok) { setCreds(saved); setAuthed(true); fetchStats(saved); }
+      else localStorage.removeItem('admin_creds');
+      setChecking(false);
+    }).catch(() => setChecking(false));
   }, []);
 
   const login = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setLoginErr('');
-    const res = await fetch(`${API}/api/admin/login`, {
+    const res = await fetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     });
@@ -376,29 +384,22 @@ export default function AdminPage() {
   const todayViews = daily.length > 0 ? daily[daily.length-1].views : 0;
 
   // ── POS: product grid ─────────────────────────────────────────────────────
-  const filteredProducts = activeCat === 'semua' ? products : products.filter(p => p.category === activeCat);
+  const filteredProducts = activeCat === 'semua' ? hardcodedProducts : hardcodedProducts.filter(p => p.category === activeCat);
 
   const renderProducts = () => (
     <div className="flex flex-col h-full">
-      {/* Category filter */}
       <div className="flex gap-2 px-4 pt-4 pb-3 overflow-x-auto no-scrollbar flex-shrink-0">
         {CATEGORIES.map(c => {
           const isActive = activeCat === c.id;
           return (
             <button key={c.id} onClick={() => setActiveCat(c.id)}
-              className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all border ${
-                isActive
-                  ? 'text-white border-transparent shadow-md'
-                  : 'text-gray-500 bg-white border-gray-200 hover:border-amber-300 hover:text-amber-600'
-              }`}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all border ${isActive ? 'text-white border-transparent shadow-md' : 'text-gray-500 bg-white border-gray-200 hover:border-amber-300 hover:text-amber-600'}`}
               style={isActive ? { background: 'linear-gradient(135deg,#D97706,#EA580C)' } : {}}>
               <span>{c.emoji}</span>{c.label}
             </button>
           );
         })}
       </div>
-
-      {/* Grid */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <div className="grid grid-cols-2 gap-3">
           {filteredProducts.map(p => {
@@ -410,8 +411,6 @@ export default function AdminPage() {
           })}
         </div>
       </div>
-
-      {/* Sticky cart bar */}
       {hasCart && (
         <div className="px-4 pb-5 pt-2 flex-shrink-0" style={{ background: 'linear-gradient(to top, #FFFBF5 80%, transparent)' }}>
           <button onClick={() => setPosView('cart')}
@@ -419,9 +418,7 @@ export default function AdminPage() {
             style={{ background: 'linear-gradient(135deg,#D97706,#EA580C)' }}>
             <div className="relative">
               <ShoppingCart size={20} />
-              <span className="absolute -top-2 -right-2.5 w-5 h-5 rounded-full bg-white text-amber-600 text-[10px] font-black flex items-center justify-center shadow">
-                {cartCount}
-              </span>
+              <span className="absolute -top-2 -right-2.5 w-5 h-5 rounded-full bg-white text-amber-600 text-[10px] font-black flex items-center justify-center shadow">{cartCount}</span>
             </div>
             <div className="flex-1 text-left leading-tight">
               <p className="text-[11px] text-white/70">{cartItems.length} produk · {cartCount} pcs</p>
@@ -434,11 +431,8 @@ export default function AdminPage() {
     </div>
   );
 
-  // ── POS: cart + checkout ──────────────────────────────────────────────────
   const renderCart = () => (
     <div className="overflow-y-auto px-4 pt-4 pb-8 space-y-3 h-full">
-
-      {/* Order list */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
         <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
           <span className="text-sm font-bold text-gray-800">Pesanan <span className="text-amber-500">({cartCount} pcs)</span></span>
@@ -446,19 +440,16 @@ export default function AdminPage() {
             <Trash2 size={12} /> Kosongkan
           </button>
         </div>
-
         <div className="divide-y divide-gray-50">
           {cartItems.map(item => {
-            const p   = products.find(pr => pr.id === item.productId)!;
+            const p   = hardcodedProducts.find(pr => pr.id === item.productId)!;
             const img = p.images?.[0];
             return (
               <div key={item.productId} className="flex items-center gap-3 px-3 py-3">
-                {/* Product thumbnail */}
                 <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 relative">
                   {img
                     ? <Image src={img} alt={p.name} fill className="object-cover" sizes="44px" />
-                    : <div className="w-full h-full flex items-center justify-center text-lg"
-                        style={{ background: `${p.bgColor}33` }}>{p.emoji}</div>
+                    : <div className="w-full h-full flex items-center justify-center text-lg" style={{ background: `${p.bgColor}33` }}>{p.emoji}</div>
                   }
                 </div>
                 <div className="flex-1 min-w-0">
@@ -466,25 +457,15 @@ export default function AdminPage() {
                   <p className="text-xs text-gray-400">{formatCurrency(p.price)} / pcs</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <button onClick={() => removeFromCart(item.productId)}
-                    className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active:bg-gray-200">
-                    <Minus size={12} strokeWidth={2.5} />
-                  </button>
+                  <button onClick={() => removeFromCart(item.productId)} className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center active:bg-gray-200"><Minus size={12} strokeWidth={2.5} /></button>
                   <span className="w-5 text-center text-sm font-black text-gray-800">{item.qty}</span>
-                  <button onClick={() => addToCart(item.productId)}
-                    className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center active:bg-amber-600">
-                    <Plus size={12} strokeWidth={2.5} />
-                  </button>
+                  <button onClick={() => addToCart(item.productId)} className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center active:bg-amber-600"><Plus size={12} strokeWidth={2.5} /></button>
                 </div>
-                <span className="text-sm font-bold text-amber-700 w-16 text-right flex-shrink-0">
-                  {formatCurrency(p.price * item.qty)}
-                </span>
+                <span className="text-sm font-bold text-amber-700 w-16 text-right flex-shrink-0">{formatCurrency(p.price * item.qty)}</span>
               </div>
             );
           })}
         </div>
-
-        {/* Summary rows */}
         <div className="border-t border-gray-100 divide-y divide-gray-50">
           {discountAmount > 0 && (
             <div className="px-4 py-2.5 flex justify-between items-center">
@@ -505,84 +486,54 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Discount */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <Tag size={11} /> Diskon <span className="font-normal normal-case">(opsional)</span>
-        </p>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><Tag size={11} /> Diskon <span className="font-normal normal-case">(opsional)</span></p>
         <div className="flex gap-2">
           <div className="flex rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 text-xs font-bold">
             <button onClick={() => { setDiscountType('percent'); setDiscountRaw(''); }}
               className={`px-3.5 py-2.5 transition-all ${discountType === 'percent' ? 'text-white' : 'text-gray-500 bg-white hover:bg-gray-50'}`}
-              style={discountType === 'percent' ? { background: 'linear-gradient(135deg,#D97706,#EA580C)' } : {}}>
-              %
-            </button>
+              style={discountType === 'percent' ? { background: 'linear-gradient(135deg,#D97706,#EA580C)' } : {}}>%</button>
             <button onClick={() => { setDiscountType('nominal'); setDiscountRaw(''); }}
               className={`px-3 py-2.5 transition-all ${discountType === 'nominal' ? 'text-white' : 'text-gray-500 bg-white hover:bg-gray-50'}`}
-              style={discountType === 'nominal' ? { background: 'linear-gradient(135deg,#D97706,#EA580C)' } : {}}>
-              Rp
-            </button>
+              style={discountType === 'nominal' ? { background: 'linear-gradient(135deg,#D97706,#EA580C)' } : {}}>Rp</button>
           </div>
           <div className="relative flex-1">
-            <input type="number" min="0"
-              max={discountType === 'percent' ? 100 : cartSubtotal}
+            <input type="number" min="0" max={discountType === 'percent' ? 100 : cartSubtotal}
               value={discountRaw} onChange={e => setDiscountRaw(e.target.value)}
               placeholder={discountType === 'percent' ? 'Contoh: 10' : 'Contoh: 5000'}
               className="w-full px-3 pr-9 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-amber-400 bg-gray-50" />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-              {discountType === 'percent' ? '%' : 'Rp'}
-            </span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{discountType === 'percent' ? '%' : 'Rp'}</span>
           </div>
-          {discountRaw && (
-            <button onClick={() => setDiscountRaw('')}
-              className="px-3 rounded-xl bg-red-50 text-red-400 hover:bg-red-100 transition-colors border border-red-100 text-xs font-bold">✕</button>
-          )}
+          {discountRaw && <button onClick={() => setDiscountRaw('')} className="px-3 rounded-xl bg-red-50 text-red-400 hover:bg-red-100 transition-colors border border-red-100 text-xs font-bold">✕</button>}
         </div>
-        {discountAmount > 0 && (
-          <p className="text-xs text-green-600 mt-2 font-medium">
-            Hemat {formatCurrency(discountAmount)} → bayar {formatCurrency(cartTotal)}
-          </p>
-        )}
+        {discountAmount > 0 && <p className="text-xs text-green-600 mt-2 font-medium">Hemat {formatCurrency(discountAmount)} → bayar {formatCurrency(cartTotal)}</p>}
       </div>
 
-      {/* Customer info */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Data Customer</p>
         <div className="relative">
           <User size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" value={custName} onChange={e => setCustName(e.target.value)}
-            placeholder="Nama customer"
+          <input type="text" value={custName} onChange={e => setCustName(e.target.value)} placeholder="Nama customer"
             className="w-full pl-9 pr-3 py-3 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-amber-400 bg-gray-50" />
         </div>
         <div className="relative">
           <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)}
-            placeholder="Nomor WhatsApp (08xxx)"
+          <input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)} placeholder="Nomor WhatsApp (08xxx)"
             className="w-full pl-9 pr-3 py-3 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-amber-400 bg-gray-50" />
         </div>
       </div>
 
-      {sendErr && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-600">{sendErr}</div>
-      )}
+      {sendErr && <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-600">{sendErr}</div>}
 
-      {/* Send button */}
       <button onClick={sendInvoice} disabled={!canSend || sending}
         className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl text-white font-bold text-sm shadow-xl active:scale-[0.98] transition-all disabled:opacity-40"
         style={{ background: 'linear-gradient(135deg,#16A34A,#22C55E)' }}>
-        {sending
-          ? <><Loader2 size={18} className="animate-spin" /> Membuat PDF Invoice...</>
-          : <><Send size={18} /> Kirim Invoice PDF ke WA</>
-        }
+        {sending ? <><Loader2 size={18} className="animate-spin" /> Membuat PDF Invoice...</> : <><Send size={18} /> Kirim Invoice PDF ke WA</>}
       </button>
-
-      <p className="text-center text-gray-400 text-xs pb-2">
-        PDF invoice akan dibagikan langsung ke WhatsApp customer
-      </p>
+      <p className="text-center text-gray-400 text-xs pb-2">PDF invoice akan dibagikan langsung ke WhatsApp customer</p>
     </div>
   );
 
-  // ── POS: done ─────────────────────────────────────────────────────────────
   const renderDone = () => (
     <div className="flex flex-col items-center justify-center py-16 px-6 gap-5 h-full">
       <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
@@ -590,10 +541,7 @@ export default function AdminPage() {
       </div>
       <div className="text-center">
         <p className="text-lg font-black text-gray-800">Invoice Terkirim!</p>
-        <p className="text-sm text-gray-500 mt-2">
-          PDF invoice sudah dibagikan ke<br />
-          <span className="font-bold text-gray-700">{custName}</span> · {custPhone}
-        </p>
+        <p className="text-sm text-gray-500 mt-2">PDF invoice sudah dibagikan ke<br /><span className="font-bold text-gray-700">{custName}</span> · {custPhone}</p>
         {invoiceNo && <p className="text-xs text-amber-600 mt-1 font-medium">{invoiceNo}</p>}
       </div>
       <div className="bg-amber-50 rounded-2xl border border-amber-100 px-5 py-4 text-xs text-amber-700 text-center w-full leading-relaxed">
@@ -606,6 +554,17 @@ export default function AdminPage() {
       </button>
     </div>
   );
+
+  // ── Tabs config ───────────────────────────────────────────────────────────
+  const TABS: { id: TabId; label: string; icon: React.ReactNode; shortLabel?: string }[] = [
+    { id: 'dashboard',  label: 'Analitik',  shortLabel: 'Analitik',   icon: <BarChart2 size={13} /> },
+    { id: 'pos',        label: 'Kasir',     shortLabel: 'Kasir',      icon: <ShoppingCart size={13} /> },
+    { id: 'products',   label: 'Produk',    shortLabel: 'Produk',     icon: <Package size={13} /> },
+    { id: 'orders',     label: 'Pesanan',   shortLabel: 'Pesanan',    icon: <Receipt size={13} /> },
+    { id: 'resellers',  label: 'Reseller',  shortLabel: 'Reseller',   icon: <Users size={13} /> },
+    { id: 'stock',      label: 'Gudang',    shortLabel: 'Gudang',     icon: <Warehouse size={13} /> },
+    { id: 'settings',   label: 'Pengaturan',shortLabel: 'Setting',    icon: <Settings size={13} /> },
+  ];
 
   // ── Full render ───────────────────────────────────────────────────────────
   return (
@@ -622,31 +581,31 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <a href={`${API}`} target="_blank" rel="noopener noreferrer"
+            <a href={MAIN_APP} target="_blank" rel="noopener noreferrer"
               className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"><Home size={15} /></a>
-            <button onClick={() => fetchStats()} disabled={loading}
-              className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors disabled:opacity-50">
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            </button>
+            {activeTab === 'dashboard' && (
+              <button onClick={() => fetchStats()} disabled={loading}
+                className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors disabled:opacity-50">
+                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              </button>
+            )}
             <button onClick={logout}
               className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"><LogOut size={15} /></button>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="max-w-2xl mx-auto px-4 pb-3 flex gap-2">
-          {([
-            { id: 'dashboard', label: 'Analitik',       icon: <BarChart2 size={13} /> },
-            { id: 'pos',       label: 'Kasir / Invoice', icon: <ShoppingCart size={13} /> },
-          ] as const).map(tab => (
+        {/* Tabs — horizontal scroll */}
+        <div className="max-w-2xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
+          {TABS.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all border ${
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all border ${
                 activeTab === tab.id
                   ? 'text-white border-transparent shadow-md'
                   : 'text-gray-500 bg-white border-gray-200 hover:border-amber-300'
               }`}
               style={activeTab === tab.id ? { background: 'linear-gradient(135deg,#D97706,#EA580C)' } : {}}>
-              {tab.icon} {tab.label}
+              {tab.icon}
+              <span>{tab.shortLabel ?? tab.label}</span>
               {tab.id === 'pos' && hasCart && activeTab !== 'pos' && (
                 <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{cartCount}</span>
               )}
@@ -761,7 +720,6 @@ export default function AdminPage() {
       {/* ── POS tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'pos' && (
         <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full overflow-hidden">
-          {/* POS sub-header */}
           {posView !== 'done' && (
             <div className="px-4 pt-4 pb-2 flex items-center gap-3 flex-shrink-0">
               {posView === 'cart' && (
@@ -771,13 +729,9 @@ export default function AdminPage() {
                 </button>
               )}
               <div className="flex-1">
-                <p className="text-sm font-black text-gray-800">
-                  {posView === 'products' ? 'Pilih Produk' : 'Detail & Kirim'}
-                </p>
+                <p className="text-sm font-black text-gray-800">{posView === 'products' ? 'Pilih Produk' : 'Detail & Kirim'}</p>
                 <p className="text-xs text-gray-400">
-                  {posView === 'products'
-                    ? `${filteredProducts.length} produk tersedia`
-                    : `${cartItems.length} jenis · ${cartCount} pcs`}
+                  {posView === 'products' ? `${filteredProducts.length} produk tersedia` : `${cartItems.length} jenis · ${cartCount} pcs`}
                 </p>
               </div>
               {posView === 'products' && hasCart && (
@@ -789,7 +743,6 @@ export default function AdminPage() {
               )}
             </div>
           )}
-
           <div className="flex-1 overflow-hidden">
             {posView === 'products' && renderProducts()}
             {posView === 'cart'     && renderCart()}
@@ -797,6 +750,13 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ── Firebase-powered tabs ─────────────────────────────────────────── */}
+      {activeTab === 'products'  && <ProductsTab  creds={creds} />}
+      {activeTab === 'orders'    && <OrdersTab    creds={creds} />}
+      {activeTab === 'resellers' && <ResellersTab creds={creds} />}
+      {activeTab === 'stock'     && <StockTab     creds={creds} />}
+      {activeTab === 'settings'  && <SettingsTab  creds={creds} />}
     </div>
   );
 }
