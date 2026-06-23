@@ -2,12 +2,12 @@
 
 /* ── Design Tokens ─────────────────────────────────────────── */
 :root {
-  /* Sidebar — espresso dark, like the inside of a warung counter */
-  --sidebar:        #130C03;
-  --sidebar-hover:  #1F1408;
-  --sidebar-border: #2A1C09;
-  --sidebar-text:   #B8996B;
-  --sidebar-muted:  #6B5030;
+  /* Sidebar — warm brown, readable and inviting */
+  --sidebar:        #3D2B1A;
+  --sidebar-hover:  #4A3421;
+  --sidebar-border: #5A3F28;
+  --sidebar-text:   #E8D5B5;
+  --sidebar-muted:  #A8896A;
 
   /* Ground & surface */
   --ground:   #F5F0E8;
@@ -86,12 +86,12 @@ body {
   white-space: nowrap;
 }
 .sidebar-nav-item:hover {
-  background: rgba(255,255,255,0.06);
-  color: #E8D5B0;
+  background: rgba(255,255,255,0.09);
+  color: #F5E8D0;
 }
 .sidebar-nav-item.active {
-  background: rgba(217, 119, 6, 0.18);
-  color: #FBD07C;
+  background: rgba(217, 119, 6, 0.22);
+  color: #FFD98A;
   font-weight: 600;
 }
 .sidebar-nav-item.active .nav-icon {
