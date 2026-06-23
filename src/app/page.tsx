@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import {
-  RefreshCw, MessageCircle, Eye, Smartphone, TrendingUp,
-  BarChart2, ShoppingCart, Plus, Minus, ChevronLeft,
-  CheckCircle2, Loader2, User, Phone, Trash2, Tag, Send, Home,
+  RefreshCw, MessageCircle, TrendingUp, Receipt, Package, Users,
+  ShoppingCart, Plus, Minus, ChevronLeft,
+  CheckCircle2, Loader2, User, Phone, Trash2, Tag, Send,
 } from 'lucide-react';
 import { products as hardcodedProducts } from '@/lib/products';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
@@ -19,16 +19,9 @@ import SettingsTab  from '@/components/tabs/SettingsTab';
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type DailyRow    = { date: string; views: number; visitors: number };
 type CartEntry   = { productId: string; qty: number };
 type PosView     = 'products' | 'cart' | 'done';
 type PosCategory = 'semua' | 'mie' | 'keripik' | 'paket';
-
-const PAGE_LABELS: Record<string, string> = {
-  '/': 'Beranda', '/products': 'Produk', '/reseller': 'Reseller',
-  '/panduan': 'Panduan', '/kontak': 'Kontak', '/checkout': 'Checkout',
-};
-const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 
 const POS_CATS: { id: PosCategory; label: string; emoji: string }[] = [
   { id: 'semua', label: 'Semua', emoji: '🛍️' },
@@ -46,57 +39,43 @@ function formatWAMessage(custName: string, invoiceNo: string, total: number, pdf
   return `Halo *${custName}*! 👋\n\nInvoice pesanan Anda dari *Cemilan Teh Risma* 🧾\n\nNo. Invoice : *${invoiceNo}*\nTotal Bayar : *${formatCurrency(total)}*\n\n📄 *Invoice PDF:*\n${pdfUrl}\n\nTerima kasih! 🙏\n_Cemilan Teh Risma · 📞 ${tel}_`.trim();
 }
 
-// ─── Analytics Charts ─────────────────────────────────────────────────────────
-function BarChart({ data }: { data: DailyRow[] }) {
-  if (!data.length) return null;
-  const maxVal = Math.max(...data.map(d => d.views), 1);
-  const W = 32, GAP = 5, H = 72, LH = 16, totalW = data.length * (W + GAP) - GAP;
+// ─── Types & helpers ──────────────────────────────────────────────────────────
+interface DashOrder { customerName: string; total: number; date: string; }
+interface DashData {
+  orderCount: number; revenue: number;
+  productCount: number; resellerCount: number;
+  recentOrders: DashOrder[];
+  revenueTrend: { date: string; revenue: number; count: number }[];
+}
+const formatRp = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+// ─── Revenue Chart ────────────────────────────────────────────────────────────
+function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
+  const maxVal = Math.max(...data.map(d => d.revenue), 1);
+  const W = 36, GAP = 6, H = 80, LH = 18, totalW = data.length * (W + GAP) - GAP;
   return (
     <svg width="100%" viewBox={`0 0 ${totalW} ${H + LH}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
       {data.map((d, i) => {
-        const barH = Math.max((d.views / maxVal) * H, d.views > 0 ? 6 : 2);
+        const barH = Math.max((d.revenue / maxVal) * H, d.revenue > 0 ? 6 : 3);
         const x = i * (W + GAP);
         const isToday = i === data.length - 1;
         return (
           <g key={i}>
-            <rect x={x} y={H - barH} width={W} height={barH} rx="5"
-              fill={isToday ? 'var(--accent)' : 'var(--border)'}
-              opacity={isToday ? 1 : 0.6} />
-            {d.views > 0 && (
+            <rect x={x} y={H - barH} width={W} height={barH} rx="6"
+              fill={isToday ? '#D97706' : '#D9770630'} />
+            {d.count > 0 && (
               <text x={x + W / 2} y={H - barH - 5} textAnchor="middle" fontSize="9"
-                fill={isToday ? 'var(--accent-dark)' : 'var(--text-muted)'} fontWeight="700">
-                {d.views}
+                fill={isToday ? '#92400E' : '#9E8E72'} fontWeight="700">
+                {d.count}x
               </text>
             )}
-            <text x={x + W / 2} y={H + LH - 2} textAnchor="middle" fontSize="9" fill="var(--text-muted)">
-              {d.date.slice(5)}
+            <text x={x + W / 2} y={H + LH - 2} textAnchor="middle" fontSize="9" fill="#6B5C3E">
+              {d.date}
             </text>
           </g>
         );
       })}
-    </svg>
-  );
-}
-
-function DonutChart({ mobile, desktop }: { mobile: number; desktop: number }) {
-  const total = mobile + desktop;
-  if (total === 0) return (
-    <svg width="72" height="72" viewBox="0 0 72 72">
-      <circle cx="36" cy="36" r="24" fill="none" stroke="var(--border)" strokeWidth="10" />
-      <text x="36" y="40" textAnchor="middle" fontSize="10" fill="var(--text-muted)">–</text>
-    </svg>
-  );
-  const r = 24, cx = 36, cy = 36, circ = 2 * Math.PI * r;
-  const mArc = (mobile / total) * circ;
-  const mPct = Math.round((mobile / total) * 100);
-  return (
-    <svg width="72" height="72" viewBox="0 0 72 72">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth="10" />
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--accent)" strokeWidth="10"
-        strokeDasharray={`${mArc} ${circ - mArc}`}
-        transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
-      <text x={cx} y={cy - 2} textAnchor="middle" fontSize="12" fontWeight="800" fill="var(--text-primary)">{mPct}%</text>
-      <text x={cx} y={cy + 10} textAnchor="middle" fontSize="8" fill="var(--text-muted)">mobile</text>
     </svg>
   );
 }
@@ -175,8 +154,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
 
   // ── Analytics ────────────────────────────────────────────
-  const [stats,    setStats]    = useState<Record<string, unknown> | null>(null);
-  const [statsErr, setStatsErr] = useState('');
+  const [dashData, setDashData] = useState<DashData | null>(null);
   const [loading,  setLoading]  = useState(false);
 
   // ── POS ──────────────────────────────────────────────────
@@ -217,15 +195,46 @@ export default function AdminPage() {
     setSending(false); setSendErr(''); setInvoiceNo('');
   };
 
-  // ── Analytics fetch ──────────────────────────────────────
-  const fetchStats = useCallback(async (authHeader?: string) => {
-    setLoading(true); setStatsErr('');
+  // ── Analytics fetch — dari Firestore sendiri ─────────────
+  const fetchDash = useCallback(async (authHeader?: string) => {
+    setLoading(true);
+    const token = authHeader ?? creds;
+    const h = { 'x-admin-auth': token };
     try {
-      const token = authHeader ?? creds;
-      const res = await fetch(`${MAIN_APP}/api/admin/stats`, { headers: token ? { 'x-admin-auth': token } : {} });
-      if (res.ok) setStats(await res.json());
-      else setStatsErr(res.status === 500 ? 'Gagal memuat data.' : 'Sesi habis. Silakan login ulang.');
-    } catch { setStatsErr('Gagal memuat data.'); }
+      const [oRes, pRes, rRes] = await Promise.all([
+        fetch('/api/orders',    { headers: h }),
+        fetch('/api/products',  { headers: h }),
+        fetch('/api/resellers', { headers: h }),
+      ]);
+      const orders: { customerName: string; total: number; createdAt?: { seconds: number }; date?: string }[] =
+        oRes.ok ? (await oRes.json()).orders : [];
+      const products: unknown[] = pRes.ok ? (await pRes.json()).products : [];
+      const resellers: unknown[] = rRes.ok ? (await rRes.json()).resellers : [];
+
+      const revenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);
+      const recentOrders: DashOrder[] = orders.slice(0, 5).map(o => ({
+        customerName: o.customerName,
+        total: o.total,
+        date: o.createdAt?.seconds
+          ? new Date(o.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+          : (o.date ?? '–'),
+      }));
+
+      const now = new Date();
+      const revenueTrend = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(now); d.setDate(d.getDate() - (6 - i));
+        const key = d.toISOString().split('T')[0];
+        const label = `${d.getDate()}/${d.getMonth() + 1}`;
+        const dayOrders = orders.filter(o =>
+          o.createdAt?.seconds
+            ? new Date(o.createdAt.seconds * 1000).toISOString().split('T')[0] === key
+            : false
+        );
+        return { date: label, revenue: dayOrders.reduce((s, o) => s + o.total, 0), count: dayOrders.length };
+      });
+
+      setDashData({ orderCount: orders.length, revenue, productCount: products.length, resellerCount: resellers.length, recentOrders, revenueTrend });
+    } catch {}
     setLoading(false);
   }, [creds]);
 
@@ -238,7 +247,7 @@ export default function AdminPage() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: rest.join(':') }),
     }).then(r => {
-      if (r.ok) { setCreds(saved); setAuthed(true); fetchStats(saved); }
+      if (r.ok) { setCreds(saved); setAuthed(true); fetchDash(saved); }
       else localStorage.removeItem('admin_creds');
       setChecking(false);
     }).catch(() => setChecking(false));
@@ -253,13 +262,13 @@ export default function AdminPage() {
     if (res.ok) {
       const h = `${username}:${password}`;
       localStorage.setItem('admin_creds', h);
-      setCreds(h); setAuthed(true); fetchStats(h);
+      setCreds(h); setAuthed(true); fetchDash(h);
     } else setLoginErr('Username atau password salah.');
   };
 
   const logout = () => {
     localStorage.removeItem('admin_creds');
-    setAuthed(false); setStats(null); setCreds('');
+    setAuthed(false); setDashData(null); setCreds('');
   };
 
   // ── Invoice send ─────────────────────────────────────────
@@ -292,21 +301,6 @@ export default function AdminPage() {
     } catch { setSendErr('Gagal mengirim invoice. Coba lagi.'); }
     finally { setSending(false); }
   };
-
-  // ── Analytics data extraction ─────────────────────────────
-  const s       = stats as Record<string, Record<string, unknown> | unknown[] | null> | null;
-  const total   = (s?.stats as Record<string, unknown>)?.visitors  as number | undefined;
-  const views   = (s?.stats as Record<string, unknown>)?.pageViews as number | undefined;
-  const devArr  = (s?.devices as unknown[]) ?? [];
-  const mobile  = (devArr.find((d: unknown) => (d as Record<string, string>).type === 'mobile')  as Record<string, number> | undefined)?.count ?? 0;
-  const desktop = (devArr.find((d: unknown) => (d as Record<string, string>).type === 'desktop') as Record<string, number> | undefined)?.count ?? 0;
-  const topPages   = (s?.paths as unknown[]) ?? [];
-  const daily      = ((s?.daily as unknown[]) ?? []) as DailyRow[];
-  const devTotal   = mobile + desktop;
-  const mPct       = devTotal > 0 ? Math.round((mobile / devTotal) * 100) : 0;
-  const dPct       = devTotal > 0 ? Math.round((desktop / devTotal) * 100) : 0;
-  const todayViews = daily.length > 0 ? daily[daily.length - 1].views : 0;
-  const avgPages   = (total ?? 0) > 0 ? ((views ?? 0) / (total ?? 1)).toFixed(1) : '–';
 
   // ─── POS filtered products ───────────────────────────────
   const filteredProducts = activeCat === 'semua' ? hardcodedProducts : hardcodedProducts.filter(p => p.category === activeCat);
@@ -386,141 +380,110 @@ export default function AdminPage() {
   const dashboardContent = (
     <div className="p-4 lg:p-6 space-y-5 max-w-5xl mx-auto">
 
-      {/* Page header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Analitik Toko</h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Data 30 hari terakhir dari main app</p>
+          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Ringkasan Toko</h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Data real-time dari database</p>
         </div>
-        <div className="flex items-center gap-2">
-          <a href={MAIN_APP} target="_blank" rel="noopener noreferrer" className="btn-ghost text-xs py-2 px-3">
-            <Home size={13} /> Lihat Toko
-          </a>
-          <button onClick={() => fetchStats()} disabled={loading} className="btn-ghost text-xs py-2 px-3">
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
+        <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost p-2.5">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
-      {statsErr && (
-        <div className="px-4 py-3 rounded-xl text-sm font-medium" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-          {statsErr}
+      {/* Loading */}
+      {loading && !dashData && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
         </div>
       )}
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { icon: <Eye size={16} />, label: 'Pengunjung Unik', val: total?.toLocaleString('id') ?? '–', sub: '30 hari terakhir' },
-          { icon: <TrendingUp size={16} />, label: 'Total Pageview', val: views?.toLocaleString('id') ?? '–', sub: 'halaman dibuka' },
-          { icon: <BarChart2 size={16} />, label: 'Hlm / Pengunjung', val: avgPages, sub: 'rata-rata' },
-          { icon: <Eye size={16} />, label: 'Pageview Hari Ini', val: todayViews.toString(), sub: 'dibanding kemarin' },
-        ].map((c, i) => (
-          <div key={i} className="card relative p-4 overflow-hidden">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                {c.icon}
+      {dashData && (
+        <>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { icon: <Receipt  size={16}/>, label: 'Total Pesanan',  val: dashData.orderCount.toString(),   color: 'var(--accent)' },
+              { icon: <TrendingUp size={16}/>, label: 'Total Omzet', val: formatRp(dashData.revenue),        color: 'var(--success)' },
+              { icon: <Package  size={16}/>, label: 'Produk Aktif',  val: dashData.productCount.toString(),  color: '#0284C7' },
+              { icon: <Users    size={16}/>, label: 'Total Reseller', val: dashData.resellerCount.toString(), color: '#D97706' },
+            ].map((c, i) => (
+              <div key={i} className="card relative p-4 overflow-hidden">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
+                  style={{ background: 'var(--accent-bg)', color: c.color }}>
+                  {c.icon}
+                </div>
+                <p className="text-xl font-extrabold tabular leading-tight mb-0.5" style={{ color: 'var(--text-primary)' }}>{c.val}</p>
+                <p className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+                <div className="stat-card-accent" />
               </div>
-            </div>
-            <p className="text-2xl font-extrabold tabular mb-0.5" style={{ color: 'var(--text-primary)' }}>{c.val}</p>
-            <p className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <div className="stat-card-accent" />
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Chart + Device row */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Bar chart */}
-        {daily.length > 0 && (
-          <div className="card p-5 lg:col-span-2">
-            <div className="flex items-center justify-between mb-4">
+          {/* Revenue chart */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-5">
               <div>
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren 7 Hari</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pageview per hari</p>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Omzet 7 Hari Terakhir</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Angka di atas bar = jumlah transaksi</p>
               </div>
-              <span className="badge badge-amber">Hari ini: {todayViews}</span>
+              {dashData.revenueTrend.some(d => d.revenue > 0) && (
+                <span className="badge badge-amber">
+                  Hari ini: {formatRp(dashData.revenueTrend[dashData.revenueTrend.length - 1].revenue)}
+                </span>
+              )}
             </div>
-            <BarChart data={daily} />
+            {dashData.revenueTrend.every(d => d.revenue === 0) ? (
+              <div className="py-8 text-center">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transaksi 7 hari terakhir</p>
+              </div>
+            ) : (
+              <RevenueChart data={dashData.revenueTrend} />
+            )}
           </div>
-        )}
 
-        {/* Device donut */}
-        <div className="card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Smartphone size={15} style={{ color: 'var(--accent)' }} />
-            <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perangkat</p>
-          </div>
-          <div className="flex items-center gap-4 mb-4">
-            <DonutChart mobile={mobile} desktop={desktop} />
-            <div className="space-y-3 flex-1">
-              {[
-                { label: 'Mobile', pct: mPct, cnt: mobile, color: 'var(--accent)' },
-                { label: 'Desktop', pct: dPct, cnt: desktop, color: 'var(--border)' },
-              ].map(d => (
-                <div key={d.label}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
-                      <span className="w-2 h-2 rounded-full inline-block" style={{ background: d.color }} />
-                      {d.label}
+          {/* Recent orders */}
+          {dashData.recentOrders.length > 0 ? (
+            <div className="card overflow-hidden">
+              <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                <Receipt size={15} style={{ color: 'var(--accent)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pesanan Terbaru</p>
+              </div>
+              <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                {dashData.recentOrders.map((o, i) => (
+                  <div key={i} className="px-5 py-3.5 flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black flex-shrink-0"
+                      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                      {i + 1}
                     </span>
-                    <span className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{d.cnt}</span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border-2)' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${d.pct}%`, background: d.color }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Top pages */}
-      {topPages.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-2)' }}>
-            <span>🔥</span>
-            <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Halaman Terpopuler</p>
-          </div>
-          <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
-            {topPages.slice(0, 5).map((p: unknown, i: number) => {
-              const pg  = p as Record<string, unknown>;
-              const cnt = pg.visitors as number;
-              const top = (topPages[0] as Record<string, unknown>).visitors as number;
-              const pct = Math.round((cnt / top) * 100);
-              return (
-                <div key={i} className="px-5 py-3.5 flex items-center gap-3">
-                  <span className="text-xs font-bold w-5 text-center" style={{ color: 'var(--border)' }}>{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                      {pageLabel(pg.path as string)}
-                    </p>
-                    <div className="h-1 rounded-full mt-1.5 overflow-hidden" style={{ background: 'var(--border-2)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{o.date}</p>
                     </div>
+                    <span className="text-sm font-extrabold tabular flex-shrink-0" style={{ color: 'var(--accent)' }}>
+                      {formatRp(o.total)}
+                    </span>
                   </div>
-                  <span className="text-sm font-bold tabular ml-2 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
-                    {cnt.toLocaleString('id')}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="card p-12 text-center">
+              <div className="text-5xl mb-4">📊</div>
+              <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Buat pesanan di tab <strong>Kasir</strong> untuk mulai melihat data di sini.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
-      {/* WA Report button */}
+      {/* WA Rekap */}
       <button
         onClick={() => {
           const date = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-          const mob = mobile, desk = desktop;
-          const topPagesStr = topPages.slice(0, 3).map((p: unknown, i: number) => {
-            const pg = p as Record<string, unknown>;
-            return `${i + 1}. ${pageLabel(pg.path as string)} — ${pg.visitors}x`;
-          }).join('\n');
-          const msg = `*Rekap Cemilan Teh Risma*\n_${date}_\n\n*Pengunjung:* ${total ?? '–'}\n*Pageview:* ${views ?? '–'}\n*Mobile:* ${mob} | *Desktop:* ${desk}\n${topPagesStr ? `\n*Terpopuler:*\n${topPagesStr}\n` : ''}\n_Dashboard Cemilan Teh Risma_`;
+          const msg = `*Rekap Toko Cemilan Teh Risma*\n_${date}_\n\n📦 Total Pesanan: ${dashData?.orderCount ?? 0}\n💰 Total Omzet: ${formatRp(dashData?.revenue ?? 0)}\n🛍️ Produk Aktif: ${dashData?.productCount ?? 0}\n👥 Total Reseller: ${dashData?.resellerCount ?? 0}\n\n_Dashboard Admin Cemilan Teh Risma_`;
           window.open(`https://wa.me/6281212132014?text=${encodeURIComponent(msg)}`, '_blank');
         }}
         className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl text-sm font-bold text-white shadow-md"
@@ -771,7 +734,7 @@ export default function AdminPage() {
       cartCount={cartCount}
       topbarActions={
         activeTab === 'dashboard' ? (
-          <button onClick={() => fetchStats()} disabled={loading} className="btn-ghost p-2">
+          <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost p-2">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         ) : undefined
