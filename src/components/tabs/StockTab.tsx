@@ -1,189 +1,233 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse } from 'lucide-react';
+import { Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse, ChevronDown, ChevronUp, X } from 'lucide-react';
 
 const API = '';
 
-interface FireProduct { id: string; name: string; emoji: string; bgColor: string; weight: string; stockQty?: number; stock: string; }
-interface StockEntry { id: string; productId: string; type: 'in' | 'out'; qty: number; note: string; date: string; createdAt?: { seconds: number }; }
+interface StockEntry {
+  id: string; type: 'in' | 'out'; qty: number; note: string;
+  createdAt?: { seconds: number };
+}
+interface ProductStock {
+  productId: string; productName: string; stockQty: number;
+  entries?: StockEntry[];
+}
 
-const formatRp = (n: number) => new Intl.NumberFormat('id-ID').format(n);
+function formatDate(e: StockEntry) {
+  if (e.createdAt?.seconds)
+    return new Date(e.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return '–';
+}
 
 export default function StockTab({ creds }: { creds: string }) {
-  const [products, setProducts] = useState<FireProduct[]>([]);
-  const [entries, setEntries] = useState<StockEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ productId: '', type: 'in' as 'in' | 'out', qty: '', note: '', date: new Date().toISOString().slice(0, 10) });
+  const [stocks,      setStocks]     = useState<ProductStock[]>([]);
+  const [loading,     setLoading]    = useState(true);
+  const [expandedId,  setExpandedId] = useState<string | null>(null);
+  const [showForm,    setShowForm]   = useState<string | null>(null);
+  const [form,        setForm]       = useState({ type: 'in' as 'in' | 'out', qty: '', note: '' });
+  const [submitting,  setSubmitting] = useState(false);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
   const load = async () => {
     setLoading(true);
-    const [pr, sr] = await Promise.all([
-      fetch(`${API}/api/products`, { headers }),
-      fetch(`${API}/api/stock`, { headers }),
-    ]);
-    if (pr.ok) { const { products: p } = await pr.json() as { products: FireProduct[] }; setProducts(p); }
-    if (sr.ok) { const { entries: e } = await sr.json() as { entries: StockEntry[] }; setEntries(e); }
+    const r = await fetch(`${API}/api/stock`, { headers });
+    if (r.ok) { const { stocks: s } = await r.json() as { stocks: ProductStock[] }; setStocks(s); }
     setLoading(false);
+  };
+
+  const loadEntries = async (productId: string) => {
+    const r = await fetch(`${API}/api/stock/${productId}`, { headers });
+    if (r.ok) {
+      const { entries } = await r.json() as { entries: StockEntry[] };
+      setStocks(s => s.map(x => x.productId === productId ? { ...x, entries } : x));
+    }
+  };
+
+  const toggleExpand = async (productId: string) => {
+    if (expandedId === productId) { setExpandedId(null); return; }
+    setExpandedId(productId);
+    await loadEntries(productId);
   };
 
   useEffect(() => { load(); }, []);
 
-  const save = async () => {
-    if (!form.productId || !form.qty) return;
-    setSaving(true);
-    await fetch(`${API}/api/stock/${form.productId}`, {
+  const submitEntry = async (productId: string) => {
+    if (!form.qty || Number(form.qty) <= 0) return;
+    setSubmitting(true);
+    const r = await fetch(`${API}/api/stock/${productId}`, {
       method: 'POST', headers,
-      body: JSON.stringify({ type: form.type, qty: parseInt(form.qty), note: form.note, date: form.date }),
+      body: JSON.stringify({ type: form.type, qty: Number(form.qty), note: form.note }),
     });
-    setForm({ productId: '', type: 'in', qty: '', note: '', date: new Date().toISOString().slice(0, 10) });
-    setShowForm(false);
-    await load();
-    setSaving(false);
-  };
-
-  const formatDate = (e: StockEntry) => {
-    if (e.createdAt?.seconds) {
-      return new Date(e.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    if (r.ok) {
+      setForm({ type: 'in', qty: '', note: '' });
+      setShowForm(null);
+      await load();
+      if (expandedId === productId) await loadEntries(productId);
     }
-    return e.date ?? '–';
+    setSubmitting(false);
   };
 
-  const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+  const totalIn  = stocks.reduce((s, x) => s + (x.stockQty > 0 ? x.stockQty : 0), 0);
+  const lowStock = stocks.filter(x => x.stockQty < 10).length;
 
-  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 size={28} className="animate-spin text-amber-400" /></div>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-24">
+      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
+    </div>
+  );
 
   return (
-    <div className="px-4 py-5 pb-10 space-y-4 max-w-2xl mx-auto w-full">
+    <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-5">
 
-      {/* Stok ringkasan per produk */}
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-sm font-bold text-gray-800">Stok Saat Ini</p>
-        <div className="flex gap-2">
-          <button onClick={load} className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200"><RefreshCw size={14} /></button>
-          <button onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white shadow-md"
-            style={{ background: 'linear-gradient(135deg,#D97706,#EA580C)' }}>
-            <Plus size={13} /> Catat Stok
-          </button>
+        <div>
+          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Gudang</h2>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Kelola stok masuk dan keluar</p>
         </div>
+        <button onClick={load} className="btn-ghost p-2.5">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
-      {/* Form catat stok */}
-      {showForm && (
-        <div className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4 space-y-3">
-          <p className="text-sm font-bold text-gray-700 flex items-center gap-2"><Warehouse size={15} className="text-amber-500" /> Catat Pergerakan Stok</p>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setForm(f => ({ ...f, type: 'in' }))}
-              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all border ${form.type === 'in' ? 'text-white border-transparent' : 'text-gray-500 bg-white border-gray-200'}`}
-              style={form.type === 'in' ? { background: 'linear-gradient(135deg,#16A34A,#22C55E)' } : {}}>
-              <TrendingUp size={13} /> Stok Masuk
-            </button>
-            <button onClick={() => setForm(f => ({ ...f, type: 'out' }))}
-              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all border ${form.type === 'out' ? 'text-white border-transparent' : 'text-gray-500 bg-white border-gray-200'}`}
-              style={form.type === 'out' ? { background: 'linear-gradient(135deg,#DC2626,#EF4444)' } : {}}>
-              <TrendingDown size={13} /> Stok Keluar
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Produk</label>
-            <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-amber-400 bg-gray-50">
-              <option value="">Pilih produk...</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name} ({p.weight})</option>)}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Jumlah (pcs)</label>
-              <input type="number" min="1" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-amber-400 bg-gray-50" placeholder="0" />
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { icon: <Warehouse    size={16}/>, label: 'Produk Terdaftar', val: stocks.length,  color: 'var(--accent)' },
+          { icon: <TrendingUp   size={16}/>, label: 'Total Stok',       val: totalIn,         color: 'var(--success)' },
+          { icon: <TrendingDown size={16}/>, label: 'Stok Rendah (<10)',val: lowStock,         color: 'var(--danger)' },
+        ].map((c, i) => (
+          <div key={i} className="card p-4">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
+              style={{ background: 'var(--accent-bg)', color: c.color }}>
+              {c.icon}
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Tanggal</label>
-              <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-amber-400 bg-gray-50" />
-            </div>
+            <p className="text-xl font-extrabold tabular" style={{ color: c.color }}>{c.val}</p>
+            <p className="text-[11px] font-semibold mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
           </div>
+        ))}
+      </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Catatan (opsional)</label>
-            <input type="text" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-amber-400 bg-gray-50"
-              placeholder="Mis: batch produksi 23 Juni" />
-          </div>
-
-          <button onClick={save} disabled={saving || !form.productId || !form.qty}
-            className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-40 flex items-center justify-center gap-2"
-            style={{ background: form.type === 'in' ? 'linear-gradient(135deg,#16A34A,#22C55E)' : 'linear-gradient(135deg,#DC2626,#EF4444)' }}>
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Menyimpan...' : `Simpan Stok ${form.type === 'in' ? 'Masuk' : 'Keluar'}`}
-          </button>
-        </div>
-      )}
-
-      {/* Stok per produk */}
-      {products.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-50">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saldo Stok per Produk</p>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {products.map(p => (
-              <div key={p.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
-                  style={{ background: `${p.bgColor}22` }}>{p.emoji}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-700 truncate">{p.name}</p>
-                  <p className="text-xs text-gray-400">{p.weight}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className={`text-sm font-bold ${(p.stockQty ?? 0) > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                    {formatRp(p.stockQty ?? 0)} pcs
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Riwayat pergerakan */}
-      <p className="text-sm font-bold text-gray-800">Riwayat Pergerakan</p>
-      {entries.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-dashed border-amber-200 p-8 text-center">
-          <div className="text-3xl mb-2">📊</div>
-          <p className="text-sm text-gray-500">Belum ada catatan stok</p>
+      {/* Stock list */}
+      {stocks.length === 0 ? (
+        <div className="card p-12 text-center">
+          <div className="text-5xl mb-4">📦</div>
+          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada data stok</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Stok produk akan muncul otomatis dari daftar produk.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
-          {entries.slice(0, 50).map(e => {
-            const p = productMap[e.productId];
-            return (
-              <div key={e.id} className="flex items-center gap-3 px-4 py-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${e.type === 'in' ? 'bg-green-50' : 'bg-red-50'}`}>
-                  {e.type === 'in' ? <TrendingUp size={15} className="text-green-500" /> : <TrendingDown size={15} className="text-red-400" />}
+        <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+          {stocks.map(s => (
+            <div key={s.productId}>
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center"
+                  style={{ background: 'var(--accent-bg)' }}>
+                  <Warehouse size={16} style={{ color: 'var(--accent)' }} />
                 </div>
+
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-700 truncate">{p ? `${p.emoji} ${p.name}` : e.productId}</p>
-                  {e.note && <p className="text-xs text-gray-400 truncate">{e.note}</p>}
+                  <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.productName}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span
+                      className={`badge ${s.stockQty < 10 ? 'badge-red' : s.stockQty < 30 ? 'badge-amber' : 'badge-green'}`}
+                    >
+                      {s.stockQty} unit
+                    </span>
+                    {s.stockQty < 10 && (
+                      <span className="text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>Stok rendah!</span>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className={`text-sm font-bold ${e.type === 'in' ? 'text-green-600' : 'text-red-500'}`}>
-                    {e.type === 'in' ? '+' : '−'}{formatRp(e.qty)} pcs
-                  </p>
-                  <p className="text-[10px] text-gray-400">{formatDate(e)}</p>
+
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => { setShowForm(showForm === s.productId ? null : s.productId); setForm({ type: 'in', qty: '', note: '' }); }}
+                    className="btn-primary flex items-center gap-1 px-3 py-2 text-xs"
+                  >
+                    <Plus size={12} /> Catat
+                  </button>
+                  <button onClick={() => toggleExpand(s.productId)} className="btn-ghost p-2">
+                    {expandedId === s.productId ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Add entry form */}
+              {showForm === s.productId && (
+                <div className="px-4 pb-4 pt-3" style={{ background: 'var(--accent-bg)', borderTop: '1px solid var(--border-2)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Catat Pergerakan Stok</p>
+                    <button onClick={() => setShowForm(null)} className="btn-ghost p-1"><X size={12} /></button>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      value={form.type}
+                      onChange={e => setForm(f => ({ ...f, type: e.target.value as 'in' | 'out' }))}
+                      className="input text-xs py-2"
+                      style={{ flex: '0 0 auto', minWidth: 100 }}
+                    >
+                      <option value="in">Masuk</option>
+                      <option value="out">Keluar</option>
+                    </select>
+                    <input
+                      type="number" min={1} placeholder="Jumlah unit"
+                      value={form.qty}
+                      onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+                      className="input text-xs py-2 flex-1"
+                    />
+                    <input
+                      type="text" placeholder="Keterangan (opsional)"
+                      value={form.note}
+                      onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+                      className="input text-xs py-2 flex-1"
+                    />
+                    <button
+                      onClick={() => submitEntry(s.productId)}
+                      disabled={submitting || !form.qty}
+                      className="btn-primary px-4 text-xs py-2 flex-shrink-0"
+                    >
+                      {submitting ? <Loader2 size={12} className="animate-spin" /> : 'Simpan'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* History */}
+              {expandedId === s.productId && (
+                <div className="px-4 pb-4 pt-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+                  <p className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: 'var(--text-muted)' }}>Riwayat Pergerakan</p>
+                  {!s.entries ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                    </div>
+                  ) : s.entries.length === 0 ? (
+                    <p className="text-xs text-center py-3" style={{ color: 'var(--text-muted)' }}>Belum ada catatan pergerakan.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {s.entries.map(e => (
+                        <div key={e.id} className="flex items-center gap-3">
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${e.type === 'in' ? 'bg-green-50' : 'bg-red-50'}`}>
+                            {e.type === 'in'
+                              ? <TrendingUp  size={11} style={{ color: 'var(--success)' }} />
+                              : <TrendingDown size={11} style={{ color: 'var(--danger)' }} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold" style={{ color: e.type === 'in' ? 'var(--success)' : 'var(--danger)' }}>
+                              {e.type === 'in' ? '+' : '–'}{e.qty} unit
+                            </span>
+                            {e.note && <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{e.note}</span>}
+                          </div>
+                          <span className="text-[10px] tabular flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDate(e)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
