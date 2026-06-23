@@ -69,60 +69,86 @@ const formatRp = (n: number) =>
 // ─── Revenue Chart ────────────────────────────────────────────────────────────
 function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
   const maxVal = Math.max(...data.map(d => d.revenue), 1);
-  const W = 36, GAP = 6, H = 80, LH = 18, totalW = data.length * (W + GAP) - GAP;
+  const n = data.length;
+  const W = 28, GAP = 10, H = 80, LH = 22;
+  const totalW = n * (W + GAP) - GAP;
+  const step = n > 14 ? 3 : n > 7 ? 2 : 1;
   return (
-    <svg width="100%" viewBox={`0 0 ${totalW} ${H + LH}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-      {data.map((d, i) => {
-        const barH = Math.max((d.revenue / maxVal) * H, d.revenue > 0 ? 6 : 3);
-        const x = i * (W + GAP);
-        const isToday = i === data.length - 1;
-        return (
-          <g key={i}>
-            <rect x={x} y={H - barH} width={W} height={barH} rx="6"
-              fill={isToday ? '#D97706' : '#D9770630'} />
-            {d.count > 0 && (
-              <text x={x + W / 2} y={H - barH - 5} textAnchor="middle" fontSize="9"
-                fill={isToday ? '#92400E' : '#9E8E72'} fontWeight="700">
-                {d.count}x
-              </text>
-            )}
-            <text x={x + W / 2} y={H + LH - 2} textAnchor="middle" fontSize="9" fill="#6B5C3E">
-              {d.date}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+    <div className="no-scrollbar" style={{ overflowX: 'auto', paddingBottom: 2 }}>
+      <svg width={totalW} height={H + LH} style={{ display: 'block', overflow: 'visible' }}>
+        {data.map((d, i) => {
+          const barH = Math.max((d.revenue / maxVal) * H, d.revenue > 0 ? 6 : 3);
+          const x = i * (W + GAP);
+          const isToday = i === n - 1;
+          const showLabel = i % step === 0 || i === n - 1;
+          return (
+            <g key={i}>
+              <rect x={x} y={H - barH} width={W} height={barH} rx="5"
+                fill={isToday ? '#D97706' : '#D9770630'} />
+              {d.count > 0 && (
+                <text x={x + W / 2} y={H - barH - 4} textAnchor="middle" fontSize="9"
+                  fill={isToday ? '#92400E' : '#9E8E72'} fontWeight="700">
+                  {d.count}x
+                </text>
+              )}
+              {showLabel && (
+                <text x={x + W / 2} y={H + LH - 3} textAnchor="middle" fontSize="8.5" fill="#9E8E72">
+                  {shortDate(d.date)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
 // ─── Pageview Chart ───────────────────────────────────────────────────────────
+function shortDate(raw: string) {
+  try {
+    const dt = new Date(raw);
+    if (!isNaN(dt.getTime()))
+      return dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  } catch {}
+  const p = raw.split(/[\s-]/);
+  return p.length >= 2 ? `${p[p.length - 1]} ${p[1]?.slice(0, 3) ?? ''}`.trim() : raw.slice(0, 5);
+}
+
 function PageviewChart({ data }: { data: { date: string; views: number }[] }) {
   const maxVal = Math.max(...data.map(d => d.views), 1);
-  const W = 36, GAP = 6, H = 72, LH = 18, totalW = data.length * (W + GAP) - GAP;
+  const n = data.length;
+  const W = 28, GAP = 10, H = 72, LH = 22;
+  const totalW = n * (W + GAP) - GAP;
+  const step = n > 14 ? 3 : n > 7 ? 2 : 1;
   return (
-    <svg width="100%" viewBox={`0 0 ${totalW} ${H + LH}`} preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-      {data.map((d, i) => {
-        const barH = Math.max((d.views / maxVal) * H, d.views > 0 ? 5 : 2);
-        const x = i * (W + GAP);
-        const isToday = i === data.length - 1;
-        return (
-          <g key={i}>
-            <rect x={x} y={H - barH} width={W} height={barH} rx="6"
-              fill={isToday ? '#0284C7' : '#0284C720'} />
-            {d.views > 0 && (
-              <text x={x + W / 2} y={H - barH - 5} textAnchor="middle" fontSize="9"
-                fill={isToday ? '#075985' : '#9E8E72'} fontWeight="700">
-                {d.views}
-              </text>
-            )}
-            <text x={x + W / 2} y={H + LH - 2} textAnchor="middle" fontSize="9" fill="#6B5C3E">
-              {d.date}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+    <div className="no-scrollbar" style={{ overflowX: 'auto', paddingBottom: 2 }}>
+      <svg width={totalW} height={H + LH} style={{ display: 'block', overflow: 'visible' }}>
+        {data.map((d, i) => {
+          const barH = Math.max((d.views / maxVal) * H, d.views > 0 ? 5 : 2);
+          const x = i * (W + GAP);
+          const isToday = i === n - 1;
+          const showLabel = i % step === 0 || i === n - 1;
+          return (
+            <g key={i}>
+              <rect x={x} y={H - barH} width={W} height={barH} rx="5"
+                fill={isToday ? '#0284C7' : '#0284C720'} />
+              {d.views > 0 && (
+                <text x={x + W / 2} y={H - barH - 4} textAnchor="middle" fontSize="9"
+                  fill={isToday ? '#075985' : '#9E8E72'} fontWeight="700">
+                  {d.views}
+                </text>
+              )}
+              {showLabel && (
+                <text x={x + W / 2} y={H + LH - 3} textAnchor="middle" fontSize="8.5" fill="#9E8E72">
+                  {shortDate(d.date)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
@@ -446,7 +472,7 @@ export default function AdminPage() {
 
   // ─── Dashboard (Analytics) content ───────────────────────
   const dashboardContent = (
-    <div className="p-4 lg:p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -950,13 +976,6 @@ export default function AdminPage() {
       onLogout={logout}
       hasCart={hasCart}
       cartCount={cartCount}
-      topbarActions={
-        activeTab === 'dashboard' ? (
-          <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost p-2">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
-        ) : undefined
-      }
     >
       {activeTab === 'dashboard'  && dashboardContent}
       {activeTab === 'pos'        && posContent}
