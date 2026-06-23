@@ -11,7 +11,7 @@ import {
 import { products } from '@/lib/products';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? '';
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // ─── Analytics helpers ───────────────────────────────────────────────────────
 
