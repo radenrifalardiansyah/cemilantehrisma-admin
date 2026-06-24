@@ -18,8 +18,15 @@ export async function POST(req: NextRequest) {
   const bucket = getBucket();
   const fileRef = bucket.file(filename);
   await fileRef.save(buffer, { metadata: { contentType: file.type } });
-  await fileRef.makePublic();
 
-  const url = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+  let url: string;
+  try {
+    await fileRef.makePublic();
+    url = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+  } catch {
+    const [signedUrl] = await fileRef.getSignedUrl({ action: 'read', expires: '2099-01-01' });
+    url = signedUrl;
+  }
+
   return Response.json({ url });
 }

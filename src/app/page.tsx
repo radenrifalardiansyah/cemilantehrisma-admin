@@ -8,7 +8,6 @@ import {
   CheckCircle2, Loader2, User, Phone, Trash2, Tag, Send,
   Eye, Smartphone, Monitor, BarChart2, Globe,
 } from 'lucide-react';
-import { products as hardcodedProducts } from '@/lib/products';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import AppShell, { TabId } from '@/components/AppShell';
 import ProductsTab  from '@/components/tabs/ProductsTab';
@@ -22,14 +21,11 @@ const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.ver
 // ─── Types ───────────────────────────────────────────────────────────────────
 type CartEntry   = { productId: string; qty: number };
 type PosView     = 'products' | 'cart' | 'done';
-type PosCategory = 'semua' | 'mie' | 'keripik' | 'paket';
+type PosCategory = string;
 
-const POS_CATS: { id: PosCategory; label: string; emoji: string }[] = [
-  { id: 'semua', label: 'Semua', emoji: '🛍️' },
-  { id: 'mie',   label: 'Mie',   emoji: '🍝' },
-  { id: 'keripik', label: 'Keripik', emoji: '🥔' },
-  { id: 'paket', label: 'Paket', emoji: '🎁' },
-];
+interface PosCategory_Entry { id: string; label: string; emoji: string }
+
+const POS_CAT_ALL: PosCategory_Entry = { id: 'semua', label: 'Semua', emoji: '🛍️' };
 
 function normalizePhone(raw: string) {
   const d = raw.replace(/\D/g, '');
@@ -153,18 +149,22 @@ function PageviewChart({ data }: { data: { date: string; views: number }[] }) {
 }
 
 // ─── POS Product Card ─────────────────────────────────────────────────────────
-type Product = (typeof hardcodedProducts)[0];
+interface PosProduct {
+  id: string; name: string; price: number; emoji: string;
+  imageUrls: string[]; category: string; stock: string;
+  bgColor: string; weight: string; badge?: string;
+}
 
 function PosProductCard({ product, qty, onAdd, onMinus }: {
-  product: Product; qty: number; onAdd: () => void; onMinus: () => void;
+  product: PosProduct; qty: number; onAdd: () => void; onMinus: () => void;
 }) {
-  const img = product.images?.[0];
+  const imgUrl = product.imageUrls?.[0];
   return (
     <div className="card overflow-hidden flex flex-col select-none active:scale-[0.97] transition-transform cursor-pointer"
       onClick={onAdd}>
       <div className="relative w-full aspect-square overflow-hidden">
-        {img ? (
-          <Image src={img} alt={product.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 200px" />
+        {imgUrl ? (
+          <Image src={imgUrl} alt={product.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-4xl"
             style={{ background: `${product.bgColor}22` }}>
@@ -230,9 +230,11 @@ export default function AdminPage() {
   const [loading,  setLoading]  = useState(false);
 
   // ── POS ──────────────────────────────────────────────────
+  const [posProducts,    setPosProducts]    = useState<PosProduct[]>([]);
+  const [posCategories,  setPosCategories]  = useState<PosCategory_Entry[]>([]);
   const [posView,      setPosView]      = useState<PosView>('products');
   const [activeCat,    setActiveCat]    = useState<PosCategory>('semua');
-  const [cart,         setCart]         = useState<CartEntry[]>(() => hardcodedProducts.map(p => ({ productId: p.id, qty: 0 })));
+  const [cart,         setCart]         = useState<CartEntry[]>([]);
   const [custName,     setCustName]     = useState('');
   const [custPhone,    setCustPhone]    = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'nominal'>('percent');
@@ -242,10 +244,11 @@ export default function AdminPage() {
   const [invoiceNo,    setInvoiceNo]    = useState('');
 
   // ── Cart computations ────────────────────────────────────
+  const getQty       = (id: string) => cart.find(i => i.productId === id)?.qty ?? 0;
   const cartItems    = cart.filter(i => i.qty > 0);
   const cartCount    = cartItems.reduce((s, i) => s + i.qty, 0);
   const cartSubtotal = cartItems.reduce((s, i) => {
-    const p = hardcodedProducts.find(pr => pr.id === i.productId);
+    const p = posProducts.find(pr => pr.id === i.productId);
     return s + (p?.price ?? 0) * i.qty;
   }, 0);
   const discountNum    = parseFloat(discountRaw) || 0;
@@ -258,9 +261,18 @@ export default function AdminPage() {
   const hasCart   = cartItems.length > 0;
   const canSend   = hasCart && custName.trim() && custPhone.trim();
 
-  const addToCart      = (id: string) => setCart(p => p.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i));
-  const removeFromCart = (id: string) => setCart(p => p.map(i => i.productId === id ? { ...i, qty: Math.max(0, i.qty - 1) } : i));
-  const clearCart      = () => setCart(hardcodedProducts.map(p => ({ productId: p.id, qty: 0 })));
+  const addToCart = (id: string) => setCart(prev => {
+    const exists = prev.find(i => i.productId === id);
+    if (exists) return prev.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i);
+    return [...prev, { productId: id, qty: 1 }];
+  });
+  const removeFromCart = (id: string) => setCart(prev =>
+    prev.flatMap(i => i.productId === id
+      ? i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []
+      : [i]
+    )
+  );
+  const clearCart = () => setCart([]);
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); clearCart();
     setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
@@ -273,18 +285,23 @@ export default function AdminPage() {
     const token = authHeader ?? creds;
     const h = { 'x-admin-auth': token };
     try {
-      const [oRes, pRes, rRes, webRes] = await Promise.all([
-        fetch('/api/orders',    { headers: h }),
-        fetch('/api/products',  { headers: h }),
-        fetch('/api/resellers', { headers: h }),
+      const [oRes, pRes, rRes, cRes, webRes] = await Promise.all([
+        fetch('/api/orders',     { headers: h }),
+        fetch('/api/products',   { headers: h }),
+        fetch('/api/resellers',  { headers: h }),
+        fetch('/api/categories', { headers: h }),
         fetch(`${MAIN_APP}/api/admin/stats`, { headers: h }).catch(() => null),
       ]);
 
       // ── Firestore data ────────────────────────────────────
       const orders: { customerName: string; total: number; createdAt?: { seconds: number }; date?: string }[] =
         oRes.ok ? (await oRes.json()).orders : [];
-      const products: unknown[] = pRes.ok ? (await pRes.json()).products : [];
+      const fetchedProducts: PosProduct[] = pRes.ok ? (await pRes.json() as { products: PosProduct[] }).products : [];
       const resellers: unknown[] = rRes.ok ? (await rRes.json()).resellers : [];
+      const fetchedCats: { id: string; name: string; emoji: string }[] =
+        cRes.ok ? (await cRes.json() as { categories: { id: string; name: string; emoji: string }[] }).categories : [];
+      setPosProducts(fetchedProducts);
+      setPosCategories(fetchedCats.map(c => ({ id: c.id, label: c.name, emoji: c.emoji })));
 
       const revenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);
       const recentOrders: DashOrder[] = orders.slice(0, 5).map(o => ({
@@ -327,7 +344,7 @@ export default function AdminPage() {
             : `Gagal memuat data pengunjung (status ${webRes.status}).`;
       }
 
-      setDashData({ orderCount: orders.length, revenue, productCount: products.length, resellerCount: resellers.length, recentOrders, revenueTrend, webStats, webStatsErr });
+      setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, webStats, webStatsErr });
     } catch {}
     setLoading(false);
   }, [creds]);
@@ -375,7 +392,7 @@ export default function AdminPage() {
       const invNo = `INV-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
       const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       const items = cartItems.map(i => {
-        const p = hardcodedProducts.find(pr => pr.id === i.productId)!;
+        const p = posProducts.find(pr => pr.id === i.productId)!;
         return { name: p.name, weight: p.weight, qty: i.qty, price: p.price, subtotal: p.price * i.qty };
       });
       const res = await fetch(`${MAIN_APP}/api/admin/invoice-pdf`, {
@@ -397,7 +414,7 @@ export default function AdminPage() {
   };
 
   // ─── POS filtered products ───────────────────────────────
-  const filteredProducts = activeCat === 'semua' ? hardcodedProducts : hardcodedProducts.filter(p => p.category === activeCat);
+  const filteredProducts = activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat);
 
   // ─── Screens: Loading & Login ────────────────────────────
   if (checking) return (
@@ -749,7 +766,7 @@ export default function AdminPage() {
   const posProductsContent = (
     <div className="flex flex-col h-full">
       <div className="flex gap-2 px-4 pt-4 pb-3 overflow-x-auto no-scrollbar flex-shrink-0">
-        {POS_CATS.map(c => (
+        {[POS_CAT_ALL, ...posCategories].map(c => (
           <button key={c.id} onClick={() => setActiveCat(c.id)}
             className={`tab-chip ${activeCat === c.id ? 'active' : ''}`}>
             <span>{c.emoji}</span> {c.label}
@@ -757,15 +774,18 @@ export default function AdminPage() {
         ))}
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-24 thin-scrollbar">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {filteredProducts.map(p => {
-            const entry = cart.find(i => i.productId === p.id)!;
-            return (
-              <PosProductCard key={p.id} product={p} qty={entry.qty}
+        {posProducts.length === 0 ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {filteredProducts.map(p => (
+              <PosProductCard key={p.id} product={p} qty={getQty(p.id)}
                 onAdd={() => addToCart(p.id)} onMinus={() => removeFromCart(p.id)} />
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
       {hasCart && (
         <div className="absolute bottom-0 left-0 right-0 px-4 pb-5 pt-2"
@@ -804,13 +824,14 @@ export default function AdminPage() {
         </div>
         <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
           {cartItems.map(item => {
-            const p = hardcodedProducts.find(pr => pr.id === item.productId)!;
-            const img = p.images?.[0];
+            const p = posProducts.find(pr => pr.id === item.productId);
+            if (!p) return null;
+            const imgUrl = p.imageUrls?.[0];
             return (
               <div key={item.productId} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 relative" style={{ background: `${p.bgColor}22` }}>
-                  {img ? <Image src={img} alt={p.name} fill className="object-cover" sizes="40px" />
-                       : <div className="w-full h-full flex items-center justify-center text-lg">{p.emoji}</div>}
+                  {imgUrl ? <Image src={imgUrl} alt={p.name} fill className="object-cover" sizes="40px" unoptimized />
+                          : <div className="w-full h-full flex items-center justify-center text-lg">{p.emoji}</div>}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
