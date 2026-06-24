@@ -1143,7 +1143,7 @@ export default function AdminPage() {
       {activeTab === 'products'   && <ProductsTab  creds={creds} />}
       {activeTab === 'orders'     && <OrdersTab    creds={creds} />}
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
-      {activeTab === 'stock'      && <StockTab     creds={creds} />}
+      {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} />}
       {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
     </AppShell>
   );
