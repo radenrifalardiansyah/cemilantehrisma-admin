@@ -277,9 +277,6 @@ export default function StockTab({ creds }: { creds: string }) {
           <button onClick={loadWarehouses} className="btn-ghost p-2.5" title="Refresh">
             <RefreshCw size={14} />
           </button>
-          <button onClick={openCreate} className="btn-primary flex items-center gap-1.5 px-4 py-2 text-sm">
-            <Plus size={14} /> Tambah Gudang
-          </button>
         </div>
       </div>
 
