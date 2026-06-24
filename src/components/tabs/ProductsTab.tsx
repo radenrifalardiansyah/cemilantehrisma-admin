@@ -487,96 +487,97 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
           {/* Category edit modal */}
           {editingCat && (
-            <div
-              className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-6"
-              style={{ background: 'rgba(19,12,3,0.55)', backdropFilter: 'blur(6px)' }}
-              onClick={closeEditCat}
-            >
-              <div
-                className="w-full lg:max-w-md flex flex-col"
-                style={{
-                  background: 'var(--surface)',
-                  borderRadius: '20px 20px 0 0',
-                  ...(typeof window !== 'undefined' && window.innerWidth >= 1024 ? { borderRadius: 20 } : {}),
-                }}
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--border-2)' }}>
-                  <p className="font-bold text-[15px]" style={{ color: 'var(--text-primary)' }}>
-                    {isNewCat ? 'Tambah Kategori' : 'Edit Kategori'}
-                  </p>
-                  <button onClick={closeEditCat} className="btn-ghost p-2"><X size={16} /></button>
-                </div>
+            <div className="modal-overlay" onClick={closeEditCat}>
+              <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+                <div className="modal-accent" />
+                <span className="modal-handle" />
 
-                <div className="p-6 space-y-4 overflow-y-auto thin-scrollbar">
-                  {/* Emoji + Name */}
-                  <div className="flex gap-3">
-                    <div className="w-24 flex-shrink-0">
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Emoji</label>
-                      <input
-                        value={editingCat.emoji}
-                        onChange={e => setEditingCat({ ...editingCat, emoji: e.target.value })}
-                        className="input w-full text-center text-2xl"
-                        maxLength={4}
-                      />
+                <div className="modal-header">
+                  <div className="modal-header-left">
+                    <div className="modal-icon">
+                      <span style={{ fontSize: 17, lineHeight: 1 }}>{editingCat.emoji || '🏷️'}</span>
                     </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nama Kategori *</label>
-                      <input
-                        value={editingCat.name}
-                        onChange={e => {
-                          const name = e.target.value;
-                          setEditingCat({
-                            ...editingCat, name,
-                            ...(isNewCat ? { slug: slugify(name) } : {}),
-                          });
-                        }}
-                        className="input w-full"
-                        placeholder="Contoh: Keripik"
-                      />
+                    <div>
+                      <p className="modal-title">{isNewCat ? 'Tambah Kategori' : 'Edit Kategori'}</p>
+                      <p className="modal-subtitle">{isNewCat ? 'Buat kategori produk baru' : `Edit: ${editingCat.name}`}</p>
                     </div>
                   </div>
-
-                  {/* Slug / ID */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                      ID / Slug{isNewCat ? ' (auto dari nama, bisa diedit)' : ' (tidak bisa diubah)'}
-                    </label>
-                    <input
-                      value={isNewCat ? (editingCat.slug || slugify(editingCat.name)) : editingCat.id}
-                      onChange={e => isNewCat && setEditingCat({ ...editingCat, slug: slugify(e.target.value) })}
-                      readOnly={!isNewCat}
-                      className="input w-full font-mono text-sm"
-                      style={!isNewCat ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
-                      placeholder="contoh: keripik"
-                    />
-                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                      Digunakan sebagai referensi di data produk. Hanya huruf kecil, angka, dan tanda hubung.
-                    </p>
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Deskripsi (opsional)</label>
-                    <input
-                      value={editingCat.description ?? ''}
-                      onChange={e => setEditingCat({ ...editingCat, description: e.target.value })}
-                      className="input w-full"
-                      placeholder="Contoh: Keripik Talas Renyah"
-                    />
-                  </div>
-
-                  {catError && (
-                    <p className="text-xs font-medium px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                      {catError}
-                    </p>
-                  )}
+                  <button onClick={closeEditCat} className="modal-close"><X size={14} /></button>
                 </div>
 
-                <div className="px-6 py-4" style={{ borderTop: '1px solid var(--border-2)' }}>
+                <div className="modal-body">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Emoji + Name */}
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ width: 88, flexShrink: 0 }}>
+                        <label className="field-label">Emoji</label>
+                        <input
+                          value={editingCat.emoji}
+                          onChange={e => setEditingCat({ ...editingCat, emoji: e.target.value })}
+                          className="input"
+                          style={{ textAlign: 'center', fontSize: 22 }}
+                          maxLength={4}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label className="field-label">Nama Kategori <span style={{ color: 'var(--danger)' }}>*</span></label>
+                        <input
+                          value={editingCat.name}
+                          onChange={e => {
+                            const name = e.target.value;
+                            setEditingCat({ ...editingCat, name, ...(isNewCat ? { slug: slugify(name) } : {}) });
+                          }}
+                          className="input"
+                          placeholder="Contoh: Keripik"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    {/* Slug / ID */}
+                    <div>
+                      <label className="field-label">
+                        ID / Slug{isNewCat ? ' (auto dari nama, bisa diedit)' : ' (tidak bisa diubah)'}
+                      </label>
+                      <input
+                        value={isNewCat ? (editingCat.slug || slugify(editingCat.name)) : editingCat.id}
+                        onChange={e => isNewCat && setEditingCat({ ...editingCat, slug: slugify(e.target.value) })}
+                        readOnly={!isNewCat}
+                        className="input"
+                        style={!isNewCat ? { opacity: 0.55, cursor: 'not-allowed', fontFamily: 'monospace' } : { fontFamily: 'monospace' }}
+                        placeholder="contoh: keripik"
+                      />
+                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Digunakan sebagai referensi di data produk. Hanya huruf kecil, angka, dan tanda hubung.
+                      </p>
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <label className="field-label">Deskripsi (opsional)</label>
+                      <input
+                        value={editingCat.description ?? ''}
+                        onChange={e => setEditingCat({ ...editingCat, description: e.target.value })}
+                        className="input"
+                        placeholder="Contoh: Keripik Talas Renyah"
+                      />
+                    </div>
+
+                    {catError && (
+                      <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                        {catError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button onClick={closeEditCat} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                    Batal
+                  </button>
                   <button onClick={saveCat} disabled={savingCat || !editingCat.name.trim()}
-                    className="btn-primary w-full justify-center py-3 text-sm">
-                    {savingCat ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                    className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                    {savingCat ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                     {savingCat ? 'Menyimpan…' : 'Simpan Kategori'}
                   </button>
                 </div>
@@ -806,35 +807,33 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
       {/* ── Product edit modal ── */}
       {editing && (
-        <div
-          className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-6"
-          style={{ background: 'rgba(19,12,3,0.55)', backdropFilter: 'blur(6px)' }}
-          onClick={closeEdit}
-        >
-          <div
-            className="w-full lg:max-w-3xl max-h-[92vh] lg:max-h-[88vh] flex flex-col"
-            style={{
-              background: 'var(--surface)',
-              borderRadius: '20px 20px 0 0',
-              ...(typeof window !== 'undefined' && window.innerWidth >= 1024 ? { borderRadius: 20 } : {}),
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4"
-              style={{ borderBottom: '1px solid var(--border-2)' }}>
-              <p className="font-bold text-[15px]" style={{ color: 'var(--text-primary)' }}>
-                {isNew ? 'Tambah Produk' : 'Edit Produk'}
-              </p>
-              <button onClick={closeEdit} className="btn-ghost p-2"><X size={16} /></button>
+        <div className="modal-overlay" onClick={closeEdit}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon">
+                  {editing.emoji
+                    ? <span style={{ fontSize: 17, lineHeight: 1 }}>{editing.emoji}</span>
+                    : <Package size={17} />}
+                </div>
+                <div>
+                  <p className="modal-title">{isNew ? 'Tambah Produk' : 'Edit Produk'}</p>
+                  <p className="modal-subtitle">{isNew ? 'Isi detail produk baru' : editing.name || 'Produk'}</p>
+                </div>
+              </div>
+              <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto thin-scrollbar">
-              <div className="p-6 space-y-6">
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
                 {/* Images */}
                 <div>
-                  <p className="section-label mb-3">Foto Produk</p>
-                  <div className="flex gap-2 flex-wrap">
+                  <p className="section-label" style={{ marginBottom: 10 }}>Foto Produk</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {editing.imageUrls.map((u, i) => (
                       <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
                         <Image src={u} alt="" fill className="object-cover" sizes="80px" unoptimized />
@@ -858,64 +857,61 @@ export default function ProductsTab({ creds }: { creds: string }) {
                 {/* 2-column grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Col 1 */}
-                  <div className="space-y-4">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {([
-                      { label: 'Nama Produk *',   key: 'name'     as const, type: 'text' },
-                      { label: 'Emoji',            key: 'emoji'    as const, type: 'text' },
-                      { label: 'Berat / Ukuran',   key: 'weight'   as const, type: 'text' },
-                      { label: 'Warna BG (hex)',   key: 'bgColor'  as const, type: 'text' },
+                      { label: 'Nama Produk *',    key: 'name'     as const, type: 'text' },
+                      { label: 'Emoji',             key: 'emoji'    as const, type: 'text' },
+                      { label: 'Berat / Ukuran',    key: 'weight'   as const, type: 'text' },
+                      { label: 'Warna BG (hex)',    key: 'bgColor'  as const, type: 'text' },
                       { label: 'Gradient Tailwind', key: 'gradient' as const, type: 'text' },
                     ] as const).map(f => (
                       <div key={f.key}>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
+                        <label className="field-label">{f.label}</label>
                         <input type={f.type} value={(editing[f.key] as string) ?? ''}
                           onChange={e => setEditing({ ...editing, [f.key]: e.target.value })}
-                          className="input w-full" />
+                          className="input" />
                       </div>
                     ))}
                   </div>
 
                   {/* Col 2 */}
-                  <div className="space-y-4">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {([
-                      { label: 'Harga (Rp)',                   key: 'price'         as const },
-                      { label: 'Harga Coret (Rp, opsional)',   key: 'originalPrice' as const },
+                      { label: 'Harga (Rp)',                 key: 'price'         as const },
+                      { label: 'Harga Coret (Rp, opsional)', key: 'originalPrice' as const },
                     ] as const).map(f => (
                       <div key={f.key}>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
+                        <label className="field-label">{f.label}</label>
                         <input type="number" value={(editing[f.key] as number | undefined) ?? ''}
                           onChange={e => setEditing({ ...editing, [f.key]: Number(e.target.value) })}
-                          className="input w-full" />
+                          className="input" />
                       </div>
                     ))}
 
                     {/* Selects */}
-                    <div className="grid grid-cols-3 gap-2">
-                      {/* Kategori — from Firestore */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
                       <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Kategori</label>
+                        <label className="field-label">Kategori</label>
                         <select value={editing.category}
                           onChange={e => setEditing({ ...editing, category: e.target.value })}
-                          className="input text-xs">
+                          className="input" style={{ fontSize: 12 }}>
                           {categories.length === 0 && <option value="">— Belum ada —</option>}
                           {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
                         </select>
                       </div>
-                      {/* Stok */}
                       <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Stok</label>
+                        <label className="field-label">Stok</label>
                         <select value={editing.stock}
                           onChange={e => setEditing({ ...editing, stock: e.target.value })}
-                          className="input text-xs">
+                          className="input" style={{ fontSize: 12 }}>
                           {STOCK_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </div>
-                      {/* Badge */}
                       <div>
-                        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Badge</label>
+                        <label className="field-label">Badge</label>
                         <select value={editing.badge ?? ''}
                           onChange={e => setEditing({ ...editing, badge: e.target.value })}
-                          className="input text-xs">
+                          className="input" style={{ fontSize: 12 }}>
                           {BADGE_OPTS.map(o => <option key={o} value={o}>{o || '–'}</option>)}
                         </select>
                       </div>
@@ -923,28 +919,28 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
                     {/* Description */}
                     <div>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Deskripsi</label>
+                      <label className="field-label">Deskripsi</label>
                       <textarea rows={4} value={editing.description}
                         onChange={e => setEditing({ ...editing, description: e.target.value })}
-                        className="input resize-none w-full" />
+                        className="input resize-none" />
                     </div>
                   </div>
                 </div>
 
                 {/* Detail points */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Detail Produk</label>
-                    <button onClick={addDetail} className="text-xs font-bold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <label className="field-label" style={{ marginBottom: 0 }}>Detail Produk</label>
+                    <button onClick={addDetail} style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
                       <Plus size={11} /> Tambah baris
                     </button>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                     {editing.details.map((d, i) => (
-                      <div key={i} className="flex gap-2">
-                        <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1 text-sm" />
+                      <div key={i} style={{ display: 'flex', gap: 8 }}>
+                        <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1" style={{ fontSize: 13 }} />
                         {editing.details.length > 1 && (
-                          <button onClick={() => removeDetail(i)} className="btn-ghost p-2 flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                          <button onClick={() => removeDetail(i)} className="btn-ghost" style={{ padding: '8px', color: 'var(--danger)', flexShrink: 0 }}>
                             <X size={13} />
                           </button>
                         )}
@@ -955,10 +951,13 @@ export default function ProductsTab({ creds }: { creds: string }) {
               </div>
             </div>
 
-            <div className="flex-shrink-0 px-6 py-4" style={{ borderTop: '1px solid var(--border-2)' }}>
+            <div className="modal-footer">
+              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
               <button onClick={save} disabled={saving || !editing.name}
-                className="btn-primary w-full justify-center py-3 text-sm">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {saving ? 'Menyimpan…' : 'Simpan Produk'}
               </button>
             </div>

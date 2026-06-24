@@ -56,129 +56,64 @@ function WarehouseModal({
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.48)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-      }}
+      className="modal-overlay"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <style>{`
-        @keyframes wh-slide { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes wh-scale { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .wh-sheet { animation: wh-slide 0.28s cubic-bezier(0.32,0.72,0,1) forwards; }
-        @media (min-width: 640px) {
-          .wh-overlay { align-items: center !important; padding: 24px; }
-          .wh-sheet {
-            width: 460px !important; max-width: 460px !important;
-            border-radius: 20px !important;
-            box-shadow: 0 24px 80px rgba(0,0,0,0.22) !important;
-            animation: wh-scale 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards !important;
-          }
-        }
-      `}</style>
-      <div
-        className="wh-overlay"
-        style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        }}
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      >
-        <div
-          className="wh-sheet"
-          style={{
-            width: '100%',
-            background: 'var(--surface)',
-            borderRadius: '24px 24px 0 0',
-            boxShadow: '0 -8px 48px rgba(0,0,0,0.18)',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Top accent line */}
-          <div style={{ height: 4, background: 'linear-gradient(90deg,var(--accent),var(--accent-dark))', borderRadius: '4px 4px 0 0' }} />
+      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-accent" />
+        <span className="modal-handle" />
 
-          <div style={{ padding: '20px 24px 28px' }}>
-            {/* Handle — mobile only */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-              <div className="sm:hidden" style={{ width: 36, height: 4, borderRadius: 4, background: 'var(--border)' }} />
-            </div>
-
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 40, height: 40, borderRadius: 12,
-                  background: 'var(--accent-bg)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <Warehouse size={18} style={{ color: 'var(--accent)' }} />
-                </div>
-                <div>
-                  <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{title}</p>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</p>
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                style={{
-                  width: 32, height: 32, borderRadius: 10, border: '1.5px solid var(--border)',
-                  background: 'var(--surface-2)', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'var(--text-muted)', flexShrink: 0,
-                }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            {/* Fields */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {[
-                { key: 'name',        label: 'Nama Gudang',    required: true,  placeholder: 'cth: Gudang Utama' },
-                { key: 'location',    label: 'Lokasi / Alamat',required: false, placeholder: 'cth: Jl. Mawar No. 5, Malang' },
-                { key: 'description', label: 'Keterangan',     required: false, placeholder: 'cth: Gudang untuk produk kering (opsional)' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-                    {f.label} {f.required && <span style={{ color: 'var(--danger)' }}>*</span>}
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={f.placeholder}
-                    value={form[f.key as keyof WFormState]}
-                    onChange={e => onChange({ ...form, [f.key]: e.target.value })}
-                    autoFocus={f.key === 'name'}
-                    className="input"
-                    style={{ fontSize: 13.5 }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button
-                onClick={onClose}
-                className="btn-ghost"
-                style={{ flex: 1, justifyContent: 'center', padding: '11px 0' }}
-              >
-                Batal
-              </button>
-              <button
-                onClick={onSave}
-                disabled={saving || !form.name.trim()}
-                className="btn-primary"
-                style={{ flex: 2, justifyContent: 'center', padding: '11px 0' }}
-              >
-                {saving && <Loader2 size={14} className="animate-spin" />}
-                {submitLabel}
-              </button>
+        {/* Header */}
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon"><Warehouse size={17} /></div>
+            <div>
+              <p className="modal-title">{title}</p>
+              <p className="modal-subtitle">{subtitle}</p>
             </div>
           </div>
+          <button onClick={onClose} className="modal-close"><X size={14} /></button>
+        </div>
+
+        {/* Fields */}
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {([
+              { key: 'name',        label: 'Nama Gudang',     required: true,  placeholder: 'cth: Gudang Utama' },
+              { key: 'location',    label: 'Lokasi / Alamat', required: false, placeholder: 'cth: Jl. Mawar No. 5, Bogor' },
+              { key: 'description', label: 'Keterangan',      required: false, placeholder: 'cth: Gudang untuk produk kering (opsional)' },
+            ] as const).map(f => (
+              <div key={f.key}>
+                <label className="field-label">
+                  {f.label}{f.required && <span style={{ color: 'var(--danger)' }}> *</span>}
+                </label>
+                <input
+                  type="text"
+                  placeholder={f.placeholder}
+                  value={form[f.key]}
+                  onChange={e => onChange({ ...form, [f.key]: e.target.value })}
+                  autoFocus={f.key === 'name'}
+                  className="input"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+            Batal
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving || !form.name.trim()}
+            className="btn-primary"
+            style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}
+          >
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            {submitLabel}
+          </button>
         </div>
       </div>
     </div>,
