@@ -360,81 +360,97 @@ export default function StockTab({ creds }: { creds: string }) {
       {/* Modal Create / Edit */}
       {showWForm && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowWForm(false); }}
         >
-          <div
-            className="w-full sm:max-w-md p-6 space-y-5 animate-slide-up sm:animate-scale-in sm:rounded-2xl"
+          {/* Mobile: slide up from bottom | Desktop: scale-in centered */}
+          <div className="w-full sm:w-[480px] sm:max-w-[480px] p-6 space-y-5 animate-slide-up sm:animate-scale-in rounded-t-[20px] sm:rounded-[20px]"
             style={{
               background: 'var(--surface)',
-              borderRadius: '20px 20px 0 0',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
+              boxShadow: '0 -4px 40px rgba(0,0,0,0.14)',
             }}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {editWarehouse ? 'Edit Gudang' : 'Tambah Gudang Baru'}
-                </h3>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {editWarehouse ? 'Perbarui informasi gudang' : 'Isi detail gudang baru'}
-                </p>
-              </div>
-              <button onClick={() => setShowWForm(false)} className="btn-ghost p-2">
-                <X size={14} />
-              </button>
-            </div>
 
-            <div className="space-y-3.5">
-              <div>
-                <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  Nama Gudang <span style={{ color: 'var(--danger)' }}>*</span>
-                </label>
-                <input
-                  type="text" placeholder="cth: Gudang Utama"
-                  value={wForm.name}
-                  onChange={e => setWForm(f => ({ ...f, name: e.target.value }))}
-                  className="input text-sm" autoFocus
-                />
+              {/* Handle bar — mobile only */}
+              <div className="flex justify-center -mt-1 mb-1 sm:hidden">
+                <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} />
               </div>
-              <div>
-                <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  Lokasi / Alamat
-                </label>
-                <input
-                  type="text" placeholder="cth: Jl. Mawar No. 5, Malang"
-                  value={wForm.location}
-                  onChange={e => setWForm(f => ({ ...f, location: e.target.value }))}
-                  className="input text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  Keterangan <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(opsional)</span>
-                </label>
-                <input
-                  type="text" placeholder="cth: Gudang untuk produk kering"
-                  value={wForm.description}
-                  onChange={e => setWForm(f => ({ ...f, description: e.target.value }))}
-                  className="input text-sm"
-                />
-              </div>
-            </div>
 
-            <div className="flex gap-2.5 pt-1">
-              <button onClick={() => setShowWForm(false)} className="btn-ghost flex-1 py-2.5 text-sm justify-center">
-                Batal
-              </button>
-              <button
-                onClick={saveWarehouse}
-                disabled={savingW || !wForm.name.trim()}
-                className="btn-primary flex-1 py-2.5 text-sm justify-center"
-              >
-                {savingW && <Loader2 size={14} className="animate-spin" />}
-                {editWarehouse ? 'Simpan Perubahan' : 'Tambah Gudang'}
-              </button>
-            </div>
+              {/* Title */}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {editWarehouse ? 'Edit Gudang' : 'Tambah Gudang Baru'}
+                  </h3>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    {editWarehouse ? 'Perbarui informasi gudang' : 'Isi detail gudang baru'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowWForm(false)}
+                  className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Fields */}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Nama Gudang <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="text" placeholder="cth: Gudang Utama"
+                    value={wForm.name}
+                    onChange={e => setWForm(f => ({ ...f, name: e.target.value }))}
+                    className="input text-sm" autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Lokasi / Alamat
+                  </label>
+                  <input
+                    type="text" placeholder="cth: Jl. Mawar No. 5, Malang"
+                    value={wForm.location}
+                    onChange={e => setWForm(f => ({ ...f, location: e.target.value }))}
+                    className="input text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Keterangan
+                    <span className="font-normal ml-1" style={{ color: 'var(--text-muted)' }}>(opsional)</span>
+                  </label>
+                  <input
+                    type="text" placeholder="cth: Gudang untuk produk kering"
+                    value={wForm.description}
+                    onChange={e => setWForm(f => ({ ...f, description: e.target.value }))}
+                    className="input text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2.5 pt-1">
+                <button
+                  onClick={() => setShowWForm(false)}
+                  className="btn-ghost flex-1 py-2.5 text-sm justify-center"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={saveWarehouse}
+                  disabled={savingW || !wForm.name.trim()}
+                  className="btn-primary flex-1 py-2.5 text-sm justify-center"
+                >
+                  {savingW && <Loader2 size={14} className="animate-spin" />}
+                  {editWarehouse ? 'Simpan Perubahan' : 'Tambah Gudang'}
+                </button>
+              </div>
           </div>
         </div>
       )}
