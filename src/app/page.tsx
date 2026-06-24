@@ -6,7 +6,7 @@ import {
   RefreshCw, MessageCircle, TrendingUp, Receipt, Package, Users,
   ShoppingCart, Plus, Minus, ChevronLeft,
   CheckCircle2, Loader2, User, Phone, Trash2, Tag, Send,
-  Eye, Smartphone, Monitor, BarChart2, Globe,
+  Eye, Smartphone, Monitor, BarChart2, Globe, Award,
 } from 'lucide-react';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import AppShell, { TabId } from '@/components/AppShell';
@@ -38,6 +38,7 @@ function formatWAMessage(custName: string, invoiceNo: string, total: number, pdf
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
+interface TopProduct { name: string; emoji: string; bgColor: string; stock: string; count: number; }
 interface WebStats {
   visitors: number; pageViews: number;
   mobile: number; desktop: number;
@@ -49,6 +50,7 @@ interface DashData {
   productCount: number; resellerCount: number;
   recentOrders: DashOrder[];
   revenueTrend: { date: string; revenue: number; count: number }[];
+  topProducts: TopProduct[];
   webStats: WebStats | null;
   webStatsErr: string;
 }
@@ -368,7 +370,7 @@ export default function AdminPage() {
       ]);
 
       // ── Firestore data ────────────────────────────────────
-      const orders: { customerName: string; total: number; createdAt?: { seconds: number }; date?: string }[] =
+      const orders: { customerName: string; total: number; createdAt?: { seconds: number }; date?: string; items?: { name: string; qty: number; subtotal: number }[] }[] =
         oRes.ok ? (await oRes.json()).orders : [];
       const fetchedProducts: PosProduct[] = pRes.ok ? (await pRes.json() as { products: PosProduct[] }).products : [];
       const resellers: unknown[] = rRes.ok ? (await rRes.json()).resellers : [];
@@ -418,7 +420,17 @@ export default function AdminPage() {
             : `Gagal memuat data pengunjung (status ${webRes.status}).`;
       }
 
-      setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, webStats, webStatsErr });
+      const salesMap: Record<string, number> = {};
+      orders.forEach(o => o.items?.forEach(it => { salesMap[it.name] = (salesMap[it.name] ?? 0) + it.qty; }));
+      const topProducts: TopProduct[] = Object.entries(salesMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, count]) => {
+          const p = fetchedProducts.find(fp => fp.name === name);
+          return { name, emoji: p?.emoji ?? '📦', bgColor: p?.bgColor ?? '#F5F0E9', stock: p?.stock ?? 'Ada', count };
+        });
+
+      setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, topProducts, webStats, webStatsErr });
     } catch {}
     setLoading(false);
   }, [creds]);
@@ -613,7 +625,7 @@ export default function AdminPage() {
             <div className="flex items-center justify-between mb-5">
               <div>
                 <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Omzet 7 Hari Terakhir</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Angka di atas bar = jumlah transaksi</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tren revenue 7 hari terakhir</p>
               </div>
               {dashData.revenueTrend.some(d => d.revenue > 0) && (
                 <span className="badge badge-amber">
@@ -630,42 +642,89 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* Recent orders */}
-          {dashData.recentOrders.length > 0 ? (
+          {/* Recent orders + Top products — 2-col */}
+          <div className="grid lg:grid-cols-2 gap-4">
+
+            {/* Recent orders */}
+            {dashData.recentOrders.length > 0 ? (
+              <div className="card overflow-hidden">
+                <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                  <Receipt size={15} style={{ color: 'var(--accent)' }} />
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pesanan Terbaru</p>
+                </div>
+                <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                  {dashData.recentOrders.map((o, i) => (
+                    <div key={i} className="px-5 py-3.5 flex items-center gap-3"
+                      style={{ transition: 'background 0.12s', cursor: 'default' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '')}
+                    >
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: 'var(--success)', boxShadow: '0 0 0 3px rgba(21,128,61,0.12)' }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{o.date}</p>
+                      </div>
+                      <span className="text-sm font-extrabold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>
+                        {formatRp(o.total)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="card p-10 text-center flex flex-col items-center justify-center">
+                <div className="text-4xl mb-3">📊</div>
+                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Buat pesanan di tab <strong>Kasir</strong> untuk mulai melihat data.
+                </p>
+              </div>
+            )}
+
+            {/* Top products */}
             <div className="card overflow-hidden">
               <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
-                <Receipt size={15} style={{ color: 'var(--accent)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pesanan Terbaru</p>
+                <Award size={15} style={{ color: 'var(--accent)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Produk Terlaris</p>
               </div>
-              <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
-                {dashData.recentOrders.map((o, i) => (
-                  <div key={i} className="px-5 py-3.5 flex items-center gap-3"
-                    style={{ transition: 'background 0.12s', cursor: 'default' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '')}
-                  >
-                    {/* Status dot */}
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: 'var(--success)', boxShadow: '0 0 0 3px rgba(21,128,61,0.12)' }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{o.date}</p>
-                    </div>
-                    <span className="text-sm font-extrabold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>
-                      {formatRp(o.total)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              {dashData.topProducts.length > 0 ? (
+                <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                  {dashData.topProducts.map((prod, i) => {
+                    const rankColors = [
+                      { fg: '#B8860B', bg: '#FFFBEA' },
+                      { fg: '#6B7280', bg: '#F3F4F6' },
+                      { fg: '#B07832', bg: '#FFF3E0' },
+                    ];
+                    const r = rankColors[i] ?? { fg: 'var(--text-muted)', bg: 'var(--surface-2)' };
+                    const stockCls = prod.stock === 'Ada' ? 'badge-green' : prod.stock === 'Terbatas' ? 'badge-amber' : prod.stock === 'Habis' ? 'badge-red' : 'badge-gray';
+                    return (
+                      <div key={i} className="px-5 py-3.5 flex items-center gap-3"
+                        style={{ transition: 'background 0.12s', cursor: 'default' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}
+                      >
+                        <div style={{ width: 22, height: 22, borderRadius: 6, background: r.bg, color: r.fg, fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {i + 1}
+                        </div>
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: `${prod.bgColor}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>
+                          {prod.emoji}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{prod.name}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{prod.count} terjual</p>
+                        </div>
+                        <span className={`badge ${stockCls} flex-shrink-0`}>{prod.stock}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-5 py-10 text-center">
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada data penjualan produk</p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="card p-12 text-center">
-              <div className="text-5xl mb-4">📊</div>
-              <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Buat pesanan di tab <strong>Kasir</strong> untuk mulai melihat data di sini.
-              </p>
-            </div>
-          )}
+          </div>
         </>
       )}
 
