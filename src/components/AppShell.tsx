@@ -41,8 +41,8 @@ const MORE_TABS    = ALL_TABS.slice(4);
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
-const SIDEBAR_BG   = 'linear-gradient(175deg, #9B4418 0%, #7A3008 100%)';
-const SIDEBAR_FULL = 240;
+const SIDEBAR_BG   = '#190C03';
+const SIDEBAR_FULL = 256;
 const SIDEBAR_MINI = 64;
 
 interface AppShellProps {
@@ -86,12 +86,12 @@ export default function AppShell({
 
       {/* ═══ Desktop Sidebar ═══════════════════════════════════ */}
       <aside
-        className="hidden lg:flex flex-col flex-shrink-0 h-full"
+        className="hidden lg:flex flex-col flex-shrink-0 h-full sidebar-texture"
         style={{
           width: sw,
           minWidth: sw,
           background: SIDEBAR_BG,
-          boxShadow: '4px 0 24px rgba(0,0,0,0.14)',
+          boxShadow: '4px 0 20px rgba(0,0,0,0.18)',
           transition: 'width 0.26s cubic-bezier(0.4,0,0.2,1), min-width 0.26s cubic-bezier(0.4,0,0.2,1)',
           overflow: 'hidden',
           position: 'relative',
@@ -103,7 +103,7 @@ export default function AppShell({
           className="flex-shrink-0 flex items-center px-3 pt-5 pb-4"
           style={{
             height: 72,
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            borderBottom: '1px solid rgba(255,255,255,0.07)',
             gap: collapsed ? 0 : 10,
             justifyContent: collapsed ? 'center' : 'flex-start',
             paddingLeft: collapsed ? 0 : 16,
@@ -112,22 +112,22 @@ export default function AppShell({
         >
           <div className="relative flex-shrink-0">
             <Image
-              src="/icon-192.png" alt="logo" width={36} height={36}
+              src="/icon-192.png" alt="logo" width={34} height={34}
               className="rounded-xl"
-              style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}
+              style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }}
             />
             <span
               className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2"
-              style={{ borderColor: '#7A3008' }}
+              style={{ borderColor: '#190C03' }}
             />
           </div>
           {!collapsed && (
             <div className="min-w-0 overflow-hidden">
-              <p className="text-[13px] font-extrabold leading-tight truncate" style={{ color: '#FDECD0' }}>
+              <p className="text-[13px] font-extrabold leading-tight truncate" style={{ color: '#EDD9C4' }}>
                 Cemilan Teh Risma
               </p>
-              <p className="text-[10.5px] mt-0.5 font-medium truncate" style={{ color: '#D49060' }}>
-                Admin Dashboard
+              <p className="text-[10px] mt-0.5 font-semibold truncate tracking-wide uppercase" style={{ color: '#8A6248' }}>
+                Admin Panel
               </p>
             </div>
           )}
@@ -139,14 +139,14 @@ export default function AppShell({
             <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
               {!collapsed && (
                 <p
-                  className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
-                  style={{ color: 'rgba(212,144,96,0.7)' }}
+                  className="px-3 mb-1.5 text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
+                  style={{ color: 'rgba(138,98,72,0.85)' }}
                 >
                   {group.label}
                 </p>
               )}
               {collapsed && gi > 0 && (
-                <div className="mx-auto mb-2 w-6" style={{ height: 1, background: 'rgba(255,255,255,0.12)' }} />
+                <div className="mx-auto mb-2 w-6" style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
               )}
               <div className="space-y-0.5">
                 {group.tabs.map(tab => {
@@ -161,11 +161,11 @@ export default function AppShell({
                     >
                       <tab.Icon
                         size={17}
-                        strokeWidth={isActive ? 2.5 : 1.8}
-                        style={{ color: isActive ? '#FDE68A' : '#D49060', flexShrink: 0 }}
+                        strokeWidth={isActive ? 2.2 : 1.7}
+                        style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
                       />
                       {!collapsed && (
-                        <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#FFFFFF' : '#FDECD0' }}>
+                        <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
                           {tab.label}
                         </span>
                       )}
@@ -190,7 +190,7 @@ export default function AppShell({
         {/* Footer */}
         <div
           className="flex-shrink-0 px-2 pb-4 pt-2 space-y-0.5"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
+          style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
         >
           <a
             href={MAIN_APP} target="_blank" rel="noopener noreferrer"
@@ -198,11 +198,11 @@ export default function AppShell({
             className="sidebar-nav-item w-full"
             style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
           >
-            <Home size={15} style={{ color: '#D49060', flexShrink: 0 }} />
+            <Home size={15} style={{ color: '#8A6248', flexShrink: 0 }} />
             {!collapsed && (
               <>
-                <span className="flex-1 text-left whitespace-nowrap overflow-hidden" style={{ color: '#FDECD0' }}>Lihat Toko</span>
-                <ChevronRight size={11} style={{ color: '#D49060', flexShrink: 0 }} />
+                <span className="flex-1 text-left whitespace-nowrap overflow-hidden" style={{ color: '#EDD9C4' }}>Lihat Toko</span>
+                <ChevronRight size={11} style={{ color: '#8A6248', flexShrink: 0 }} />
               </>
             )}
           </a>
@@ -221,13 +221,13 @@ export default function AppShell({
             onClick={toggleCollapse}
             title={collapsed ? 'Perlebar menu' : 'Perkecil menu'}
             className="sidebar-nav-item w-full mt-1"
-            style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.7 }}
+            style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.65 }}
           >
             {collapsed
-              ? <PanelLeftOpen  size={14} style={{ color: '#D49060', flexShrink: 0 }} />
-              : <PanelLeftClose size={14} style={{ color: '#D49060', flexShrink: 0 }} />
+              ? <PanelLeftOpen  size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
+              : <PanelLeftClose size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
             }
-            {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: '#D49060' }}>Perkecil</span>}
+            {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: '#8A6248' }}>Perkecil</span>}
           </button>
         </div>
       </aside>
@@ -239,12 +239,10 @@ export default function AppShell({
         <header
           className="flex-shrink-0 flex items-center justify-between px-4 lg:px-6"
           style={{
-            height: 58,
-            background: 'rgba(255,255,255,0.88)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            borderBottom: '1px solid var(--border-2)',
-            boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
+            height: 60,
+            background: '#FFFFFF',
+            borderBottom: '1px solid var(--border)',
+            boxShadow: '0 1px 0 var(--border-2)',
           }}
         >
           <div className="flex items-center gap-3">
@@ -270,7 +268,7 @@ export default function AppShell({
             {topbarActions}
             <button
               onClick={onLogout}
-              className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl transition-colors"
+              className="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
               <LogOut size={15} />
@@ -288,11 +286,9 @@ export default function AppShell({
       <nav
         className="lg:hidden fixed bottom-0 left-0 right-0 z-30"
         style={{
-          background: 'rgba(255,255,255,0.96)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderTop: '1px solid var(--border-2)',
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.07)',
+          background: '#FFFFFF',
+          borderTop: '1px solid var(--border)',
+          boxShadow: '0 -4px 16px rgba(30,16,8,0.07)',
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
@@ -303,18 +299,12 @@ export default function AppShell({
               <button
                 key={tab.id}
                 onClick={() => go(tab.id)}
-                className="flex flex-col items-center justify-center gap-1 flex-1 relative pt-1"
+                className="flex flex-col items-center justify-center gap-1 flex-1 relative pb-1"
               >
-                {isActive && (
-                  <span
-                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full"
-                    style={{ background: 'var(--accent)' }}
-                  />
-                )}
                 <span className="relative">
                   <tab.Icon
-                    size={22}
-                    strokeWidth={isActive ? 2.5 : 1.6}
+                    size={21}
+                    strokeWidth={isActive ? 2.2 : 1.6}
                     style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}
                   />
                   {tab.id === 'pos' && hasCart && (
@@ -329,6 +319,12 @@ export default function AppShell({
                 >
                   {tab.mobileLabel}
                 </span>
+                {isActive && (
+                  <span
+                    className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                    style={{ background: 'var(--accent)' }}
+                  />
+                )}
               </button>
             );
           })}
@@ -336,17 +332,11 @@ export default function AppShell({
           {/* More button */}
           <button
             onClick={() => setMoreOpen(true)}
-            className="flex flex-col items-center justify-center gap-1 flex-1 relative pt-1"
+            className="flex flex-col items-center justify-center gap-1 flex-1 relative pb-1"
           >
-            {isMoreActive && (
-              <span
-                className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full"
-                style={{ background: 'var(--accent)' }}
-              />
-            )}
             <MoreHorizontal
-              size={22}
-              strokeWidth={isMoreActive ? 2.5 : 1.6}
+              size={21}
+              strokeWidth={isMoreActive ? 2.2 : 1.6}
               style={{ color: isMoreActive ? 'var(--accent)' : 'var(--text-muted)' }}
             />
             <span
@@ -355,6 +345,12 @@ export default function AppShell({
             >
               {isMoreActive ? (currentTab?.mobileLabel ?? 'Lainnya') : 'Lainnya'}
             </span>
+            {isMoreActive && (
+              <span
+                className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                style={{ background: 'var(--accent)' }}
+              />
+            )}
           </button>
         </div>
       </nav>
@@ -364,7 +360,7 @@ export default function AppShell({
         <>
           <div
             className="lg:hidden fixed inset-0 z-40"
-            style={{ background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+            style={{ background: 'rgba(30,16,8,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setMoreOpen(false)}
           />
           <div
@@ -372,8 +368,8 @@ export default function AppShell({
             style={{
               bottom: 0,
               background: 'var(--surface)',
-              borderRadius: '24px 24px 0 0',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.14)',
+              borderRadius: '20px 20px 0 0',
+              boxShadow: '0 -8px 40px rgba(30,16,8,0.14)',
               paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
             }}
           >

@@ -2,37 +2,37 @@
 
 /* ── Design Tokens ─────────────────────────────────────────── */
 :root {
-  /* Sidebar — warm amber-brown, sesuai warna invoice brand */
-  --sidebar:        #8C3D0D;
-  --sidebar-hover:  rgba(255,255,255,0.1);
-  --sidebar-border: rgba(0,0,0,0.15);
-  --sidebar-text:   #FDECD0;
-  --sidebar-muted:  #D49060;
+  /* Sidebar — espresso gelap premium */
+  --sidebar:        #190C03;
+  --sidebar-hover:  rgba(255,255,255,0.07);
+  --sidebar-border: rgba(255,255,255,0.07);
+  --sidebar-text:   #EDD9C4;
+  --sidebar-muted:  #8A6248;
 
   /* Ground & surface */
-  --ground:   #F5F0E8;
-  --surface:  #FFFFFF;
-  --surface-2: #FAF7F2;
-  --border:   #E4DDD0;
-  --border-2: #EDE8DF;
+  --ground:    #F5F0E9;
+  --surface:   #FFFFFF;
+  --surface-2: #FBF8F3;
+  --border:    #E6DDD0;
+  --border-2:  #EEE7DC;
 
   /* Typography */
-  --text-primary:   #1C1208;
-  --text-secondary: #6B5C3E;
-  --text-muted:     #9E8E72;
+  --text-primary:   #1E1008;
+  --text-secondary: #6B5440;
+  --text-muted:     #A08468;
 
-  /* Brand accent */
-  --accent:       #D97706;
-  --accent-dark:  #B45309;
-  --accent-light: #FDE68A;
-  --accent-bg:    #FFFBEB;
+  /* Brand accent — amber toasted */
+  --accent:       #D4691E;
+  --accent-dark:  #A84F10;
+  --accent-light: #F9DEC8;
+  --accent-bg:    #FDF0E6;
 
   /* Semantic */
   --success:      #15803D;
   --success-bg:   #F0FDF4;
   --danger:       #DC2626;
   --danger-bg:    #FEF2F2;
-  --warning:      #D97706;
+  --warning:      #B45309;
   --info:         #0284C7;
 }
 
@@ -77,13 +77,27 @@ body {
 }
 
 /* ── Sidebar ────────────────────────────────────────────────── */
+.sidebar-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0px, transparent 6px,
+    rgba(255,255,255,0.018) 6px, rgba(255,255,255,0.018) 7px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+.sidebar-texture > * { position: relative; z-index: 1; }
+
 .sidebar-nav-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 14px 9px 14px;
-  border-radius: 12px;
+  padding: 8px 12px 8px 14px;
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 500;
   color: var(--sidebar-text);
@@ -93,19 +107,19 @@ body {
   overflow: hidden;
 }
 .sidebar-nav-item:hover {
-  background: rgba(255,255,255,0.12);
+  background: var(--sidebar-hover);
 }
 .sidebar-nav-item.active {
-  background: rgba(255,255,255,0.18);
-  font-weight: 700;
+  background: rgba(212,105,30,0.14);
+  font-weight: 600;
 }
 .sidebar-nav-item.active::before {
   content: '';
   position: absolute;
   left: 0; top: 50%;
   transform: translateY(-50%);
-  width: 3px; height: 60%;
-  background: #FDE68A;
+  width: 3px; height: 18px;
+  background: var(--accent);
   border-radius: 0 3px 3px 0;
 }
 
@@ -120,9 +134,9 @@ body {
 /* ── Card ───────────────────────────────────────────────────── */
 .card {
   background: var(--surface);
-  border-radius: 16px;
-  border: 1px solid var(--border-2);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(30,16,8,0.05), 0 1px 2px rgba(30,16,8,0.03);
 }
 
 /* ── Stat card gradient accent bar ─────────────────────────── */
@@ -130,8 +144,8 @@ body {
   position: absolute;
   bottom: 0; left: 0; right: 0;
   height: 3px;
-  border-radius: 0 0 16px 16px;
-  background: linear-gradient(90deg, var(--accent), #EA580C);
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-dark));
 }
 
 /* ── Button ─────────────────────────────────────────────────── */
@@ -140,17 +154,17 @@ body {
   align-items: center;
   gap: 6px;
   padding: 9px 16px;
-  border-radius: 10px;
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 600;
   color: white;
-  background: linear-gradient(135deg, #D97706, #EA580C);
-  box-shadow: 0 1px 3px rgba(217,119,6,0.3);
-  transition: opacity 0.15s, transform 0.15s;
+  background: linear-gradient(135deg, #E8821A, #C96018);
+  box-shadow: 0 1px 3px rgba(200,96,24,0.3), inset 0 1px 0 rgba(255,255,255,0.12);
+  transition: box-shadow 0.15s, transform 0.15s, background 0.15s;
   cursor: pointer;
   border: none;
 }
-.btn-primary:hover  { opacity: 0.92; }
+.btn-primary:hover  { background: linear-gradient(135deg, #D4751A, #B55514); box-shadow: 0 2px 6px rgba(200,96,24,0.38); transform: translateY(-0.5px); }
 .btn-primary:active { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
@@ -185,7 +199,7 @@ body {
 }
 .input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(217,119,6,0.12);
+  box-shadow: 0 0 0 3px rgba(212,105,30,0.12);
   background: var(--surface);
 }
 .input::placeholder { color: var(--text-muted); }
@@ -199,11 +213,11 @@ body {
   font-size: 11px;
   font-weight: 600;
 }
-.badge-amber  { background: #FEF3C7; color: #92400E; }
-.badge-green  { background: #DCFCE7; color: #166534; }
-.badge-red    { background: #FEE2E2; color: #991B1B; }
-.badge-gray   { background: #F3F4F6; color: #4B5563; }
-.badge-blue   { background: #DBEAFE; color: #1E40AF; }
+.badge-amber  { background: #FDF0E6; color: #A84F10; border: 1px solid rgba(212,105,30,0.2); }
+.badge-green  { background: #F0FDF4; color: #15803D; border: 1px solid #D1FAE5; }
+.badge-red    { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+.badge-gray   { background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border); }
+.badge-blue   { background: #EFF6FF; color: #0369A1; border: 1px solid #BFDBFE; }
 
 /* ── Tab strip (mobile) ─────────────────────────────────────── */
 .tab-chip {
@@ -225,9 +239,9 @@ body {
 }
 .tab-chip.active {
   color: white;
-  background: linear-gradient(135deg, #D97706, #EA580C);
+  background: linear-gradient(135deg, #E8821A, #C96018);
   border-color: transparent;
-  box-shadow: 0 2px 6px rgba(217,119,6,0.3);
+  box-shadow: 0 2px 6px rgba(200,96,24,0.3);
 }
 
 /* ── Divider ────────────────────────────────────────────────── */
