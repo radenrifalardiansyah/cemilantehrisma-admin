@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
   ChevronDown, ChevronUp, X, ArrowLeft, Pencil, Trash2, MapPin,
@@ -38,6 +39,151 @@ function formatDate(e: StockEntry) {
       hour: '2-digit', minute: '2-digit',
     });
   return '–';
+}
+
+// ── Warehouse modal (portal → document.body) ─────────────────────────────────
+interface WFormState { name: string; location: string; description: string }
+
+function WarehouseModal({
+  title, subtitle, form, saving, onChange, onClose, onSave, submitLabel,
+}: {
+  title: string; subtitle: string;
+  form: WFormState; saving: boolean;
+  onChange: (f: WFormState) => void;
+  onClose: () => void; onSave: () => void;
+  submitLabel: string;
+}) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.48)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <style>{`
+        @keyframes wh-slide { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes wh-scale { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .wh-sheet { animation: wh-slide 0.28s cubic-bezier(0.32,0.72,0,1) forwards; }
+        @media (min-width: 640px) {
+          .wh-overlay { align-items: center !important; padding: 24px; }
+          .wh-sheet {
+            width: 460px !important; max-width: 460px !important;
+            border-radius: 20px !important;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.22) !important;
+            animation: wh-scale 0.2s cubic-bezier(0.34,1.56,0.64,1) forwards !important;
+          }
+        }
+      `}</style>
+      <div
+        className="wh-overlay"
+        style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        <div
+          className="wh-sheet"
+          style={{
+            width: '100%',
+            background: 'var(--surface)',
+            borderRadius: '24px 24px 0 0',
+            boxShadow: '0 -8px 48px rgba(0,0,0,0.18)',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Top accent line */}
+          <div style={{ height: 4, background: 'linear-gradient(90deg,var(--accent),#EA580C)', borderRadius: '4px 4px 0 0' }} />
+
+          <div style={{ padding: '20px 24px 28px' }}>
+            {/* Handle — mobile only */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <div className="sm:hidden" style={{ width: 36, height: 4, borderRadius: 4, background: 'var(--border)' }} />
+            </div>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 12,
+                  background: 'var(--accent-bg)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Warehouse size={18} style={{ color: 'var(--accent)' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{title}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                style={{
+                  width: 32, height: 32, borderRadius: 10, border: '1.5px solid var(--border)',
+                  background: 'var(--surface-2)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--text-muted)', flexShrink: 0,
+                }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Fields */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {[
+                { key: 'name',        label: 'Nama Gudang',    required: true,  placeholder: 'cth: Gudang Utama' },
+                { key: 'location',    label: 'Lokasi / Alamat',required: false, placeholder: 'cth: Jl. Mawar No. 5, Malang' },
+                { key: 'description', label: 'Keterangan',     required: false, placeholder: 'cth: Gudang untuk produk kering (opsional)' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                    {f.label} {f.required && <span style={{ color: 'var(--danger)' }}>*</span>}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={f.placeholder}
+                    value={form[f.key as keyof WFormState]}
+                    onChange={e => onChange({ ...form, [f.key]: e.target.value })}
+                    autoFocus={f.key === 'name'}
+                    className="input"
+                    style={{ fontSize: 13.5 }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button
+                onClick={onClose}
+                className="btn-ghost"
+                style={{ flex: 1, justifyContent: 'center', padding: '11px 0' }}
+              >
+                Batal
+              </button>
+              <button
+                onClick={onSave}
+                disabled={saving || !form.name.trim()}
+                className="btn-primary"
+                style={{ flex: 2, justifyContent: 'center', padding: '11px 0' }}
+              >
+                {saving && <Loader2 size={14} className="animate-spin" />}
+                {submitLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 export default function StockTab({ creds }: { creds: string }) {
@@ -357,103 +503,17 @@ export default function StockTab({ creds }: { creds: string }) {
         </div>
       )}
 
-      {/* Modal Create / Edit */}
-      {showWForm && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setShowWForm(false); }}
-        >
-          {/* Mobile: slide up from bottom | Desktop: scale-in centered */}
-          <div className="w-full sm:w-[480px] sm:max-w-[480px] p-6 space-y-5 animate-slide-up sm:animate-scale-in rounded-t-[20px] sm:rounded-[20px]"
-            style={{
-              background: 'var(--surface)',
-              boxShadow: '0 -4px 40px rgba(0,0,0,0.14)',
-            }}
-          >
-
-              {/* Handle bar — mobile only */}
-              <div className="flex justify-center -mt-1 mb-1 sm:hidden">
-                <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} />
-              </div>
-
-              {/* Title */}
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {editWarehouse ? 'Edit Gudang' : 'Tambah Gudang Baru'}
-                  </h3>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                    {editWarehouse ? 'Perbarui informasi gudang' : 'Isi detail gudang baru'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowWForm(false)}
-                  className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
-                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              {/* Fields */}
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                    Nama Gudang <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
-                  <input
-                    type="text" placeholder="cth: Gudang Utama"
-                    value={wForm.name}
-                    onChange={e => setWForm(f => ({ ...f, name: e.target.value }))}
-                    className="input text-sm" autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                    Lokasi / Alamat
-                  </label>
-                  <input
-                    type="text" placeholder="cth: Jl. Mawar No. 5, Malang"
-                    value={wForm.location}
-                    onChange={e => setWForm(f => ({ ...f, location: e.target.value }))}
-                    className="input text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                    Keterangan
-                    <span className="font-normal ml-1" style={{ color: 'var(--text-muted)' }}>(opsional)</span>
-                  </label>
-                  <input
-                    type="text" placeholder="cth: Gudang untuk produk kering"
-                    value={wForm.description}
-                    onChange={e => setWForm(f => ({ ...f, description: e.target.value }))}
-                    className="input text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2.5 pt-1">
-                <button
-                  onClick={() => setShowWForm(false)}
-                  className="btn-ghost flex-1 py-2.5 text-sm justify-center"
-                >
-                  Batal
-                </button>
-                <button
-                  onClick={saveWarehouse}
-                  disabled={savingW || !wForm.name.trim()}
-                  className="btn-primary flex-1 py-2.5 text-sm justify-center"
-                >
-                  {savingW && <Loader2 size={14} className="animate-spin" />}
-                  {editWarehouse ? 'Simpan Perubahan' : 'Tambah Gudang'}
-                </button>
-              </div>
-          </div>
-        </div>
-      )}
+      {/* Modal — di-portal ke document.body agar overlay cover full viewport */}
+      {showWForm && <WarehouseModal
+        title={editWarehouse ? 'Edit Gudang' : 'Tambah Gudang Baru'}
+        subtitle={editWarehouse ? 'Perbarui informasi gudang' : 'Isi detail gudang baru'}
+        form={wForm}
+        saving={savingW}
+        onChange={setWForm}
+        onClose={() => setShowWForm(false)}
+        onSave={saveWarehouse}
+        submitLabel={editWarehouse ? 'Simpan Perubahan' : 'Tambah Gudang'}
+      />}
     </div>
   );
 
