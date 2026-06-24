@@ -40,12 +40,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const data = await req.json() as {
     productId: string;
     productName: string;
+    warehouseName?: string;
     type: 'in' | 'out';
     qty: number;
     note?: string;
   };
 
-  const { productId, productName, type, qty, note } = data;
+  const { productId, productName, warehouseName, type, qty, note } = data;
   if (!productId || !type || !qty || qty <= 0) {
     return Response.json({ error: 'Data tidak valid' }, { status: 400 });
   }
@@ -56,7 +57,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   // Catat entri stok (audit trail)
   await db.collection('stock').add({
     warehouseId,
+    warehouseName: warehouseName ?? '',
     productId,
+    productName: productName ?? '',
     type,
     qty,
     note: note ?? '',
