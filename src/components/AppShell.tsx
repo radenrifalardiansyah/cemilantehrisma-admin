@@ -53,11 +53,13 @@ interface AppShellProps {
   cartCount: number;
   children: React.ReactNode;
   topbarActions?: React.ReactNode;
+  username?: string;
 }
 
 export default function AppShell({
   activeTab, setActiveTab, onLogout,
   hasCart, cartCount, children, topbarActions,
+  username = 'Admin',
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
@@ -108,9 +110,19 @@ export default function AppShell({
             justifyContent: collapsed ? 'center' : 'flex-start',
             paddingLeft: collapsed ? 0 : 16,
             transition: 'gap 0.26s, padding 0.26s',
+            position: 'relative',
+            overflow: 'hidden',
           }}
         >
-          <div className="relative flex-shrink-0">
+          {/* Ambient glow */}
+          <div style={{
+            position: 'absolute', top: -28, left: -28,
+            width: 150, height: 150, borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(212,105,30,0.20) 0%, transparent 68%)',
+            pointerEvents: 'none', zIndex: 0,
+          }} />
+
+          <div className="relative flex-shrink-0" style={{ zIndex: 1 }}>
             <Image
               src="/icon-192.png" alt="logo" width={34} height={34}
               className="rounded-xl"
@@ -122,7 +134,7 @@ export default function AppShell({
             />
           </div>
           {!collapsed && (
-            <div className="min-w-0 overflow-hidden">
+            <div className="min-w-0 overflow-hidden" style={{ zIndex: 1 }}>
               <p className="text-[13px] font-extrabold leading-tight truncate" style={{ color: '#EDD9C4' }}>
                 Cemilan Teh Risma
               </p>
@@ -189,7 +201,7 @@ export default function AppShell({
 
         {/* Footer */}
         <div
-          className="flex-shrink-0 px-2 pb-4 pt-2 space-y-0.5"
+          className="flex-shrink-0 px-2 pb-4 pt-2"
           style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
         >
           <a
@@ -206,22 +218,13 @@ export default function AppShell({
               </>
             )}
           </a>
-          <button
-            onClick={onLogout}
-            title={collapsed ? 'Keluar' : undefined}
-            className="sidebar-nav-item w-full"
-            style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-          >
-            <LogOut size={15} style={{ color: '#FF9090', flexShrink: 0 }} />
-            {!collapsed && <span className="whitespace-nowrap" style={{ color: '#FF9090' }}>Keluar</span>}
-          </button>
 
           {/* Collapse toggle */}
           <button
             onClick={toggleCollapse}
             title={collapsed ? 'Perlebar menu' : 'Perkecil menu'}
-            className="sidebar-nav-item w-full mt-1"
-            style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.65 }}
+            className="sidebar-nav-item w-full mb-2"
+            style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.6 }}
           >
             {collapsed
               ? <PanelLeftOpen  size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
@@ -229,6 +232,59 @@ export default function AppShell({
             }
             {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: '#8A6248' }}>Perkecil</span>}
           </button>
+
+          {/* User card — expanded */}
+          {!collapsed && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '9px 10px', borderRadius: 10,
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.07)',
+            }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                background: 'linear-gradient(135deg, #D4691E, #A84F10)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800, color: 'white',
+                boxShadow: '0 2px 6px rgba(212,105,30,0.35)',
+              }}>
+                {username[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#EDD9C4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+                  {username}
+                </p>
+                <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>Administrator</p>
+              </div>
+              <button
+                onClick={onLogout}
+                title="Keluar"
+                style={{
+                  width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+                  background: 'rgba(255,144,144,0.08)', border: '1px solid rgba(255,144,144,0.15)',
+                  color: '#FF9090', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,144,144,0.20)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,144,144,0.08)')}
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          )}
+
+          {/* User card — collapsed: logout icon */}
+          {collapsed && (
+            <button
+              onClick={onLogout}
+              title="Keluar"
+              className="sidebar-nav-item w-full mt-0.5"
+              style={{ justifyContent: 'center' }}
+            >
+              <LogOut size={15} style={{ color: '#FF9090', flexShrink: 0 }} />
+            </button>
+          )}
         </div>
       </aside>
 

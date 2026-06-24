@@ -62,40 +62,114 @@ const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
-// ─── Revenue Chart ────────────────────────────────────────────────────────────
+// ─── Revenue Chart — smooth bezier line + hover tooltip ──────────────────────
 function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
-  const maxVal = Math.max(...data.map(d => d.revenue), 1);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const n = data.length;
-  const W = 28, GAP = 10, H = 80, LH = 22;
-  const totalW = n * (W + GAP) - GAP;
+  if (n === 0) return null;
+
+  const VW = 560, VH = 128;
+  const PAD = { l: 6, r: 6, t: 22, b: 28 };
+  const iW = VW - PAD.l - PAD.r;
+  const iH = VH - PAD.t - PAD.b;
+  const maxVal = Math.max(...data.map(d => d.revenue), 1);
+
+  const pts = data.map((d, i) => ({
+    x: PAD.l + (n === 1 ? iW / 2 : (i / (n - 1)) * iW),
+    y: PAD.t + (1 - d.revenue / maxVal) * iH,
+    revenue: d.revenue, date: d.date, count: d.count,
+  }));
+
+  const linePath = n < 2 ? '' : pts.reduce((acc, pt, i) => {
+    if (i === 0) return `M ${pt.x},${pt.y}`;
+    const prev = pts[i - 1];
+    return `${acc} C ${prev.x + (pt.x - prev.x) * 0.45},${prev.y} ${prev.x + (pt.x - prev.x) * 0.55},${pt.y} ${pt.x},${pt.y}`;
+  }, '');
+
+  const fillPath = linePath
+    ? `${linePath} L ${pts[n-1].x},${PAD.t + iH} L ${pts[0].x},${PAD.t + iH} Z`
+    : '';
+
+  const lastPt = pts[n - 1];
+  const hPt = hoverIdx !== null ? pts[hoverIdx] : null;
   const step = n > 14 ? 3 : n > 7 ? 2 : 1;
+
   return (
-    <div className="no-scrollbar" style={{ overflowX: 'auto', paddingBottom: 2 }}>
-      <svg width={totalW} height={H + LH} style={{ display: 'block', overflow: 'visible' }}>
-        {data.map((d, i) => {
-          const barH = Math.max((d.revenue / maxVal) * H, d.revenue > 0 ? 6 : 3);
-          const x = i * (W + GAP);
-          const isToday = i === n - 1;
-          const showLabel = i % step === 0 || i === n - 1;
+    <div style={{ position: 'relative', userSelect: 'none' }}>
+      <svg
+        viewBox={`0 0 ${VW} ${VH}`}
+        style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+        onMouseMove={e => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const relX = ((e.clientX - rect.left) / rect.width) * VW;
+          let ci = 0, md = Infinity;
+          pts.forEach((pt, i) => { const d = Math.abs(pt.x - relX); if (d < md) { md = d; ci = i; } });
+          setHoverIdx(ci);
+        }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <defs>
+          <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#D4691E" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#D4691E" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+
+        {fillPath && <path d={fillPath} fill="url(#rev-fill)" />}
+        {linePath && <path d={linePath} fill="none" stroke="#D4691E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+
+        {/* Single point */}
+        {n === 1 && <circle cx={lastPt.x} cy={lastPt.y} r="5" fill="#D4691E" stroke="white" strokeWidth="2" />}
+
+        {/* Hover dashed vertical */}
+        {hPt && (
+          <line x1={hPt.x} y1={PAD.t} x2={hPt.x} y2={PAD.t + iH}
+            stroke="var(--border)" strokeWidth="1.5" strokeDasharray="4,3" />
+        )}
+
+        {/* Hover dot */}
+        {hPt && <circle cx={hPt.x} cy={hPt.y} r="5" fill="#D4691E" stroke="white" strokeWidth="2.5" />}
+
+        {/* Endpoint pulse (hari ini) */}
+        {n > 1 && hoverIdx !== n - 1 && (
+          <>
+            <circle cx={lastPt.x} cy={lastPt.y} r="10" fill="#D4691E" opacity="0.10" />
+            <circle cx={lastPt.x} cy={lastPt.y} r="4.5" fill="#D4691E" stroke="white" strokeWidth="2" />
+          </>
+        )}
+
+        {/* X-axis labels */}
+        {pts.map((pt, i) => {
+          if (i % step !== 0 && i !== n - 1) return null;
           return (
-            <g key={i}>
-              <rect x={x} y={H - barH} width={W} height={barH} rx="5"
-                fill={isToday ? '#D4691E' : 'rgba(212,105,30,0.2)'} />
-              {d.count > 0 && (
-                <text x={x + W / 2} y={H - barH - 4} textAnchor="middle" fontSize="9"
-                  fill={isToday ? '#7A3A0C' : '#9E8E72'} fontWeight="700">
-                  {d.count}x
-                </text>
-              )}
-              {showLabel && (
-                <text x={x + W / 2} y={H + LH - 3} textAnchor="middle" fontSize="8.5" fill="#9E8E72">
-                  {shortDate(d.date)}
-                </text>
-              )}
-            </g>
+            <text key={i} x={pt.x} y={VH - 4} textAnchor="middle" fontSize="9" fill="#A08468">
+              {shortDate(pt.date)}
+            </text>
           );
         })}
       </svg>
+
+      {/* Tooltip */}
+      {hPt && hPt.revenue > 0 && (
+        <div style={{
+          position: 'absolute',
+          left: `${(hPt.x / VW) * 100}%`,
+          top: `${(hPt.y / VH) * 100}%`,
+          transform: 'translate(-50%, calc(-100% - 10px))',
+          background: 'var(--text-primary)',
+          color: 'white',
+          padding: '5px 10px',
+          borderRadius: 8,
+          fontSize: 11, fontWeight: 700,
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+          zIndex: 10,
+        }}>
+          {formatRp(hPt.revenue)}
+          {hPt.count > 0 && <span style={{ opacity: 0.6, marginLeft: 5, fontSize: 10 }}>{hPt.count}x</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -514,19 +588,22 @@ export default function AdminPage() {
           {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { icon: <Receipt  size={16}/>, label: 'Total Pesanan',  val: dashData.orderCount.toString(),   color: 'var(--accent)' },
-              { icon: <TrendingUp size={16}/>, label: 'Total Omzet', val: formatRp(dashData.revenue),        color: 'var(--success)' },
-              { icon: <Package  size={16}/>, label: 'Produk Aktif',  val: dashData.productCount.toString(),  color: '#0284C7' },
-              { icon: <Users    size={16}/>, label: 'Total Reseller', val: dashData.resellerCount.toString(), color: '#7C3AED' },
+              { icon: <Receipt    size={16}/>, label: 'Total Pesanan',  val: dashData.orderCount.toString(),   color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: '#D4691E,#A84F10' },
+              { icon: <TrendingUp size={16}/>, label: 'Total Omzet',    val: formatRp(dashData.revenue),       color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
+              { icon: <Package    size={16}/>, label: 'Produk Aktif',   val: dashData.productCount.toString(), color: '#0284C7',        iconBg: '#EFF6FF',           bar: '#0284C7,#0369A1' },
+              { icon: <Users      size={16}/>, label: 'Total Reseller', val: dashData.resellerCount.toString(),color: '#7C3AED',        iconBg: '#F5F3FF',           bar: '#7C3AED,#6D28D9' },
             ].map((c, i) => (
-              <div key={i} className="card relative p-4 overflow-hidden">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
-                  style={{ background: 'var(--accent-bg)', color: c.color }}>
+              <div key={i} className="card relative p-4 overflow-hidden"
+                style={{ transition: 'transform 0.18s, box-shadow 0.18s', cursor: 'default' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 8px 24px rgba(30,16,8,0.10)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = ''; (e.currentTarget as HTMLDivElement).style.boxShadow = ''; }}
+              >
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: c.iconBg, color: c.color, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
                   {c.icon}
                 </div>
-                <p className="text-xl font-extrabold tabular leading-tight mb-0.5" style={{ color: 'var(--text-primary)' }}>{c.val}</p>
-                <p className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-                <div className="stat-card-accent" />
+                <p className="tabular" style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text-primary)', lineHeight: 1.15, marginBottom: 4 }}>{c.val}</p>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>{c.label}</p>
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, borderRadius: '0 0 12px 12px', background: `linear-gradient(90deg, ${c.bar})` }} />
               </div>
             ))}
           </div>
@@ -562,16 +639,18 @@ export default function AdminPage() {
               </div>
               <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
                 {dashData.recentOrders.map((o, i) => (
-                  <div key={i} className="px-5 py-3.5 flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black flex-shrink-0"
-                      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                      {i + 1}
-                    </span>
+                  <div key={i} className="px-5 py-3.5 flex items-center gap-3"
+                    style={{ transition: 'background 0.12s', cursor: 'default' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                  >
+                    {/* Status dot */}
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: 'var(--success)', boxShadow: '0 0 0 3px rgba(21,128,61,0.12)' }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{o.date}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{o.date}</p>
                     </div>
-                    <span className="text-sm font-extrabold tabular flex-shrink-0" style={{ color: 'var(--accent)' }}>
+                    <span className="text-sm font-extrabold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>
                       {formatRp(o.total)}
                     </span>
                   </div>
@@ -990,6 +1069,7 @@ export default function AdminPage() {
   );
 
   // ─── Main render ──────────────────────────────────────────
+  const adminUsername = creds ? creds.split(':')[0] : 'Admin';
   return (
     <AppShell
       activeTab={activeTab}
@@ -997,6 +1077,7 @@ export default function AdminPage() {
       onLogout={logout}
       hasCart={hasCart}
       cartCount={cartCount}
+      username={adminUsername}
     >
       {activeTab === 'dashboard'  && dashboardContent}
       {activeTab === 'pos'        && posContent}
