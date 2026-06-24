@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
   // Ambil semua produk
   const productsSnap = await db.collection('products').orderBy('createdAt', 'desc').get();
-  const products = productsSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+  const products = productsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<{ id: string; name: string }>;
 
   // Ambil warehouse_stock untuk gudang ini
   const stockSnap = await db.collection('warehouse_stock')
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
   const stocks = products.map(p => ({
     productId: p.id,
-    productName: p.name as string,
+    productName: p.name,
     stockQty: stockMap.get(p.id) ?? 0,
   }));
 
