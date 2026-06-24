@@ -5,7 +5,7 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon, Tag,
+  ChevronLeft, ChevronRight, ImageIcon,
 } from 'lucide-react';
 
 const API       = '';
@@ -17,6 +17,7 @@ interface FireProduct {
   price: number; originalPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
   bgColor: string; weight: string; stockQty?: number; order?: number;
+  code?: string;
 }
 
 interface FireCategory {
@@ -28,6 +29,7 @@ const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
   name: '', description: '', details: [''], price: 0, emoji: '🛍️',
   imageUrls: [], category: '', badge: '', stock: 'ready',
   gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309', weight: '', stockQty: 0,
+  code: '',
 };
 
 const EMPTY_CAT: Omit<FireCategory, 'id'> & { slug: string } = {
@@ -336,7 +338,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const goPage    = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const resetPage = () => setPage(1);
 
-  const catName = (id: string) => categories.find(c => c.id === id)?.name ?? id;
+  const catName  = (id: string) => categories.find(c => c.id === id)?.name  ?? id;
+  const catEmoji = (id: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -682,6 +685,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
+                            {p.code && (
+                              <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                {p.code}
+                              </span>
+                            )}
                             {p.badge && <span className="badge badge-amber">{p.badge}</span>}
                             {!p.imageUrls?.length && (
                               <span className="badge badge-gray flex items-center gap-1">
@@ -696,7 +705,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             {p.category && (
                               <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                                 style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                                <Tag size={8} /> {catName(p.category)}
+                                <span style={{ fontSize: 9, lineHeight: 1 }}>{catEmoji(p.category)}</span>
+                                {catName(p.category)}
                               </span>
                             )}
                           </div>
@@ -860,6 +870,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {([
                       { label: 'Nama Produk *',    key: 'name'     as const, type: 'text' },
+                      { label: 'Kode Produk',       key: 'code'     as const, type: 'text' },
                       { label: 'Emoji',             key: 'emoji'    as const, type: 'text' },
                       { label: 'Berat / Ukuran',    key: 'weight'   as const, type: 'text' },
                       { label: 'Warna BG (hex)',    key: 'bgColor'  as const, type: 'text' },
