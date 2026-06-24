@@ -190,13 +190,41 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const addDetail    = () => editing && setEditing({ ...editing, details: [...editing.details, ''] });
   const removeDetail = (idx: number) => editing && setEditing({ ...editing, details: editing.details.filter((_, i) => i !== idx) });
 
+  const compressImage = async (file: File): Promise<File> => {
+    const MAX_PX = 1200;
+    const bitmap = await createImageBitmap(file);
+    const scale  = Math.min(1, MAX_PX / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+    return new Promise(resolve =>
+      canvas.toBlob(
+        blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })),
+        'image/jpeg', 0.82,
+      ),
+    );
+  };
+
   const uploadImage = async (file: File) => {
     setUploading(true);
-    const form = new FormData();
-    form.append('file', file); form.append('folder', 'products');
-    const r = await fetch(`${API}/api/upload`, { method: 'POST', headers, body: form });
-    if (r.ok) { const { url } = await r.json() as { url: string }; if (editing) setEditing({ ...editing, imageUrls: [...editing.imageUrls, url] }); }
-    setUploading(false);
+    try {
+      const compressed = await compressImage(file);
+      const form = new FormData();
+      form.append('file', compressed);
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers, body: form });
+      if (r.ok) {
+        const { url } = await r.json() as { url: string };
+        if (editing) setEditing({ ...editing, imageUrls: [...editing.imageUrls, url] });
+      } else {
+        const { error } = await r.json() as { error?: string };
+        alert(error ?? 'Upload gagal');
+      }
+    } finally {
+      setUploading(false);
+    }
   };
 
   const save = async () => {
