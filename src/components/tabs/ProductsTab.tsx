@@ -5,7 +5,7 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon, ArrowUp, ArrowDown, ListOrdered,
+  ChevronLeft, ChevronRight, ImageIcon,
 } from 'lucide-react';
 
 const API       = '';
@@ -73,7 +73,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [page,         setPage]         = useState(1);
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
   const [bulkDeleting,   setBulkDeleting]   = useState(false);
-  const [savingOrder,    setSavingOrder]    = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
@@ -172,45 +171,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
     setBulkDeleting(false);
   };
 
-  const saveOrder = async (orders: { id: string; order: number }[]) => {
-    await fetch(`${API}/api/products/reorder`, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orders }),
-    });
-  };
-
-  const initOrder = async () => {
-    setSavingOrder(true);
-    const sorted = [...products].sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
-    const orders = sorted.map((p, i) => ({ id: p.id, order: i + 1 }));
-    setProducts(sorted.map((p, i) => ({ ...p, order: i + 1 })));
-    await saveOrder(orders);
-    setSavingOrder(false);
-  };
-
-  const moveItem = async (id: string, dir: 'up' | 'down') => {
-    // operate on the currently filtered+sorted list
-    const list = [...filtered];
-    const idx  = list.findIndex(p => p.id === id);
-    if (idx === -1) return;
-    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= list.length) return;
-
-    const aOrder = list[idx].order   ?? idx + 1;
-    const bOrder = list[swapIdx].order ?? swapIdx + 1;
-    const aId    = list[idx].id;
-    const bId    = list[swapIdx].id;
-
-    setProducts(prev => prev.map(p => {
-      if (p.id === aId) return { ...p, order: bOrder };
-      if (p.id === bId) return { ...p, order: aOrder };
-      return p;
-    }));
-
-    await saveOrder([{ id: aId, order: bOrder }, { id: bId, order: aOrder }]);
-  };
-
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -226,7 +186,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
   };
 
   // Filter + sort by order + pagination
-  const hasOrder = products.some(p => p.order !== undefined);
   const filtered = products
     .filter(p => {
       const matchCat = catFilter === 'semua' || p.category === catFilter;
@@ -267,12 +226,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
             <button onClick={syncImages} disabled={syncing} className="btn-ghost text-xs py-2">
               {syncing ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
               {syncing ? 'Sync…' : 'Sync Gambar'}
-            </button>
-          )}
-          {products.length > 0 && !hasOrder && (
-            <button onClick={initOrder} disabled={savingOrder} className="btn-ghost text-xs py-2">
-              {savingOrder ? <Loader2 size={13} className="animate-spin" /> : <ListOrdered size={13} />}
-              Atur Urutan
             </button>
           )}
           <button onClick={openNew} className="btn-primary text-xs py-2">
@@ -352,10 +305,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
             ) : paginated.map((p, idx) => {
               const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
               const isSelected = selected.has(p.id);
-              // position in the full filtered list
-              const globalIdx  = filtered.findIndex(x => x.id === p.id);
-              const isFirst    = globalIdx === 0;
-              const isLast     = globalIdx === filtered.length - 1;
+              const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
               return (
                 <div key={p.id}
                   style={{
@@ -366,31 +316,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   <div className="flex items-center gap-2 px-4 py-3.5">
                     <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
 
-                    {/* Order number */}
-                    {hasOrder && (
-                      <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                        <button
-                          onClick={() => moveItem(p.id, 'up')}
-                          disabled={isFirst}
-                          className="w-5 h-5 rounded flex items-center justify-center transition-colors disabled:opacity-20"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          <ArrowUp size={11} />
-                        </button>
-                        <span className="text-[10px] font-black tabular leading-none"
-                          style={{ color: 'var(--text-muted)', minWidth: 16, textAlign: 'center' }}>
-                          {globalIdx + 1}
-                        </span>
-                        <button
-                          onClick={() => moveItem(p.id, 'down')}
-                          disabled={isLast}
-                          className="w-5 h-5 rounded flex items-center justify-center transition-colors disabled:opacity-20"
-                          style={{ color: 'var(--text-muted)' }}
-                        >
-                          <ArrowDown size={11} />
-                        </button>
-                      </div>
-                    )}
+                    {/* Row number */}
+                    <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center"
+                      style={{ color: 'var(--text-muted)' }}>
+                      {rowNum}
+                    </span>
 
                     {/* Thumbnail */}
                     <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
