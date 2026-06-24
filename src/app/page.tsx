@@ -80,10 +80,10 @@ function RevenueChart({ data }: { data: { date: string; revenue: number; count: 
           return (
             <g key={i}>
               <rect x={x} y={H - barH} width={W} height={barH} rx="5"
-                fill={isToday ? '#D97706' : '#D9770630'} />
+                fill={isToday ? '#D4691E' : 'rgba(212,105,30,0.2)'} />
               {d.count > 0 && (
                 <text x={x + W / 2} y={H - barH - 4} textAnchor="middle" fontSize="9"
-                  fill={isToday ? '#92400E' : '#9E8E72'} fontWeight="700">
+                  fill={isToday ? '#7A3A0C' : '#9E8E72'} fontWeight="700">
                   {d.count}x
                 </text>
               )}
@@ -173,7 +173,7 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
         )}
         {qty > 0 && <div className="absolute inset-0 bg-black/15" />}
         {qty > 0 && (
-          <div className="absolute top-2 right-2 min-w-[24px] h-6 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center px-1.5 shadow ring-2 ring-white">
+          <div className="absolute top-2 right-2 min-w-[24px] h-6 rounded-full text-white text-[11px] font-black flex items-center justify-center px-1.5 shadow ring-2 ring-white" style={{ background: 'var(--accent)' }}>
             {qty}
           </div>
         )}
@@ -200,7 +200,7 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
               </button>
               <span className="text-[13px] font-black w-4 text-center tabular" style={{ color: 'var(--text-primary)' }}>{qty}</span>
               <button onClick={e => { e.stopPropagation(); onAdd(); }}
-                className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center">
+                className="w-6 h-6 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
                 <Plus size={10} strokeWidth={2.5} />
               </button>
             </div>
@@ -420,7 +420,7 @@ export default function AdminPage() {
   if (checking) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--ground)' }}>
       <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 border-[3px] border-amber-400 border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-[3px] rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
         <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Memuat dashboard…</p>
       </div>
     </div>
@@ -517,7 +517,7 @@ export default function AdminPage() {
               { icon: <Receipt  size={16}/>, label: 'Total Pesanan',  val: dashData.orderCount.toString(),   color: 'var(--accent)' },
               { icon: <TrendingUp size={16}/>, label: 'Total Omzet', val: formatRp(dashData.revenue),        color: 'var(--success)' },
               { icon: <Package  size={16}/>, label: 'Produk Aktif',  val: dashData.productCount.toString(),  color: '#0284C7' },
-              { icon: <Users    size={16}/>, label: 'Total Reseller', val: dashData.resellerCount.toString(), color: '#D97706' },
+              { icon: <Users    size={16}/>, label: 'Total Reseller', val: dashData.resellerCount.toString(), color: '#7C3AED' },
             ].map((c, i) => (
               <div key={i} className="card relative p-4 overflow-hidden">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
@@ -605,11 +605,11 @@ export default function AdminPage() {
       {/* Web stats error banner */}
       {dashData?.webStatsErr && (
         <div className="rounded-2xl px-4 py-3.5 flex items-start gap-3"
-          style={{ background: '#FFF7ED', border: '1px solid #FDE68A' }}>
+          style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-light)' }}>
           <span className="text-base flex-shrink-0">⚠️</span>
           <div>
-            <p className="text-xs font-semibold" style={{ color: '#92400E' }}>Data pengunjung tidak tersedia</p>
-            <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>{dashData.webStatsErr}</p>
+            <p className="text-xs font-semibold" style={{ color: 'var(--accent-dark)' }}>Data pengunjung tidak tersedia</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--warning)' }}>{dashData.webStatsErr}</p>
           </div>
         </div>
       )}
@@ -630,7 +630,7 @@ export default function AdminPage() {
                 { icon: <Users      size={15}/>, label: 'Pengunjung Unik', val: ws.visitors.toLocaleString('id'),  color: '#0284C7', bg: '#EFF6FF' },
                 { icon: <Eye        size={15}/>, label: 'Total Pageview',  val: ws.pageViews.toLocaleString('id'), color: '#7C3AED', bg: '#F5F3FF' },
                 { icon: <BarChart2  size={15}/>, label: 'Hlm / Pengunjung',val: avgPages,                          color: '#059669', bg: '#ECFDF5' },
-                { icon: <Eye        size={15}/>, label: 'Pageview Hari Ini',val: todayViews.toString(),             color: '#D97706', bg: '#FFFBEB' },
+                { icon: <Eye        size={15}/>, label: 'Pageview Hari Ini',val: todayViews.toString(),             color: 'var(--accent)', bg: 'var(--accent-bg)' },
               ].map((c, i) => (
                 <div key={i} className="card relative p-4 overflow-hidden">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
@@ -715,7 +715,7 @@ export default function AdminPage() {
                     return (
                       <div key={i} className="px-5 py-3.5 flex items-center gap-3">
                         <span className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0"
-                          style={{ background: i === 0 ? '#FFFBEB' : 'var(--surface-2)', color: i === 0 ? '#D97706' : 'var(--text-muted)' }}>
+                          style={{ background: i === 0 ? 'var(--accent-bg)' : 'var(--surface-2)', color: i === 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">
@@ -792,10 +792,10 @@ export default function AdminPage() {
           style={{ background: 'linear-gradient(to top, var(--ground) 70%, transparent)' }}>
           <button onClick={() => setPosView('cart')}
             className="w-full flex items-center gap-3 px-5 py-4 rounded-2xl text-white font-bold shadow-2xl"
-            style={{ background: 'linear-gradient(135deg,#D97706,#EA580C)' }}>
+            style={{ background: 'linear-gradient(135deg,#E8821A,#C96018)' }}>
             <div className="relative">
               <ShoppingCart size={19} />
-              <span className="absolute -top-2 -right-2.5 w-5 h-5 rounded-full bg-white text-amber-600 text-[10px] font-black flex items-center justify-center shadow">
+              <span className="absolute -top-2 -right-2.5 w-5 h-5 rounded-full bg-white text-[10px] font-black flex items-center justify-center shadow" style={{ color: 'var(--accent)' }}>
                 {cartCount}
               </span>
             </div>
@@ -845,7 +845,7 @@ export default function AdminPage() {
                   </button>
                   <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
                   <button onClick={() => addToCart(item.productId)}
-                    className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center">
+                    className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
                     <Plus size={11} strokeWidth={2.5} />
                   </button>
                 </div>
@@ -886,7 +886,7 @@ export default function AdminPage() {
             {(['percent', 'nominal'] as const).map(t => (
               <button key={t} onClick={() => { setDiscountType(t); setDiscountRaw(''); }}
                 className="px-3.5 py-2.5 transition-all"
-                style={discountType === t ? { background: 'linear-gradient(135deg,#D97706,#EA580C)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                style={discountType === t ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
                 {t === 'percent' ? '%' : 'Rp'}
               </button>
             ))}
@@ -974,7 +974,7 @@ export default function AdminPage() {
           {posView === 'products' && hasCart && (
             <button onClick={() => setPosView('cart')} className="btn-ghost gap-2 text-xs py-2">
               <ShoppingCart size={14} />
-              <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center justify-center">
+              <span className="w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center" style={{ background: 'var(--accent)' }}>
                 {cartCount}
               </span>
             </button>

@@ -84,7 +84,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
       <div className="grid grid-cols-4 gap-3">
         {[
           { icon: <Users     size={15}/>, label: 'Total',     val: counts.all,      color: 'var(--accent)' },
-          { icon: <Clock     size={15}/>, label: 'Menunggu',  val: counts.pending,  color: '#D97706' },
+          { icon: <Clock     size={15}/>, label: 'Menunggu',  val: counts.pending,  color: 'var(--warning)' },
           { icon: <UserCheck size={15}/>, label: 'Disetujui', val: counts.approved, color: 'var(--success)' },
           { icon: <UserX     size={15}/>, label: 'Ditolak',   val: counts.rejected, color: 'var(--danger)' },
         ].map((c, i) => (

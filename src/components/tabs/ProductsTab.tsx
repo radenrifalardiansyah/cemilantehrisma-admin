@@ -658,7 +658,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     <div key={p.id}
                       style={{
                         borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined,
-                        background: isSelected ? 'rgba(217,119,6,0.05)' : undefined,
+                        background: isSelected ? 'rgba(212,105,30,0.05)' : undefined,
                         transition: 'background 0.1s',
                       }}>
                       <div className="flex items-center gap-2 px-4 py-3.5">

@@ -85,7 +85,7 @@ export default function AdminSplashScreen() {
               <motion.div
                 key={i}
                 className="w-2 h-2 rounded-full"
-                style={{ background: '#D97706' }}
+                style={{ background: 'var(--accent)' }}
                 animate={{ scale: [1, 1.5, 1], opacity: [0.3, 1, 0.3] }}
                 transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
               />

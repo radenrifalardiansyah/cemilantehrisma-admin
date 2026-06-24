@@ -98,7 +98,7 @@ function WarehouseModal({
           }}
         >
           {/* Top accent line */}
-          <div style={{ height: 4, background: 'linear-gradient(90deg,var(--accent),#EA580C)', borderRadius: '4px 4px 0 0' }} />
+          <div style={{ height: 4, background: 'linear-gradient(90deg,var(--accent),var(--accent-dark))', borderRadius: '4px 4px 0 0' }} />
 
           <div style={{ padding: '20px 24px 28px' }}>
             {/* Handle — mobile only */}
