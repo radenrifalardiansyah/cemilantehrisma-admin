@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
   X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, Package,
-  ArrowLeftRight, Check, Clock,
+  ArrowLeftRight, Check, Clock, ImageIcon,
 } from 'lucide-react';
+import { useViewMode, type ViewMode } from '@/lib/useViewMode';
+import ViewToggle from '@/components/ViewToggle';
+import ScrollChips from '@/components/ScrollChips';
 
 const API = '';
 
@@ -45,7 +49,7 @@ interface TxEntry {
   productName?: string;
   qty: number;
   note?: string;
-  createdAt?: { seconds: number };
+  createdAt?: { seconds?: number; _seconds?: number };
 }
 
 interface Product {
@@ -53,11 +57,20 @@ interface Product {
   name: string;
   emoji: string;
   bgColor: string;
+  imageUrls?: string[];
+  category?: string;
+}
+
+interface Category {
+  id: string;
+  label: string;
+  emoji: string;
 }
 
 function formatDate(entry: Pick<TxEntry, 'createdAt'>) {
-  if (entry.createdAt?.seconds)
-    return new Date(entry.createdAt.seconds * 1000).toLocaleDateString('id-ID', {
+  const seconds = entry.createdAt?.seconds ?? entry.createdAt?._seconds;
+  if (seconds)
+    return new Date(seconds * 1000).toLocaleDateString('id-ID', {
       day: 'numeric', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
@@ -133,17 +146,24 @@ function WarehouseModal({
 
 // ── TxList — shared transaction list component ────────────────────────────────
 function TxList({
-  entries, loading, emptyLabel, warehouses, products,
+  entries, loading, emptyLabel, warehouses, products, view,
 }: {
   entries: TxEntry[];
   loading: boolean;
   emptyLabel: string;
   warehouses: WarehouseData[];
   products: Product[];
+  view: ViewMode;
 }) {
   const wName = (id?: string) => warehouses.find(w => w.id === id)?.name ?? id ?? '–';
   const pName = (entry: TxEntry) => entry.productName || products.find(p => p.id === entry.productId)?.name || entry.productId;
   const pEmoji = (id: string) => products.find(p => p.id === id)?.emoji ?? '📦';
+
+  const typeBadge = (type: TxEntry['type']) => {
+    if (type === 'in')       return { label: 'Masuk',    Icon: TrendingUp,     color: 'var(--success)', bg: 'var(--success-bg)' };
+    if (type === 'out')      return { label: 'Keluar',   Icon: TrendingDown,   color: 'var(--danger)',  bg: 'var(--danger-bg)'  };
+    return                          { label: 'Transfer', Icon: ArrowLeftRight, color: '#0284C7',        bg: '#EFF6FF'            };
+  };
 
   if (loading) return (
     <div className="flex justify-center py-12">
@@ -158,55 +178,107 @@ function TxList({
     </div>
   );
 
-  return (
+  const rows = entries.map(e => {
+    const isIn = e.type === 'in';
+    const isTransfer = e.type === 'transfer';
+    const badge = typeBadge(e.type);
+    const locationLabel = isTransfer
+      ? `${e.fromWarehouseName || wName(e.fromWarehouseId)}  →  ${e.toWarehouseName || wName(e.toWarehouseId)}`
+      : (e.warehouseName || wName(e.warehouseId));
+    return { e, isIn, isTransfer, badge, locationLabel };
+  });
+
+  if (view === 'table') return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {entries.map(e => {
-        const isIn = e.type === 'in';
-        const isTransfer = e.type === 'transfer';
-        const color = isIn ? 'var(--success)' : isTransfer ? '#0284C7' : 'var(--danger)';
-        const bg    = isIn ? 'var(--success-bg)' : isTransfer ? '#EFF6FF' : 'var(--danger-bg)';
-
-        let locationLabel = '';
-        if (isTransfer) {
-          locationLabel = `${wName(e.fromWarehouseName ? undefined : e.fromWarehouseId) || e.fromWarehouseName} → ${wName(e.toWarehouseName ? undefined : e.toWarehouseId) || e.toWarehouseName}`;
-          if (e.fromWarehouseName && e.toWarehouseName) locationLabel = `${e.fromWarehouseName} → ${e.toWarehouseName}`;
-        } else {
-          locationLabel = e.warehouseName || wName(e.warehouseId);
-        }
-
-        return (
-          <div key={e.id} style={{
-            display: 'flex', alignItems: 'center', gap: 12,
-            padding: '10px 14px', borderRadius: 12,
-            background: 'var(--surface)', border: '1px solid var(--border-2)',
+      {rows.map(({ e, isIn, isTransfer, badge, locationLabel }) => (
+        <div key={e.id} style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 14px', borderRadius: 12,
+          background: 'var(--surface)', border: '1px solid var(--border-2)',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: badge.bg, fontSize: 16,
           }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: bg, fontSize: 16,
-            }}>
-              {pEmoji(e.productId)}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {pEmoji(e.productId)}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="flex items-center gap-1.5">
               <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {pName(e)}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {locationLabel}
-                {e.note ? ` · ${e.note}` : ''}
-              </p>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
+                fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em',
+                color: badge.color, background: badge.bg, borderRadius: 999, padding: '1.5px 6px 1.5px 5px',
+              }}>
+                <badge.Icon size={9} strokeWidth={2.5} /> {badge.label}
+              </span>
             </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <p style={{ fontSize: 13, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>
-                {isIn ? '+' : isTransfer ? '' : '–'}{e.qty} unit
+            <p style={{
+              fontSize: 11, color: 'var(--text-muted)', marginTop: 2,
+              display: 'flex', alignItems: 'center', gap: 4,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {isTransfer ? <ArrowLeftRight size={10} style={{ flexShrink: 0 }} /> : <Warehouse size={10} style={{ flexShrink: 0 }} />}
+              {locationLabel}
+            </p>
+            {e.note && (
+              <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 1, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                &ldquo;{e.note}&rdquo;
               </p>
-              <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                {formatDate(e)}
-              </p>
-            </div>
+            )}
           </div>
-        );
-      })}
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: badge.color, fontVariantNumeric: 'tabular-nums' }}>
+              {isIn ? '+' : isTransfer ? '' : '–'}{e.qty} unit
+            </p>
+            <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+              {formatDate(e)}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {rows.map(({ e, isIn, isTransfer, badge, locationLabel }) => (
+        <div key={e.id} className="card p-4" style={{ borderColor: 'var(--border-2)' }}>
+          <div className="flex items-center justify-between mb-2">
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: badge.bg, fontSize: 18,
+            }}>
+              {pEmoji(e.productId)}
+            </div>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em',
+              color: badge.color, background: badge.bg, borderRadius: 999, padding: '2px 7px 2px 6px',
+            }}>
+              <badge.Icon size={9} strokeWidth={2.5} /> {badge.label}
+            </span>
+          </div>
+          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{pName(e)}</p>
+          <p className="text-xs mt-1 flex items-center gap-1.5 truncate" style={{ color: 'var(--text-muted)' }}>
+            {isTransfer ? <ArrowLeftRight size={11} style={{ flexShrink: 0 }} /> : <Warehouse size={11} style={{ flexShrink: 0 }} />}
+            {locationLabel}
+          </p>
+          {e.note && (
+            <p className="text-xs mt-1 italic truncate" style={{ color: 'var(--text-muted)' }}>&ldquo;{e.note}&rdquo;</p>
+          )}
+          <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+            <p className="text-sm font-extrabold tabular" style={{ color: badge.color }}>
+              {isIn ? '+' : isTransfer ? '' : '–'}{e.qty} unit
+            </p>
+            <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>{formatDate(e)}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -215,9 +287,11 @@ function TxList({
 export default function StockTab({
   creds,
   products = [],
+  categories = [],
 }: {
   creds: string;
   products?: Product[];
+  categories?: Category[];
 }) {
   const [subTab, setSubTab] = useState<SubTab>('stok');
 
@@ -233,6 +307,8 @@ export default function StockTab({
   const [stocks, setStocks]                         = useState<ProductStock[]>([]);
   const [stockLoading, setStockLoading]             = useState(false);
   const [hoveredCard, setHoveredCard]               = useState<string | null>(null);
+  const [stockCatFilter, setStockCatFilter]         = useState('semua');
+  const [historyView, setHistoryView]               = useViewMode('stock-history');
 
   // Warehouse CRUD
   const [showWForm, setShowWForm]       = useState(false);
@@ -300,6 +376,7 @@ export default function StockTab({
   const openWarehouse = async (w: WarehouseData) => {
     setSelectedWarehouse(w);
     setStokView('stock');
+    setStockCatFilter('semua');
     await loadStock(w.id);
   };
 
@@ -307,6 +384,7 @@ export default function StockTab({
     setStokView('warehouses');
     setSelectedWarehouse(null);
     setStocks([]);
+    setStockCatFilter('semua');
   };
 
   const openCreate = () => {
@@ -411,8 +489,8 @@ export default function StockTab({
     <div className="flex flex-col" style={{ height: '100%' }}>
 
       {/* Sub-navigation */}
-      <div
-        className="flex-shrink-0 flex gap-1.5 px-4 pt-3.5 pb-3 overflow-x-auto no-scrollbar"
+      <ScrollChips
+        className="flex-shrink-0 px-4 pt-3.5 pb-3"
         style={{ borderBottom: '1px solid var(--border-2)' }}
       >
         {SUB_TABS.map(tab => {
@@ -428,7 +506,7 @@ export default function StockTab({
             </button>
           );
         })}
-      </div>
+      </ScrollChips>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto thin-scrollbar">
@@ -611,38 +689,88 @@ export default function StockTab({
                 <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada stok</p>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan stok lewat menu <strong>Masuk</strong>.</p>
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {stocks.map(s => {
-                  const prod    = products.find(p => p.name === s.productName);
-                  const emoji   = prod?.emoji   ?? '📦';
-                  const bgColor = prod?.bgColor ?? '#F5F0E9';
-                  const qty = s.stockQty;
-                  const qtyStyle = qty === 0
-                    ? { bg: '#FEF2F2', color: '#DC2626', border: '#FECACA' }
-                    : qty < 10
-                      ? { bg: '#FDF0E6', color: '#A84F10', border: 'rgba(212,105,30,0.25)' }
-                      : { bg: '#F0FDF4', color: '#15803D', border: '#D1FAE5' };
-                  return (
-                    <div key={s.productId} className="card overflow-hidden flex flex-col select-none">
-                      <div className="relative w-full aspect-square" style={{ background: `${bgColor}22` }}>
-                        <div className="absolute inset-0 flex items-center justify-center text-4xl">{emoji}</div>
-                        <div className="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-full"
-                          style={{ background: qtyStyle.bg, color: qtyStyle.color, border: `1px solid ${qtyStyle.border}` }}>
-                          {qty} unit
-                        </div>
-                      </div>
-                      <div className="px-3 pt-2 pb-3">
-                        <p className="text-[11px] font-bold leading-snug line-clamp-2"
-                          style={{ color: 'var(--text-primary)' }}>
-                          {s.productName}
-                        </p>
-                      </div>
+            ) : (() => {
+              const withCat = stocks.map(s => ({ ...s, category: products.find(p => p.id === s.productId)?.category ?? '' }));
+              const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;
+              const catEmoji = (id: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
+              const catIds = Array.from(new Set(withCat.map(s => s.category).filter(Boolean)));
+              const catCounts = catIds.map(id => ({ id, label: catLabel(id), emoji: catEmoji(id), count: withCat.filter(s => s.category === id).length }));
+              const visible = stockCatFilter === 'semua' ? withCat : withCat.filter(s => s.category === stockCatFilter);
+
+              return (
+                <>
+                  {catCounts.length > 0 && (
+                    <ScrollChips className="mb-4">
+                      <button onClick={() => setStockCatFilter('semua')}
+                        className={`tab-chip text-xs py-1.5 ${stockCatFilter === 'semua' ? 'active' : ''}`}>
+                        Semua ({withCat.length})
+                      </button>
+                      {catCounts.map(c => (
+                        <button key={c.id} onClick={() => setStockCatFilter(c.id)}
+                          className={`tab-chip text-xs py-1.5 ${stockCatFilter === c.id ? 'active' : ''}`}>
+                          {c.emoji} {c.label} ({c.count})
+                        </button>
+                      ))}
+                    </ScrollChips>
+                  )}
+
+                  {visible.length === 0 ? (
+                    <div className="rounded-2xl p-12 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Tidak ada produk di kategori ini.</p>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {visible.map(s => {
+                        const prod    = products.find(p => p.id === s.productId);
+                        const imgUrl  = prod?.imageUrls?.[0];
+                        const emoji   = prod?.emoji   ?? '📦';
+                        const bgColor = prod?.bgColor ?? '#F5F0E9';
+                        const qty = s.stockQty;
+                        const qtyStyle = qty === 0
+                          ? { bg: '#FEF2F2', color: '#DC2626', border: '#FECACA' }
+                          : qty < 10
+                            ? { bg: '#FDF0E6', color: '#A84F10', border: 'rgba(212,105,30,0.25)' }
+                            : { bg: '#F0FDF4', color: '#15803D', border: '#D1FAE5' };
+                        return (
+                          <div key={s.productId} className="card overflow-hidden flex flex-col select-none">
+                            <div className="relative w-full aspect-square" style={{ background: `${bgColor}22` }}>
+                              {imgUrl ? (
+                                <Image src={imgUrl} alt={s.productName} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
+                              ) : (
+                                <div className="absolute inset-0 flex items-center justify-center text-4xl">{emoji}</div>
+                              )}
+                              <div className="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-full"
+                                style={{ background: qtyStyle.bg, color: qtyStyle.color, border: `1px solid ${qtyStyle.border}` }}>
+                                {qty} unit
+                              </div>
+                              {!imgUrl && (
+                                <div className="absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center"
+                                  style={{ background: 'rgba(0,0,0,0.35)' }} title="Belum ada foto">
+                                  <ImageIcon size={10} color="#fff" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="px-3 pt-2 pb-3">
+                              <p className="text-[11px] font-bold leading-snug line-clamp-2"
+                                style={{ color: 'var(--text-primary)' }}>
+                                {s.productName}
+                              </p>
+                              {s.category && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-1.5"
+                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                                  <span style={{ fontSize: 9, lineHeight: 1 }}>{catEmoji(s.category)}</span>
+                                  {catLabel(s.category)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -712,12 +840,15 @@ export default function StockTab({
                 <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
                   <Clock size={11} /> Riwayat Masuk ({inTx.length})
                 </p>
-                <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
-                  <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <ViewToggle mode={historyView} onChange={setHistoryView} />
+                  <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
+                    <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
               </div>
               <TxList entries={inTx} loading={txLoading} emptyLabel="Belum ada transaksi stok masuk"
-                warehouses={warehouses} products={products} />
+                warehouses={warehouses} products={products} view={historyView} />
             </div>
           </div>
         )}
@@ -792,12 +923,15 @@ export default function StockTab({
                 <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
                   <Clock size={11} /> Riwayat Keluar ({outTx.length})
                 </p>
-                <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
-                  <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <ViewToggle mode={historyView} onChange={setHistoryView} />
+                  <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
+                    <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
               </div>
               <TxList entries={outTx} loading={txLoading} emptyLabel="Belum ada transaksi stok keluar"
-                warehouses={warehouses} products={products} />
+                warehouses={warehouses} products={products} view={historyView} />
             </div>
           </div>
         )}
@@ -886,12 +1020,15 @@ export default function StockTab({
                 <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
                   <Clock size={11} /> Riwayat Transfer ({transferTx.length})
                 </p>
-                <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
-                  <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <ViewToggle mode={historyView} onChange={setHistoryView} />
+                  <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
+                    <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
               </div>
               <TxList entries={transferTx} loading={txLoading} emptyLabel="Belum ada transaksi transfer"
-                warehouses={warehouses} products={products} />
+                warehouses={warehouses} products={products} view={historyView} />
             </div>
           </div>
         )}

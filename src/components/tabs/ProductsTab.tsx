@@ -5,8 +5,11 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon,
+  ChevronLeft, ChevronRight, ImageIcon, Tag,
 } from 'lucide-react';
+import { useViewMode } from '@/lib/useViewMode';
+import ViewToggle from '@/components/ViewToggle';
+import ScrollChips from '@/components/ScrollChips';
 
 const API       = '';
 const PAGE_SIZE = 10;
@@ -21,7 +24,7 @@ interface FireProduct {
 }
 
 interface FireCategory {
-  id: string; name: string; emoji: string; description?: string; order?: number;
+  id: string; name: string; emoji: string; description?: string; order?: number; bannerUrl?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -33,7 +36,7 @@ const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
 };
 
 const EMPTY_CAT: Omit<FireCategory, 'id'> & { slug: string } = {
-  name: '', emoji: '🏷️', description: '', slug: '',
+  name: '', emoji: '🏷️', description: '', slug: '', bannerUrl: '',
 };
 
 const STOCK_MAP: Record<string, { label: string; cls: string }> = {
@@ -81,8 +84,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [loading,     setLoading]     = useState(true);
   const [saving,      setSaving]      = useState(false);
   const [seeding,     setSeeding]     = useState(false);
-  const [syncing,     setSyncing]     = useState(false);
-  const [syncResult,  setSyncResult]  = useState<string>('');
   const [editing,     setEditing]     = useState<FireProduct | null>(null);
   const [isNew,       setIsNew]       = useState(false);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
@@ -93,6 +94,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
   const [seedingCats,   setSeedingCats]   = useState(false);
+  const [view, setView] = useViewMode('products');
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Sub-view ──────────────────────────────────────────────────────
@@ -106,6 +108,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [savingCat,     setSavingCat]     = useState(false);
   const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
   const [catError,      setCatError]      = useState('');
+  const [catSearch,     setCatSearch]     = useState('');
+  const [catPage,       setCatPage]       = useState(1);
+  const [catView, setCatView] = useViewMode('categories');
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const bannerFileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
 
@@ -155,28 +162,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
     const r = await fetch(`${API}/api/seed`, { method: 'POST', headers });
     if (r.ok) { const d = await r.json() as { seeded: number }; alert(`${d.seeded} produk baru ditambahkan.`); await load(); }
     setSeeding(false);
-  };
-
-  // ── Sync images ───────────────────────────────────────────────────
-  const syncImages = async () => {
-    setSyncing(true); setSyncResult('');
-    try {
-      const r    = await fetch(`${API}/api/products/sync-images`, { method: 'POST', headers });
-      const text = await r.text();
-      if (r.ok) {
-        const d = JSON.parse(text) as { updated: number; skipped: number; errors: string[]; log?: string[]; total?: number };
-        const parts = [`✓ ${d.updated} diupdate, ${d.skipped} dilewati dari ${d.total ?? '?'} produk`];
-        if (d.errors.length) parts.push(`Error: ${d.errors.join(' | ')}`);
-        if (d.log?.length)   parts.push(`Info: ${d.log.join(' | ')}`);
-        setSyncResult(parts.join(' · '));
-        if (d.updated > 0) await load();
-      } else {
-        setSyncResult(`✗ HTTP ${r.status}: ${text.slice(0, 200)}`);
-      }
-    } catch (e) {
-      setSyncResult(`✗ ${String(e)}`);
-    }
-    setSyncing(false);
   };
 
   // ── Product CRUD ──────────────────────────────────────────────────
@@ -229,16 +214,40 @@ export default function ProductsTab({ creds }: { creds: string }) {
     }
   };
 
+  const uploadBannerImage = async (file: File) => {
+    setUploadingBanner(true);
+    try {
+      const compressed = await compressImage(file);
+      const form = new FormData();
+      form.append('file', compressed);
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers, body: form });
+      if (r.ok) {
+        const { url } = await r.json() as { url: string };
+        setEditingCat(ec => ec && { ...ec, bannerUrl: url });
+      } else {
+        const { error } = await r.json() as { error?: string };
+        alert(error ?? 'Upload gagal');
+      }
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
   const save = async () => {
     if (!editing) return;
     setSaving(true);
     const { id, ...data } = editing;
-    if (isNew) {
-      await fetch(`${API}/api/products`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const r = isNew
+      ? await fetch(`${API}/api/products`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      : await fetch(`${API}/api/products/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (r.ok) {
+      await load();
+      closeEdit();
     } else {
-      await fetch(`${API}/api/products/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      alert(error ?? 'Gagal menyimpan produk');
     }
-    await load(); closeEdit(); setSaving(false);
+    setSaving(false);
   };
 
   const del = async (id: string, name: string) => {
@@ -294,6 +303,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         body: JSON.stringify({
           slug, name: editingCat.name, emoji: editingCat.emoji,
           description: editingCat.description, order: categories.length + 1,
+          bannerUrl: editingCat.bannerUrl,
         }),
       });
       if (!r.ok) {
@@ -304,7 +314,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
       await fetch(`${API}/api/categories/${editingCat.id}`, {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editingCat.name, emoji: editingCat.emoji, description: editingCat.description }),
+        body: JSON.stringify({
+          name: editingCat.name, emoji: editingCat.emoji, description: editingCat.description,
+          bannerUrl: editingCat.bannerUrl,
+        }),
       });
     }
     await loadCats(); closeEditCat(); setSavingCat(false);
@@ -341,6 +354,43 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const catName  = (id: string) => categories.find(c => c.id === id)?.name  ?? id;
   const catEmoji = (id: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
 
+  // ── Category filter + pagination ──────────────────────────────────
+  const filteredCats = categories.filter(c =>
+    !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()) || c.id.toLowerCase().includes(catSearch.toLowerCase())
+  );
+  const catTotalPages = Math.max(1, Math.ceil(filteredCats.length / PAGE_SIZE));
+  const catSafePage   = Math.min(catPage, catTotalPages);
+  const catPaginated  = filteredCats.slice((catSafePage - 1) * PAGE_SIZE, catSafePage * PAGE_SIZE);
+
+  const goCatPage    = (p: number) => setCatPage(Math.max(1, Math.min(p, catTotalPages)));
+  const resetCatPage = () => setCatPage(1);
+
+  const renderDetail = (p: FireProduct) => (
+    <div className="px-4 pb-4 pt-2 space-y-2" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{p.description}</p>
+      <ul className="space-y-1">
+        {p.details.map((d, i) => (
+          <li key={i} className="flex gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span style={{ color: 'var(--accent)' }}>·</span>{d}
+          </li>
+        ))}
+      </ul>
+      {p.imageUrls?.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {p.imageUrls.map((u, i) => (
+            <div key={i} className="w-16 h-16 rounded-xl overflow-hidden relative" style={{ background: 'var(--surface-2)' }}>
+              <Image src={u} alt="" fill className="object-contain" sizes="64px" unoptimized />
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Stok fisik: <strong style={{ color: 'var(--text-secondary)' }}>{p.stockQty ?? 0} pcs</strong>
+        {' · '}Kategori: <strong style={{ color: 'var(--text-secondary)' }}>{catName(p.category)}</strong>
+      </p>
+    </div>
+  );
+
   if (loading) return (
     <div className="flex items-center justify-center py-24">
       <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
@@ -354,12 +404,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
     <div className="p-4 lg:p-6 space-y-4">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Produk</h2>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{products.length} produk · {categories.length} kategori</p>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
+        <div className="flex items-center justify-between sm:justify-end gap-2">
           {/* Sub-view toggle */}
           <div className="flex rounded-xl overflow-hidden border text-xs font-bold flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
             {(['produk', 'kategori'] as const).map(v => (
@@ -373,52 +423,37 @@ export default function ProductsTab({ creds }: { creds: string }) {
             ))}
           </div>
 
-          {subView === 'produk' && (
-            <>
-              {products.length === 0 && (
-                <button onClick={seed} disabled={seeding} className="btn-ghost text-xs py-2">
-                  {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
-                  Migrasi Data
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {subView === 'produk' && (
+              <>
+                {products.length === 0 && (
+                  <button onClick={seed} disabled={seeding} className="btn-ghost text-xs py-2">
+                    {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
+                    <span className="hidden sm:inline">Migrasi Data</span>
+                  </button>
+                )}
+                <button onClick={openNew} className="btn-primary text-xs py-2">
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
                 </button>
-              )}
-              {products.length > 0 && (
-                <button onClick={syncImages} disabled={syncing} className="btn-ghost text-xs py-2">
-                  {syncing ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
-                  {syncing ? 'Sync…' : 'Sync Gambar'}
-                </button>
-              )}
-              <button onClick={openNew} className="btn-primary text-xs py-2">
-                <Plus size={13} /> Tambah Produk
-              </button>
-            </>
-          )}
+              </>
+            )}
 
-          {subView === 'kategori' && (
-            <>
-              {categories.length === 0 && (
-                <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs py-2">
-                  {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
-                  {seedingCats ? 'Menambahkan…' : 'Kategori Default'}
+            {subView === 'kategori' && (
+              <>
+                {categories.length === 0 && (
+                  <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs py-2">
+                    {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
+                    <span className="hidden sm:inline">{seedingCats ? 'Menambahkan…' : 'Kategori Default'}</span>
+                  </button>
+                )}
+                <button onClick={openNewCat} className="btn-primary text-xs py-2">
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Kategori</span><span className="sm:hidden">Tambah</span>
                 </button>
-              )}
-              <button onClick={openNewCat} className="btn-primary text-xs py-2">
-                <Plus size={13} /> Tambah Kategori
-              </button>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* ── Sync result banner ── */}
-      {syncResult && subView === 'produk' && (
-        <div className="card px-4 py-2.5 flex items-center justify-between gap-3"
-          style={{ background: syncResult.startsWith('✓') ? 'var(--success-bg)' : 'var(--danger-bg)' }}>
-          <p className="text-xs font-semibold" style={{ color: syncResult.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>
-            {syncResult}
-          </p>
-          <button onClick={() => setSyncResult('')}><X size={13} style={{ color: 'var(--text-muted)' }} /></button>
-        </div>
-      )}
 
       {/* ════════════════════════════════════════════════════════════ */}
       {/* SUB-VIEW: KATEGORI                                          */}
@@ -438,54 +473,176 @@ export default function ProductsTab({ creds }: { creds: string }) {
               </p>
             </div>
           ) : (
-            <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-              {categories.map((c, idx) => {
-                const count      = products.filter(p => p.category === c.id).length;
-                const isDeleting = deletingCatId === c.id;
-                return (
-                  <div key={c.id}
-                    style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
-                    <div className="flex items-center gap-3 px-4 py-3.5">
-                      {/* Emoji */}
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                        style={{ background: 'var(--accent-bg)' }}>
-                        {c.emoji}
-                      </div>
+            <>
+              {/* Search + view toggle */}
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <Search size={14} style={{
+                    position: 'absolute', left: 14, top: '50%',
+                    transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+                  }} />
+                  <input
+                    value={catSearch}
+                    onChange={e => { setCatSearch(e.target.value); resetCatPage(); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38 }}
+                    placeholder="Cari kategori…"
+                  />
+                </div>
+                <ViewToggle mode={catView} onChange={setCatView} />
+              </div>
 
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                            {c.id}
-                          </span>
-                          <span className="badge badge-amber text-[10px]">{count} produk</span>
+              {catPaginated.length === 0 ? (
+                <div className="card py-12 text-center">
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada kategori yang cocok.</p>
+                </div>
+              ) : catView === 'table' ? (
+                <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+                  {catPaginated.map((c, idx) => {
+                    const count      = products.filter(p => p.category === c.id).length;
+                    const isDeleting = deletingCatId === c.id;
+                    return (
+                      <div key={c.id}
+                        style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
+                        <div className="flex items-center gap-3 px-4 py-3.5">
+                          {/* Emoji / banner thumbnail */}
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 relative overflow-hidden"
+                            style={{ background: 'var(--accent-bg)' }}>
+                            {c.bannerUrl
+                              ? <Image src={c.bannerUrl} alt="" fill className="object-cover" sizes="40px" unoptimized />
+                              : c.emoji}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                                {c.id}
+                              </span>
+                              <span className="badge badge-amber text-[10px]">{count} produk</span>
+                              {!c.bannerUrl && (
+                                <span className="badge badge-gray text-[10px] flex items-center gap-1">
+                                  <ImageIcon size={9} /> No banner
+                                </span>
+                              )}
+                            </div>
+                            {c.description && (
+                              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => deleteCat(c.id, c.name)}
+                              disabled={isDeleting || count > 0}
+                              className="btn-ghost p-2 disabled:opacity-30"
+                              title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
+                              style={{ color: 'var(--danger)' }}>
+                              {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                            </button>
+                          </div>
                         </div>
-                        {c.description && (
-                          <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {catPaginated.map(c => {
+                    const count      = products.filter(p => p.category === c.id).length;
+                    const isDeleting = deletingCatId === c.id;
+                    return (
+                      <div key={c.id} className="card overflow-hidden flex flex-col">
+                        {c.bannerUrl && (
+                          <div className="relative w-full" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
+                            <Image src={c.bannerUrl} alt={c.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 240px" unoptimized />
+                            <span className="absolute top-2 left-2 w-8 h-8 rounded-lg flex items-center justify-center text-base"
+                              style={{ background: 'rgba(255,255,255,0.9)' }}>
+                              {c.emoji}
+                            </span>
+                          </div>
                         )}
+                        <div className="p-4 flex flex-col gap-2 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            {!c.bannerUrl && (
+                              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                                style={{ background: 'var(--accent-bg)' }}>
+                                {c.emoji}
+                              </div>
+                            )}
+                            <span className="badge badge-amber text-[10px] flex-shrink-0 ml-auto">{count} produk</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded inline-block mt-1"
+                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                              {c.id}
+                            </span>
+                          </div>
+                          {c.description && (
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
+                          )}
+                          <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                            <button onClick={() => openEditCat(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              onClick={() => deleteCat(c.id, c.name)}
+                              disabled={isDeleting || count > 0}
+                              className="btn-ghost p-1.5 disabled:opacity-30"
+                              title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
+                              style={{ color: 'var(--danger)' }}>
+                              {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                            </button>
+                          </div>
+                        </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => deleteCat(c.id, c.name)}
-                          disabled={isDeleting || count > 0}
-                          className="btn-ghost p-2 disabled:opacity-30"
-                          title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
-                          style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
-                      </div>
-                    </div>
+              {/* Pagination */}
+              {catTotalPages > 1 && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {filteredCats.length} kategori · halaman {catSafePage} dari {catTotalPages}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                    {Array.from({ length: catTotalPages }, (_, i) => i + 1)
+                      .filter(n => n === 1 || n === catTotalPages || Math.abs(n - catSafePage) <= 1)
+                      .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                        if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                        acc.push(n); return acc;
+                      }, [])
+                      .map((n, i) =>
+                        n === '…'
+                          ? <span key={`ce${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                          : <button key={n} onClick={() => goCatPage(n as number)}
+                              className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                              style={catSafePage === n
+                                ? { background: 'var(--accent)', color: '#fff' }
+                                : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                              {n}
+                            </button>
+                      )
+                    }
+                    <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Category edit modal */}
@@ -566,6 +723,32 @@ export default function ProductsTab({ creds }: { creds: string }) {
                       />
                     </div>
 
+                    {/* Banner */}
+                    <div>
+                      <label className="field-label">Banner Kategori (opsional)</label>
+                      {editingCat.bannerUrl ? (
+                        <div className="relative w-full rounded-xl overflow-hidden group" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
+                          <Image src={editingCat.bannerUrl} alt="" fill className="object-cover" sizes="480px" unoptimized />
+                          <button onClick={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
+                            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => bannerFileRef.current?.click()} disabled={uploadingBanner}
+                          className="w-full rounded-xl flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition-colors"
+                          style={{ aspectRatio: '2 / 1', border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                          {uploadingBanner ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
+                          {uploadingBanner ? 'Mengunggah…' : 'Unggah Banner'}
+                        </button>
+                      )}
+                      <input ref={bannerFileRef} type="file" accept="image/*" className="hidden"
+                        onChange={e => e.target.files?.[0] && uploadBannerImage(e.target.files[0])} />
+                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Tampil sebagai banner saat kategori ini dipilih di halaman toko (rasio 2:1).
+                      </p>
+                    </div>
+
                     {catError && (
                       <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
                         {catError}
@@ -605,8 +788,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
             </div>
           ) : (
             <>
-              {/* Search + Category filter */}
-              <div className="flex gap-2 flex-col sm:flex-row">
+              {/* Search + view toggle */}
+              <div className="flex gap-2 items-center">
                 <div className="relative flex-1">
                   <Search size={14} style={{
                     position: 'absolute', left: 14, top: '50%',
@@ -620,140 +803,179 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     placeholder="Cari produk…"
                   />
                 </div>
-                <div className="flex gap-1.5 flex-wrap">
-                  <button onClick={() => { setCatFilter('semua'); resetPage(); }}
-                    className={`tab-chip text-xs py-1.5 ${catFilter === 'semua' ? 'active' : ''}`}>
-                    Semua
-                  </button>
-                  {categories.map(c => (
-                    <button key={c.id} onClick={() => { setCatFilter(c.id); resetPage(); }}
-                      className={`tab-chip text-xs py-1.5 ${catFilter === c.id ? 'active' : ''}`}>
-                      {c.emoji} {c.name}
-                    </button>
-                  ))}
-                </div>
+                <ViewToggle mode={view} onChange={setView} />
               </div>
+
+              {/* Category filter — scrolls horizontally with arrows when it overflows */}
+              <ScrollChips>
+                <button onClick={() => { setCatFilter('semua'); resetPage(); }}
+                  className={`tab-chip text-xs py-1.5 ${catFilter === 'semua' ? 'active' : ''}`}>
+                  Semua
+                </button>
+                {categories.map(c => (
+                  <button key={c.id} onClick={() => { setCatFilter(c.id); resetPage(); }}
+                    className={`tab-chip text-xs py-1.5 ${catFilter === c.id ? 'active' : ''}`}>
+                    {c.emoji} {c.name}
+                  </button>
+                ))}
+              </ScrollChips>
+
+              {/* Select-all bar */}
+              {paginated.length > 0 && (
+                <div className="flex items-center gap-3 px-4 py-2.5 card"
+                  style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                  <Checkbox
+                    checked={paginated.every(p => selected.has(p.id))}
+                    indeterminate={paginated.some(p => selected.has(p.id)) && !paginated.every(p => selected.has(p.id))}
+                    onChange={togglePageAll}
+                  />
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                    {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} produk di halaman ini`}
+                  </span>
+                </div>
+              )}
 
               {/* Product list */}
-              <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-                {paginated.length > 0 && (
-                  <div className="flex items-center gap-3 px-4 py-2.5"
-                    style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
-                    <Checkbox
-                      checked={paginated.every(p => selected.has(p.id))}
-                      indeterminate={paginated.some(p => selected.has(p.id)) && !paginated.every(p => selected.has(p.id))}
-                      onChange={togglePageAll}
-                    />
-                    <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-                      {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} produk di halaman ini`}
-                    </span>
-                  </div>
-                )}
+              {paginated.length === 0 ? (
+                <div className="card py-12 text-center">
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada produk yang cocok.</p>
+                </div>
+              ) : view === 'table' ? (
+                <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+                  {paginated.map((p, idx) => {
+                    const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
+                    const isSelected = selected.has(p.id);
+                    const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
+                    return (
+                      <div key={p.id}
+                        style={{
+                          borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined,
+                          background: isSelected ? 'rgba(212,105,30,0.05)' : undefined,
+                          transition: 'background 0.1s',
+                        }}>
+                        <div className="flex items-center gap-2 px-4 py-3.5">
+                          <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
 
-                {paginated.length === 0 ? (
-                  <div className="py-12 text-center">
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada produk yang cocok.</p>
-                  </div>
-                ) : paginated.map((p, idx) => {
-                  const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
-                  const isSelected = selected.has(p.id);
-                  const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
-                  return (
-                    <div key={p.id}
-                      style={{
-                        borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined,
-                        background: isSelected ? 'rgba(212,105,30,0.05)' : undefined,
-                        transition: 'background 0.1s',
-                      }}>
-                      <div className="flex items-center gap-2 px-4 py-3.5">
-                        <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
+                          {/* Row number */}
+                          <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center"
+                            style={{ color: 'var(--text-muted)' }}>
+                            {rowNum}
+                          </span>
 
-                        {/* Row number */}
-                        <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center"
-                          style={{ color: 'var(--text-muted)' }}>
-                          {rowNum}
-                        </span>
-
-                        {/* Thumbnail */}
-                        <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
-                          style={{ background: `${p.bgColor}22` }}>
-                          {p.imageUrls?.[0]
-                            ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-cover" sizes="48px" unoptimized />
-                            : <div className="w-full h-full flex items-center justify-center text-2xl">{p.emoji}</div>}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
-                            {p.code && (
-                              <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
-                                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                                {p.code}
-                              </span>
-                            )}
-                            {p.badge && <span className="badge badge-amber">{p.badge}</span>}
-                            {!p.imageUrls?.length && (
-                              <span className="badge badge-gray flex items-center gap-1">
-                                <ImageIcon size={9} /> No img
-                              </span>
-                            )}
+                          {/* Thumbnail */}
+                          <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
+                            style={{ background: `${p.bgColor}22` }}>
+                            {p.imageUrls?.[0]
+                              ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="48px" unoptimized />
+                              : <div className="w-full h-full flex items-center justify-center text-2xl">{p.emoji}</div>}
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.price)}</span>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.weight}</span>
-                            <span className={`badge ${stock.cls}`}>{stock.label}</span>
-                            {p.category && (
-                              <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                                <span style={{ fontSize: 9, lineHeight: 1 }}>{catEmoji(p.category)}</span>
-                                {catName(p.category)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
-                            {expandedId === p.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                          </button>
-                          <button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                            <Pencil size={13} />
-                          </button>
-                          <button onClick={() => del(p.id, p.name)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {expandedId === p.id && (
-                        <div className="px-4 pb-4 pt-2 space-y-2" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
-                          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{p.description}</p>
-                          <ul className="space-y-1">
-                            {p.details.map((d, i) => (
-                              <li key={i} className="flex gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                <span style={{ color: 'var(--accent)' }}>·</span>{d}
-                              </li>
-                            ))}
-                          </ul>
-                          {p.imageUrls?.length > 0 && (
-                            <div className="flex gap-2 flex-wrap">
-                              {p.imageUrls.map((u, i) => (
-                                <div key={i} className="w-16 h-16 rounded-xl overflow-hidden relative">
-                                  <Image src={u} alt="" fill className="object-cover" sizes="64px" unoptimized />
-                                </div>
-                              ))}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
+                              {p.code && (
+                                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                  {p.code}
+                                </span>
+                              )}
+                              {p.badge && <span className="badge badge-amber">{p.badge}</span>}
+                              {!p.imageUrls?.length && (
+                                <span className="badge badge-gray flex items-center gap-1">
+                                  <ImageIcon size={9} /> No img
+                                </span>
+                              )}
                             </div>
-                          )}
-                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            Stok fisik: <strong style={{ color: 'var(--text-secondary)' }}>{p.stockQty ?? 0} pcs</strong>
-                            {' · '}Kategori: <strong style={{ color: 'var(--text-secondary)' }}>{catName(p.category)}</strong>
-                          </p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.price)}</span>
+                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.weight}</span>
+                              <span className={`badge ${stock.cls}`}>{stock.label}</span>
+                              {p.category && (
+                                <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                                  <span style={{ fontSize: 9, lineHeight: 1 }}>{catEmoji(p.category)}</span>
+                                  {catName(p.category)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
+                              {expandedId === p.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                            </button>
+                            <button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                              <Pencil size={13} />
+                            </button>
+                            <button onClick={() => del(p.id, p.name)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+
+                        {expandedId === p.id && renderDetail(p)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {paginated.map(p => {
+                    const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
+                    const isSelected = selected.has(p.id);
+                    return (
+                      <div key={p.id} className="card overflow-hidden flex flex-col"
+                        style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                        <div className="relative w-full aspect-square" style={{ background: `${p.bgColor}22` }}>
+                          {p.imageUrls?.[0]
+                            ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
+                            : <div className="w-full h-full flex items-center justify-center text-4xl">{p.emoji}</div>}
+                          <div className="absolute top-2 left-2 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.85)' }}>
+                            <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
+                          </div>
+                          {p.badge && <span className="absolute top-2 right-2 badge badge-amber">{p.badge}</span>}
+                          {!p.imageUrls?.length && (
+                            <span className="absolute bottom-2 right-2 badge badge-gray flex items-center gap-1">
+                              <ImageIcon size={9} /> No img
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="p-3 flex-1 flex flex-col gap-1.5">
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.price)}</span>
+                            <span className={`badge ${stock.cls}`}>{stock.label}</span>
+                          </div>
+                          {p.category && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full self-start"
+                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                              {catEmoji(p.category)} {catName(p.category)}
+                            </span>
+                          )}
+
+                          <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                            <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                              className="btn-ghost px-2 py-1.5 text-xs font-semibold flex items-center gap-1">
+                              Detail {expandedId === p.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => del(p.id, p.name)} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {expandedId === p.id && renderDetail(p)}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Pagination */}
               {totalPages > 1 && (
@@ -845,8 +1067,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   <p className="section-label" style={{ marginBottom: 10 }}>Foto Produk</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {editing.imageUrls.map((u, i) => (
-                      <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
-                        <Image src={u} alt="" fill className="object-cover" sizes="80px" unoptimized />
+                      <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group" style={{ background: 'var(--surface-2)' }}>
+                        <Image src={u} alt="" fill className="object-contain" sizes="80px" unoptimized />
                         <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
                           className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                           <X size={11} />

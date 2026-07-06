@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
-  const { slug, name, emoji, description, order } =
-    await req.json() as { slug: string; name: string; emoji: string; description?: string; order?: number };
+  const { slug, name, emoji, description, order, bannerUrl } =
+    await req.json() as { slug: string; name: string; emoji: string; description?: string; order?: number; bannerUrl?: string };
 
   if (!slug || !name) return Response.json({ error: 'Slug dan nama wajib diisi.' }, { status: 400 });
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   await ref.set({
     name, emoji: emoji || '🏷️', description: description ?? '',
-    order: order ?? 99,
+    order: order ?? 99, bannerUrl: bannerUrl ?? '',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
