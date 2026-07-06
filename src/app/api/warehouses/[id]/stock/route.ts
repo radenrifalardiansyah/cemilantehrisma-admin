@@ -10,26 +10,30 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id: warehouseId } = await ctx.params;
   const db = getDb();
 
-  // Ambil semua produk
-  const productsSnap = await db.collection('products').orderBy('createdAt', 'desc').get();
-  const products = productsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<{ id: string; name: string }>;
-
-  // Ambil warehouse_stock untuk gudang ini
+  // Ambil warehouse_stock untuk gudang ini — hanya produk yang benar-benar punya stok di sini
   const stockSnap = await db.collection('warehouse_stock')
     .where('warehouseId', '==', warehouseId)
     .get();
 
-  const stockMap = new Map<string, number>();
-  stockSnap.docs.forEach(d => {
-    const data = d.data();
-    stockMap.set(data.productId as string, data.stockQty as number ?? 0);
-  });
+  const entries = stockSnap.docs
+    .map(d => d.data())
+    .filter(data => ((data.stockQty as number) ?? 0) > 0);
 
-  const stocks = products.map(p => ({
-    productId: p.id,
-    productName: p.name,
-    stockQty: stockMap.get(p.id) ?? 0,
+  // Ambil nama produk terbaru (nama bisa berubah setelah dicatat di warehouse_stock)
+  const productIds = entries.map(e => e.productId as string);
+  const productNames = new Map<string, string>();
+  await Promise.all(productIds.map(async id => {
+    const doc = await db.collection('products').doc(id).get();
+    if (doc.exists) productNames.set(id, doc.data()?.name as string);
   }));
+
+  const stocks = entries
+    .map(e => ({
+      productId: e.productId as string,
+      productName: productNames.get(e.productId as string) ?? (e.productName as string) ?? '',
+      stockQty: e.stockQty as number,
+    }))
+    .sort((a, b) => a.productName.localeCompare(b.productName));
 
   return Response.json({ stocks });
 }

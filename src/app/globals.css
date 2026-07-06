@@ -206,6 +206,14 @@ body {
   background: var(--surface);
 }
 .input::placeholder { color: var(--text-muted); }
+.input-error {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+.input-error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.12);
+}
 
 /* ── Badge ──────────────────────────────────────────────────── */
 .badge {

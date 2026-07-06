@@ -6,10 +6,11 @@ import {
   RefreshCw, MessageCircle, TrendingUp, Receipt, Package, Users,
   ShoppingCart, Plus, Minus, ChevronLeft,
   CheckCircle2, Loader2, User, Phone, Trash2, Tag, Send,
-  Eye, Smartphone, Monitor, BarChart2, Globe, Award,
+  Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
 } from 'lucide-react';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import AppShell, { TabId } from '@/components/AppShell';
+import ScrollChips from '@/components/ScrollChips';
 import ProductsTab  from '@/components/tabs/ProductsTab';
 import OrdersTab    from '@/components/tabs/OrdersTab';
 import ResellersTab from '@/components/tabs/ResellersTab';
@@ -238,12 +239,11 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
   return (
     <div className="card overflow-hidden flex flex-col select-none active:scale-[0.97] transition-transform cursor-pointer"
       onClick={onAdd}>
-      <div className="relative w-full aspect-square overflow-hidden">
+      <div className="relative w-full aspect-square overflow-hidden" style={{ background: `${product.bgColor}22` }}>
         {imgUrl ? (
-          <Image src={imgUrl} alt={product.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
+          <Image src={imgUrl} alt={product.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-4xl"
-            style={{ background: `${product.bgColor}22` }}>
+          <div className="w-full h-full flex items-center justify-center text-4xl">
             {product.emoji}
           </div>
         )}
@@ -297,6 +297,9 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [creds,    setCreds]    = useState('');
   const [loginErr, setLoginErr] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [authUser, setAuthUser] = useState<{ username: string; role: string } | null>(null);
 
   // ── Tab ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
@@ -439,28 +442,36 @@ export default function AdminPage() {
   useEffect(() => {
     const saved = localStorage.getItem('admin_creds');
     if (!saved) { setChecking(false); return; }
-    const [u, ...rest] = saved.split(':');
-    fetch('/api/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: rest.join(':') }),
-    }).then(r => {
-      if (r.ok) { setCreds(saved); setAuthed(true); fetchDash(saved); }
-      else localStorage.removeItem('admin_creds');
+    fetch('/api/me', { headers: { 'x-admin-auth': saved } }).then(async r => {
+      if (r.ok) {
+        const { user } = await r.json() as { user: { username: string; role: string } };
+        setCreds(saved); setAuthUser(user); setAuthed(true); fetchDash(saved);
+      } else localStorage.removeItem('admin_creds');
       setChecking(false);
     }).catch(() => setChecking(false));
   }, []);
 
   const login = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setLoginErr('');
+
+    const errs: { username?: string; password?: string } = {};
+    if (!username.trim()) errs.username = 'Username atau email wajib diisi.';
+    if (!password)        errs.password = 'Password wajib diisi.';
+    if (Object.keys(errs).length) { setFieldErrors(errs); return; }
+    setFieldErrors({});
+
     const res = await fetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     });
     if (res.ok) {
-      const h = `${username}:${password}`;
-      localStorage.setItem('admin_creds', h);
-      setCreds(h); setAuthed(true); fetchDash(h);
-    } else setLoginErr('Username atau password salah.');
+      const { token, user } = await res.json() as { token: string; user: { username: string; role: string } };
+      localStorage.setItem('admin_creds', token);
+      setCreds(token); setAuthUser(user); setAuthed(true); fetchDash(token);
+    } else {
+      setFieldErrors({ username: ' ', password: ' ' });
+      setLoginErr('Username/email atau password salah.');
+    }
   };
 
   const logout = () => {
@@ -543,16 +554,33 @@ export default function AdminPage() {
           <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--text-primary)' }}>Masuk</h1>
           <p className="text-sm mb-8" style={{ color: 'var(--text-muted)' }}>Dashboard Admin Cemilan Teh Risma</p>
 
-          <form onSubmit={login} className="space-y-4">
+          <form onSubmit={login} className="space-y-4" noValidate>
             <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Username</label>
-              <input type="text" value={username} onChange={e => setUsername(e.target.value)}
-                className="input" placeholder="Masukkan username" autoComplete="username" />
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Username atau Email</label>
+              <input type="text" value={username}
+                onChange={e => { setUsername(e.target.value); setFieldErrors(f => ({ ...f, username: undefined })); setLoginErr(''); }}
+                className={`input ${fieldErrors.username ? 'input-error' : ''}`}
+                placeholder="Masukkan username atau email" autoComplete="username" />
+              {fieldErrors.username?.trim() && (
+                <p className="text-xs font-medium mt-1.5" style={{ color: 'var(--danger)' }}>{fieldErrors.username}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                className="input" placeholder="Masukkan password" autoComplete="current-password" />
+              <div className="relative">
+                <input type={showPassword ? 'text' : 'password'} value={password}
+                  onChange={e => { setPassword(e.target.value); setFieldErrors(f => ({ ...f, password: undefined })); setLoginErr(''); }}
+                  className={`input ${fieldErrors.password ? 'input-error' : ''}`}
+                  style={{ paddingRight: 40 }}
+                  placeholder="Masukkan password" autoComplete="current-password" />
+                <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {fieldErrors.password?.trim() && (
+                <p className="text-xs font-medium mt-1.5" style={{ color: 'var(--danger)' }}>{fieldErrors.password}</p>
+              )}
             </div>
             {loginErr && (
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium"
@@ -903,14 +931,14 @@ export default function AdminPage() {
   // ─── POS content ─────────────────────────────────────────
   const posProductsContent = (
     <div className="flex flex-col h-full">
-      <div className="flex gap-2 px-4 pt-4 pb-3 overflow-x-auto no-scrollbar flex-shrink-0">
+      <ScrollChips className="px-4 pt-4 pb-3 flex-shrink-0" gap="gap-2">
         {[POS_CAT_ALL, ...posCategories].map(c => (
           <button key={c.id} onClick={() => setActiveCat(c.id)}
             className={`tab-chip ${activeCat === c.id ? 'active' : ''}`}>
             <span>{c.emoji}</span> {c.label}
           </button>
         ))}
-      </div>
+      </ScrollChips>
       <div className="flex-1 overflow-y-auto px-4 pb-24 thin-scrollbar">
         {posProducts.length === 0 ? (
           <div className="flex items-center justify-center py-20">
@@ -968,7 +996,7 @@ export default function AdminPage() {
             return (
               <div key={item.productId} className="flex items-center gap-3 px-4 py-3">
                 <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 relative" style={{ background: `${p.bgColor}22` }}>
-                  {imgUrl ? <Image src={imgUrl} alt={p.name} fill className="object-cover" sizes="40px" unoptimized />
+                  {imgUrl ? <Image src={imgUrl} alt={p.name} fill className="object-contain" sizes="40px" unoptimized />
                           : <div className="w-full h-full flex items-center justify-center text-lg">{p.emoji}</div>}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1128,7 +1156,7 @@ export default function AdminPage() {
   );
 
   // ─── Main render ──────────────────────────────────────────
-  const adminUsername = creds ? creds.split(':')[0] : 'Admin';
+  const adminUsername = authUser?.username ?? 'Admin';
   return (
     <AppShell
       activeTab={activeTab}
@@ -1143,7 +1171,7 @@ export default function AdminPage() {
       {activeTab === 'products'   && <ProductsTab  creds={creds} />}
       {activeTab === 'orders'     && <OrdersTab    creds={creds} />}
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
-      {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} />}
+      {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
     </AppShell>
   );
