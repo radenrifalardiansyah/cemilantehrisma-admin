@@ -70,18 +70,37 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  // Upsert warehouse_stock (stok per produk per gudang)
+  // Upsert warehouse_stock (stok per produk per gudang), dan sinkronkan total stockQty +
+  // status ready/habis di dokumen produk (kecuali "Buka PO" diaktifkan manual, yang selalu menang)
   const wsRef = db.collection('warehouse_stock').doc(`${warehouseId}_${productId}`);
-  await wsRef.set(
-    {
-      warehouseId,
-      productId,
-      productName,
-      stockQty: FieldValue.increment(delta),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  const productRef = db.collection('products').doc(productId);
+
+  await db.runTransaction(async tx => {
+    const productSnap = await tx.get(productRef);
+    const product = productSnap.data();
+    const currentQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
+    const newQty = currentQty + delta;
+
+    tx.set(
+      wsRef,
+      {
+        warehouseId,
+        productId,
+        productName,
+        stockQty: FieldValue.increment(delta),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    if (productSnap.exists) {
+      tx.update(productRef, {
+        stockQty: newQty,
+        stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
 
   return Response.json({ ok: true });
 }

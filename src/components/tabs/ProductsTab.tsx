@@ -7,9 +7,14 @@ import {
   Package, ChevronDown, ChevronUp, Search,
   ChevronLeft, ChevronRight, ImageIcon, Tag,
 } from 'lucide-react';
+import ImageLightbox from '@/components/ImageLightbox';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import ScrollChips from '@/components/ScrollChips';
+import EmojiPicker from '@/components/EmojiPicker';
+import ColorThemePicker from '@/components/ColorThemePicker';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/Confirm';
 
 const API       = '';
 const PAGE_SIZE = 10;
@@ -20,7 +25,7 @@ interface FireProduct {
   price: number; originalPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
   bgColor: string; weight: string; stockQty?: number; order?: number;
-  code?: string;
+  code?: string; openPO?: boolean;
 }
 
 interface FireCategory {
@@ -30,22 +35,25 @@ interface FireCategory {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
   name: '', description: '', details: [''], price: 0, emoji: '🛍️',
-  imageUrls: [], category: '', badge: '', stock: 'ready',
+  imageUrls: [], category: '', badge: '', stock: 'habis',
   gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309', weight: '', stockQty: 0,
-  code: '',
+  code: '', openPO: false,
 };
 
 const EMPTY_CAT: Omit<FireCategory, 'id'> & { slug: string } = {
   name: '', emoji: '🏷️', description: '', slug: '', bannerUrl: '',
 };
 
-const STOCK_MAP: Record<string, { label: string; cls: string }> = {
+const STOCK_MAP = {
   ready:   { label: 'Tersedia', cls: 'badge-green' },
   habis:   { label: 'Habis',    cls: 'badge-red'   },
-  open_po: { label: 'Open PO', cls: 'badge-amber'  },
+  open_po: { label: 'Open PO',  cls: 'badge-amber' },
 };
 const BADGE_OPTS = ['', 'Best Seller', 'Popular', 'New'];
-const STOCK_OPTS = ['ready', 'habis', 'open_po'];
+const HEADER_BTN_H = 34; // samakan tinggi semua tombol di header Produk/Kategori
+// Status stok dihitung dari total qty gudang (menu Stok), kecuali "Buka PO" diaktifkan manual.
+const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
+  p.openPO ? STOCK_MAP.open_po : (p.stockQty ?? 0) > 0 ? STOCK_MAP.ready : STOCK_MAP.habis;
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
@@ -76,8 +84,33 @@ function Checkbox({ checked, indeterminate, onChange }: {
   );
 }
 
+// ─── Switch ───────────────────────────────────────────────────────────────────
+function Switch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      className="flex-shrink-0 relative transition-colors"
+      style={{
+        width: 38, height: 22, borderRadius: 999,
+        background: checked ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute', top: 2, left: checked ? 18 : 2,
+          width: 18, height: 18, borderRadius: '50%', background: '#fff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transition: 'left 0.15s',
+        }}
+      />
+    </button>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function ProductsTab({ creds }: { creds: string }) {
+  const toast = useToast();
+  const confirm = useConfirm();
 
   // ── Product state ─────────────────────────────────────────────────
   const [products,    setProducts]    = useState<FireProduct[]>([]);
@@ -96,6 +129,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [seedingCats,   setSeedingCats]   = useState(false);
   const [view, setView] = useViewMode('products');
   const fileRef = useRef<HTMLInputElement>(null);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; title?: string } | null>(null);
+  const openLightbox = (images: string[], index = 0, title?: string) => {
+    if (images?.length) setLightbox({ images, index, title });
+  };
 
   // ── Sub-view ──────────────────────────────────────────────────────
   const [subView, setSubView] = useState<'produk' | 'kategori'>('produk');
@@ -136,7 +173,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
   // ── Seed default categories ───────────────────────────────
   const seedCategories = async () => {
-    if (!confirm('Tambahkan 4 kategori default (Keripik, Mie, Snack, Paket)?')) return;
+    if (!await confirm('Tambahkan 4 kategori default (Keripik, Mie, Snack, Paket)?')) return;
     setSeedingCats(true);
     const defaults = [
       { slug: 'keripik', name: 'Keripik',  emoji: '🥔', description: 'Keripik Talas Renyah',    order: 1 },
@@ -144,23 +181,33 @@ export default function ProductsTab({ creds }: { creds: string }) {
       { slug: 'snack',   name: 'Snack',    emoji: '🍿', description: 'Cemilan Seru Lainnya',     order: 3 },
       { slug: 'paket',   name: 'Paket',    emoji: '🎁', description: 'Paket Hemat Pilihan',      order: 4 },
     ];
+    let failed = 0;
     for (const d of defaults) {
-      await fetch(`${API}/api/categories`, {
+      const r = await fetch(`${API}/api/categories`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
       });
+      if (!r.ok) failed++;
     }
     await loadCats();
     setSeedingCats(false);
+    if (failed === 0) toast.success('Kategori default berhasil ditambahkan.');
+    else toast.error(`${failed} dari ${defaults.length} kategori gagal ditambahkan.`);
   };
 
   // ── Seed ──────────────────────────────────────────────────────────
   const seed = async () => {
-    if (!confirm('Migrasi 11 produk default ke Firestore? Produk yang sudah ada tidak akan ditimpa.')) return;
+    if (!await confirm('Migrasi 11 produk default ke Firestore? Produk yang sudah ada tidak akan ditimpa.')) return;
     setSeeding(true);
     const r = await fetch(`${API}/api/seed`, { method: 'POST', headers });
-    if (r.ok) { const d = await r.json() as { seeded: number }; alert(`${d.seeded} produk baru ditambahkan.`); await load(); }
+    if (r.ok) {
+      const d = await r.json() as { seeded: number };
+      toast.success(`${d.seeded} produk baru ditambahkan.`);
+      await load();
+    } else {
+      toast.error('Gagal migrasi data produk.');
+    }
     setSeeding(false);
   };
 
@@ -207,7 +254,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         if (editing) setEditing({ ...editing, imageUrls: [...editing.imageUrls, url] });
       } else {
         const { error } = await r.json() as { error?: string };
-        alert(error ?? 'Upload gagal');
+        toast.error(error ?? 'Upload gagal');
       }
     } finally {
       setUploading(false);
@@ -226,7 +273,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         setEditingCat(ec => ec && { ...ec, bannerUrl: url });
       } else {
         const { error } = await r.json() as { error?: string };
-        alert(error ?? 'Upload gagal');
+        toast.error(error ?? 'Upload gagal');
       }
     } finally {
       setUploadingBanner(false);
@@ -236,37 +283,53 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const save = async () => {
     if (!editing) return;
     setSaving(true);
-    const { id, ...data } = editing;
+    const { id, ...rest } = editing;
+    const data = {
+      ...rest,
+      stock: editing.openPO ? 'open_po' : (editing.stockQty ?? 0) > 0 ? 'ready' : 'habis',
+    };
     const r = isNew
       ? await fetch(`${API}/api/products`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       : await fetch(`${API}/api/products/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     if (r.ok) {
       await load();
       closeEdit();
+      toast.success(isNew ? 'Produk berhasil ditambahkan.' : 'Produk berhasil diperbarui.');
     } else {
       const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
-      alert(error ?? 'Gagal menyimpan produk');
+      toast.error(error ?? 'Gagal menyimpan produk.');
     }
     setSaving(false);
   };
 
   const del = async (id: string, name: string) => {
-    if (!confirm(`Hapus "${name}"?`)) return;
-    await fetch(`${API}/api/products/${id}`, { method: 'DELETE', headers });
-    setProducts(p => p.filter(x => x.id !== id));
-    setSelected(s => { const n = new Set(s); n.delete(id); return n; });
+    if (!await confirm({ message: `Hapus produk "${name}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    const r = await fetch(`${API}/api/products/${id}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      setProducts(p => p.filter(x => x.id !== id));
+      setSelected(s => { const n = new Set(s); n.delete(id); return n; });
+      toast.success(`"${name}" berhasil dihapus.`);
+    } else {
+      toast.error(`Gagal menghapus "${name}".`);
+    }
   };
 
   const bulkDelete = async () => {
     if (selected.size === 0) return;
-    if (!confirm(`Hapus ${selected.size} produk yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!await confirm({ message: `Hapus ${selected.size} produk yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setBulkDeleting(true);
+    const count = selected.size;
     const r = await fetch(`${API}/api/products/bulk-delete`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [...selected] }),
     });
-    if (r.ok) { setProducts(p => p.filter(x => !selected.has(x.id))); setSelected(new Set()); }
+    if (r.ok) {
+      setProducts(p => p.filter(x => !selected.has(x.id))); setSelected(new Set());
+      toast.success(`${count} produk berhasil dihapus.`);
+    } else {
+      toast.error('Gagal menghapus produk yang dipilih.');
+    }
     setBulkDeleting(false);
   };
 
@@ -308,10 +371,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
       });
       if (!r.ok) {
         const d = await r.json() as { error?: string };
-        setCatError(d.error ?? 'Gagal menyimpan kategori.'); setSavingCat(false); return;
+        setCatError(d.error ?? 'Gagal menyimpan kategori.'); setSavingCat(false);
+        toast.error(d.error ?? 'Gagal menyimpan kategori.');
+        return;
       }
     } else {
-      await fetch(`${API}/api/categories/${editingCat.id}`, {
+      const r = await fetch(`${API}/api/categories/${editingCat.id}`, {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -319,19 +384,27 @@ export default function ProductsTab({ creds }: { creds: string }) {
           bannerUrl: editingCat.bannerUrl,
         }),
       });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        setCatError(d.error ?? 'Gagal menyimpan kategori.'); setSavingCat(false);
+        toast.error(d.error ?? 'Gagal menyimpan kategori.');
+        return;
+      }
     }
     await loadCats(); closeEditCat(); setSavingCat(false);
+    toast.success(isNewCat ? 'Kategori berhasil ditambahkan.' : 'Kategori berhasil diperbarui.');
   };
 
   const deleteCat = async (id: string, name: string) => {
-    if (!confirm(`Hapus kategori "${name}"?`)) return;
+    if (!await confirm({ message: `Hapus kategori "${name}"?`, danger: true })) return;
     setDeletingCatId(id);
     const r = await fetch(`${API}/api/categories/${id}`, { method: 'DELETE', headers });
     if (!r.ok) {
-      const d = await r.json() as { error?: string };
-      alert(d.error ?? 'Gagal menghapus kategori.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus kategori.');
     } else {
       await loadCats();
+      toast.success(`Kategori "${name}" berhasil dihapus.`);
     }
     setDeletingCatId(null);
   };
@@ -343,7 +416,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
       const matchQ   = !search || p.name.toLowerCase().includes(search.toLowerCase());
       return matchCat && matchQ;
     })
-    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+    .sort((a, b) => {
+      const aHabis = stockStatus(a) === STOCK_MAP.habis ? 1 : 0;
+      const bHabis = stockStatus(b) === STOCK_MAP.habis ? 1 : 0;
+      if (aHabis !== bHabis) return aHabis - bHabis;
+      return (a.order ?? 9999) - (b.order ?? 9999);
+    });
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);
   const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -378,9 +456,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
       {p.imageUrls?.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {p.imageUrls.map((u, i) => (
-            <div key={i} className="w-16 h-16 rounded-xl overflow-hidden relative" style={{ background: 'var(--surface-2)' }}>
+            <button key={i} onClick={() => openLightbox(p.imageUrls, i, p.name)}
+              className="w-16 h-16 rounded-xl overflow-hidden relative" style={{ background: 'var(--surface-2)' }}>
               <Image src={u} alt="" fill className="object-contain" sizes="64px" unoptimized />
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -411,13 +490,16 @@ export default function ProductsTab({ creds }: { creds: string }) {
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-2">
           {/* Sub-view toggle */}
-          <div className="flex rounded-xl overflow-hidden border text-xs font-bold flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex rounded-xl overflow-hidden border flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
             {(['produk', 'kategori'] as const).map(v => (
               <button key={v} onClick={() => setSubView(v)}
-                className="px-3.5 py-2 capitalize transition-all"
-                style={subView === v
-                  ? { background: 'var(--accent)', color: '#fff' }
-                  : { color: 'var(--text-muted)' }}>
+                className="capitalize transition-all inline-flex items-center"
+                style={{
+                  height: HEADER_BTN_H - 2, padding: '0 16px', fontSize: 13, fontWeight: 600,
+                  ...(subView === v
+                    ? { background: 'var(--accent)', color: '#fff' }
+                    : { color: 'var(--text-muted)' }),
+                }}>
                 {v === 'produk' ? '📦 Produk' : '🏷️ Kategori'}
               </button>
             ))}
@@ -427,12 +509,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
             {subView === 'produk' && (
               <>
                 {products.length === 0 && (
-                  <button onClick={seed} disabled={seeding} className="btn-ghost text-xs py-2">
+                  <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
                     {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
                     <span className="hidden sm:inline">Migrasi Data</span>
                   </button>
                 )}
-                <button onClick={openNew} className="btn-primary text-xs py-2">
+                <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
                 </button>
               </>
@@ -441,12 +523,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
             {subView === 'kategori' && (
               <>
                 {categories.length === 0 && (
-                  <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs py-2">
+                  <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
                     {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
                     <span className="hidden sm:inline">{seedingCats ? 'Menambahkan…' : 'Kategori Default'}</span>
                   </button>
                 )}
-                <button onClick={openNewCat} className="btn-primary text-xs py-2">
+                <button onClick={openNewCat} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Tambah Kategori</span><span className="sm:hidden">Tambah</span>
                 </button>
               </>
@@ -562,20 +644,14 @@ export default function ProductsTab({ creds }: { creds: string }) {
                         {c.bannerUrl && (
                           <div className="relative w-full" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
                             <Image src={c.bannerUrl} alt={c.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 240px" unoptimized />
-                            <span className="absolute top-2 left-2 w-8 h-8 rounded-lg flex items-center justify-center text-base"
-                              style={{ background: 'rgba(255,255,255,0.9)' }}>
-                              {c.emoji}
-                            </span>
                           </div>
                         )}
                         <div className="p-4 flex flex-col gap-2 flex-1">
                           <div className="flex items-start justify-between gap-2">
-                            {!c.bannerUrl && (
-                              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-                                style={{ background: 'var(--accent-bg)' }}>
-                                {c.emoji}
-                              </div>
-                            )}
+                            <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                              style={{ background: 'var(--accent-bg)' }}>
+                              {c.emoji}
+                            </div>
                             <span className="badge badge-amber text-[10px] flex-shrink-0 ml-auto">{count} produk</span>
                           </div>
                           <div>
@@ -669,14 +745,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     {/* Emoji + Name */}
                     <div style={{ display: 'flex', gap: 12 }}>
-                      <div style={{ width: 88, flexShrink: 0 }}>
+                      <div style={{ flexShrink: 0 }}>
                         <label className="field-label">Emoji</label>
-                        <input
+                        <EmojiPicker
                           value={editingCat.emoji}
-                          onChange={e => setEditingCat({ ...editingCat, emoji: e.target.value })}
-                          className="input"
-                          style={{ textAlign: 'center', fontSize: 22 }}
-                          maxLength={4}
+                          onChange={emoji => setEditingCat({ ...editingCat, emoji })}
                         />
                       </div>
                       <div style={{ flex: 1 }}>
@@ -843,7 +916,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
               ) : view === 'table' ? (
                 <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
                   {paginated.map((p, idx) => {
-                    const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
+                    const stock      = stockStatus(p);
+                    const outOfStock = stock.label === 'Habis';
                     const isSelected = selected.has(p.id);
                     const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
                     return (
@@ -863,12 +937,17 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           </span>
 
                           {/* Thumbnail */}
-                          <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
-                            style={{ background: `${p.bgColor}22` }}>
-                            {p.imageUrls?.[0]
-                              ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="48px" unoptimized />
-                              : <div className="w-full h-full flex items-center justify-center text-2xl">{p.emoji}</div>}
-                          </div>
+                          <button
+                            onClick={() => p.imageUrls?.length && openLightbox(p.imageUrls, 0, p.name)}
+                            disabled={!p.imageUrls?.length}
+                            className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 relative"
+                            style={{ background: `${p.bgColor}22`, cursor: p.imageUrls?.length ? 'pointer' : 'default' }}>
+                            <div style={{ width: '100%', height: '100%', position: 'relative', filter: outOfStock ? 'grayscale(0.8) blur(2px)' : undefined, opacity: outOfStock ? 0.55 : 1, transition: 'filter 0.15s, opacity 0.15s' }}>
+                              {p.imageUrls?.[0]
+                                ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="48px" unoptimized />
+                                : <div className="w-full h-full flex items-center justify-center text-2xl">{p.emoji}</div>}
+                            </div>
+                          </button>
 
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -889,7 +968,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                               <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.price)}</span>
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.weight}</span>
-                              <span className={`badge ${stock.cls}`}>{stock.label}</span>
+                              <span className={`badge ${stock.cls}`}>
+                                {stock.label}{stock === STOCK_MAP.ready ? ` · ${p.stockQty ?? 0} pcs` : ''}
+                              </span>
                               {p.category && (
                                 <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                                   style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
@@ -921,15 +1002,25 @@ export default function ProductsTab({ creds }: { creds: string }) {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {paginated.map(p => {
-                    const stock      = STOCK_MAP[p.stock] ?? { label: p.stock, cls: 'badge-gray' };
+                    const stock      = stockStatus(p);
+                    const outOfStock = stock.label === 'Habis';
                     const isSelected = selected.has(p.id);
                     return (
                       <div key={p.id} className="card overflow-hidden flex flex-col"
                         style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                        <div className="relative w-full aspect-square" style={{ background: `${p.bgColor}22` }}>
-                          {p.imageUrls?.[0]
-                            ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
-                            : <div className="w-full h-full flex items-center justify-center text-4xl">{p.emoji}</div>}
+                        <div
+                          onClick={() => p.imageUrls?.length && openLightbox(p.imageUrls, 0, p.name)}
+                          className="relative w-full aspect-square" style={{ background: `${p.bgColor}22`, cursor: p.imageUrls?.length ? 'pointer' : 'default' }}>
+                          <div style={{ width: '100%', height: '100%', position: 'relative', filter: outOfStock ? 'grayscale(0.8) blur(3px)' : undefined, opacity: outOfStock ? 0.55 : 1, transition: 'filter 0.15s, opacity 0.15s' }}>
+                            {p.imageUrls?.[0]
+                              ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
+                              : <div className="w-full h-full flex items-center justify-center text-4xl">{p.emoji}</div>}
+                          </div>
+                          {outOfStock && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="badge badge-red" style={{ fontSize: 11 }}>Stok Habis</span>
+                            </div>
+                          )}
                           <div className="absolute top-2 left-2 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.85)' }}>
                             <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
                           </div>
@@ -945,7 +1036,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.price)}</span>
-                            <span className={`badge ${stock.cls}`}>{stock.label}</span>
+                            <span className={`badge ${stock.cls}`}>
+                              {stock.label}{stock === STOCK_MAP.ready ? ` · ${p.stockQty ?? 0} pcs` : ''}
+                            </span>
                           </div>
                           {p.category && (
                             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full self-start"
@@ -1090,13 +1183,28 @@ export default function ProductsTab({ creds }: { creds: string }) {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Col 1 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* Emoji + Name */}
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flexShrink: 0 }}>
+                        <label className="field-label">Emoji</label>
+                        <EmojiPicker
+                          value={editing.emoji}
+                          onChange={emoji => setEditing({ ...editing, emoji })}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label className="field-label">Nama Produk *</label>
+                        <input
+                          value={editing.name}
+                          onChange={e => setEditing({ ...editing, name: e.target.value })}
+                          className="input"
+                        />
+                      </div>
+                    </div>
+
                     {([
-                      { label: 'Nama Produk *',    key: 'name'     as const, type: 'text' },
-                      { label: 'Kode Produk',       key: 'code'     as const, type: 'text' },
-                      { label: 'Emoji',             key: 'emoji'    as const, type: 'text' },
-                      { label: 'Berat / Ukuran',    key: 'weight'   as const, type: 'text' },
-                      { label: 'Warna BG (hex)',    key: 'bgColor'  as const, type: 'text' },
-                      { label: 'Gradient Tailwind', key: 'gradient' as const, type: 'text' },
+                      { label: 'Kode Produk',    key: 'code'   as const, type: 'text' },
+                      { label: 'Berat / Ukuran', key: 'weight' as const, type: 'text' },
                     ] as const).map(f => (
                       <div key={f.key}>
                         <label className="field-label">{f.label}</label>
@@ -1105,6 +1213,15 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           className="input" />
                       </div>
                     ))}
+
+                    <div>
+                      <label className="field-label">Warna & Gradient</label>
+                      <ColorThemePicker
+                        bgColor={editing.bgColor}
+                        gradient={editing.gradient}
+                        onChange={theme => setEditing({ ...editing, ...theme })}
+                      />
+                    </div>
                   </div>
 
                   {/* Col 2 */}
@@ -1122,7 +1239,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     ))}
 
                     {/* Selects */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
                       <div>
                         <label className="field-label">Kategori</label>
                         <select value={editing.category}
@@ -1133,14 +1250,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
                         </select>
                       </div>
                       <div>
-                        <label className="field-label">Stok</label>
-                        <select value={editing.stock}
-                          onChange={e => setEditing({ ...editing, stock: e.target.value })}
-                          className="input" style={{ fontSize: 12 }}>
-                          {STOCK_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </div>
-                      <div>
                         <label className="field-label">Badge</label>
                         <select value={editing.badge ?? ''}
                           onChange={e => setEditing({ ...editing, badge: e.target.value })}
@@ -1148,6 +1257,26 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           {BADGE_OPTS.map(o => <option key={o} value={o}>{o || '–'}</option>)}
                         </select>
                       </div>
+                    </div>
+
+                    {/* Status stok — read-only, dihitung dari data gudang (kecuali PO diaktifkan) */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div>
+                        <p className="field-label" style={{ marginBottom: 2 }}>Status Stok</p>
+                        <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Otomatis dari data gudang & transaksi di menu Stok</p>
+                      </div>
+                      <span className={`badge ${stockStatus(editing).cls}`}>
+                        {stockStatus(editing).label} · {editing.stockQty ?? 0} pcs
+                      </span>
+                    </div>
+
+                    {/* Toggle Open PO */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div>
+                        <p className="field-label" style={{ marginBottom: 2 }}>Buka Pre-Order (PO)</p>
+                        <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Aktifkan untuk tetap menerima pesanan walau stok gudang 0</p>
+                      </div>
+                      <Switch checked={!!editing.openPO} onChange={() => setEditing({ ...editing, openPO: !editing.openPO })} />
                     </div>
 
                     {/* Description */}
@@ -1196,6 +1325,17 @@ export default function ProductsTab({ creds }: { creds: string }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Image lightbox ── */}
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          title={lightbox.title}
+          onIndexChange={i => setLightbox(l => l && { ...l, index: i })}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
   );

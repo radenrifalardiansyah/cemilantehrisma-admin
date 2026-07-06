@@ -11,6 +11,9 @@ import {
 import { useViewMode, type ViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import ScrollChips from '@/components/ScrollChips';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/Confirm';
+import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
 
 const API = '';
 
@@ -59,6 +62,8 @@ interface Product {
   bgColor: string;
   imageUrls?: string[];
   category?: string;
+  stock?: string;
+  stockQty?: number;
 }
 
 interface Category {
@@ -293,6 +298,8 @@ export default function StockTab({
   products?: Product[];
   categories?: Category[];
 }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [subTab, setSubTab] = useState<SubTab>('stok');
 
   // Shared
@@ -403,23 +410,32 @@ export default function StockTab({
   const saveWarehouse = async () => {
     if (!wForm.name.trim()) return;
     setSavingW(true);
-    if (editWarehouse) {
-      await fetch(`${API}/api/warehouses/${editWarehouse.id}`, { method: 'PUT', headers, body: JSON.stringify(wForm) });
-    } else {
-      await fetch(`${API}/api/warehouses`, { method: 'POST', headers, body: JSON.stringify(wForm) });
-    }
-    setShowWForm(false);
-    await loadWarehouses();
+    const isEdit = !!editWarehouse;
+    const r = isEdit
+      ? await fetch(`${API}/api/warehouses/${editWarehouse!.id}`, { method: 'PUT', headers, body: JSON.stringify(wForm) })
+      : await fetch(`${API}/api/warehouses`, { method: 'POST', headers, body: JSON.stringify(wForm) });
     setSavingW(false);
+    if (r.ok) {
+      setShowWForm(false);
+      await loadWarehouses();
+      toast.success(isEdit ? 'Gudang berhasil diperbarui.' : 'Gudang berhasil ditambahkan.');
+    } else {
+      toast.error('Gagal menyimpan gudang.');
+    }
   };
 
   const deleteWarehouse = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Hapus gudang ini? Semua data stok di gudang ini juga akan dihapus.')) return;
+    if (!await confirm({ message: 'Hapus gudang ini? Semua data stok di gudang ini juga akan dihapus.', danger: true })) return;
     setDeletingId(id);
-    await fetch(`${API}/api/warehouses/${id}`, { method: 'DELETE', headers });
-    await loadWarehouses();
+    const r = await fetch(`${API}/api/warehouses/${id}`, { method: 'DELETE', headers });
     setDeletingId(null);
+    if (r.ok) {
+      await loadWarehouses();
+      toast.success('Gudang berhasil dihapus.');
+    } else {
+      toast.error('Gagal menghapus gudang.');
+    }
   };
 
   // ── Submit masuk / keluar ──
@@ -442,6 +458,9 @@ export default function StockTab({
       setTxSuccess(true);
       setTimeout(() => setTxSuccess(false), 2500);
       await loadTx();
+      toast.success(type === 'in' ? 'Stok masuk berhasil dicatat.' : 'Stok keluar berhasil dicatat.');
+    } else {
+      toast.error('Gagal mencatat transaksi stok.');
     }
     setTxSub(false);
   };
@@ -467,6 +486,9 @@ export default function StockTab({
       setTrSuccess(true);
       setTimeout(() => setTrSuccess(false), 2500);
       await loadTx();
+      toast.success('Transfer stok berhasil.');
+    } else {
+      toast.error('Gagal melakukan transfer stok.');
     }
     setTrSub(false);
   };
@@ -481,6 +503,27 @@ export default function StockTab({
   const inTx       = transactions.filter(t => t.type === 'in');
   const outTx      = transactions.filter(t => t.type === 'out');
   const transferTx = transactions.filter(t => t.type === 'transfer');
+
+  const poProducts  = products.filter(p => p.stock === 'open_po');
+  const totalQtyAll = products.reduce((s, p) => s + (p.stockQty ?? 0), 0);
+
+  // Produk open PO tidak selalu punya entri warehouse_stock (bisa 0 unit fisik) —
+  // tetap tampilkan di setiap gudang supaya admin melihat status PO-nya.
+  const poIds       = new Set(poProducts.map(p => p.id));
+  const stockPoExtra = poProducts
+    .filter(p => !stocks.some(s => s.productId === p.id))
+    .map(p => ({ productId: p.id, productName: p.name, stockQty: 0 }));
+  const mergedStocks = [...stocks, ...stockPoExtra];
+
+  // Dropdown produk hanya untuk item yang tersedia (ready) atau open PO — bukan yang habis
+  const availableProducts = products.filter(p => p.stock === 'ready' || p.stock === 'open_po');
+  const productOptions: SearchSelectOption[] = availableProducts.map(p => ({
+    value: p.id, label: p.name, imageUrl: p.imageUrls?.[0], emoji: p.emoji,
+    sublabel: p.stock === 'open_po' ? 'Open PO' : undefined,
+  }));
+  const warehouseOptions: SearchSelectOption[] = warehouses.map(w => ({
+    value: w.id, label: w.name, sublabel: w.location || undefined, emoji: '🏬',
+  }));
 
   // ── Shared form row style ──
   const fieldLabel = { fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 6, display: 'block' };
@@ -527,8 +570,10 @@ export default function StockTab({
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               {[
-                { icon: <Warehouse size={16} />, label: 'Total Gudang', val: warehouses.length, color: 'var(--accent)' },
-                { icon: <Package   size={16} />, label: 'Aktif',        val: warehouses.length, color: 'var(--success)' },
+                { icon: <Warehouse   size={16} />, label: 'Total Gudang',        val: warehouses.length, color: 'var(--accent)' },
+                { icon: <Package     size={16} />, label: 'Aktif',               val: warehouses.length, color: 'var(--success)' },
+                { icon: <TrendingUp  size={16} />, label: 'Total Qty Gudang',    val: totalQtyAll,        color: '#0284C7' },
+                { icon: <Clock       size={16} />, label: 'Item Open PO',        val: poProducts.length,  color: '#A84F10' },
               ].map((c, i) => (
                 <div key={i} className="card p-4 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -624,6 +669,43 @@ export default function StockTab({
               </div>
             )}
 
+            {/* Item Open PO — lintas semua gudang */}
+            {poProducts.length > 0 && (
+              <div className="mt-8">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: '#FDF0E6', color: '#A84F10' }}>
+                    <Clock size={15} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Item Open PO</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {poProducts.length} produk pre-order — berlaku di semua gudang
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {poProducts.map(p => (
+                    <div key={p.id} className="card overflow-hidden flex flex-col">
+                      <div className="relative w-full aspect-square" style={{ background: `${p.bgColor}22` }}>
+                        {p.imageUrls?.[0] ? (
+                          <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-4xl">{p.emoji}</div>
+                        )}
+                        <span className="badge badge-amber absolute top-2 right-2 text-[10px]">Open PO</span>
+                      </div>
+                      <div className="px-3 pt-2 pb-3">
+                        <p className="text-[11px] font-bold leading-snug line-clamp-2" style={{ color: 'var(--text-primary)' }}>
+                          {p.name}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {showWForm && (
               <WarehouseModal
                 title={editWarehouse ? 'Edit Gudang' : 'Tambah Gudang Baru'}
@@ -662,11 +744,12 @@ export default function StockTab({
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               {[
-                { icon: <Package      size={16} />, label: 'Jenis Produk', val: stocks.length,                              color: 'var(--accent)'  },
+                { icon: <Package      size={16} />, label: 'Jenis Produk', val: mergedStocks.length,                        color: 'var(--accent)'  },
                 { icon: <TrendingUp   size={16} />, label: 'Total Unit',   val: stocks.reduce((s, x) => s + x.stockQty, 0), color: 'var(--success)' },
                 { icon: <TrendingDown size={16} />, label: 'Stok Rendah',  val: stocks.filter(x => x.stockQty < 10).length, color: 'var(--danger)'  },
+                { icon: <Clock        size={16} />, label: 'Item Open PO', val: poProducts.length,                          color: '#A84F10'        },
               ].map((c, i) => (
                 <div key={i} className="card p-4">
                   <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-3"
@@ -683,14 +766,14 @@ export default function StockTab({
               <div className="flex items-center justify-center py-20">
                 <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
               </div>
-            ) : stocks.length === 0 ? (
+            ) : mergedStocks.length === 0 ? (
               <div className="rounded-2xl p-16 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <Package size={24} style={{ color: 'var(--accent)', margin: '0 auto 10px', display: 'block' }} />
                 <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada stok</p>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan stok lewat menu <strong>Masuk</strong>.</p>
               </div>
             ) : (() => {
-              const withCat = stocks.map(s => ({ ...s, category: products.find(p => p.id === s.productId)?.category ?? '' }));
+              const withCat = mergedStocks.map(s => ({ ...s, category: products.find(p => p.id === s.productId)?.category ?? '' }));
               const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;
               const catEmoji = (id: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
               const catIds = Array.from(new Set(withCat.map(s => s.category).filter(Boolean)));
@@ -725,7 +808,8 @@ export default function StockTab({
                         const imgUrl  = prod?.imageUrls?.[0];
                         const emoji   = prod?.emoji   ?? '📦';
                         const bgColor = prod?.bgColor ?? '#F5F0E9';
-                        const qty = s.stockQty;
+                        const qty     = s.stockQty;
+                        const isPO    = poIds.has(s.productId);
                         const qtyStyle = qty === 0
                           ? { bg: '#FEF2F2', color: '#DC2626', border: '#FECACA' }
                           : qty < 10
@@ -743,7 +827,9 @@ export default function StockTab({
                                 style={{ background: qtyStyle.bg, color: qtyStyle.color, border: `1px solid ${qtyStyle.border}` }}>
                                 {qty} unit
                               </div>
-                              {!imgUrl && (
+                              {isPO ? (
+                                <span className="badge badge-amber absolute top-2 left-2 text-[10px]">Open PO</span>
+                              ) : !imgUrl && (
                                 <div className="absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center"
                                   style={{ background: 'rgba(0,0,0,0.35)' }} title="Belum ada foto">
                                   <ImageIcon size={10} color="#fff" />
@@ -793,17 +879,13 @@ export default function StockTab({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Gudang</label>
-                    <select className="input" value={txWId} onChange={e => setTxWId(e.target.value)}>
-                      <option value="">– Pilih Gudang –</option>
-                      {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
+                    <SearchSelect value={txWId} onChange={setTxWId} options={warehouseOptions}
+                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
                   </div>
                   <div>
                     <label style={fieldLabel}>Produk</label>
-                    <select className="input" value={txPId} onChange={e => setTxPId(e.target.value)}>
-                      <option value="">– Pilih Produk –</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>)}
-                    </select>
+                    <SearchSelect value={txPId} onChange={setTxPId} options={productOptions}
+                      placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                   </div>
                 </div>
 
@@ -872,17 +954,13 @@ export default function StockTab({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Gudang</label>
-                    <select className="input" value={txWId} onChange={e => setTxWId(e.target.value)}>
-                      <option value="">– Pilih Gudang –</option>
-                      {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
+                    <SearchSelect value={txWId} onChange={setTxWId} options={warehouseOptions}
+                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
                   </div>
                   <div>
                     <label style={fieldLabel}>Produk</label>
-                    <select className="input" value={txPId} onChange={e => setTxPId(e.target.value)}>
-                      <option value="">– Pilih Produk –</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>)}
-                    </select>
+                    <SearchSelect value={txPId} onChange={setTxPId} options={productOptions}
+                      placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                   </div>
                 </div>
 
@@ -955,27 +1033,22 @@ export default function StockTab({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Dari Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <select className="input" value={fromWId} onChange={e => setFromWId(e.target.value)}>
-                      <option value="">– Pilih Asal –</option>
-                      {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
+                    <SearchSelect value={fromWId} onChange={setFromWId} options={warehouseOptions}
+                      placeholder="– Pilih Asal –" searchPlaceholder="Cari gudang…" />
                   </div>
                   <div>
                     <label style={fieldLabel}>Ke Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <select className="input" value={toWId} onChange={e => setToWId(e.target.value)}>
-                      <option value="">– Pilih Tujuan –</option>
-                      {warehouses.filter(w => w.id !== fromWId).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
+                    <SearchSelect value={toWId} onChange={setToWId}
+                      options={warehouseOptions.filter(o => o.value !== fromWId)}
+                      placeholder="– Pilih Tujuan –" searchPlaceholder="Cari gudang…" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <select className="input" value={trPId} onChange={e => setTrPId(e.target.value)}>
-                      <option value="">– Pilih Produk –</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>)}
-                    </select>
+                    <SearchSelect value={trPId} onChange={setTrPId} options={productOptions}
+                      placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                   </div>
                   <div>
                     <label style={fieldLabel}>Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>

@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, ChevronDown, ChevronUp, Check, X, Users, UserCheck,
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import ScrollChips from '@/components/ScrollChips';
+import { useToast } from '@/components/Toast';
 
 const API = '';
 
@@ -31,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function ResellersTab({ creds }: { creds: string }) {
+  const toast = useToast();
   const [resellers,  setResellers]  = useState<Reseller[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -48,11 +50,16 @@ export default function ResellersTab({ creds }: { creds: string }) {
   useEffect(() => { load(); }, []);
 
   const updateStatus = async (id: string, status: 'approved' | 'rejected') => {
-    await fetch(`${API}/api/resellers/${id}`, {
+    const r = await fetch(`${API}/api/resellers/${id}`, {
       method: 'PUT', headers,
       body: JSON.stringify({ status }),
     });
-    setResellers(rs => rs.map(r => r.id === id ? { ...r, status } : r));
+    if (r.ok) {
+      setResellers(rs => rs.map(x => x.id === id ? { ...x, status } : x));
+      toast.success(status === 'approved' ? 'Reseller berhasil disetujui.' : 'Reseller berhasil ditolak.');
+    } else {
+      toast.error('Gagal mengubah status reseller.');
+    }
   };
 
   const counts = {

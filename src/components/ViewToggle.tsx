@@ -11,20 +11,20 @@ export default function ViewToggle({ mode, onChange }: { mode: ViewMode; onChang
   });
 
   return (
-    <div className="inline-flex items-center rounded-xl p-1 gap-0.5 flex-shrink-0"
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+    <div className="inline-flex items-center rounded-xl gap-0.5 flex-shrink-0"
+      style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', height: 42, padding: '0 4px', boxSizing: 'border-box' }}>
       <button
         onClick={() => onChange('table')}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-        style={btn(mode === 'table')}
+        className="flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-semibold transition-colors"
+        style={{ ...btn(mode === 'table'), height: 32 }}
         title="Tampilan tabel"
       >
         <Rows3 size={14} /> <span className="hidden sm:inline">Tabel</span>
       </button>
       <button
         onClick={() => onChange('card')}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-        style={btn(mode === 'card')}
+        className="flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-semibold transition-colors"
+        style={{ ...btn(mode === 'card'), height: 32 }}
         title="Tampilan kartu"
       >
         <LayoutGrid size={14} /> <span className="hidden sm:inline">Kartu</span>

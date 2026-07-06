@@ -28,13 +28,22 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  // Update running stock on product document
+  // Update running stock on product document, and derive its ready/habis status from the new total
+  // (unless "Buka PO" is manually enabled on the product, which always wins)
   const qty = typeof data.qty === 'number' ? data.qty : 0;
   const type = data.type as 'in' | 'out';
   const delta = type === 'in' ? qty : -qty;
-  await db.collection('products').doc(productId).update({
-    stockQty: FieldValue.increment(delta),
-    updatedAt: FieldValue.serverTimestamp(),
+  const productRef = db.collection('products').doc(productId);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(productRef);
+    const product = snap.data();
+    const currentQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
+    const newQty = currentQty + delta;
+    tx.update(productRef, {
+      stockQty: newQty,
+      stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   });
 
   return Response.json({ id: ref.id });

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save } from 'lucide-react';
+import { useToast } from '@/components/Toast';
 
 const API = '';
 
@@ -55,6 +56,7 @@ const FIELD_GROUPS = [
 ];
 
 export default function SettingsTab({ creds }: { creds: string }) {
+  const toast = useToast();
   const [settings,  setSettings]  = useState<StoreSettings>({});
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
@@ -73,13 +75,18 @@ export default function SettingsTab({ creds }: { creds: string }) {
 
   const save = async () => {
     setSaving(true);
-    await fetch(`${API}/api/settings`, {
+    const r = await fetch(`${API}/api/settings`, {
       method: 'PUT', headers,
       body: JSON.stringify(settings),
     });
-    setSaved(true);
     setSaving(false);
-    setTimeout(() => setSaved(false), 2500);
+    if (r.ok) {
+      setSaved(true);
+      toast.success('Pengaturan berhasil disimpan.');
+      setTimeout(() => setSaved(false), 2500);
+    } else {
+      toast.error('Gagal menyimpan pengaturan.');
+    }
   };
 
   const set = (key: string, val: string | number | boolean) =>

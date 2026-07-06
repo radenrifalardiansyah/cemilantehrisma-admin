@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag } from 'lucide-react';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/Confirm';
 
 const API = '';
 
@@ -24,6 +26,8 @@ function formatDate(o: Order) {
 }
 
 export default function OrdersTab({ creds }: { creds: string }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -40,9 +44,14 @@ export default function OrdersTab({ creds }: { creds: string }) {
   useEffect(() => { load(); }, []);
 
   const del = async (id: string) => {
-    if (!confirm('Hapus pesanan ini?')) return;
-    await fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers });
-    setOrders(o => o.filter(x => x.id !== id));
+    if (!await confirm({ message: 'Hapus pesanan ini? Tindakan ini tidak bisa dibatalkan.', danger: true })) return;
+    const r = await fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      setOrders(o => o.filter(x => x.id !== id));
+      toast.success('Pesanan berhasil dihapus.');
+    } else {
+      toast.error('Gagal menghapus pesanan.');
+    }
   };
 
   const totalRevenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);

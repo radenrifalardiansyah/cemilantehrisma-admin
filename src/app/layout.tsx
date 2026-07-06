@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AdminSplashScreen from "@/components/AdminSplashScreen";
+import ToastProvider from "@/components/Toast";
+import ConfirmProvider from "@/components/Confirm";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -21,7 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="id" className={jakarta.variable}>
       <body>
         <AdminSplashScreen />
-        {children}
+        <ToastProvider>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </ToastProvider>
       </body>
     </html>
   );
