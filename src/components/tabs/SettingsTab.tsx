@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save } from 'lucide-react';
+import ScrollChips from '@/components/ScrollChips';
 import { useToast } from '@/components/Toast';
 
 const API = '';
@@ -101,10 +102,10 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const activeGroup = FIELD_GROUPS.find(g => g.id === activeGrp)!;
 
   return (
-    <div className="p-4 lg:p-6 max-w-4xl mx-auto space-y-5">
+    <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Pengaturan Toko</h2>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Ubah tanpa perlu redeploy</p>
@@ -119,10 +120,10 @@ export default function SettingsTab({ creds }: { creds: string }) {
         </button>
       </div>
 
-      <div className="flex gap-4 lg:gap-6">
+      <div className="flex flex-col sm:flex-row gap-4 lg:gap-6">
 
         {/* Sidebar group picker */}
-        <aside className="flex-shrink-0 w-[180px] hidden sm:block">
+        <aside className="flex-shrink-0 sm:w-[180px] hidden sm:block">
           <div className="card p-2 space-y-0.5">
             {FIELD_GROUPS.map(g => (
               <button
@@ -145,16 +146,18 @@ export default function SettingsTab({ creds }: { creds: string }) {
         </aside>
 
         {/* Mobile tab chips */}
-        <div className="sm:hidden flex gap-2 flex-wrap mb-1">
-          {FIELD_GROUPS.map(g => (
-            <button
-              key={g.id}
-              onClick={() => setActiveGrp(g.id)}
-              className={`tab-chip ${activeGrp === g.id ? 'active' : ''}`}
-            >
-              {g.icon}{g.label}
-            </button>
-          ))}
+        <div className="sm:hidden">
+          <ScrollChips gap="gap-2">
+            {FIELD_GROUPS.map(g => (
+              <button
+                key={g.id}
+                onClick={() => setActiveGrp(g.id)}
+                className={`tab-chip ${activeGrp === g.id ? 'active' : ''}`}
+              >
+                {g.icon}{g.label}
+              </button>
+            ))}
+          </ScrollChips>
         </div>
 
         {/* Form fields */}
@@ -219,7 +222,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
       </div>
 
       {/* Save bar (mobile floating) */}
-      <div className="fixed bottom-4 right-4 sm:hidden z-40">
+      <div className="fixed bottom-20 right-4 sm:hidden z-40">
         <button
           onClick={save}
           disabled={saving}

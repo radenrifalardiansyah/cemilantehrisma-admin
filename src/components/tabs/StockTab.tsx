@@ -14,6 +14,7 @@ import ScrollChips from '@/components/ScrollChips';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
+import ImageCarousel from '@/components/ImageCarousel';
 
 const API = '';
 
@@ -163,6 +164,8 @@ function TxList({
   const wName = (id?: string) => warehouses.find(w => w.id === id)?.name ?? id ?? '–';
   const pName = (entry: TxEntry) => entry.productName || products.find(p => p.id === entry.productId)?.name || entry.productId;
   const pEmoji = (id: string) => products.find(p => p.id === id)?.emoji ?? '📦';
+  const pImages = (id: string) => products.find(p => p.id === id)?.imageUrls;
+  const pBgColor = (id: string) => products.find(p => p.id === id)?.bgColor ?? '#F5F0E9';
 
   const typeBadge = (type: TxEntry['type']) => {
     if (type === 'in')       return { label: 'Masuk',    Icon: TrendingUp,     color: 'var(--success)', bg: 'var(--success-bg)' };
@@ -204,9 +207,11 @@ function TxList({
           <div style={{
             width: 36, height: 36, borderRadius: 10, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: badge.bg, fontSize: 16,
+            background: `${pBgColor(e.productId)}22`, fontSize: 16, position: 'relative', overflow: 'hidden',
           }}>
-            {pEmoji(e.productId)}
+            {pImages(e.productId)?.[0]
+              ? <Image src={pImages(e.productId)![0]} alt={pName(e)} fill className="object-contain" sizes="36px" unoptimized />
+              : pEmoji(e.productId)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="flex items-center gap-1.5">
@@ -249,38 +254,43 @@ function TxList({
   );
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {rows.map(({ e, isIn, isTransfer, badge, locationLabel }) => (
-        <div key={e.id} className="card p-4" style={{ borderColor: 'var(--border-2)' }}>
-          <div className="flex items-center justify-between mb-2">
-            <div style={{
-              width: 40, height: 40, borderRadius: 12,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: badge.bg, fontSize: 18,
-            }}>
-              {pEmoji(e.productId)}
-            </div>
-            <span style={{
+        <div key={e.id} className="card overflow-hidden flex flex-col" style={{ borderColor: 'var(--border-2)' }}>
+          <div className="relative w-full aspect-square" style={{ background: `${pBgColor(e.productId)}22` }}>
+            <ImageCarousel
+              imageUrls={pImages(e.productId)}
+              emoji={pEmoji(e.productId)}
+              alt={pName(e)}
+              sizes="(max-width: 640px) 50vw, 200px"
+              emojiClassName="text-4xl"
+            />
+            <span className="absolute top-2 right-2" style={{
               display: 'inline-flex', alignItems: 'center', gap: 3,
               fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em',
-              color: badge.color, background: badge.bg, borderRadius: 999, padding: '2px 7px 2px 6px',
+              color: badge.color, background: 'var(--surface)', borderRadius: 999, padding: '2px 7px 2px 6px',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
             }}>
               <badge.Icon size={9} strokeWidth={2.5} /> {badge.label}
             </span>
           </div>
-          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{pName(e)}</p>
-          <p className="text-xs mt-1 flex items-center gap-1.5 truncate" style={{ color: 'var(--text-muted)' }}>
-            {isTransfer ? <ArrowLeftRight size={11} style={{ flexShrink: 0 }} /> : <Warehouse size={11} style={{ flexShrink: 0 }} />}
-            {locationLabel}
-          </p>
-          {e.note && (
-            <p className="text-xs mt-1 italic truncate" style={{ color: 'var(--text-muted)' }}>&ldquo;{e.note}&rdquo;</p>
-          )}
-          <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-            <p className="text-sm font-extrabold tabular" style={{ color: badge.color }}>
-              {isIn ? '+' : isTransfer ? '' : '–'}{e.qty} unit
+          <div className="px-3 pt-2 pb-3">
+            <p className="text-[11px] font-bold leading-snug line-clamp-2" style={{ color: 'var(--text-primary)' }}>
+              {pName(e)}
             </p>
-            <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>{formatDate(e)}</p>
+            <p className="text-[10.5px] mt-1 flex items-center gap-1 truncate" style={{ color: 'var(--text-muted)' }}>
+              {isTransfer ? <ArrowLeftRight size={9} style={{ flexShrink: 0 }} /> : <Warehouse size={9} style={{ flexShrink: 0 }} />}
+              {locationLabel}
+            </p>
+            {e.note && (
+              <p className="text-[10.5px] mt-0.5 italic truncate" style={{ color: 'var(--text-muted)' }}>&ldquo;{e.note}&rdquo;</p>
+            )}
+            <div className="flex items-center justify-between mt-2 pt-1.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+              <p className="text-xs font-extrabold tabular" style={{ color: badge.color }}>
+                {isIn ? '+' : isTransfer ? '' : '–'}{e.qty} unit
+              </p>
+              <p className="text-[10px] tabular" style={{ color: 'var(--text-muted)' }}>{formatDate(e)}</p>
+            </div>
           </div>
         </div>
       ))}
@@ -688,11 +698,13 @@ export default function StockTab({
                   {poProducts.map(p => (
                     <div key={p.id} className="card overflow-hidden flex flex-col">
                       <div className="relative w-full aspect-square" style={{ background: `${p.bgColor}22` }}>
-                        {p.imageUrls?.[0] ? (
-                          <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center text-4xl">{p.emoji}</div>
-                        )}
+                        <ImageCarousel
+                          imageUrls={p.imageUrls}
+                          emoji={p.emoji}
+                          alt={p.name}
+                          sizes="(max-width: 640px) 50vw, 200px"
+                          emojiClassName="text-4xl"
+                        />
                         <span className="badge badge-amber absolute top-2 right-2 text-[10px]">Open PO</span>
                       </div>
                       <div className="px-3 pt-2 pb-3">
@@ -805,7 +817,7 @@ export default function StockTab({
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                       {visible.map(s => {
                         const prod    = products.find(p => p.id === s.productId);
-                        const imgUrl  = prod?.imageUrls?.[0];
+                        const hasImg  = !!prod?.imageUrls?.length;
                         const emoji   = prod?.emoji   ?? '📦';
                         const bgColor = prod?.bgColor ?? '#F5F0E9';
                         const qty     = s.stockQty;
@@ -818,18 +830,20 @@ export default function StockTab({
                         return (
                           <div key={s.productId} className="card overflow-hidden flex flex-col select-none">
                             <div className="relative w-full aspect-square" style={{ background: `${bgColor}22` }}>
-                              {imgUrl ? (
-                                <Image src={imgUrl} alt={s.productName} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
-                              ) : (
-                                <div className="absolute inset-0 flex items-center justify-center text-4xl">{emoji}</div>
-                              )}
+                              <ImageCarousel
+                                imageUrls={prod?.imageUrls}
+                                emoji={emoji}
+                                alt={s.productName}
+                                sizes="(max-width: 640px) 50vw, 200px"
+                                emojiClassName="text-4xl"
+                              />
                               <div className="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-full"
                                 style={{ background: qtyStyle.bg, color: qtyStyle.color, border: `1px solid ${qtyStyle.border}` }}>
                                 {qty} unit
                               </div>
                               {isPO ? (
                                 <span className="badge badge-amber absolute top-2 left-2 text-[10px]">Open PO</span>
-                              ) : !imgUrl && (
+                              ) : !hasImg && (
                                 <div className="absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center"
                                   style={{ background: 'rgba(0,0,0,0.35)' }} title="Belum ada foto">
                                   <ImageIcon size={10} color="#fff" />
@@ -924,7 +938,7 @@ export default function StockTab({
                 </p>
                 <div className="flex items-center gap-2">
                   <ViewToggle mode={historyView} onChange={setHistoryView} />
-                  <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
+                  <button onClick={loadTx} className="btn-ghost p-1.5 flex items-center justify-center" style={{ height: 42, width: 42 }} title="Refresh">
                     <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
                   </button>
                 </div>
@@ -1003,7 +1017,7 @@ export default function StockTab({
                 </p>
                 <div className="flex items-center gap-2">
                   <ViewToggle mode={historyView} onChange={setHistoryView} />
-                  <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
+                  <button onClick={loadTx} className="btn-ghost p-1.5 flex items-center justify-center" style={{ height: 42, width: 42 }} title="Refresh">
                     <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
                   </button>
                 </div>
@@ -1095,7 +1109,7 @@ export default function StockTab({
                 </p>
                 <div className="flex items-center gap-2">
                   <ViewToggle mode={historyView} onChange={setHistoryView} />
-                  <button onClick={loadTx} className="btn-ghost p-1.5" title="Refresh">
+                  <button onClick={loadTx} className="btn-ghost p-1.5 flex items-center justify-center" style={{ height: 42, width: 42 }} title="Refresh">
                     <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
                   </button>
                 </div>

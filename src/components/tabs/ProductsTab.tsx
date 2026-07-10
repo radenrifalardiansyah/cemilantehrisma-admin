@@ -5,9 +5,11 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon, Tag,
+  ChevronLeft, ChevronRight, ImageIcon, Tag, FileSpreadsheet,
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import ImageLightbox from '@/components/ImageLightbox';
+import ImageCarousel from '@/components/ImageCarousel';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import ScrollChips from '@/components/ScrollChips';
@@ -127,6 +129,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
   const [seedingCats,   setSeedingCats]   = useState(false);
+  const [exporting,     setExporting]     = useState(false);
   const [view, setView] = useViewMode('products');
   const fileRef = useRef<HTMLInputElement>(null);
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; title?: string } | null>(null);
@@ -336,6 +339,170 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  const STATUS_FONT_COLOR: Record<string, string> = {
+    Tersedia: 'FF16A34A',
+    Habis:    'FFDC2626',
+    'Open PO': 'FFD97706',
+  };
+
+  const exportExcel = async (rows: FireProduct[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada produk untuk diexport.'); return; }
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+
+      const ws = wb.addWorksheet('Produk');
+
+      const COLS = [
+        { header: 'No',          key: 'no',            width: 6  },
+        { header: 'Kode',        key: 'code',          width: 10 },
+        { header: 'Nama',        key: 'name',           width: 30 },
+        { header: 'Kategori',    key: 'category',       width: 16 },
+        { header: 'Harga',       key: 'price',          width: 14 },
+        { header: 'Harga Coret', key: 'originalPrice',  width: 14 },
+        { header: 'Berat',       key: 'weight',         width: 10 },
+        { header: 'Status Stok', key: 'stockLabel',     width: 14 },
+        { header: 'Stok Qty',    key: 'stockQty',       width: 10 },
+        { header: 'Badge',       key: 'badge',          width: 12 },
+        { header: 'Buka PO',     key: 'openPO',         width: 10 },
+        { header: 'Deskripsi',   key: 'description',    width: 45 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      // ── Judul laporan ──
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'LAPORAN PRODUK — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      // ── Sub-judul (ringkasan) ──
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      subCell.value = `${rows.length} produk (${label}) · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      // ── Header kolom ──
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      // ── Data rows ──
+      rows.forEach((p, i) => {
+        const stockLabel = stockStatus(p).label;
+        const row = ws.addRow({
+          no: i + 1,
+          code: p.code || '-',
+          name: p.name,
+          category: catName(p.category),
+          price: p.price,
+          originalPrice: p.originalPrice ?? null,
+          weight: p.weight || '-',
+          stockLabel,
+          stockQty: p.stockQty ?? 0,
+          badge: p.badge || '-',
+          openPO: p.openPO ? 'Ya' : 'Tidak',
+          description: p.description,
+        });
+
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top:    { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left:   { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right:  { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+
+        row.getCell('price').numFmt = '"Rp"#,##0';
+        row.getCell('price').alignment = { horizontal: 'right', vertical: 'middle' };
+        if (p.originalPrice) {
+          row.getCell('originalPrice').numFmt = '"Rp"#,##0';
+          row.getCell('originalPrice').alignment = { horizontal: 'right', vertical: 'middle' };
+          row.getCell('originalPrice').font = { strike: true, color: { argb: 'FF9CA3AF' } };
+        }
+        row.getCell('no').alignment       = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('stockQty').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('openPO').alignment    = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('category').alignment  = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('description').alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+
+        const statusCell = row.getCell('stockLabel');
+        statusCell.font = { bold: true, color: { argb: STATUS_FONT_COLOR[stockLabel] ?? 'FF374151' } };
+        statusCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      // ── Auto-resize kolom sesuai isi (judul & sub-judul dikecualikan) ──
+      ws.columns.forEach(column => {
+        let maxLen = 8;
+        for (let r = HEADER_ROW_NUM; r <= ws.rowCount; r++) {
+          const v = ws.getRow(r).getCell(column.number!).value;
+          const len = v == null ? 0 : v.toString().length;
+          if (len > maxLen) maxLen = len;
+        }
+        column.width = Math.min(maxLen + 2, 50);
+      });
+
+      // ── Tinggi baris menyesuaikan panjang teks Deskripsi yang di-wrap ──
+      const descColWidth = ws.getColumn('description').width ?? 45;
+      const charsPerLine = Math.max(10, descColWidth - 2);
+      for (let r = HEADER_ROW_NUM + 1; r <= ws.rowCount; r++) {
+        const text = ws.getRow(r).getCell('description').value?.toString() ?? '';
+        const lines = Math.max(1, Math.ceil(text.length / charsPerLine));
+        ws.getRow(r).height = Math.max(20, lines * 14);
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `produk-cemilantehrisma-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} produk (${label}) ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const togglePageAll = () => {
     const pageIds    = paginated.map(p => p.id);
     const allSelected = pageIds.every(id => selected.has(id));
@@ -512,6 +679,13 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
                     {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
                     <span className="hidden sm:inline">Migrasi Data</span>
+                  </button>
+                )}
+                {products.length > 0 && (
+                  <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting}
+                    className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+                    {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+                    <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
                   </button>
                 )}
                 <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
@@ -1008,14 +1182,16 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     return (
                       <div key={p.id} className="card overflow-hidden flex flex-col"
                         style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                        <div
-                          onClick={() => p.imageUrls?.length && openLightbox(p.imageUrls, 0, p.name)}
-                          className="relative w-full aspect-square" style={{ background: `${p.bgColor}22`, cursor: p.imageUrls?.length ? 'pointer' : 'default' }}>
-                          <div style={{ width: '100%', height: '100%', position: 'relative', filter: outOfStock ? 'grayscale(0.8) blur(3px)' : undefined, opacity: outOfStock ? 0.55 : 1, transition: 'filter 0.15s, opacity 0.15s' }}>
-                            {p.imageUrls?.[0]
-                              ? <Image src={p.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
-                              : <div className="w-full h-full flex items-center justify-center text-4xl">{p.emoji}</div>}
-                          </div>
+                        <div className="relative w-full aspect-square" style={{ background: `${p.bgColor}22` }}>
+                          <ImageCarousel
+                            imageUrls={p.imageUrls}
+                            emoji={p.emoji}
+                            alt={p.name}
+                            sizes="(max-width: 640px) 50vw, 200px"
+                            emojiClassName="text-4xl"
+                            onImageClick={p.imageUrls?.length ? (i) => openLightbox(p.imageUrls, i, p.name) : undefined}
+                            innerStyle={{ filter: outOfStock ? 'grayscale(0.8) blur(3px)' : undefined, opacity: outOfStock ? 0.55 : 1, transition: 'filter 0.15s, opacity 0.15s' }}
+                          />
                           {outOfStock && (
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                               <span className="badge badge-red" style={{ fontSize: 11 }}>Stok Habis</span>
@@ -1117,6 +1293,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
             <span className="text-sm font-bold">{selected.size} dipilih</span>
             <div className="w-px h-4 rounded-full" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => exportExcel(products.filter(p => selected.has(p.id)), 'terpilih')} disabled={exporting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              Export {selected.size} Produk
+            </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors"
               style={{ background: 'var(--danger)', color: '#fff' }}>

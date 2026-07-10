@@ -140,6 +140,15 @@ body {
   transition: box-shadow 0.18s;
 }
 
+/* ── Carousel foto produk (geser tanpa scrollbar) ──────────── */
+.carousel-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.carousel-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Stat card gradient accent bar ─────────────────────────── */
 .stat-card-accent {
   position: absolute;
