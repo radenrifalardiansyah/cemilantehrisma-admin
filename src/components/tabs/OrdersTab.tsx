@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
@@ -25,6 +26,35 @@ function formatDate(o: Order) {
   return o.date ?? '–';
 }
 
+// ─── Excel import ─────────────────────────────────────────────────────────────
+const ORDER_TEMPLATE_COLS = [
+  { header: 'No. Invoice',    key: 'invoiceNo',     width: 18 },
+  { header: 'Tanggal',        key: 'date',          width: 16 },
+  { header: 'Nama Pelanggan*', key: 'customerName', width: 24 },
+  { header: 'No. HP',         key: 'customerPhone', width: 18 },
+  { header: 'Produk',         key: 'itemsText',     width: 36 },
+  { header: 'Subtotal',       key: 'subtotal',      width: 16 },
+  { header: 'Diskon',         key: 'discount',      width: 14 },
+  { header: 'Total*',         key: 'total',         width: 16 },
+  { header: 'Status',         key: 'status',        width: 14 },
+] as const;
+
+type OrderTemplateKey = typeof ORDER_TEMPLATE_COLS[number]['key'];
+
+function detectOrderColumn(header: string): OrderTemplateKey | null {
+  const h = header.toLowerCase();
+  if (h.includes('invoice')) return 'invoiceNo';
+  if (h.includes('tanggal') || h.includes('date')) return 'date';
+  if (h.includes('pelanggan') || h.includes('customer')) return 'customerName';
+  if (h.includes('hp') || h.includes('whatsapp') || h.includes('telp') || h.includes('phone')) return 'customerPhone';
+  if (h.includes('produk') || h.includes('item')) return 'itemsText';
+  if (h.includes('subtotal')) return 'subtotal';
+  if (h.includes('diskon') || h.includes('discount')) return 'discount';
+  if (h.includes('total')) return 'total';
+  if (h.includes('status')) return 'status';
+  return null;
+}
+
 export default function OrdersTab({ creds }: { creds: string }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -32,6 +62,9 @@ export default function OrdersTab({ creds }: { creds: string }) {
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [view, setView] = useViewMode('orders');
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
 
@@ -54,6 +87,274 @@ export default function OrdersTab({ creds }: { creds: string }) {
     }
   };
 
+  const exportExcel = async (rows: Order[]) => {
+    if (rows.length === 0) { toast.error('Tidak ada pesanan untuk diexport.'); return; }
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Pesanan');
+
+      const COLS = [
+        { header: 'No',          key: 'no',        width: 6  },
+        { header: 'No. Invoice', key: 'invoiceNo', width: 18 },
+        { header: 'Tanggal',     key: 'date',      width: 20 },
+        { header: 'Pelanggan',   key: 'customer',  width: 24 },
+        { header: 'No. HP',      key: 'phone',     width: 18 },
+        { header: 'Produk',      key: 'items',     width: 40 },
+        { header: 'Jml Produk',  key: 'itemCount', width: 12 },
+        { header: 'Subtotal',    key: 'subtotal',  width: 16 },
+        { header: 'Diskon',      key: 'discount',  width: 16 },
+        { header: 'Total',       key: 'total',     width: 16 },
+        { header: 'Status',      key: 'status',    width: 14 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'LAPORAN PESANAN — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      const totalOmzet = rows.reduce((s, o) => s + (o.total ?? 0), 0);
+      subCell.value = `${rows.length} pesanan · Total omzet ${formatRp(totalOmzet)} · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      rows.forEach((o, i) => {
+        const itemsText = (o.items ?? []).map(it => `${it.name} (${it.weight}) ×${it.qty}`).join(', ');
+        const row = ws.addRow({
+          no: i + 1,
+          invoiceNo: o.invoiceNo || '-',
+          date: formatDate(o),
+          customer: o.customerName || '-',
+          phone: o.customerPhone || '-',
+          items: itemsText || '-',
+          itemCount: o.items?.length ?? 0,
+          subtotal: o.subtotal ?? o.total,
+          discount: o.discount?.amount ?? 0,
+          total: o.total,
+          status: o.status || '-',
+        });
+
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top:    { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left:   { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right:  { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+
+        row.getCell('no').alignment        = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('itemCount').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('status').alignment    = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('items').alignment     = { horizontal: 'left', vertical: 'top', wrapText: true };
+        ['subtotal', 'discount', 'total'].forEach(key => {
+          const cell = row.getCell(key);
+          cell.numFmt = '"Rp"#,##0';
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        });
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      ws.columns.forEach(column => {
+        let maxLen = 8;
+        for (let r = HEADER_ROW_NUM; r <= ws.rowCount; r++) {
+          const v = ws.getRow(r).getCell(column.number!).value;
+          const len = v == null ? 0 : v.toString().length;
+          if (len > maxLen) maxLen = len;
+        }
+        column.width = Math.min(maxLen + 2, 50);
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pesanan-cemilantehrisma-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} pesanan ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const downloadOrderTemplate = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Cemilan Teh Risma Admin';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Template Pesanan');
+    const colCount = ORDER_TEMPLATE_COLS.length;
+    ws.columns = ORDER_TEMPLATE_COLS.map(c => ({ key: c.key, width: c.width }));
+
+    ws.mergeCells(1, 1, 1, colCount);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = 'TEMPLATE IMPORT DATA PESANAN — CEMILAN TEH RISMA';
+    titleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+    ws.getRow(1).height = 26;
+
+    ws.mergeCells(2, 1, 2, colCount);
+    const noteCell = ws.getCell(2, 1);
+    noteCell.value =
+      'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3. '
+      + 'Kolom Tanggal diisi format tgl/bln/tahun, contoh: 15/07/2026 (kosong = tanggal hari ini). '
+      + 'Kolom No. Invoice boleh dikosongkan — akan dibuat otomatis. '
+      + 'Kolom Produk cukup diisi ringkasan nama produk (bebas), bukan rincian per baris.';
+    noteCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+    ws.getRow(2).height = 46;
+
+    const HEADER_ROW_NUM = 3;
+    const headerRow = ws.getRow(HEADER_ROW_NUM);
+    ORDER_TEMPLATE_COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+    headerRow.height = 24;
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFC96018' } },
+        bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+        left: { style: 'thin', color: { argb: 'FFC96018' } },
+        right: { style: 'thin', color: { argb: 'FFC96018' } },
+      };
+    });
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+    const exampleRow = ws.addRow({
+      invoiceNo: '', date: '15/07/2026', customerName: 'Budi Santoso', customerPhone: '081234567890',
+      itemsText: 'Keripik Talas (100g) ×2, Mie Kremes (150g) ×1', subtotal: 45000, discount: 5000,
+      total: 40000, status: 'selesai',
+    });
+    exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-pesanan.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importOrdersFromExcel = async (file: File) => {
+    setImporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) { toast.error('File Excel tidak valid.'); return; }
+
+      let headerRowNum = -1;
+      let colField = new Map<number, OrderTemplateKey>();
+      for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+        const map = new Map<number, OrderTemplateKey>();
+        ws.getRow(r).eachCell((cell, colNumber) => {
+          const field = detectOrderColumn(cell.value?.toString() ?? '');
+          if (field) map.set(colNumber, field);
+        });
+        const fields = new Set(map.values());
+        if (fields.has('customerName') || fields.has('total')) { headerRowNum = r; colField = map; break; }
+      }
+      if (headerRowNum === -1) {
+        toast.error('Kolom "Nama Pelanggan" atau "Total" tidak ditemukan. Gunakan template yang disediakan.');
+        return;
+      }
+
+      const rows: Record<string, unknown>[] = [];
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNum) return;
+        const raw: Record<string, string> = Object.fromEntries(ORDER_TEMPLATE_COLS.map(c => [c.key, '']));
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const field = colField.get(colNumber);
+          if (!field) return;
+          raw[field] = cell.value?.toString().trim() ?? '';
+        });
+        if (!raw.customerName.trim()) return;
+        rows.push({
+          invoiceNo: raw.invoiceNo, date: raw.date, customerName: raw.customerName, customerPhone: raw.customerPhone,
+          itemsText: raw.itemsText,
+          subtotal: Number(raw.subtotal.replace(/[^0-9.-]/g, '')) || undefined,
+          discount: Number(raw.discount.replace(/[^0-9.-]/g, '')) || undefined,
+          total: Number(raw.total.replace(/[^0-9.-]/g, '')) || 0,
+          status: raw.status,
+        });
+      });
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada data pesanan valid pada file tersebut. Pastikan kolom Nama Pelanggan dan Total terisi.');
+        return;
+      }
+
+      const r = await fetch(`${API}/api/orders/bulk-import`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: rows }),
+      });
+      if (r.ok) {
+        const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
+        await load();
+        const extra = [
+          d.skippedDuplicate > 0 ? `${d.skippedDuplicate} No. Invoice duplikat dilewati` : '',
+          d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
+        ].filter(Boolean).join(', ');
+        toast.success(`${d.created} pesanan berhasil diimpor.${extra ? ` (${extra})` : ''}`);
+      } else {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(d.error ?? 'Gagal mengimpor data pesanan.');
+      }
+    } catch {
+      toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const totalRevenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);
   const avgOrder     = orders.length ? totalRevenue / orders.length : 0;
 
@@ -67,12 +368,24 @@ export default function OrdersTab({ creds }: { creds: string }) {
     <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Pesanan</h2>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Riwayat transaksi dari kasir</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-end flex-wrap gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={downloadOrderTemplate} className="btn-ghost text-xs" style={{ height: 34 }}>
+            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
+          </button>
+          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: 34 }}>
+            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
+            <span className="sm:hidden">Upload</span>
+          </button>
+          <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) importOrdersFromExcel(f); e.target.value = ''; }} />
+          {orders.length > 0 && (
+            <button onClick={() => exportExcel(orders)} disabled={exporting} className="btn-ghost text-xs" style={{ height: 34 }}>
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
+            </button>
+          )}
           <ViewToggle mode={view} onChange={setView} />
           <button onClick={load} disabled={loading} className="btn-ghost p-2.5">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />

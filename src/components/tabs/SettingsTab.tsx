@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save } from 'lucide-react';
+import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, RefreshCw, Landmark } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import { useToast } from '@/components/Toast';
 
@@ -54,6 +54,10 @@ const FIELD_GROUPS = [
       { key: 'returnPolicy',   label: 'Kebijakan Pengembalian', type: 'textarea', placeholder: 'Isi kebijakan retur...' },
     ],
   },
+  {
+    id: 'sync', icon: <Database size={15}/>, label: 'Sinkronisasi Data',
+    fields: [],
+  },
 ];
 
 export default function SettingsTab({ creds }: { creds: string }) {
@@ -63,6 +67,8 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
   const [activeGrp, setActiveGrp] = useState('store');
+  const [bankCount,   setBankCount]   = useState<number | null>(null);
+  const [syncingBanks, setSyncingBanks] = useState(false);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
@@ -73,6 +79,25 @@ export default function SettingsTab({ creds }: { creds: string }) {
       setLoading(false);
     })();
   }, []);
+
+  const loadBankCount = async () => {
+    const r = await fetch(`${API}/api/master-banks`, { headers });
+    if (r.ok) { const { banks } = await r.json() as { banks: unknown[] }; setBankCount(banks.length); }
+  };
+  useEffect(() => { loadBankCount(); }, []);
+
+  const syncBanks = async () => {
+    setSyncingBanks(true);
+    const r = await fetch(`${API}/api/master-banks/sync`, { method: 'POST', headers });
+    if (r.ok) {
+      const d = await r.json() as { synced: number; total: number };
+      await loadBankCount();
+      toast.success(d.synced > 0 ? `${d.synced} bank baru disinkronkan (${d.total} total tersedia).` : 'Semua data bank sudah tersinkron.');
+    } else {
+      toast.error('Gagal menyinkronkan data bank.');
+    }
+    setSyncingBanks(false);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -105,11 +130,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
     <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Pengaturan Toko</h2>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Ubah tanpa perlu redeploy</p>
-        </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
         <button
           onClick={save}
           disabled={saving}
@@ -171,6 +192,32 @@ export default function SettingsTab({ creds }: { creds: string }) {
               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{activeGroup.label}</p>
             </div>
 
+            {activeGrp === 'sync' ? (
+              <div className="space-y-3">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Sinkronkan data master ke Firestore. Bank baru akan ditambahkan, bank yang sudah ada akan diperbarui (mis. kode bank) tanpa duplikasi.
+                </p>
+
+                <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                      <Landmark size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Master Bank</p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {bankCount === null ? 'Memuat…' : `${bankCount} bank tersimpan di Firestore`}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={syncBanks} disabled={syncingBanks} className="btn-ghost text-xs flex-shrink-0" style={{ height: 34 }}>
+                    {syncingBanks ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    {syncingBanks ? 'Menyinkronkan…' : 'Sinkronkan'}
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="space-y-4">
               {activeGroup.fields.map(f => (
                 <div key={f.key}>
@@ -217,6 +264,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
       </div>

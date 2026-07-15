@@ -567,11 +567,7 @@ export default function StockTab({
         {/* ════ STOK ════════════════════════════════════════════ */}
         {subTab === 'stok' && stokView === 'warehouses' && (
           <div className="p-4 lg:p-6 animate-fade-up">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Manajemen Gudang</h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{warehouses.length} gudang terdaftar</p>
-              </div>
+            <div className="flex items-center justify-end mb-6">
               <button onClick={loadWarehouses} className="btn-ghost p-2.5" title="Refresh">
                 <RefreshCw size={14} />
               </button>

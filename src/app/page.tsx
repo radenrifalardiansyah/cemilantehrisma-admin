@@ -7,26 +7,43 @@ import {
   ShoppingCart, Plus, Minus, ChevronLeft,
   CheckCircle2, Loader2, User, Phone, Trash2, Tag, Send,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
+  Wallet, X, Banknote,
 } from 'lucide-react';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import AppShell, { TabId } from '@/components/AppShell';
 import ScrollChips from '@/components/ScrollChips';
-import ProductsTab  from '@/components/tabs/ProductsTab';
+import ImageCarousel from '@/components/ImageCarousel';
+import SearchSelect from '@/components/SearchSelect';
+import { useToast } from '@/components/Toast';
+import ProductsTab   from '@/components/tabs/ProductsTab';
+import CategoriesTab from '@/components/tabs/CategoriesTab';
 import OrdersTab    from '@/components/tabs/OrdersTab';
 import ResellersTab from '@/components/tabs/ResellersTab';
+import CustomersTab from '@/components/tabs/CustomersTab';
 import StockTab     from '@/components/tabs/StockTab';
 import SettingsTab  from '@/components/tabs/SettingsTab';
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type CartEntry   = { productId: string; qty: number };
-type PosView     = 'products' | 'cart' | 'done';
-type PosCategory = string;
+type CartEntry     = { productId: string; qty: number };
+type PosView       = 'products' | 'cart' | 'done';
+type PosCategory   = string;
+type PaymentMethod = 'cash' | 'transfer' | 'qris';
 
 interface PosCategory_Entry { id: string; label: string; emoji: string }
+interface PosReseller { id: string; customerId?: string; name: string; phone: string; status: string }
+interface PosBank { id: string; code: string; name: string }
+interface CashierShift {
+  id: string; openedAt?: { seconds: number }; openedBy: string; openingBalance: number;
+  status: 'open' | 'closed';
+}
 
 const POS_CAT_ALL: PosCategory_Entry = { id: 'semua', label: 'Semua', emoji: '🛍️' };
+// QRIS belum diaktifkan (masih proses manual) — cukup tambah entrinya lagi di sini kalau sudah siap
+const PAYMENT_METHODS: { id: PaymentMethod; label: string }[] = [
+  { id: 'cash', label: 'Tunai' }, { id: 'transfer', label: 'Transfer' },
+];
 
 function normalizePhone(raw: string) {
   const d = raw.replace(/\D/g, '');
@@ -230,40 +247,62 @@ interface PosProduct {
   id: string; name: string; price: number; emoji: string;
   imageUrls: string[]; category: string; stock: string;
   bgColor: string; weight: string; badge?: string;
+  stockQty?: number; openPO?: boolean; order?: number;
 }
+
+const POS_STOCK_MAP = {
+  ready:   { label: 'Tersedia', cls: 'badge-green' },
+  habis:   { label: 'Habis',    cls: 'badge-red'   },
+  open_po: { label: 'Open PO',  cls: 'badge-amber' },
+};
+const posStockStatus = (p: Pick<PosProduct, 'stockQty' | 'openPO'>) =>
+  p.openPO ? POS_STOCK_MAP.open_po : (p.stockQty ?? 0) > 0 ? POS_STOCK_MAP.ready : POS_STOCK_MAP.habis;
 
 function PosProductCard({ product, qty, onAdd, onMinus }: {
   product: PosProduct; qty: number; onAdd: () => void; onMinus: () => void;
 }) {
-  const imgUrl = product.imageUrls?.[0];
+  const stock      = posStockStatus(product);
+  const outOfStock = stock.label === 'Habis';
   return (
-    <div className="card overflow-hidden flex flex-col select-none active:scale-[0.97] transition-transform cursor-pointer"
-      onClick={onAdd}>
+    <div className={`card overflow-hidden flex flex-col select-none transition-transform ${outOfStock ? '' : 'active:scale-[0.97] cursor-pointer'}`}
+      onClick={outOfStock ? undefined : onAdd}>
       <div className="relative w-full aspect-square overflow-hidden" style={{ background: `${product.bgColor}22` }}>
-        {imgUrl ? (
-          <Image src={imgUrl} alt={product.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-4xl">
-            {product.emoji}
+        <ImageCarousel
+          imageUrls={product.imageUrls}
+          emoji={product.emoji}
+          alt={product.name}
+          sizes="(max-width: 640px) 50vw, 200px"
+          emojiClassName="text-4xl"
+          innerStyle={{ filter: outOfStock ? 'grayscale(0.8) blur(3px)' : undefined, opacity: outOfStock ? 0.55 : 1, transition: 'filter 0.15s, opacity 0.15s' }}
+        />
+        {outOfStock && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="badge badge-red" style={{ fontSize: 11 }}>Stok Habis</span>
           </div>
         )}
-        {qty > 0 && <div className="absolute inset-0 bg-black/15" />}
+        {product.badge && !outOfStock && <span className="absolute top-2 right-2 badge badge-amber">{product.badge}</span>}
+        {qty > 0 && <div className="absolute inset-0 bg-black/15 pointer-events-none" />}
         {qty > 0 && (
           <div className="absolute top-2 right-2 min-w-[24px] h-6 rounded-full text-white text-[11px] font-black flex items-center justify-center px-1.5 shadow ring-2 ring-white" style={{ background: 'var(--accent)' }}>
             {qty}
           </div>
         )}
-        {qty === 0 && (
+        {qty === 0 && !outOfStock && (
           <div className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
             <Plus size={13} className="text-white" strokeWidth={2.5} />
           </div>
         )}
       </div>
-      <div className="px-3 pt-2 pb-3 flex flex-col flex-1">
-        <p className="text-[11px] font-bold leading-snug line-clamp-2 flex-1 mb-1.5" style={{ color: 'var(--text-primary)' }}>
+      <div className="px-3 pt-2 pb-3 flex flex-col flex-1 gap-1.5">
+        <p className="text-[11px] font-bold leading-snug line-clamp-2" style={{ color: 'var(--text-primary)' }}>
           {product.name}
         </p>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className={`badge ${stock.cls}`} style={{ fontSize: 10 }}>
+            {stock.label}{stock === POS_STOCK_MAP.ready ? ` · ${product.stockQty ?? 0} pcs` : ''}
+          </span>
+        </div>
+        <div className="flex items-center justify-between mt-auto">
           <span className="text-[13px] font-black tabular" style={{ color: 'var(--accent)' }}>
             {formatCurrency(product.price)}
           </span>
@@ -318,9 +357,23 @@ export default function AdminPage() {
   const [custPhone,    setCustPhone]    = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'nominal'>('percent');
   const [discountRaw,  setDiscountRaw]  = useState('');
+  const [paymentMethod,     setPaymentMethod]     = useState<PaymentMethod>('cash');
+  const [amountPaidRaw,     setAmountPaidRaw]     = useState('');
+  const [bankOptions,       setBankOptions]       = useState<PosBank[]>([]);
+  const [transferBank,      setTransferBank]      = useState('');
+  const [transferAmountRaw, setTransferAmountRaw] = useState('');
+  const [resellerList,      setResellerList]      = useState<PosReseller[]>([]);
+  const [selectedResellerId, setSelectedResellerId] = useState('');
+  const [currentShift,      setCurrentShift]      = useState<CashierShift | null>(null);
+  const [shiftLoaded,       setShiftLoaded]       = useState(false);
+  const [shiftModal,        setShiftModal]        = useState<'open' | 'close' | null>(null);
+  const [shiftInputRaw,     setShiftInputRaw]     = useState('');
+  const [shiftNote,         setShiftNote]         = useState('');
+  const [shiftSubmitting,   setShiftSubmitting]   = useState(false);
   const [sending,      setSending]      = useState(false);
   const [sendErr,      setSendErr]      = useState('');
   const [invoiceNo,    setInvoiceNo]    = useState('');
+  const toast = useToast();
 
   // ── Cart computations ────────────────────────────────────
   const getQty       = (id: string) => cart.find(i => i.productId === id)?.qty ?? 0;
@@ -338,7 +391,13 @@ export default function AdminPage() {
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
   const cartTotal = cartSubtotal - discountAmount;
   const hasCart   = cartItems.length > 0;
-  const canSend   = hasCart && custName.trim() && custPhone.trim();
+  const amountPaidNum      = parseFloat(amountPaidRaw) || 0;
+  const changeAmount       = amountPaidNum - cartTotal;
+  const transferAmountNum  = parseFloat(transferAmountRaw) || 0;
+  const transferDiff       = transferAmountNum - cartTotal;
+  const canSend   = hasCart && custName.trim() && custPhone.trim()
+    && (paymentMethod !== 'cash'     || amountPaidNum >= cartTotal)
+    && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= cartTotal));
 
   const addToCart = (id: string) => setCart(prev => {
     const exists = prev.find(i => i.productId === id);
@@ -355,6 +414,8 @@ export default function AdminPage() {
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); clearCart();
     setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
+    setPaymentMethod('cash'); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
+    setSelectedResellerId('');
     setSending(false); setSendErr(''); setInvoiceNo('');
   };
 
@@ -364,11 +425,12 @@ export default function AdminPage() {
     const token = authHeader ?? creds;
     const h = { 'x-admin-auth': token };
     try {
-      const [oRes, pRes, rRes, cRes, webRes] = await Promise.all([
-        fetch('/api/orders',     { headers: h }),
-        fetch('/api/products',   { headers: h }),
-        fetch('/api/resellers',  { headers: h }),
-        fetch('/api/categories', { headers: h }),
+      const [oRes, pRes, rRes, cRes, bRes, webRes] = await Promise.all([
+        fetch('/api/orders',       { headers: h }),
+        fetch('/api/products',     { headers: h }),
+        fetch('/api/resellers',    { headers: h }),
+        fetch('/api/categories',   { headers: h }),
+        fetch('/api/master-banks', { headers: h }),
         fetch(`${MAIN_APP}/api/admin/stats`, { headers: h }).catch(() => null),
       ]);
 
@@ -376,11 +438,14 @@ export default function AdminPage() {
       const orders: { customerName: string; total: number; createdAt?: { seconds: number }; date?: string; items?: { name: string; qty: number; subtotal: number }[] }[] =
         oRes.ok ? (await oRes.json()).orders : [];
       const fetchedProducts: PosProduct[] = pRes.ok ? (await pRes.json() as { products: PosProduct[] }).products : [];
-      const resellers: unknown[] = rRes.ok ? (await rRes.json()).resellers : [];
+      const resellers: (PosReseller & Record<string, unknown>)[] = rRes.ok ? (await rRes.json()).resellers : [];
       const fetchedCats: { id: string; name: string; emoji: string }[] =
         cRes.ok ? (await cRes.json() as { categories: { id: string; name: string; emoji: string }[] }).categories : [];
+      const fetchedBanks: PosBank[] = bRes.ok ? (await bRes.json() as { banks: PosBank[] }).banks : [];
       setPosProducts(fetchedProducts);
       setPosCategories(fetchedCats.map(c => ({ id: c.id, label: c.name, emoji: c.emoji })));
+      setResellerList(resellers.filter(r => r.status === 'approved'));
+      setBankOptions(fetchedBanks);
 
       const revenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);
       const recentOrders: DashOrder[] = orders.slice(0, 5).map(o => ({
@@ -451,6 +516,15 @@ export default function AdminPage() {
     }).catch(() => setChecking(false));
   }, []);
 
+  // ── Sesi kasir — muat status shift terbuka saat tab Kasir dibuka ──
+  useEffect(() => {
+    if (activeTab !== 'pos' || !creds || shiftLoaded) return;
+    fetch('/api/pos/shifts', { headers: { 'x-admin-auth': creds } }).then(async r => {
+      if (r.ok) setCurrentShift((await r.json() as { shift: CashierShift | null }).shift);
+      setShiftLoaded(true);
+    }).catch(() => setShiftLoaded(true));
+  }, [activeTab, creds, shiftLoaded]);
+
   const login = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setLoginErr('');
 
@@ -499,19 +573,85 @@ export default function AdminPage() {
       });
       if (!res.ok) throw new Error('Gagal generate PDF');
       const { url: pdfUrl } = await res.json() as { url: string };
+      const reseller = resellerList.find(r => r.id === selectedResellerId);
+      const bank = bankOptions.find(b => b.code === transferBank);
       await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
-        body: JSON.stringify({ invoiceNo: invNo, date: dateStr, customerName: custName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, pdfUrl }),
+        body: JSON.stringify({
+          invoiceNo: invNo, date: dateStr, customerName: custName, customerPhone: custPhone, items,
+          subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, pdfUrl,
+          paymentMethod,
+          ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
+          ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum } : {}),
+          ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
+          ...(currentShift ? { shiftId: currentShift.id } : {}),
+        }),
       });
+
+      // Potong stok otomatis (best-effort — kegagalan di sini tidak membatalkan invoice yang sudah terkirim)
+      await Promise.all(cartItems.map(i =>
+        fetch(`/api/stock/${i.productId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
+          body: JSON.stringify({ type: 'out', qty: i.qty, date: dateStr, note: `Penjualan Kasir - ${invNo}` }),
+        }).catch(() => null)
+      )).then(results => {
+        if (results.some(r => !r || !r.ok)) toast.error('Sebagian stok gagal diperbarui otomatis, cek menu Stok.');
+      });
+
       window.open(`https://wa.me/${normalizePhone(custPhone)}?text=${encodeURIComponent(formatWAMessage(custName, invNo, cartTotal, pdfUrl))}`, '_blank');
       setInvoiceNo(invNo); setPosView('done');
     } catch { setSendErr('Gagal mengirim invoice. Coba lagi.'); }
     finally { setSending(false); }
   };
 
+  // ── Sesi kasir — buka/tutup shift ─────────────────────────
+  const openShift = async () => {
+    const openingBalance = parseFloat(shiftInputRaw) || 0;
+    setShiftSubmitting(true);
+    try {
+      const r = await fetch('/api/pos/shifts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
+        body: JSON.stringify({ openingBalance, note: shiftNote }),
+      });
+      const data = await r.json() as { shift?: CashierShift; error?: string };
+      if (!r.ok || !data.shift) { toast.error(data.error ?? 'Gagal membuka sesi kasir.'); return; }
+      setCurrentShift(data.shift);
+      setShiftModal(null); setShiftInputRaw(''); setShiftNote('');
+      toast.success('Sesi kasir dibuka.');
+    } catch { toast.error('Gagal membuka sesi kasir.'); }
+    finally { setShiftSubmitting(false); }
+  };
+
+  const closeShift = async () => {
+    if (!currentShift) return;
+    const actualBalance = parseFloat(shiftInputRaw) || 0;
+    setShiftSubmitting(true);
+    try {
+      const r = await fetch(`/api/pos/shifts/${currentShift.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
+        body: JSON.stringify({ actualBalance, note: shiftNote }),
+      });
+      const data = await r.json() as { shift?: CashierShift & { difference?: number }; error?: string };
+      if (!r.ok || !data.shift) { toast.error(data.error ?? 'Gagal menutup sesi kasir.'); return; }
+      setCurrentShift(null);
+      setShiftModal(null); setShiftInputRaw(''); setShiftNote('');
+      const diff = data.shift.difference ?? 0;
+      toast.success(diff === 0 ? 'Sesi kasir ditutup, kas pas.' : `Sesi kasir ditutup, selisih ${formatCurrency(diff)}.`);
+    } catch { toast.error('Gagal menutup sesi kasir.'); }
+    finally { setShiftSubmitting(false); }
+  };
+
   // ─── POS filtered products ───────────────────────────────
-  const filteredProducts = activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat);
+  const filteredProducts = (activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat))
+    .slice()
+    .sort((a, b) => {
+      const aHabis = posStockStatus(a) === POS_STOCK_MAP.habis ? 1 : 0;
+      const bHabis = posStockStatus(b) === POS_STOCK_MAP.habis ? 1 : 0;
+      if (aHabis !== bHabis) return aHabis - bHabis;
+      return (a.order ?? 9999) - (b.order ?? 9999);
+    });
 
   // ─── Screens: Loading & Login ────────────────────────────
   if (checking) return (
@@ -606,11 +746,7 @@ export default function AdminPage() {
     <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Ringkasan Toko</h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Data real-time dari database</p>
-        </div>
+      <div className="flex items-center justify-end">
         <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost p-2.5">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
@@ -931,14 +1067,24 @@ export default function AdminPage() {
   // ─── POS content ─────────────────────────────────────────
   const posProductsContent = (
     <div className="flex flex-col h-full">
-      <ScrollChips className="px-4 pt-4 pb-3 flex-shrink-0" gap="gap-2">
-        {[POS_CAT_ALL, ...posCategories].map(c => (
-          <button key={c.id} onClick={() => setActiveCat(c.id)}
-            className={`tab-chip ${activeCat === c.id ? 'active' : ''}`}>
-            <span>{c.emoji}</span> {c.label}
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3 flex-shrink-0">
+        <ScrollChips className="flex-1 min-w-0" gap="gap-2">
+          {[POS_CAT_ALL, ...posCategories].map(c => (
+            <button key={c.id} onClick={() => setActiveCat(c.id)}
+              className={`tab-chip ${activeCat === c.id ? 'active' : ''}`}>
+              <span>{c.emoji}</span> {c.label}
+            </button>
+          ))}
+        </ScrollChips>
+        {hasCart && (
+          <button onClick={() => setPosView('cart')} className="btn-ghost gap-2 text-xs py-2 flex-shrink-0">
+            <ShoppingCart size={14} />
+            <span className="w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center" style={{ background: 'var(--accent)' }}>
+              {cartCount}
+            </span>
           </button>
-        ))}
-      </ScrollChips>
+        )}
+      </div>
       <div className="flex-1 overflow-y-auto px-4 pb-24 thin-scrollbar">
         {posProducts.length === 0 ? (
           <div className="flex items-center justify-center py-20">
@@ -977,7 +1123,7 @@ export default function AdminPage() {
   );
 
   const posCartContent = (
-    <div className="overflow-y-auto px-4 pt-4 pb-8 space-y-3 thin-scrollbar" style={{ maxWidth: 560, margin: '0 auto' }}>
+    <div className="h-full overflow-y-auto px-4 pt-4 pb-8 space-y-3 thin-scrollbar" style={{ maxWidth: 560, margin: '0 auto' }}>
       {/* Order list */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-2)' }}>
@@ -1070,9 +1216,68 @@ export default function AdminPage() {
         )}
       </div>
 
+      {/* Pembayaran */}
+      <div className="card p-4">
+        <p className="section-label mb-3 flex items-center gap-1.5"><Banknote size={11} /> Metode Pembayaran</p>
+        <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
+          {PAYMENT_METHODS.map(m => (
+            <button key={m.id} onClick={() => { setPaymentMethod(m.id); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw(''); }}
+              className="flex-1 px-3.5 py-2.5 transition-all"
+              style={paymentMethod === m.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {paymentMethod === 'cash' && (
+          <div className="mt-3">
+            <input type="number" min="0" value={amountPaidRaw} onChange={e => setAmountPaidRaw(e.target.value)}
+              className="input" placeholder="Jumlah dibayar (Rp)" />
+            {amountPaidRaw && (
+              <p className="text-xs mt-2 font-semibold" style={{ color: changeAmount >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                {changeAmount >= 0 ? `Kembalian: ${formatCurrency(changeAmount)}` : `Kurang ${formatCurrency(-changeAmount)}`}
+              </p>
+            )}
+          </div>
+        )}
+        {paymentMethod === 'transfer' && (
+          <div className="mt-3 space-y-2.5">
+            <SearchSelect
+              value={transferBank}
+              onChange={setTransferBank}
+              options={bankOptions.map(b => ({ value: b.code, label: b.name }))}
+              placeholder="– Pilih Bank Pengirim –"
+              searchPlaceholder="Cari bank…"
+            />
+            <input type="number" min="0" value={transferAmountRaw} onChange={e => setTransferAmountRaw(e.target.value)}
+              className="input" placeholder="Nominal transfer (Rp)" />
+            {transferAmountRaw && (
+              <p className="text-xs font-semibold" style={{ color: transferDiff >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                {transferDiff === 0 ? 'Nominal sesuai total' : transferDiff > 0 ? `Lebih ${formatCurrency(transferDiff)}` : `Kurang ${formatCurrency(-transferDiff)}`}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Customer */}
       <div className="card p-4 space-y-3">
         <p className="section-label">Data Customer</p>
+        {resellerList.length > 0 && (
+          <SearchSelect
+            value={selectedResellerId}
+            onChange={id => {
+              setSelectedResellerId(id);
+              const r = resellerList.find(rr => rr.id === id);
+              if (r) { setCustName(r.name); setCustPhone(r.phone); }
+            }}
+            options={[
+              { value: '', label: 'Pelanggan Umum (isi manual)' },
+              ...resellerList.map(r => ({ value: r.id, label: r.name, sublabel: r.phone })),
+            ]}
+            placeholder="– Pilih Reseller (opsional) –"
+            searchPlaceholder="Cari reseller…"
+          />
+        )}
         <div className="relative">
           <User size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input type="text" value={custName} onChange={e => setCustName(e.target.value)}
@@ -1119,32 +1324,20 @@ export default function AdminPage() {
 
   const posContent = (
     <div className="relative flex flex-col" style={{ height: '100%' }}>
-      {posView !== 'done' && (
+      {posView === 'cart' && (
         <div className="px-4 pt-4 pb-3 flex items-center gap-3 flex-shrink-0">
-          {posView === 'cart' && (
-            <button onClick={() => { setPosView('products'); setSendErr(''); }}
-              className="btn-ghost p-2.5">
-              <ChevronLeft size={16} />
-            </button>
-          )}
+          <button onClick={() => { setPosView('products'); setSendErr(''); }}
+            className="btn-ghost p-2.5">
+            <ChevronLeft size={16} />
+          </button>
           <div className="flex-1">
             <p className="text-[15px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-              {posView === 'products' ? 'Pilih Produk' : 'Detail & Checkout'}
+              Detail &amp; Checkout
             </p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {posView === 'products'
-                ? `${filteredProducts.length} produk tersedia`
-                : `${cartItems.length} jenis · ${cartCount} pcs`}
+              {`${cartItems.length} jenis · ${cartCount} pcs`}
             </p>
           </div>
-          {posView === 'products' && hasCart && (
-            <button onClick={() => setPosView('cart')} className="btn-ghost gap-2 text-xs py-2">
-              <ShoppingCart size={14} />
-              <span className="w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center" style={{ background: 'var(--accent)' }}>
-                {cartCount}
-              </span>
-            </button>
-          )}
         </div>
       )}
       <div className="flex-1 overflow-hidden relative">
@@ -1155,24 +1348,85 @@ export default function AdminPage() {
     </div>
   );
 
+  // ── Sesi kasir — indikator topbar & modal buka/tutup ──────
+  const posShiftBar = activeTab === 'pos' && shiftLoaded && (
+    currentShift ? (
+      <button onClick={() => setShiftModal('close')} className="btn-ghost gap-2 text-xs py-2" style={{ color: 'var(--success)' }}>
+        <Wallet size={14} />
+        <span className="hidden sm:inline">Kas {formatCurrency(currentShift.openingBalance)} ·</span> Tutup Kasir
+      </button>
+    ) : (
+      <button onClick={() => setShiftModal('open')} className="btn-ghost gap-2 text-xs py-2" style={{ color: 'var(--accent)' }}>
+        <Wallet size={14} /> Buka Kasir
+      </button>
+    )
+  );
+
+  const shiftModalContent = shiftModal && (
+    <div className="modal-overlay" onClick={() => !shiftSubmitting && setShiftModal(null)}>
+      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-accent" />
+        <span className="modal-handle" />
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon"><Wallet size={17} /></div>
+            <div>
+              <p className="modal-title">{shiftModal === 'open' ? 'Buka Sesi Kasir' : 'Tutup Sesi Kasir'}</p>
+              <p className="modal-subtitle">
+                {shiftModal === 'open' ? 'Catat kas awal sebelum mulai transaksi' : 'Hitung kas fisik untuk rekonsiliasi'}
+              </p>
+            </div>
+          </div>
+          <button onClick={() => setShiftModal(null)} className="modal-close"><X size={14} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <p className="section-label mb-1.5">{shiftModal === 'open' ? 'Kas Awal (Rp)' : 'Kas Aktual Dihitung (Rp)'}</p>
+              <input type="number" min="0" value={shiftInputRaw} onChange={e => setShiftInputRaw(e.target.value)}
+                className="input" placeholder="0" autoFocus />
+            </div>
+            <div>
+              <p className="section-label mb-1.5">Catatan (opsional)</p>
+              <input type="text" value={shiftNote} onChange={e => setShiftNote(e.target.value)}
+                className="input" placeholder="Catatan tambahan" />
+            </div>
+            <button
+              onClick={shiftModal === 'open' ? openShift : closeShift}
+              disabled={shiftSubmitting}
+              className="btn-primary w-full py-3 mt-1 disabled:opacity-50">
+              {shiftSubmitting ? <Loader2 size={15} className="animate-spin mx-auto" /> : (shiftModal === 'open' ? 'Buka Kasir' : 'Tutup Kasir')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   // ─── Main render ──────────────────────────────────────────
   const adminUsername = authUser?.username ?? 'Admin';
   return (
-    <AppShell
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      onLogout={logout}
-      hasCart={hasCart}
-      cartCount={cartCount}
-      username={adminUsername}
-    >
-      {activeTab === 'dashboard'  && dashboardContent}
-      {activeTab === 'pos'        && posContent}
-      {activeTab === 'products'   && <ProductsTab  creds={creds} />}
-      {activeTab === 'orders'     && <OrdersTab    creds={creds} />}
-      {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
-      {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
-      {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
-    </AppShell>
+    <>
+      <AppShell
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={logout}
+        hasCart={hasCart}
+        cartCount={cartCount}
+        username={adminUsername}
+        topbarActions={posShiftBar}
+      >
+        {activeTab === 'dashboard'  && dashboardContent}
+        {activeTab === 'pos'        && posContent}
+        {activeTab === 'products'   && <ProductsTab   creds={creds} />}
+        {activeTab === 'categories' && <CategoriesTab creds={creds} />}
+        {activeTab === 'orders'     && <OrdersTab    creds={creds} />}
+        {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
+        {activeTab === 'customers'  && <CustomersTab creds={creds} />}
+        {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
+        {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
+      </AppShell>
+      {shiftModalContent}
+    </>
   );
 }

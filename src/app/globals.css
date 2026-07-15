@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/*
+ * Everything below lives in the `components` layer so that Tailwind
+ * utility classes (which Tailwind registers in the `utilities` layer)
+ * can always override these custom rules — e.g. `p-1.5` on a
+ * `.btn-ghost` button. Unlayered CSS beats every layer regardless of
+ * source order, so without this wrapper these overrides silently do
+ * nothing.
+ */
+@layer components {
+
 /* ── Design Tokens ─────────────────────────────────────────── */
 :root {
   /* Sidebar — espresso gelap premium */
@@ -129,6 +139,23 @@ body {
 }
 @media (min-width: 1024px) {
   .mobile-content-pad { padding-bottom: 0; }
+}
+
+/* ── Floating bulk-action bar ─────────────────────────────────
+ * Centered on the viewport by default. On desktop (lg+) the sidebar
+ * eats into the left side of the screen, so re-center within the
+ * remaining content area using --sidebar-w (set by AppShell) instead
+ * of colliding with the sidebar. */
+.bulk-action-bar {
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+}
+@media (min-width: 1024px) {
+  .bulk-action-bar {
+    left: calc(50% + (var(--sidebar-w, 0px) / 2));
+    max-width: calc(100vw - var(--sidebar-w, 0px) - 24px);
+  }
 }
 
 /* ── Card ───────────────────────────────────────────────────── */
@@ -461,3 +488,5 @@ body {
   gap: 10px;
   background: var(--surface);
 }
+
+} /* end @layer components */

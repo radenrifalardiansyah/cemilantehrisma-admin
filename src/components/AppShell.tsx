@@ -2,15 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart2, ShoppingCart, Package, Receipt,
-  Users, Warehouse, Settings, LogOut, Home,
-  ChevronRight, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
+  BarChart2, ShoppingCart, Package, Receipt, Tag,
+  Users, Contact, Warehouse, Settings, LogOut, Home,
+  ChevronRight, ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 
-export type TabId = 'dashboard' | 'pos' | 'products' | 'orders' | 'resellers' | 'stock' | 'settings';
+export type TabId = 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers' | 'stock' | 'settings';
 
-const NAV_GROUPS = [
+interface NavTab {
+  id: TabId; label: string; mobileLabel: string; Icon: LucideIcon;
+  children?: NavTab[];
+}
+
+const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
   {
     label: 'Utama',
     tabs: [
@@ -21,9 +27,15 @@ const NAV_GROUPS = [
   {
     label: 'Manajemen',
     tabs: [
-      { id: 'products'  as TabId, label: 'Produk',       mobileLabel: 'Produk',   Icon: Package },
-      { id: 'orders'    as TabId, label: 'Pesanan',      mobileLabel: 'Pesanan',  Icon: Receipt },
-      { id: 'resellers' as TabId, label: 'Reseller',     mobileLabel: 'Reseller', Icon: Users },
+      {
+        id: 'products' as TabId, label: 'Produk', mobileLabel: 'Produk', Icon: Package,
+        children: [
+          { id: 'categories' as TabId, label: 'Kategori', mobileLabel: 'Kategori', Icon: Tag },
+        ],
+      },
+      { id: 'orders'     as TabId, label: 'Pesanan',      mobileLabel: 'Pesanan',  Icon: Receipt },
+      { id: 'resellers'  as TabId, label: 'Reseller',     mobileLabel: 'Reseller', Icon: Users },
+      { id: 'customers'  as TabId, label: 'Pelanggan',    mobileLabel: 'Pelanggan', Icon: Contact },
     ],
   },
   {
@@ -35,9 +47,14 @@ const NAV_GROUPS = [
   },
 ];
 
-const ALL_TABS     = NAV_GROUPS.flatMap(g => g.tabs);
-const PRIMARY_TABS = ALL_TABS.slice(0, 4);
-const MORE_TABS    = ALL_TABS.slice(4);
+// Flattened (parents + their children) — used for lookups like the topbar
+// title and "is this tab active" checks, regardless of nesting in the sidebar.
+const ALL_TABS = NAV_GROUPS.flatMap(g => g.tabs.flatMap(t => t.children ? [t, ...t.children] : [t]));
+// Fixed set (not a positional slice) so inserting new tabs into NAV_GROUPS
+// doesn't silently reshuffle which 4 tabs get mobile bottom-nav quick access.
+const PRIMARY_IDS: TabId[] = ['dashboard', 'pos', 'products', 'orders'];
+const PRIMARY_TABS = PRIMARY_IDS.map(id => ALL_TABS.find(t => t.id === id)!);
+const MORE_TABS    = ALL_TABS.filter(t => !PRIMARY_IDS.includes(t.id));
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
@@ -63,6 +80,7 @@ export default function AppShell({
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<TabId>>(new Set());
 
   useEffect(() => {
     const saved = localStorage.getItem('sb-collapsed');
@@ -82,6 +100,8 @@ export default function AppShell({
   const sw           = collapsed ? SIDEBAR_MINI : SIDEBAR_FULL;
 
   const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); };
+  const toggleExpanded = (id: TabId) =>
+    setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--ground)' }}>
@@ -162,36 +182,82 @@ export default function AppShell({
               )}
               <div className="space-y-0.5">
                 {group.tabs.map(tab => {
-                  const isActive = activeTab === tab.id;
+                  const isActive     = activeTab === tab.id;
+                  const hasChildren  = !!tab.children?.length;
+                  const childActive  = tab.children?.some(c => c.id === activeTab) ?? false;
+                  const isExpanded   = !collapsed && (expandedIds.has(tab.id) || childActive);
                   return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      title={collapsed ? tab.label : undefined}
-                      className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
-                      style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-                    >
-                      <tab.Icon
-                        size={17}
-                        strokeWidth={isActive ? 2.2 : 1.7}
-                        style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
-                      />
-                      {!collapsed && (
-                        <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
-                          {tab.label}
-                        </span>
-                      )}
-                      {!collapsed && tab.id === 'pos' && hasCart && (
-                        <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
-                          {cartCount}
-                        </span>
-                      )}
-                      {collapsed && tab.id === 'pos' && hasCart && (
-                        <span
-                          className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
+                    <div key={tab.id}>
+                      <button
+                        onClick={() => setActiveTab(tab.id)}
+                        title={collapsed ? tab.label : undefined}
+                        className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
+                        style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+                      >
+                        <tab.Icon
+                          size={17}
+                          strokeWidth={isActive ? 2.2 : 1.7}
+                          style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
                         />
+                        {!collapsed && (
+                          <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
+                            {tab.label}
+                          </span>
+                        )}
+                        {!collapsed && tab.id === 'pos' && hasCart && (
+                          <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
+                            {cartCount}
+                          </span>
+                        )}
+                        {collapsed && tab.id === 'pos' && hasCart && (
+                          <span
+                            className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
+                          />
+                        )}
+                        {!collapsed && hasChildren && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={e => { e.stopPropagation(); toggleExpanded(tab.id); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); toggleExpanded(tab.id); } }}
+                            className="flex-shrink-0 p-0.5"
+                          >
+                            <ChevronDown
+                              size={13}
+                              style={{
+                                color: '#8A6248', transition: 'transform 0.15s',
+                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                              }}
+                            />
+                          </span>
+                        )}
+                      </button>
+
+                      {isExpanded && (
+                        <div className="mt-0.5 space-y-0.5" style={{ paddingLeft: 29 }}>
+                          {tab.children!.map(child => {
+                            const childIsActive = activeTab === child.id;
+                            return (
+                              <button
+                                key={child.id}
+                                onClick={() => setActiveTab(child.id)}
+                                className={`sidebar-nav-item w-full${childIsActive ? ' active' : ''}`}
+                                style={{ justifyContent: 'flex-start' }}
+                              >
+                                <child.Icon
+                                  size={15}
+                                  strokeWidth={childIsActive ? 2.2 : 1.7}
+                                  style={{ color: childIsActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
+                                />
+                                <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: childIsActive ? '#F0C89A' : '#EDD9C4' }}>
+                                  {child.label}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -289,7 +355,8 @@ export default function AppShell({
       </aside>
 
       {/* ═══ Main Area ═════════════════════════════════════════ */}
-      <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
+      <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden"
+        style={{ '--sidebar-w': `${sw}px` } as React.CSSProperties}>
 
         {/* Topbar */}
         <header

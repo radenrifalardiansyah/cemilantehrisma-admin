@@ -5,7 +5,7 @@ import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search,
-  ChevronLeft, ChevronRight, ImageIcon, Tag, FileSpreadsheet,
+  ChevronLeft, ChevronRight, ImageIcon, FileSpreadsheet, Upload,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import ImageLightbox from '@/components/ImageLightbox';
@@ -42,17 +42,13 @@ const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
   code: '', openPO: false,
 };
 
-const EMPTY_CAT: Omit<FireCategory, 'id'> & { slug: string } = {
-  name: '', emoji: '🏷️', description: '', slug: '', bannerUrl: '',
-};
-
 const STOCK_MAP = {
   ready:   { label: 'Tersedia', cls: 'badge-green' },
   habis:   { label: 'Habis',    cls: 'badge-red'   },
   open_po: { label: 'Open PO',  cls: 'badge-amber' },
 };
 const BADGE_OPTS = ['', 'Best Seller', 'Popular', 'New'];
-const HEADER_BTN_H = 34; // samakan tinggi semua tombol di header Produk/Kategori
+const HEADER_BTN_H = 34; // samakan tinggi semua tombol di header Produk
 // Status stok dihitung dari total qty gudang (menu Stok), kecuali "Buka PO" diaktifkan manual.
 const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
   p.openPO ? STOCK_MAP.open_po : (p.stockQty ?? 0) > 0 ? STOCK_MAP.ready : STOCK_MAP.habis;
@@ -60,8 +56,35 @@ const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
-function slugify(s: string) {
-  return s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+// ─── Excel import ─────────────────────────────────────────────────────────────
+const PRODUCT_TEMPLATE_COLS = [
+  { header: 'Kode',           key: 'code',        width: 12 },
+  { header: 'Nama*',          key: 'name',        width: 26 },
+  { header: 'Kategori*',      key: 'category',    width: 16 },
+  { header: 'Harga*',         key: 'price',       width: 14 },
+  { header: 'Harga Coret',    key: 'originalPrice', width: 14 },
+  { header: 'Berat',          key: 'weight',      width: 10 },
+  { header: 'Stok Qty',       key: 'stockQty',    width: 10 },
+  { header: 'Buka PO (Ya/Tidak)', key: 'openPO',  width: 16 },
+  { header: 'Badge',          key: 'badge',       width: 12 },
+  { header: 'Deskripsi',      key: 'description', width: 40 },
+] as const;
+
+type ProductTemplateKey = typeof PRODUCT_TEMPLATE_COLS[number]['key'];
+
+function detectProductColumn(header: string): ProductTemplateKey | null {
+  const h = header.toLowerCase();
+  if (h.includes('kode')) return 'code';
+  if (h.includes('nama')) return 'name';
+  if (h.includes('kategori')) return 'category';
+  if (h.includes('coret')) return 'originalPrice';
+  if (h.includes('harga')) return 'price';
+  if (h.includes('berat')) return 'weight';
+  if (h.includes('stok') || h.includes('qty')) return 'stockQty';
+  if (h.includes('po')) return 'openPO';
+  if (h.includes('badge')) return 'badge';
+  if (h.includes('deskripsi')) return 'description';
+  return null;
 }
 
 // ─── Checkbox ─────────────────────────────────────────────────────────────────
@@ -128,8 +151,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [page,        setPage]        = useState(1);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
-  const [seedingCats,   setSeedingCats]   = useState(false);
   const [exporting,     setExporting]     = useState(false);
+  const [importing,     setImporting]     = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useViewMode('products');
   const fileRef = useRef<HTMLInputElement>(null);
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; title?: string } | null>(null);
@@ -137,22 +161,8 @@ export default function ProductsTab({ creds }: { creds: string }) {
     if (images?.length) setLightbox({ images, index, title });
   };
 
-  // ── Sub-view ──────────────────────────────────────────────────────
-  const [subView, setSubView] = useState<'produk' | 'kategori'>('produk');
-
-  // ── Category state ────────────────────────────────────────────────
+  // ── Category state (read-only here — managed in the Kategori tab) ──
   const [categories,    setCategories]    = useState<FireCategory[]>([]);
-  const [catsLoading,   setCatsLoading]   = useState(false);
-  const [editingCat,    setEditingCat]    = useState<(Omit<FireCategory, 'id'> & { id: string; slug: string }) | null>(null);
-  const [isNewCat,      setIsNewCat]      = useState(false);
-  const [savingCat,     setSavingCat]     = useState(false);
-  const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
-  const [catError,      setCatError]      = useState('');
-  const [catSearch,     setCatSearch]     = useState('');
-  const [catPage,       setCatPage]       = useState(1);
-  const [catView, setCatView] = useViewMode('categories');
-  const [uploadingBanner, setUploadingBanner] = useState(false);
-  const bannerFileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
 
@@ -166,38 +176,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
   // ── Load categories ───────────────────────────────────────────────
   const loadCats = async () => {
-    setCatsLoading(true);
     const r = await fetch(`${API}/api/categories`, { headers });
     if (r.ok) { const { categories: c } = await r.json() as { categories: FireCategory[] }; setCategories(c); }
-    setCatsLoading(false);
   };
 
   useEffect(() => { load(); loadCats(); }, []);
-
-  // ── Seed default categories ───────────────────────────────
-  const seedCategories = async () => {
-    if (!await confirm('Tambahkan 4 kategori default (Keripik, Mie, Snack, Paket)?')) return;
-    setSeedingCats(true);
-    const defaults = [
-      { slug: 'keripik', name: 'Keripik',  emoji: '🥔', description: 'Keripik Talas Renyah',    order: 1 },
-      { slug: 'mie',     name: 'Mie',      emoji: '🍝', description: 'Mie Kremes Crispy',        order: 2 },
-      { slug: 'snack',   name: 'Snack',    emoji: '🍿', description: 'Cemilan Seru Lainnya',     order: 3 },
-      { slug: 'paket',   name: 'Paket',    emoji: '🎁', description: 'Paket Hemat Pilihan',      order: 4 },
-    ];
-    let failed = 0;
-    for (const d of defaults) {
-      const r = await fetch(`${API}/api/categories`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(d),
-      });
-      if (!r.ok) failed++;
-    }
-    await loadCats();
-    setSeedingCats(false);
-    if (failed === 0) toast.success('Kategori default berhasil ditambahkan.');
-    else toast.error(`${failed} dari ${defaults.length} kategori gagal ditambahkan.`);
-  };
 
   // ── Seed ──────────────────────────────────────────────────────────
   const seed = async () => {
@@ -212,6 +195,145 @@ export default function ProductsTab({ creds }: { creds: string }) {
       toast.error('Gagal migrasi data produk.');
     }
     setSeeding(false);
+  };
+
+  // ── Excel template + import ────────────────────────────────────────
+  const downloadProductTemplate = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Cemilan Teh Risma Admin';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Template Produk');
+    const colCount = PRODUCT_TEMPLATE_COLS.length;
+    ws.columns = PRODUCT_TEMPLATE_COLS.map(c => ({ key: c.key, width: c.width }));
+
+    ws.mergeCells(1, 1, 1, colCount);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = 'TEMPLATE IMPORT DATA PRODUK — CEMILAN TEH RISMA';
+    titleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+    ws.getRow(1).height = 26;
+
+    ws.mergeCells(2, 1, 2, colCount);
+    const noteCell = ws.getCell(2, 1);
+    const catNames = categories.map(c => c.name).join(', ') || '(belum ada kategori)';
+    noteCell.value =
+      'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3. '
+      + `Kolom Kategori harus persis sama dengan salah satu kategori yang sudah ada: ${catNames}. `
+      + 'Kolom Buka PO diisi "Ya" atau "Tidak" (kosong dianggap Tidak).';
+    noteCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+    ws.getRow(2).height = 46;
+
+    const HEADER_ROW_NUM = 3;
+    const headerRow = ws.getRow(HEADER_ROW_NUM);
+    PRODUCT_TEMPLATE_COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+    headerRow.height = 24;
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFC96018' } },
+        bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+        left: { style: 'thin', color: { argb: 'FFC96018' } },
+        right: { style: 'thin', color: { argb: 'FFC96018' } },
+      };
+    });
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+    const exampleRow = ws.addRow({
+      code: 'PRD001', name: 'Keripik Talas Original', category: categories[0]?.name ?? 'Keripik',
+      price: 15000, originalPrice: 18000, weight: '100g', stockQty: 50, openPO: 'Tidak',
+      badge: 'Best Seller', description: 'Contoh — timpa dengan data produk Anda',
+    });
+    exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-produk.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importProductsFromExcel = async (file: File) => {
+    setImporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) { toast.error('File Excel tidak valid.'); return; }
+
+      let headerRowNum = -1;
+      let colField = new Map<number, ProductTemplateKey>();
+      for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+        const map = new Map<number, ProductTemplateKey>();
+        ws.getRow(r).eachCell((cell, colNumber) => {
+          const field = detectProductColumn(cell.value?.toString() ?? '');
+          if (field) map.set(colNumber, field);
+        });
+        const fields = new Set(map.values());
+        if (fields.has('name')) { headerRowNum = r; colField = map; break; }
+      }
+      if (headerRowNum === -1) {
+        toast.error('Kolom "Nama" tidak ditemukan. Gunakan template yang disediakan.');
+        return;
+      }
+
+      const catIdByName = new Map(categories.map(c => [c.name.trim().toLowerCase(), c.id]));
+      const rows: Record<string, unknown>[] = [];
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNum) return;
+        const raw: Record<string, string> = Object.fromEntries(PRODUCT_TEMPLATE_COLS.map(c => [c.key, '']));
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const field = colField.get(colNumber);
+          if (!field) return;
+          raw[field] = cell.value?.toString().trim() ?? '';
+        });
+        if (!raw.name.trim()) return;
+        const categoryId = catIdByName.get(raw.category.trim().toLowerCase());
+        if (!categoryId) return;
+        rows.push({
+          code: raw.code, name: raw.name, category: categoryId,
+          price: Number(raw.price.replace(/[^0-9.-]/g, '')) || 0,
+          originalPrice: Number(raw.originalPrice.replace(/[^0-9.-]/g, '')) || undefined,
+          weight: raw.weight, stockQty: Number(raw.stockQty.replace(/[^0-9.-]/g, '')) || 0,
+          openPO: /^ya$/i.test(raw.openPO.trim()), badge: raw.badge, description: raw.description,
+        });
+      });
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada data produk valid pada file tersebut. Pastikan kolom Nama, Kategori, dan Harga terisi dan Kategori sesuai daftar yang ada.');
+        return;
+      }
+
+      const r = await fetch(`${API}/api/products/bulk-import`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: rows }),
+      });
+      if (r.ok) {
+        const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
+        await load();
+        const extra = [
+          d.skippedDuplicate > 0 ? `${d.skippedDuplicate} Kode duplikat dilewati` : '',
+          d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
+        ].filter(Boolean).join(', ');
+        toast.success(`${d.created} produk berhasil diimpor.${extra ? ` (${extra})` : ''}`);
+      } else {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(d.error ?? 'Gagal mengimpor data produk.');
+      }
+    } catch {
+      toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImporting(false);
+    }
   };
 
   // ── Product CRUD ──────────────────────────────────────────────────
@@ -261,25 +383,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
       }
     } finally {
       setUploading(false);
-    }
-  };
-
-  const uploadBannerImage = async (file: File) => {
-    setUploadingBanner(true);
-    try {
-      const compressed = await compressImage(file);
-      const form = new FormData();
-      form.append('file', compressed);
-      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers, body: form });
-      if (r.ok) {
-        const { url } = await r.json() as { url: string };
-        setEditingCat(ec => ec && { ...ec, bannerUrl: url });
-      } else {
-        const { error } = await r.json() as { error?: string };
-        toast.error(error ?? 'Upload gagal');
-      }
-    } finally {
-      setUploadingBanner(false);
     }
   };
 
@@ -514,68 +617,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
     });
   };
 
-  // ── Category CRUD ─────────────────────────────────────────────────
-  const openNewCat  = () => { setEditingCat({ ...EMPTY_CAT, id: '' }); setIsNewCat(true);  setCatError(''); };
-  const openEditCat = (c: FireCategory) => { setEditingCat({ ...c, slug: c.id }); setIsNewCat(false); setCatError(''); };
-  const closeEditCat = () => { setEditingCat(null); setIsNewCat(false); setCatError(''); };
-
-  const saveCat = async () => {
-    if (!editingCat) return;
-    setSavingCat(true); setCatError('');
-    const slug = isNewCat ? (editingCat.slug || slugify(editingCat.name)) : editingCat.id;
-    if (!slug || !editingCat.name.trim()) {
-      setCatError('Nama kategori wajib diisi.'); setSavingCat(false); return;
-    }
-    if (isNewCat) {
-      const r = await fetch(`${API}/api/categories`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          slug, name: editingCat.name, emoji: editingCat.emoji,
-          description: editingCat.description, order: categories.length + 1,
-          bannerUrl: editingCat.bannerUrl,
-        }),
-      });
-      if (!r.ok) {
-        const d = await r.json() as { error?: string };
-        setCatError(d.error ?? 'Gagal menyimpan kategori.'); setSavingCat(false);
-        toast.error(d.error ?? 'Gagal menyimpan kategori.');
-        return;
-      }
-    } else {
-      const r = await fetch(`${API}/api/categories/${editingCat.id}`, {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: editingCat.name, emoji: editingCat.emoji, description: editingCat.description,
-          bannerUrl: editingCat.bannerUrl,
-        }),
-      });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
-        setCatError(d.error ?? 'Gagal menyimpan kategori.'); setSavingCat(false);
-        toast.error(d.error ?? 'Gagal menyimpan kategori.');
-        return;
-      }
-    }
-    await loadCats(); closeEditCat(); setSavingCat(false);
-    toast.success(isNewCat ? 'Kategori berhasil ditambahkan.' : 'Kategori berhasil diperbarui.');
-  };
-
-  const deleteCat = async (id: string, name: string) => {
-    if (!await confirm({ message: `Hapus kategori "${name}"?`, danger: true })) return;
-    setDeletingCatId(id);
-    const r = await fetch(`${API}/api/categories/${id}`, { method: 'DELETE', headers });
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
-      toast.error(d.error ?? 'Gagal menghapus kategori.');
-    } else {
-      await loadCats();
-      toast.success(`Kategori "${name}" berhasil dihapus.`);
-    }
-    setDeletingCatId(null);
-  };
-
   // ── Filter + pagination ───────────────────────────────────────────
   const filtered = products
     .filter(p => {
@@ -598,17 +639,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
   const catName  = (id: string) => categories.find(c => c.id === id)?.name  ?? id;
   const catEmoji = (id: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
-
-  // ── Category filter + pagination ──────────────────────────────────
-  const filteredCats = categories.filter(c =>
-    !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()) || c.id.toLowerCase().includes(catSearch.toLowerCase())
-  );
-  const catTotalPages = Math.max(1, Math.ceil(filteredCats.length / PAGE_SIZE));
-  const catSafePage   = Math.min(catPage, catTotalPages);
-  const catPaginated  = filteredCats.slice((catSafePage - 1) * PAGE_SIZE, catSafePage * PAGE_SIZE);
-
-  const goCatPage    = (p: number) => setCatPage(Math.max(1, Math.min(p, catTotalPages)));
-  const resetCatPage = () => setCatPage(1);
 
   const renderDetail = (p: FireProduct) => (
     <div className="px-4 pb-4 pt-2 space-y-2" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
@@ -650,382 +680,38 @@ export default function ProductsTab({ creds }: { creds: string }) {
     <div className="p-4 lg:p-6 space-y-4">
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>Produk</h2>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{products.length} produk · {categories.length} kategori</p>
-        </div>
-        <div className="flex items-center justify-between sm:justify-end gap-2">
-          {/* Sub-view toggle */}
-          <div className="flex rounded-xl overflow-hidden border flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-            {(['produk', 'kategori'] as const).map(v => (
-              <button key={v} onClick={() => setSubView(v)}
-                className="capitalize transition-all inline-flex items-center"
-                style={{
-                  height: HEADER_BTN_H - 2, padding: '0 16px', fontSize: 13, fontWeight: 600,
-                  ...(subView === v
-                    ? { background: 'var(--accent)', color: '#fff' }
-                    : { color: 'var(--text-muted)' }),
-                }}>
-                {v === 'produk' ? '📦 Produk' : '🏷️ Kategori'}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {subView === 'produk' && (
-              <>
-                {products.length === 0 && (
-                  <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-                    {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
-                    <span className="hidden sm:inline">Migrasi Data</span>
-                  </button>
-                )}
-                {products.length > 0 && (
-                  <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting}
-                    className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-                    {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-                    <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
-                  </button>
-                )}
-                <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
-                </button>
-              </>
-            )}
-
-            {subView === 'kategori' && (
-              <>
-                {categories.length === 0 && (
-                  <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-                    {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
-                    <span className="hidden sm:inline">{seedingCats ? 'Menambahkan…' : 'Kategori Default'}</span>
-                  </button>
-                )}
-                <button onClick={openNewCat} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Kategori</span><span className="sm:hidden">Tambah</span>
-                </button>
-              </>
-            )}
-          </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {products.length === 0 && (
+            <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+              {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
+              <span className="hidden sm:inline">Migrasi Data</span>
+            </button>
+          )}
+          <button onClick={downloadProductTemplate} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
+          </button>
+          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
+            <span className="sm:hidden">Upload</span>
+          </button>
+          <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) importProductsFromExcel(f); e.target.value = ''; }} />
+          {products.length > 0 && (
+            <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting}
+              className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
+            </button>
+          )}
+          <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
+            <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
+          </button>
         </div>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════ */}
-      {/* SUB-VIEW: KATEGORI                                          */}
-      {/* ════════════════════════════════════════════════════════════ */}
-      {subView === 'kategori' && (
-        <>
-          {catsLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-            </div>
-          ) : categories.length === 0 ? (
-            <div className="card p-12 text-center">
-              <div className="text-5xl mb-4">🏷️</div>
-              <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada kategori</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Klik "Tambah Kategori" untuk membuat kategori produk pertama.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Search + view toggle */}
-              <div className="flex gap-2 items-center">
-                <div className="relative flex-1">
-                  <Search size={14} style={{
-                    position: 'absolute', left: 14, top: '50%',
-                    transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
-                  }} />
-                  <input
-                    value={catSearch}
-                    onChange={e => { setCatSearch(e.target.value); resetCatPage(); }}
-                    className="input text-sm w-full"
-                    style={{ paddingLeft: 38 }}
-                    placeholder="Cari kategori…"
-                  />
-                </div>
-                <ViewToggle mode={catView} onChange={setCatView} />
-              </div>
-
-              {catPaginated.length === 0 ? (
-                <div className="card py-12 text-center">
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada kategori yang cocok.</p>
-                </div>
-              ) : catView === 'table' ? (
-                <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-                  {catPaginated.map((c, idx) => {
-                    const count      = products.filter(p => p.category === c.id).length;
-                    const isDeleting = deletingCatId === c.id;
-                    return (
-                      <div key={c.id}
-                        style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
-                        <div className="flex items-center gap-3 px-4 py-3.5">
-                          {/* Emoji / banner thumbnail */}
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 relative overflow-hidden"
-                            style={{ background: 'var(--accent-bg)' }}>
-                            {c.bannerUrl
-                              ? <Image src={c.bannerUrl} alt="" fill className="object-cover" sizes="40px" unoptimized />
-                              : c.emoji}
-                          </div>
-
-                          {/* Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                                {c.id}
-                              </span>
-                              <span className="badge badge-amber text-[10px]">{count} produk</span>
-                              {!c.bannerUrl && (
-                                <span className="badge badge-gray text-[10px] flex items-center gap-1">
-                                  <ImageIcon size={9} /> No banner
-                                </span>
-                              )}
-                            </div>
-                            {c.description && (
-                              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
-                            )}
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              onClick={() => deleteCat(c.id, c.name)}
-                              disabled={isDeleting || count > 0}
-                              className="btn-ghost p-2 disabled:opacity-30"
-                              title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
-                              style={{ color: 'var(--danger)' }}>
-                              {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {catPaginated.map(c => {
-                    const count      = products.filter(p => p.category === c.id).length;
-                    const isDeleting = deletingCatId === c.id;
-                    return (
-                      <div key={c.id} className="card overflow-hidden flex flex-col">
-                        {c.bannerUrl && (
-                          <div className="relative w-full" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
-                            <Image src={c.bannerUrl} alt={c.name} fill className="object-cover" sizes="(max-width: 640px) 50vw, 240px" unoptimized />
-                          </div>
-                        )}
-                        <div className="p-4 flex flex-col gap-2 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-                              style={{ background: 'var(--accent-bg)' }}>
-                              {c.emoji}
-                            </div>
-                            <span className="badge badge-amber text-[10px] flex-shrink-0 ml-auto">{count} produk</span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded inline-block mt-1"
-                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                              {c.id}
-                            </span>
-                          </div>
-                          {c.description && (
-                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
-                          )}
-                          <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                            <button onClick={() => openEditCat(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                              <Pencil size={12} />
-                            </button>
-                            <button
-                              onClick={() => deleteCat(c.id, c.name)}
-                              disabled={isDeleting || count > 0}
-                              className="btn-ghost p-1.5 disabled:opacity-30"
-                              title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
-                              style={{ color: 'var(--danger)' }}>
-                              {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Pagination */}
-              {catTotalPages > 1 && (
-                <div className="flex items-center justify-between">
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {filteredCats.length} kategori · halaman {catSafePage} dari {catTotalPages}
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                      <ChevronLeft size={14} />
-                    </button>
-                    {Array.from({ length: catTotalPages }, (_, i) => i + 1)
-                      .filter(n => n === 1 || n === catTotalPages || Math.abs(n - catSafePage) <= 1)
-                      .reduce<(number | '…')[]>((acc, n, i, arr) => {
-                        if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-                        acc.push(n); return acc;
-                      }, [])
-                      .map((n, i) =>
-                        n === '…'
-                          ? <span key={`ce${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                          : <button key={n} onClick={() => goCatPage(n as number)}
-                              className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                              style={catSafePage === n
-                                ? { background: 'var(--accent)', color: '#fff' }
-                                : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                              {n}
-                            </button>
-                      )
-                    }
-                    <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Category edit modal */}
-          {editingCat && (
-            <div className="modal-overlay" onClick={closeEditCat}>
-              <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-                <div className="modal-accent" />
-                <span className="modal-handle" />
-
-                <div className="modal-header">
-                  <div className="modal-header-left">
-                    <div className="modal-icon">
-                      <span style={{ fontSize: 17, lineHeight: 1 }}>{editingCat.emoji || '🏷️'}</span>
-                    </div>
-                    <div>
-                      <p className="modal-title">{isNewCat ? 'Tambah Kategori' : 'Edit Kategori'}</p>
-                      <p className="modal-subtitle">{isNewCat ? 'Buat kategori produk baru' : `Edit: ${editingCat.name}`}</p>
-                    </div>
-                  </div>
-                  <button onClick={closeEditCat} className="modal-close"><X size={14} /></button>
-                </div>
-
-                <div className="modal-body">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {/* Emoji + Name */}
-                    <div style={{ display: 'flex', gap: 12 }}>
-                      <div style={{ flexShrink: 0 }}>
-                        <label className="field-label">Emoji</label>
-                        <EmojiPicker
-                          value={editingCat.emoji}
-                          onChange={emoji => setEditingCat({ ...editingCat, emoji })}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <label className="field-label">Nama Kategori <span style={{ color: 'var(--danger)' }}>*</span></label>
-                        <input
-                          value={editingCat.name}
-                          onChange={e => {
-                            const name = e.target.value;
-                            setEditingCat({ ...editingCat, name, ...(isNewCat ? { slug: slugify(name) } : {}) });
-                          }}
-                          className="input"
-                          placeholder="Contoh: Keripik"
-                          autoFocus
-                        />
-                      </div>
-                    </div>
-
-                    {/* Slug / ID */}
-                    <div>
-                      <label className="field-label">
-                        ID / Slug{isNewCat ? ' (auto dari nama, bisa diedit)' : ' (tidak bisa diubah)'}
-                      </label>
-                      <input
-                        value={isNewCat ? (editingCat.slug || slugify(editingCat.name)) : editingCat.id}
-                        onChange={e => isNewCat && setEditingCat({ ...editingCat, slug: slugify(e.target.value) })}
-                        readOnly={!isNewCat}
-                        className="input"
-                        style={!isNewCat ? { opacity: 0.55, cursor: 'not-allowed', fontFamily: 'monospace' } : { fontFamily: 'monospace' }}
-                        placeholder="contoh: keripik"
-                      />
-                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                        Digunakan sebagai referensi di data produk. Hanya huruf kecil, angka, dan tanda hubung.
-                      </p>
-                    </div>
-
-                    {/* Description */}
-                    <div>
-                      <label className="field-label">Deskripsi (opsional)</label>
-                      <input
-                        value={editingCat.description ?? ''}
-                        onChange={e => setEditingCat({ ...editingCat, description: e.target.value })}
-                        className="input"
-                        placeholder="Contoh: Keripik Talas Renyah"
-                      />
-                    </div>
-
-                    {/* Banner */}
-                    <div>
-                      <label className="field-label">Banner Kategori (opsional)</label>
-                      {editingCat.bannerUrl ? (
-                        <div className="relative w-full rounded-xl overflow-hidden group" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
-                          <Image src={editingCat.bannerUrl} alt="" fill className="object-cover" sizes="480px" unoptimized />
-                          <button onClick={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
-                            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <X size={13} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button onClick={() => bannerFileRef.current?.click()} disabled={uploadingBanner}
-                          className="w-full rounded-xl flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition-colors"
-                          style={{ aspectRatio: '2 / 1', border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                          {uploadingBanner ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
-                          {uploadingBanner ? 'Mengunggah…' : 'Unggah Banner'}
-                        </button>
-                      )}
-                      <input ref={bannerFileRef} type="file" accept="image/*" className="hidden"
-                        onChange={e => e.target.files?.[0] && uploadBannerImage(e.target.files[0])} />
-                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                        Tampil sebagai banner saat kategori ini dipilih di halaman toko (rasio 2:1).
-                      </p>
-                    </div>
-
-                    {catError && (
-                      <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                        {catError}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="modal-footer">
-                  <button onClick={closeEditCat} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                    Batal
-                  </button>
-                  <button onClick={saveCat} disabled={savingCat || !editingCat.name.trim()}
-                    className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                    {savingCat ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    {savingCat ? 'Menyimpan…' : 'Simpan Kategori'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ════════════════════════════════════════════════════════════ */}
-      {/* SUB-VIEW: PRODUK                                            */}
-      {/* ════════════════════════════════════════════════════════════ */}
-      {subView === 'produk' && (
-        <>
-          {products.length === 0 ? (
+      {products.length === 0 ? (
             <div className="card p-12 text-center">
               <div className="text-5xl mb-4">📦</div>
               <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada produk</p>
@@ -1223,12 +909,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             </span>
                           )}
 
-                          <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                          <div className="flex items-center justify-between gap-2 mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                             <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                              className="btn-ghost px-2 py-1.5 text-xs font-semibold flex items-center gap-1">
+                              className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
                               Detail {expandedId === p.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                             </button>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-shrink-0">
                               <button onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                                 <Pencil size={12} />
                               </button>
@@ -1282,30 +968,28 @@ export default function ProductsTab({ creds }: { creds: string }) {
               )}
             </>
           )}
-        </>
-      )}
 
       {/* ── Bulk action bar ── */}
-      {selected.size > 0 && subView === 'produk' && (
-        <div className="fixed bottom-20 lg:bottom-6 left-1/2 z-40 animate-fade-up"
-          style={{ transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
-          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-xl"
+      {selected.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-            <span className="text-sm font-bold">{selected.size} dipilih</span>
-            <div className="w-px h-4 rounded-full" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
             <button onClick={() => exportExcel(products.filter(p => selected.has(p.id)), 'terpilih')} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors"
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-              Export {selected.size} Produk
+              Export
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors"
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'var(--danger)', color: '#fff' }}>
               {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Hapus {selected.size} Produk
+              Hapus
             </button>
-            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity">
+            <button onClick={() => setSelected(new Set())}
+              className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
               Batal
             </button>
           </div>
