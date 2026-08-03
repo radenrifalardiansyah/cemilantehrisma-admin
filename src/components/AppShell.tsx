@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BarChart2, ShoppingCart, Package, Receipt, Tag,
   Users, Contact, Warehouse, Settings, LogOut, Home,
-  ChevronRight, ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
+  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
   Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark,
 } from 'lucide-react';
 
@@ -445,13 +445,6 @@ export default function AppShell({
               <span className="hidden sm:inline">Lihat Toko</span>
             </a>
             {topbarActions}
-            <button
-              onClick={onLogout}
-              className="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            >
-              <LogOut size={15} />
-            </button>
           </div>
         </header>
 
@@ -512,6 +505,7 @@ export default function AppShell({
           <button
             onClick={() => setMoreOpen(true)}
             className="flex flex-col items-center justify-center gap-1 flex-1 relative pb-1"
+            aria-label={isMoreActive ? (currentTab?.mobileLabel ?? 'Lainnya') : 'Lainnya'}
           >
             <MoreHorizontal
               size={21}
@@ -560,31 +554,30 @@ export default function AppShell({
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-muted)' }}>
                 Menu Lainnya
               </p>
-              <div className="space-y-1.5">
+              <div className="grid grid-cols-4 gap-3">
                 {MORE_TABS.map(tab => {
                   const isActive = activeTab === tab.id;
                   return (
                     <button
                       key={tab.id}
                       onClick={() => go(tab.id)}
-                      className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all"
+                      className="flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-2xl transition-all"
                       style={{
                         background: isActive ? 'var(--accent-bg)' : 'var(--surface-2)',
                         border: `1.5px solid ${isActive ? 'var(--accent-light)' : 'transparent'}`,
                       }}
                     >
                       <tab.Icon
-                        size={20}
+                        size={22}
                         strokeWidth={isActive ? 2.5 : 1.8}
                         style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
                       />
                       <span
-                        className="font-semibold text-sm flex-1 text-left"
+                        className="text-[11px] font-semibold text-center leading-tight px-0.5"
                         style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
                       >
-                        {tab.label}
+                        {tab.mobileLabel}
                       </span>
-                      {isActive && <ChevronRight size={15} style={{ color: 'var(--accent)' }} />}
                     </button>
                   );
                 })}

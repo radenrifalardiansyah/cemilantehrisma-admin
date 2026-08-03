@@ -1,17 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-  Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Loader2, RefreshCw,
+  Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
+  Search, ChevronLeft, ChevronRight, FileSpreadsheet, Upload,
+  History, Warehouse, Ban,
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { useViewMode } from '@/lib/useViewMode';
+import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import Tooltip from '@/components/Tooltip';
 import type { PosProduct } from '@/lib/pos-types';
 
 const API = '';
+const HEADER_BTN_H = 34;
+
+function Checkbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate?: boolean; onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{
+        background:  checked || indeterminate ? 'var(--accent)' : 'transparent',
+        borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked
+          ? <Check size={11} color="#fff" strokeWidth={3} />
+          : null}
+    </button>
+  );
+}
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
@@ -39,17 +69,87 @@ const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: 
 interface ConsignmentStockItem { productId: string; productName: string; stockQty: number; hargaTitip: number }
 
 interface ShipmentItem { productName: string; qty: number; hargaTitip: number; subtotal: number }
-interface Shipment { id: string; locationName: string; items: ShipmentItem[]; note?: string; createdAt?: { seconds: number } }
+interface Shipment { id: string; locationId?: string; locationName: string; items: ShipmentItem[]; note?: string; createdAt?: { seconds: number } }
 
-interface RecapItem { productName: string; qtySold: number; qtyRetur: number; hargaTitip: number; revenue: number }
+interface RecapItem { productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; revenue: number }
 interface Recap {
-  id: string; locationName: string; items: RecapItem[];
-  totalSold: number; totalRetur: number; totalRevenue: number; note?: string;
-  paymentStatus?: 'lunas' | 'belum_lunas'; createdAt?: { seconds: number };
+  id: string; locationId?: string; locationName: string; items: RecapItem[];
+  totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number; note?: string;
+  paymentStatus?: 'lunas' | 'belum_lunas';
+  warehouseId?: string; warehouseName?: string;
+  createdAt?: { seconds: number };
 }
+
+interface ConsignmentWarehouse { id: string; name: string }
 
 interface SendRow { productId: string; qty: string; hargaTitip: string }
 const EMPTY_SEND_ROW: SendRow = { productId: '', qty: '', hargaTitip: '' };
+
+// ─── Excel import (Lokasi) ─────────────────────────────────────────────────────
+const LOCATION_TEMPLATE_COLS = [
+  { header: 'Nama Lokasi*', key: 'name',        width: 24 },
+  { header: 'Nama Kontak',  key: 'contactName', width: 20 },
+  { header: 'Telepon',      key: 'contactPhone', width: 18 },
+  { header: 'Alamat',       key: 'address',     width: 32 },
+  { header: 'Catatan',      key: 'note',        width: 28 },
+] as const;
+
+type LocationTemplateKey = typeof LOCATION_TEMPLATE_COLS[number]['key'];
+
+function detectLocationColumn(header: string): LocationTemplateKey | null {
+  const h = header.toLowerCase();
+  if (h.includes('lokasi')) return 'name';
+  if (h.includes('kontak')) return 'contactName';
+  if (h.includes('telepon') || h.includes('hp') || h.includes('whatsapp') || h.includes('phone')) return 'contactPhone';
+  if (h.includes('alamat') || h.includes('address')) return 'address';
+  if (h.includes('catatan') || h.includes('note')) return 'note';
+  if (h.includes('nama')) return 'name';
+  return null;
+}
+
+// Pagination bar (shared markup across the three lists in this tab)
+function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPage, unit }: {
+  total: number; safePage: number; totalPages: number; pageSize: number;
+  onPageSize: (n: number) => void; onGoPage: (p: number) => void; unit: string;
+}) {
+  if (total === 0) return null;
+  return (
+    <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center gap-3 flex-wrap">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {total} {unit} · halaman {safePage} dari {totalPages}
+        </p>
+        <PageSizeSelect value={pageSize} onChange={onPageSize} />
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+            <ChevronLeft size={14} />
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+            .reduce<(number | '…')[]>((acc, n, i, arr) => {
+              if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+              acc.push(n); return acc;
+            }, [])
+            .map((n, i) =>
+              n === '…'
+                ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                : <button key={n} onClick={() => onGoPage(n as number)}
+                    className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                    style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                    {n}
+                  </button>
+            )
+          }
+          <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ConsignmentTab({ creds, products }: { creds: string; products: PosProduct[] }) {
   const toast   = useToast();
@@ -57,6 +157,38 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const headers = { 'x-admin-auth': creds };
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
+
+  // ── Gudang (untuk tujuan retur/reject di Rekap Harian) ────────
+  const [warehouses, setWarehouses] = useState<ConsignmentWarehouse[]>([]);
+  const loadWarehouses = async () => {
+    const r = await fetch(`${API}/api/warehouses`, { headers });
+    if (r.ok) setWarehouses((await r.json() as { warehouses: ConsignmentWarehouse[] }).warehouses);
+  };
+  useEffect(() => { loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Riwayat per lokasi (modal) ─────────────────────────────────
+  const [historyLocation,  setHistoryLocation]  = useState<ConsignmentLocation | null>(null);
+  const [historyLoading,   setHistoryLoading]   = useState(false);
+  const [historyShipments, setHistoryShipments] = useState<Shipment[]>([]);
+  const [historyRecaps,    setHistoryRecaps]    = useState<Recap[]>([]);
+
+  const openLocationHistory = async (l: ConsignmentLocation) => {
+    setHistoryLocation(l);
+    setHistoryLoading(true);
+    try {
+      const [sr, rr] = await Promise.all([
+        fetch(`${API}/api/consignment/send?limit=500`, { headers }),
+        fetch(`${API}/api/consignment/recap?limit=500`, { headers }),
+      ]);
+      const sData = sr.ok ? (await sr.json() as { shipments: Shipment[] }).shipments : [];
+      const rData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
+      setHistoryShipments(sData.filter(s => s.locationId === l.id));
+      setHistoryRecaps(rData.filter(r => r.locationId === l.id));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+  const closeLocationHistory = () => { setHistoryLocation(null); setHistoryShipments([]); setHistoryRecaps([]); };
 
   // ── Lokasi ───────────────────────────────────────────────────
   const [locations,        setLocations]        = useState<ConsignmentLocation[]>([]);
@@ -67,6 +199,16 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [lForm,       setLForm]       = useState<LocationForm>(EMPTY_LOCATION);
   const [savingL,     setSavingL]     = useState(false);
   const [deletingLId, setDeletingLId] = useState<string | null>(null);
+  const [locationView, setLocationView] = useViewMode('consignment-locations', 'card');
+
+  const [locationSearch,   setLocationSearch]   = useState('');
+  const [locationPage,     setLocationPage]     = useState(1);
+  const [locationPageSize, setLocationPageSize] = useState(10);
+  const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
+  const [bulkDeletingLocations, setBulkDeletingLocations] = useState(false);
+  const [exportingLocations, setExportingLocations] = useState(false);
+  const [importingLocations, setImportingLocations] = useState(false);
+  const importLocationFileRef = useRef<HTMLInputElement>(null);
 
   const loadLocations = async () => {
     setLocationsLoading(true);
@@ -103,9 +245,293 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     if (!await confirm({ message: `Hapus lokasi "${l.name}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setDeletingLId(l.id);
     const r = await fetch(`${API}/api/consignment/locations/${l.id}`, { method: 'DELETE', headers });
-    if (r.ok) { setLocations(prev => prev.filter(x => x.id !== l.id)); toast.success(`"${l.name}" berhasil dihapus.`); }
+    if (r.ok) {
+      setLocations(prev => prev.filter(x => x.id !== l.id));
+      setSelectedLocations(s => { const n = new Set(s); n.delete(l.id); return n; });
+      toast.success(`"${l.name}" berhasil dihapus.`);
+    }
     else toast.error('Gagal menghapus lokasi.');
     setDeletingLId(null);
+  };
+
+  const locationStockTotals = (id: string) => {
+    const stock = locationStock[id] ?? [];
+    return {
+      qty:   stock.reduce((s, it) => s + it.stockQty, 0),
+      value: stock.reduce((s, it) => s + it.stockQty * it.hargaTitip, 0),
+    };
+  };
+
+  const bulkDeleteLocations = async () => {
+    if (selectedLocations.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selectedLocations.size} lokasi yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    setBulkDeletingLocations(true);
+    const count = selectedLocations.size;
+    const ids = [...selectedLocations];
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/locations/${id}`, { method: 'DELETE', headers })));
+    const okIds = ids.filter((_, i) => results[i].ok);
+    setLocations(prev => prev.filter(l => !okIds.includes(l.id)));
+    setSelectedLocations(new Set());
+    if (okIds.length === count) toast.success(`${count} lokasi berhasil dihapus.`);
+    else toast.error(`Hanya ${okIds.length} dari ${count} lokasi berhasil dihapus.`);
+    setBulkDeletingLocations(false);
+  };
+
+  const toggleSelectLocation = (id: string) =>
+    setSelectedLocations(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const exportLocationsExcel = async (rows: ConsignmentLocation[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada lokasi untuk diexport.'); return; }
+    setExportingLocations(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Lokasi Konsinyasi');
+
+      const COLS = [
+        { header: 'No',               key: 'no',          width: 6  },
+        { header: 'Nama Lokasi',      key: 'name',        width: 24 },
+        { header: 'Nama Kontak',      key: 'contactName', width: 20 },
+        { header: 'Telepon',         key: 'contactPhone', width: 18 },
+        { header: 'Alamat',           key: 'address',     width: 32 },
+        { header: 'Stok Titip (pcs)', key: 'stockQty',    width: 16 },
+        { header: 'Nilai Stok Titip', key: 'stockValue',  width: 18 },
+        { header: 'Catatan',          key: 'note',        width: 28 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'LOKASI KONSINYASI — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      subCell.value = `${rows.length} lokasi (${label}) · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      rows.forEach((l, i) => {
+        const totals = locationStockTotals(l.id);
+        const row = ws.addRow({
+          no: i + 1,
+          name: l.name,
+          contactName: l.contactName || '-',
+          contactPhone: l.contactPhone || '-',
+          address: l.address || '-',
+          stockQty: totals.qty,
+          stockValue: totals.value,
+          note: l.note || '-',
+        });
+
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top:    { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left:   { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right:  { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+
+        row.getCell('no').alignment       = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('stockQty').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('address').alignment  = { horizontal: 'left', vertical: 'top', wrapText: true };
+        row.getCell('stockValue').numFmt  = '#,##0';
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lokasi-konsinyasi-cemilantehrisma-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} lokasi (${label}) ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExportingLocations(false);
+    }
+  };
+
+  const downloadLocationTemplate = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Cemilan Teh Risma Admin';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Template Lokasi');
+    const colCount = LOCATION_TEMPLATE_COLS.length;
+    ws.columns = LOCATION_TEMPLATE_COLS.map(c => ({ key: c.key, width: c.width }));
+
+    ws.mergeCells(1, 1, 1, colCount);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = 'TEMPLATE IMPORT LOKASI KONSINYASI — CEMILAN TEH RISMA';
+    titleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+    ws.getRow(1).height = 26;
+
+    ws.mergeCells(2, 1, 2, colCount);
+    const noteCell = ws.getCell(2, 1);
+    noteCell.value =
+      'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3.';
+    noteCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+    ws.getRow(2).height = 30;
+
+    const HEADER_ROW_NUM = 3;
+    const headerRow = ws.getRow(HEADER_ROW_NUM);
+    LOCATION_TEMPLATE_COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+    headerRow.height = 24;
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFC96018' } },
+        bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+        left: { style: 'thin', color: { argb: 'FFC96018' } },
+        right: { style: 'thin', color: { argb: 'FFC96018' } },
+      };
+    });
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+    ws.getColumn('contactPhone').numFmt = '@';
+
+    const exampleRow = ws.addRow({
+      name: 'Warung Bu Yanti', contactName: 'Bu Yanti', contactPhone: '081234567890',
+      address: 'Jl. Melati No. 3', note: '',
+    });
+    exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-lokasi-konsinyasi.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importLocationsFromExcel = async (file: File) => {
+    setImportingLocations(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) { toast.error('File Excel tidak valid.'); return; }
+
+      let headerRowNum = -1;
+      let colField = new Map<number, LocationTemplateKey>();
+      for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+        const map = new Map<number, LocationTemplateKey>();
+        ws.getRow(r).eachCell((cell, colNumber) => {
+          const field = detectLocationColumn(cell.value?.toString() ?? '');
+          if (field) map.set(colNumber, field);
+        });
+        if (map.has(1) || [...map.values()].includes('name')) { headerRowNum = r; colField = map; break; }
+      }
+      if (headerRowNum === -1) {
+        toast.error('Kolom "Nama Lokasi" tidak ditemukan. Gunakan template yang disediakan.');
+        return;
+      }
+
+      const rows: LocationForm[] = [];
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNum) return;
+        const raw: Record<string, string> = Object.fromEntries(LOCATION_TEMPLATE_COLS.map(c => [c.key, '']));
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const field = colField.get(colNumber);
+          if (!field) return;
+          raw[field] = cell.value?.toString().trim() ?? '';
+        });
+        if (!raw.name.trim()) return;
+        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note });
+      });
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada data lokasi valid pada file tersebut.');
+        return;
+      }
+
+      let created = 0;
+      for (const row of rows) {
+        const r = await fetch(`${API}/api/consignment/locations`, {
+          method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(row),
+        });
+        if (r.ok) created++;
+      }
+      await loadLocations();
+      const failed = rows.length - created;
+      toast.success(`${created} lokasi berhasil diimpor.${failed > 0 ? ` ${failed} baris gagal.` : ''}`);
+    } catch {
+      toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImportingLocations(false);
+    }
+  };
+
+  const filteredLocations = locations.filter(l => {
+    if (!locationSearch) return true;
+    const q = locationSearch.toLowerCase();
+    return l.name.toLowerCase().includes(q)
+      || l.contactName.toLowerCase().includes(q)
+      || l.contactPhone.toLowerCase().includes(q)
+      || l.address.toLowerCase().includes(q);
+  });
+  const totalLocationPages   = Math.max(1, Math.ceil(filteredLocations.length / locationPageSize));
+  const safeLocationPage     = Math.min(locationPage, totalLocationPages);
+  const paginatedLocations   = filteredLocations.slice((safeLocationPage - 1) * locationPageSize, safeLocationPage * locationPageSize);
+  const goLocationPage       = (p: number) => setLocationPage(Math.max(1, Math.min(p, totalLocationPages)));
+  const resetLocationPage    = () => setLocationPage(1);
+
+  const togglePageAllLocations = () => {
+    const pageIds     = paginatedLocations.map(l => l.id);
+    const allSelected = pageIds.every(id => selectedLocations.has(id));
+    setSelectedLocations(s => {
+      const n = new Set(s);
+      if (allSelected) pageIds.forEach(id => n.delete(id));
+      else             pageIds.forEach(id => n.add(id));
+      return n;
+    });
   };
 
   // ── Kirim Stok ───────────────────────────────────────────────
@@ -115,6 +541,13 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [sending,        setSending]        = useState(false);
   const [shipments,        setShipments]        = useState<Shipment[]>([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(true);
+  const [shipmentView, setShipmentView] = useViewMode('consignment-shipments', 'table');
+
+  const [shipmentSearch,   setShipmentSearch]   = useState('');
+  const [shipmentPage,     setShipmentPage]     = useState(1);
+  const [shipmentPageSize, setShipmentPageSize] = useState(10);
+  const [selectedShipments, setSelectedShipments] = useState<Set<string>>(new Set());
+  const [exportingShipments, setExportingShipments] = useState(false);
 
   const loadShipments = async () => {
     setShipmentsLoading(true);
@@ -154,17 +587,152 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     } finally { setSending(false); }
   };
 
+  const exportShipmentsExcel = async (rows: Shipment[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada riwayat kirim untuk diexport.'); return; }
+    setExportingShipments(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Riwayat Kirim');
+
+      const COLS = [
+        { header: 'No',        key: 'no',       width: 6  },
+        { header: 'Lokasi',    key: 'location', width: 24 },
+        { header: 'Tanggal',   key: 'date',     width: 20 },
+        { header: 'Produk',    key: 'items',    width: 44 },
+        { header: 'Total Nilai Titip', key: 'total', width: 18 },
+        { header: 'Catatan',   key: 'note',     width: 26 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'RIWAYAT KIRIM STOK KONSINYASI — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      subCell.value = `${rows.length} pengiriman (${label}) · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      rows.forEach((s, i) => {
+        const row = ws.addRow({
+          no: i + 1,
+          location: s.locationName,
+          date: formatDate(s.createdAt?.seconds),
+          items: s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', '),
+          total: s.items.reduce((sum, it) => sum + it.subtotal, 0),
+          note: s.note || '-',
+        });
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+        row.getCell('no').alignment    = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('items').alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+        row.getCell('total').numFmt    = '#,##0';
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riwayat-kirim-konsinyasi-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} riwayat kirim (${label}) ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExportingShipments(false);
+    }
+  };
+
+  const toggleSelectShipment = (id: string) =>
+    setSelectedShipments(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const filteredShipments = shipments.filter(s => {
+    if (!shipmentSearch) return true;
+    const q = shipmentSearch.toLowerCase();
+    return s.locationName.toLowerCase().includes(q)
+      || s.items.some(it => it.productName.toLowerCase().includes(q))
+      || (s.note ?? '').toLowerCase().includes(q);
+  });
+  const totalShipmentPages = Math.max(1, Math.ceil(filteredShipments.length / shipmentPageSize));
+  const safeShipmentPage   = Math.min(shipmentPage, totalShipmentPages);
+  const paginatedShipments = filteredShipments.slice((safeShipmentPage - 1) * shipmentPageSize, safeShipmentPage * shipmentPageSize);
+  const goShipmentPage     = (p: number) => setShipmentPage(Math.max(1, Math.min(p, totalShipmentPages)));
+  const resetShipmentPage  = () => setShipmentPage(1);
+
+  const togglePageAllShipments = () => {
+    const pageIds     = paginatedShipments.map(s => s.id);
+    const allSelected = pageIds.every(id => selectedShipments.has(id));
+    setSelectedShipments(s => {
+      const n = new Set(s);
+      if (allSelected) pageIds.forEach(id => n.delete(id));
+      else             pageIds.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
   // ── Rekap Harian ─────────────────────────────────────────────
   const [recapLocationId,   setRecapLocationId]   = useState('');
   const [recapStock,        setRecapStock]        = useState<ConsignmentStockItem[]>([]);
   const [recapStockLoading, setRecapStockLoading] = useState(false);
-  const [recapInputs,       setRecapInputs]       = useState<Record<string, { sold: string; retur: string }>>({});
+  const [recapInputs,       setRecapInputs]       = useState<Record<string, { sold: string; retur: string; reject: string }>>({});
   const [recapNote,         setRecapNote]         = useState('');
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
+  const [recapWarehouseId,  setRecapWarehouseId]  = useState('');
   const [submittingRecap,   setSubmittingRecap]   = useState(false);
   const [recaps,        setRecaps]        = useState<Recap[]>([]);
   const [recapsLoading, setRecapsLoading] = useState(true);
   const [markingRecapId, setMarkingRecapId] = useState<string | null>(null);
+  const [recapView, setRecapView] = useViewMode('consignment-recaps', 'table');
+
+  const [recapSearch,   setRecapSearch]   = useState('');
+  const [recapPage,     setRecapPage]     = useState(1);
+  const [recapPageSize, setRecapPageSize] = useState(10);
+  const [selectedRecaps, setSelectedRecaps] = useState<Set<string>>(new Set());
+  const [exportingRecaps, setExportingRecaps] = useState(false);
 
   const loadRecaps = async () => {
     setRecapsLoading(true);
@@ -184,35 +752,43 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   };
 
   const recapRows = recapStock.map(item => {
-    const input = recapInputs[item.productId] ?? { sold: '', retur: '' };
-    const sold  = parseFloat(input.sold)  || 0;
-    const retur = parseFloat(input.retur) || 0;
-    const sisa  = item.stockQty - sold - retur;
-    return { item, sold, retur, sisa, exceeds: sold + retur > item.stockQty };
+    const input = recapInputs[item.productId] ?? { sold: '', retur: '', reject: '' };
+    const sold   = parseFloat(input.sold)   || 0;
+    const retur  = parseFloat(input.retur)  || 0;
+    const reject = parseFloat(input.reject) || 0;
+    const sisa   = item.stockQty - sold - retur - reject;
+    return { item, sold, retur, reject, sisa, exceeds: sold + retur + reject > item.stockQty };
   });
   const recapTotalRevenue = recapRows.reduce((s, r) => s + r.sold * r.item.hargaTitip, 0);
+  const recapTotalRetur   = recapRows.reduce((s, r) => s + r.retur, 0);
+  const recapTotalReject  = recapRows.reduce((s, r) => s + r.reject, 0);
   const recapHasExceeds   = recapRows.some(r => r.exceeds);
-  const canSubmitRecap    = !!recapLocationId && recapRows.some(r => r.sold > 0 || r.retur > 0) && !recapHasExceeds;
+  const recapNeedsWarehouse = recapTotalRetur + recapTotalReject > 0;
+  const canSubmitRecap    = !!recapLocationId && recapRows.some(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
+    && !recapHasExceeds && (!recapNeedsWarehouse || !!recapWarehouseId);
 
   const submitRecap = async () => {
     if (!canSubmitRecap) return;
     setSubmittingRecap(true);
     try {
       const location = locations.find(l => l.id === recapLocationId)!;
+      const warehouse = warehouses.find(w => w.id === recapWarehouseId);
       const items = recapRows
-        .filter(r => r.sold > 0 || r.retur > 0)
-        .map(r => ({ productId: r.item.productId, productName: r.item.productName, qtySold: r.sold, qtyRetur: r.retur }));
+        .filter(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
+        .map(r => ({ productId: r.item.productId, productName: r.item.productName, qtySold: r.sold, qtyRetur: r.retur, qtyReject: r.reject }));
       const res = await fetch(`${API}/api/consignment/recap`, {
         method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           locationId: location.id, locationName: location.name, items, note: recapNote,
           paymentStatus: recapPaymentStatus,
+          warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
+          warehouseName: recapNeedsWarehouse ? warehouse?.name : undefined,
         }),
       });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan rekap.'); return; }
       toast.success(`Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
-      setRecapNote(''); setRecapPaymentStatus('lunas');
+      setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
       await Promise.all([loadRecapStock(recapLocationId), loadRecaps(), loadLocations()]);
     } finally { setSubmittingRecap(false); }
   };
@@ -225,9 +801,167 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setMarkingRecapId(null);
   };
 
+  const exportRecapsExcel = async (rows: Recap[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada riwayat rekap untuk diexport.'); return; }
+    setExportingRecaps(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Riwayat Rekap');
+
+      const COLS = [
+        { header: 'No',              key: 'no',       width: 6  },
+        { header: 'Lokasi',          key: 'location', width: 24 },
+        { header: 'Tanggal',         key: 'date',     width: 20 },
+        { header: 'Produk',          key: 'items',    width: 44 },
+        { header: 'Total Terjual',   key: 'sold',     width: 14 },
+        { header: 'Total Retur',     key: 'retur',    width: 14 },
+        { header: 'Total Reject',    key: 'reject',   width: 14 },
+        { header: 'Gudang Tujuan',   key: 'warehouse', width: 20 },
+        { header: 'Total Pendapatan', key: 'revenue', width: 18 },
+        { header: 'Status Bayar',    key: 'status',   width: 14 },
+        { header: 'Catatan',         key: 'note',     width: 26 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'RIWAYAT REKAP HARIAN KONSINYASI — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      subCell.value = `${rows.length} rekap (${label}) · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      rows.forEach((r, i) => {
+        const row = ws.addRow({
+          no: i + 1,
+          location: r.locationName,
+          date: formatDate(r.createdAt?.seconds),
+          items: r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', '),
+          sold: r.totalSold,
+          retur: r.totalRetur,
+          reject: r.totalReject || 0,
+          warehouse: r.warehouseName || '-',
+          revenue: r.totalRevenue,
+          status: r.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+          note: r.note || '-',
+        });
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+        row.getCell('no').alignment      = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('sold').alignment    = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('retur').alignment   = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('reject').alignment  = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('items').alignment   = { horizontal: 'left', vertical: 'top', wrapText: true };
+        row.getCell('revenue').numFmt    = '#,##0';
+        const statusCell = row.getCell('status');
+        statusCell.font = { bold: true, color: { argb: r.paymentStatus === 'belum_lunas' ? 'FFDC2626' : 'FF16A34A' } };
+        statusCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riwayat-rekap-konsinyasi-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} riwayat rekap (${label}) ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExportingRecaps(false);
+    }
+  };
+
+  const toggleSelectRecap = (id: string) =>
+    setSelectedRecaps(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const filteredRecaps = recaps.filter(r => {
+    if (!recapSearch) return true;
+    const q = recapSearch.toLowerCase();
+    return r.locationName.toLowerCase().includes(q)
+      || r.items.some(it => it.productName.toLowerCase().includes(q))
+      || (r.note ?? '').toLowerCase().includes(q);
+  });
+  const totalRecapPages = Math.max(1, Math.ceil(filteredRecaps.length / recapPageSize));
+  const safeRecapPage   = Math.min(recapPage, totalRecapPages);
+  const paginatedRecaps = filteredRecaps.slice((safeRecapPage - 1) * recapPageSize, safeRecapPage * recapPageSize);
+  const goRecapPage     = (p: number) => setRecapPage(Math.max(1, Math.min(p, totalRecapPages)));
+  const resetRecapPage  = () => setRecapPage(1);
+
+  const togglePageAllRecaps = () => {
+    const pageIds     = paginatedRecaps.map(r => r.id);
+    const allSelected = pageIds.every(id => selectedRecaps.has(id));
+    setSelectedRecaps(s => {
+      const n = new Set(s);
+      if (allSelected) pageIds.forEach(id => n.delete(id));
+      else             pageIds.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
   const locationOptions = locations.map(l => ({ value: l.id, label: l.name }));
   const productOptions  = products.map(p => ({ value: p.id, label: p.name, emoji: p.emoji }));
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
+
+  // ── Riwayat per lokasi (data turunan untuk modal) ─────────────
+  type HistoryEntry =
+    | { kind: 'kirim'; seconds: number; shipment: Shipment }
+    | { kind: 'rekap'; seconds: number; recap: Recap };
+  const historyTimeline: HistoryEntry[] = [
+    ...historyShipments.map(s => ({ kind: 'kirim' as const, seconds: s.createdAt?.seconds ?? 0, shipment: s })),
+    ...historyRecaps.map(r => ({ kind: 'rekap' as const, seconds: r.createdAt?.seconds ?? 0, recap: r })),
+  ].sort((a, b) => b.seconds - a.seconds);
+  const historyTotalKirim   = historyShipments.reduce((s, sh) => s + sh.items.reduce((ss, it) => ss + it.subtotal, 0), 0);
+  const historyTotalSold    = historyRecaps.reduce((s, r) => s + r.totalSold, 0);
+  const historyTotalRetur   = historyRecaps.reduce((s, r) => s + r.totalRetur, 0);
+  const historyTotalReject  = historyRecaps.reduce((s, r) => s + (r.totalReject || 0), 0);
+  const historyTotalRevenue = historyRecaps.reduce((s, r) => s + r.totalRevenue, 0);
+  const historyBelumLunas   = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas').length;
 
   return (
     <div className="flex flex-col h-full">
@@ -252,15 +986,48 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         {/* ════ LOKASI ═════════════════════════════════════════ */}
         {subTab === 'lokasi' && (
-          <div className="p-4 lg:p-6 animate-fade-up">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Lokasi Konsinyasi</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{locations.length} lokasi titip jual</p>
+          <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {locations.length > 0 && (
+                <div className="relative flex-1 min-w-0">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={locationSearch}
+                    onChange={e => { setLocationSearch(e.target.value); resetLocationPage(); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari nama lokasi, kontak, telepon, atau alamat…"
+                  />
+                </div>
+              )}
+              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Tooltip label="Unduh Template">
+                    <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      <FileSpreadsheet size={14} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={importingLocations ? 'Mengimpor…' : 'Upload Excel'}>
+                    <button onClick={() => importLocationFileRef.current?.click()} disabled={importingLocations} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {importingLocations ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    </button>
+                  </Tooltip>
+                  <input ref={importLocationFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) importLocationsFromExcel(f); e.target.value = ''; }} />
+                  {locations.length > 0 && (
+                    <Tooltip label="Export Excel">
+                      <button onClick={() => exportLocationsExcel(filteredLocations, 'sesuai filter')} disabled={exportingLocations} aria-label="Export Excel"
+                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                        {exportingLocations ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      </button>
+                    </Tooltip>
+                  )}
+                  {locations.length > 0 && <ViewToggle mode={locationView} onChange={setLocationView} height={HEADER_BTN_H} />}
+                </div>
+                <button onClick={openCreateL} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Lokasi</span><span className="sm:hidden">Tambah</span>
+                </button>
               </div>
-              <button onClick={openCreateL} className="btn-primary px-4 py-2 text-xs">
-                <Plus size={13} /> Tambah Lokasi
-              </button>
             </div>
 
             {locationsLoading && locations.length === 0 ? (
@@ -274,58 +1041,137 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan lapak/UMKM mitra untuk mulai kirim stok titip</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {locations.map(l => {
-                  const stock = locationStock[l.id] ?? [];
-                  const totalQty   = stock.reduce((s, it) => s + it.stockQty, 0);
-                  const totalValue = stock.reduce((s, it) => s + it.stockQty * it.hargaTitip, 0);
-                  return (
-                    <div key={l.id} className="card overflow-hidden p-5">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
-                          <Store size={20} style={{ color: 'var(--accent)' }} />
+              <>
+                {paginatedLocations.length > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                    <Checkbox
+                      checked={paginatedLocations.every(l => selectedLocations.has(l.id))}
+                      indeterminate={paginatedLocations.some(l => selectedLocations.has(l.id)) && !paginatedLocations.every(l => selectedLocations.has(l.id))}
+                      onChange={togglePageAllLocations}
+                    />
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                      {selectedLocations.size > 0 ? `${selectedLocations.size} dipilih` : `${paginatedLocations.length} lokasi di halaman ini`}
+                    </span>
+                  </div>
+                )}
+
+                {paginatedLocations.length === 0 ? (
+                  <div className="card py-12 text-center">
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada lokasi yang cocok.</p>
+                  </div>
+                ) : locationView === 'table' ? (
+                  <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                    {paginatedLocations.map(l => {
+                      const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
+                      const isSelected = selectedLocations.has(l.id);
+                      return (
+                        <div key={l.id} className="flex items-center gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)' }}>
+                            <Store size={16} style={{ color: 'var(--accent)' }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                              {l.contactName && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {l.contactName}</span>}
+                            </div>
+                            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                              {l.contactPhone && (
+                                <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                                  <Phone size={10} /> {l.contactPhone}
+                                </span>
+                              )}
+                              {l.address && (
+                                <span className="text-xs flex items-center gap-1 truncate" style={{ color: 'var(--text-muted)' }}>
+                                  <MapPin size={10} className="flex-shrink-0" /> {l.address}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{totalQty} pcs</p>
+                            <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatRp(totalValue)}</p>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
+                              <History size={12} />
+                            </button>
+                            <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                              {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                            <Pencil size={12} />
-                          </button>
-                          <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                            {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {paginatedLocations.map(l => {
+                      const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
+                      const isSelected = selectedLocations.has(l.id);
+                      return (
+                        <div key={l.id} className="card overflow-hidden p-5 relative"
+                          style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                          <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                            <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
+                          </div>
+                          <div className="flex items-start justify-between mb-3 pl-6">
+                            <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
+                              <Store size={20} style={{ color: 'var(--accent)' }} />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
+                                <History size={12} />
+                              </button>
+                              <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </div>
+                          </div>
+                          <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                          {l.contactName && (
+                            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{l.contactName}</p>
+                          )}
+                          {l.contactPhone && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <Phone size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{l.contactPhone}</p>
+                            </div>
+                          )}
+                          {l.address && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <MapPin size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{l.address}</p>
+                            </div>
+                          )}
+                          {l.note && (
+                            <div className="flex items-start gap-1 mt-1">
+                              <StickyNote size={10} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: 2 }} />
+                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{l.note}</p>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between mt-4 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Stok titip saat ini</span>
+                            <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
+                              {totalQty} pcs · {formatRp(totalValue)}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
-                      {l.contactName && (
-                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{l.contactName}</p>
-                      )}
-                      {l.contactPhone && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <Phone size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{l.contactPhone}</p>
-                        </div>
-                      )}
-                      {l.address && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <MapPin size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{l.address}</p>
-                        </div>
-                      )}
-                      {l.note && (
-                        <div className="flex items-start gap-1 mt-1">
-                          <StickyNote size={10} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: 2 }} />
-                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{l.note}</p>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between mt-4 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Stok titip saat ini</span>
-                        <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
-                          {totalQty} pcs · {formatRp(totalValue)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <Pagination total={filteredLocations.length} safePage={safeLocationPage} totalPages={totalLocationPages}
+                  pageSize={locationPageSize} onPageSize={n => { setLocationPageSize(n); resetLocationPage(); }}
+                  onGoPage={goLocationPage} unit="lokasi" />
+              </>
             )}
           </div>
         )}
@@ -364,8 +1210,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
                             <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
                               placeholder="Qty (pcs)" className="input" />
-                            <input type="number" min="0" value={row.hargaTitip} onChange={e => updateSendRow(i, { hargaTitip: e.target.value })}
-                              placeholder="Harga titip" className="input" />
+                            <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
+                              placeholder="Harga titip" />
                             <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
                               className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
                               <X size={14} />
@@ -399,31 +1245,119 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                <Clock size={11} /> Riwayat Kirim ({shipments.length})
-              </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                  <Clock size={11} /> Riwayat Kirim ({shipments.length})
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {shipments.length > 0 && (
+                    <Tooltip label="Export Excel">
+                      <button onClick={() => exportShipmentsExcel(filteredShipments, 'sesuai filter')} disabled={exportingShipments} aria-label="Export Excel"
+                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                        {exportingShipments ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      </button>
+                    </Tooltip>
+                  )}
+                  {shipments.length > 0 && <ViewToggle mode={shipmentView} onChange={setShipmentView} height={HEADER_BTN_H} />}
+                </div>
+              </div>
+
+              {shipments.length > 0 && (
+                <div className="relative">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={shipmentSearch}
+                    onChange={e => { setShipmentSearch(e.target.value); resetShipmentPage(); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari lokasi, produk, atau catatan…"
+                  />
+                </div>
+              )}
+
               {shipmentsLoading && shipments.length === 0 ? (
                 <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
               ) : shipments.length === 0 ? (
                 <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat pengiriman.</p>
               ) : (
-                <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
-                  {shipments.map(s => (
-                    <div key={s.id} className="px-4 py-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
-                        <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
-                          {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
-                        </span>
-                      </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
-                      <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                        {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
-                      </p>
+                <>
+                  {paginatedShipments.length > 0 && (
+                    <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                      <Checkbox
+                        checked={paginatedShipments.every(s => selectedShipments.has(s.id))}
+                        indeterminate={paginatedShipments.some(s => selectedShipments.has(s.id)) && !paginatedShipments.every(s => selectedShipments.has(s.id))}
+                        onChange={togglePageAllShipments}
+                      />
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                        {selectedShipments.size > 0 ? `${selectedShipments.size} dipilih` : `${paginatedShipments.length} pengiriman di halaman ini`}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                  )}
+
+                  {paginatedShipments.length === 0 ? (
+                    <div className="card py-12 text-center">
+                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat yang cocok.</p>
+                    </div>
+                  ) : shipmentView === 'table' ? (
+                    <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                      {paginatedShipments.map(s => {
+                        const isSelected = selectedShipments.has(s.id);
+                        return (
+                          <div key={s.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                            <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} /></div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                                <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
+                                  {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
+                                </span>
+                              </div>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
+                              <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {paginatedShipments.map(s => {
+                        const isSelected = selectedShipments.has(s.id);
+                        return (
+                          <div key={s.id} className="card overflow-hidden p-4 relative"
+                            style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                              <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
+                            </div>
+                            <div className="flex items-center gap-2 mb-1 pl-6">
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                                <Send size={14} />
+                              </div>
+                              <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                            </div>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
+                            <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+                              {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
+                            </p>
+                            <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total nilai titip</span>
+                              <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
+                                {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <Pagination total={filteredShipments.length} safePage={safeShipmentPage} totalPages={totalShipmentPages}
+                    pageSize={shipmentPageSize} onPageSize={n => { setShipmentPageSize(n); resetShipmentPage(); }}
+                    onGoPage={goShipmentPage} unit="pengiriman" />
+                </>
               )}
             </div>
           </div>
@@ -466,17 +1400,23 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               Stok di lokasi: {item.stockQty} pcs · {formatRp(item.hargaTitip)}/pcs
                             </span>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             <div>
                               <label style={fieldLabel}>Qty Terjual</label>
                               <input type="number" min="0" value={recapInputs[item.productId]?.sold ?? ''}
-                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: e.target.value, retur: prev[item.productId]?.retur ?? '' } }))}
+                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: e.target.value, retur: prev[item.productId]?.retur ?? '', reject: prev[item.productId]?.reject ?? '' } }))}
                                 placeholder="0" className="input" />
                             </div>
                             <div>
                               <label style={fieldLabel}>Qty Retur</label>
                               <input type="number" min="0" value={recapInputs[item.productId]?.retur ?? ''}
-                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: e.target.value } }))}
+                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: e.target.value, reject: prev[item.productId]?.reject ?? '' } }))}
+                                placeholder="0" className="input" />
+                            </div>
+                            <div>
+                              <label style={fieldLabel}>Qty Reject</label>
+                              <input type="number" min="0" value={recapInputs[item.productId]?.reject ?? ''}
+                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: prev[item.productId]?.retur ?? '', reject: e.target.value } }))}
                                 placeholder="0" className="input" />
                             </div>
                           </div>
@@ -491,9 +1431,26 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   )
                 )}
 
+                {recapNeedsWarehouse && (
+                  <div>
+                    <label style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Warehouse size={11} /> Gudang Tujuan Retur/Reject <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
+                    <SearchSelect value={recapWarehouseId} onChange={setRecapWarehouseId}
+                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Retur (kondisi baik) menambah stok jual di gudang ini. Reject (rusak/tidak layak jual) hanya tercatat sebagai kerugian, tidak menambah stok jual.
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
+                  <input type="text" value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="cth: kemasan penyok, expired, komplain pelanggan…" className="input" />
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Dipakai juga sebagai keterangan retur/reject di riwayat &amp; catatan gudang.
+                  </p>
                 </div>
 
                 <div>
@@ -533,42 +1490,142 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                <Clock size={11} /> Riwayat Rekap ({recaps.length})
-              </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                  <Clock size={11} /> Riwayat Rekap ({recaps.length})
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {recaps.length > 0 && (
+                    <Tooltip label="Export Excel">
+                      <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
+                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                        {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      </button>
+                    </Tooltip>
+                  )}
+                  {recaps.length > 0 && <ViewToggle mode={recapView} onChange={setRecapView} height={HEADER_BTN_H} />}
+                </div>
+              </div>
+
+              {recaps.length > 0 && (
+                <div className="relative">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={recapSearch}
+                    onChange={e => { setRecapSearch(e.target.value); resetRecapPage(); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari lokasi, produk, atau catatan…"
+                  />
+                </div>
+              )}
+
               {recapsLoading && recaps.length === 0 ? (
                 <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
               ) : recaps.length === 0 ? (
                 <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat rekap.</p>
               ) : (
-                <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
-                  {recaps.map(r => (
-                    <div key={r.id} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
-                          {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
-                          {r.paymentStatus === 'belum_lunas' && (
-                            <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
-                              className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                              {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}
-                      </p>
-                      <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                        {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''})`).join(', ')}
-                      </p>
+                <>
+                  {paginatedRecaps.length > 0 && (
+                    <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                      <Checkbox
+                        checked={paginatedRecaps.every(r => selectedRecaps.has(r.id))}
+                        indeterminate={paginatedRecaps.some(r => selectedRecaps.has(r.id)) && !paginatedRecaps.every(r => selectedRecaps.has(r.id))}
+                        onChange={togglePageAllRecaps}
+                      />
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                        {selectedRecaps.size > 0 ? `${selectedRecaps.size} dipilih` : `${paginatedRecaps.length} rekap di halaman ini`}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                  )}
+
+                  {paginatedRecaps.length === 0 ? (
+                    <div className="card py-12 text-center">
+                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat yang cocok.</p>
+                    </div>
+                  ) : recapView === 'table' ? (
+                    <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                      {paginatedRecaps.map(r => {
+                        const isSelected = selectedRecaps.has(r.id);
+                        return (
+                          <div key={r.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                            <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                                  {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                                  {r.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
+                                  {r.paymentStatus === 'belum_lunas' && (
+                                    <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
+                                      className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                      {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
+                                {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
+                              </p>
+                              <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
+                              </p>
+                              {r.note && (
+                                <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{r.note}&rdquo;</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {paginatedRecaps.map(r => {
+                        const isSelected = selectedRecaps.has(r.id);
+                        return (
+                          <div key={r.id} className="card overflow-hidden p-4 relative"
+                            style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                              <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
+                            </div>
+                            <div className="flex items-center justify-between gap-2 mb-1 pl-6">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                                {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
+                                {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
+                              </div>
+                            </div>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
+                              {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
+                            </p>
+                            <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+                              {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
+                            </p>
+                            <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                              <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
+                              {r.paymentStatus === 'belum_lunas' && (
+                                <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
+                                  className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                  {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <Pagination total={filteredRecaps.length} safePage={safeRecapPage} totalPages={totalRecapPages}
+                    pageSize={recapPageSize} onPageSize={n => { setRecapPageSize(n); resetRecapPage(); }}
+                    onGoPage={goRecapPage} unit="rekap" />
+                </>
               )}
             </div>
           </div>
@@ -628,6 +1685,181 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                 {savingL ? 'Menyimpan…' : editingL ? 'Simpan Perubahan' : 'Tambah Lokasi'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {historyLocation && (
+        <div className="modal-overlay" onClick={closeLocationHistory}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><History size={17} /></div>
+                <div>
+                  <p className="modal-title">Riwayat {historyLocation.name}</p>
+                  <p className="modal-subtitle">
+                    {[historyLocation.contactName, historyLocation.contactPhone].filter(Boolean).join(' · ') || 'Riwayat kirim & rekap lokasi ini'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={closeLocationHistory} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body">
+              {historyLoading ? (
+                <div className="flex items-center justify-center py-14"><Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
+                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--accent)' }}>
+                        {locationStockTotals(historyLocation.id).qty} pcs
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Total Dikirim</p>
+                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>{formatRp(historyTotalKirim)}</p>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
+                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Total Pendapatan</p>
+                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--success)' }}>{formatRp(historyTotalRevenue)}</p>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Jual / Retur / Reject</p>
+                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>
+                        {historyTotalSold} / {historyTotalRetur} / {historyTotalReject}
+                      </p>
+                    </div>
+                  </div>
+
+                  {historyBelumLunas > 0 && (
+                    <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                      <AlertTriangle size={12} /> {historyBelumLunas} rekap belum lunas di lokasi ini.
+                    </p>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                      <Clock size={11} /> Linimasa ({historyTimeline.length})
+                    </p>
+                    {historyTimeline.length === 0 ? (
+                      <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat untuk lokasi ini.</p>
+                    ) : (
+                      <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                        {historyTimeline.map(entry => entry.kind === 'kirim' ? (
+                          <div key={`s-${entry.shipment.id}`} className="px-4 py-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="badge badge-blue" style={{ gap: 4 }}><Send size={10} /> Kirim</span>
+                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(entry.shipment.createdAt?.seconds)}</p>
+                              <span className="text-sm font-bold tabular ml-auto" style={{ color: 'var(--accent)' }}>
+                                {formatRp(entry.shipment.items.reduce((s, it) => s + it.subtotal, 0))}
+                              </span>
+                            </div>
+                            <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                              {entry.shipment.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
+                            </p>
+                          </div>
+                        ) : (
+                          <div key={`r-${entry.recap.id}`} className="px-4 py-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="badge badge-green" style={{ gap: 4 }}><ClipboardList size={10} /> Rekap</span>
+                              {entry.recap.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                              {entry.recap.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {entry.recap.totalReject} pcs reject</span>}
+                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(entry.recap.createdAt?.seconds)}</p>
+                              <span className="text-sm font-bold tabular ml-auto" style={{ color: 'var(--success)' }}>
+                                {formatRp(entry.recap.totalRevenue)}
+                              </span>
+                            </div>
+                            <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                              {entry.recap.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
+                            </p>
+                            {entry.recap.warehouseName && (
+                              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Retur/reject ke gudang: {entry.recap.warehouseName}</p>
+                            )}
+                            {entry.recap.note && (
+                              <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{entry.recap.note}&rdquo;</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeLocationHistory} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk action bar — Lokasi */}
+      {subTab === 'lokasi' && selectedLocations.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selectedLocations.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => exportLocationsExcel(locations.filter(l => selectedLocations.has(l.id)), 'terpilih')} disabled={exportingLocations}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingLocations ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              Export
+            </button>
+            <button onClick={bulkDeleteLocations} disabled={bulkDeletingLocations}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeletingLocations ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
+            </button>
+            <button onClick={() => setSelectedLocations(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk action bar — Riwayat Kirim */}
+      {subTab === 'kirim' && selectedShipments.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selectedShipments.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => exportShipmentsExcel(shipments.filter(s => selectedShipments.has(s.id)), 'terpilih')} disabled={exportingShipments}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingShipments ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              Export
+            </button>
+            <button onClick={() => setSelectedShipments(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk action bar — Riwayat Rekap */}
+      {subTab === 'rekap' && selectedRecaps.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selectedRecaps.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => exportRecapsExcel(recaps.filter(r => selectedRecaps.has(r.id)), 'terpilih')} disabled={exportingRecaps}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingRecaps ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              Export
+            </button>
+            <button onClick={() => setSelectedRecaps(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
           </div>
         </div>
       )}

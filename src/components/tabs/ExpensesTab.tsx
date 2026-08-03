@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Banknote, Plus, Pencil, Trash2, X, Check, Loader2, Search,
+  Banknote, Plus, Pencil, Trash2, X, Check, Loader2, Search, FileSpreadsheet,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, TrendingDown, CalendarDays, Wallet,
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import FilterSelect from '@/components/FilterSelect';
 import PageSizeSelect from '@/components/PageSizeSelect';
+import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
+import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 
@@ -84,6 +88,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const [saving,     setSaving]     = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,      setError]      = useState('');
+  const [exporting,  setExporting]  = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -209,6 +214,74 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     });
   };
 
+  const exportExcel = async (rows: Expense[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada pengeluaran untuk diexport.'); return; }
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Pengeluaran');
+      ws.columns = [
+        { key: 'tgl', width: 16 }, { key: 'kat', width: 18 }, { key: 'ket', width: 32 },
+        { key: 'jml', width: 18 }, { key: 'catatan', width: 32 },
+      ];
+
+      ws.mergeCells(1, 1, 1, 5);
+      const t = ws.getCell(1, 1);
+      t.value = 'DAFTAR PENGELUARAN — CEMILAN TEH RISMA';
+      t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      t.alignment = { horizontal: 'center', vertical: 'middle' };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, 5);
+      const s = ws.getCell(2, 1);
+      s.value = `${rows.length} pengeluaran (${label})`;
+      s.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      s.alignment = { horizontal: 'center', vertical: 'middle' };
+      s.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const headerRow = ws.getRow(3);
+      ['Tanggal', 'Kategori', 'Keterangan', 'Jumlah', 'Catatan'].forEach((h, i) => { headerRow.getCell(i + 1).value = h; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      ws.views = [{ state: 'frozen', ySplit: 3 }];
+
+      rows.forEach((e, i) => {
+        const rowNum = 4 + i;
+        const row = ws.getRow(rowNum);
+        row.getCell(1).value = formatDateDisplay(e.date);
+        row.getCell(2).value = e.category;
+        row.getCell(3).value = e.description;
+        row.getCell(4).value = e.amount;
+        row.getCell(4).numFmt = '"Rp"#,##0';
+        row.getCell(5).value = e.note ?? '';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
+          cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+        });
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pengeluaran-${todayISO()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} pengeluaran ke Excel.`);
+    } finally { setExporting(false); }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center py-24">
       <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
@@ -240,6 +313,17 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       {/* Header: search + actions in one row */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         {expenses.length > 0 && (
+          <div className="w-full sm:w-[200px] flex-shrink-0">
+            <FilterSelect
+              value={categoryFilter}
+              onChange={v => { setCategoryFilter(v); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari kategori…"
+              options={categoryOptions}
+            />
+          </div>
+        )}
+        {expenses.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
@@ -251,20 +335,19 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        {expenses.length > 0 && (
-          <div style={{ width: 200 }} className="flex-shrink-0">
-            <FilterSelect
-              value={categoryFilter}
-              onChange={v => { setCategoryFilter(v); resetPage(); }}
-              height={HEADER_BTN_H}
-              searchPlaceholder="Cari kategori…"
-              options={categoryOptions}
-            />
+        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+          <div className="flex items-center gap-2 flex-wrap">
+            {expenses.length > 0 && (
+              <Tooltip label="Export Excel">
+                <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                </button>
+              </Tooltip>
+            )}
+            {expenses.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
-          {expenses.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
-          <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
+          <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Catat Pengeluaran</span><span className="sm:hidden">Tambah</span>
           </button>
         </div>
@@ -436,6 +519,12 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
             <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
             <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => exportExcel(expenses.filter(e => selected.has(e.id)), 'terpilih')} disabled={exporting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              Export
+            </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'var(--danger)', color: '#fff' }}>
@@ -470,9 +559,9 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                 <div style={{ display: 'flex', gap: 12 }}>
                   <div style={{ flex: 1 }}>
                     <label className="field-label">Kategori</label>
-                    <select value={editing.category} onChange={e => setEditing({ ...editing, category: e.target.value })} className="input">
-                      {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <SearchSelect value={editing.category} onChange={v => setEditing({ ...editing, category: v })}
+                      options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))}
+                      searchPlaceholder="Cari kategori…" />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -496,8 +585,8 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
                 <div>
                   <label className="field-label">Jumlah (Rp) <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="number" min="0" value={editing.amount} onChange={e => setEditing({ ...editing, amount: e.target.value })}
-                    className="input" placeholder="0" />
+                  <NumberInput value={editing.amount} onChange={raw => setEditing({ ...editing, amount: raw })}
+                    placeholder="0" />
                 </div>
 
                 <div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2 } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -14,7 +14,7 @@ import ImageLightbox from '@/components/ImageLightbox';
 const API = '';
 const HEADER_BTN_H = 34;
 
-interface OrderItem { name: string; weight: string; qty: number; price: number; subtotal: number; }
+interface OrderItem { productId?: string; name: string; weight: string; qty: number; price: number; subtotal: number; }
 interface Order {
   id: string; invoiceNo: string; date: string; customerName: string; customerPhone: string;
   items: OrderItem[]; subtotal: number; discount?: { amount: number; label: string };
@@ -25,6 +25,7 @@ interface Order {
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   source?: 'kasir' | 'portal';
   deliveryMethod?: 'pickup' | 'delivery'; address?: string; note?: string;
+  stockRestored?: boolean;
 }
 
 function SourceBadge({ source }: { source?: 'kasir' | 'portal' }) {
@@ -35,9 +36,11 @@ function SourceBadge({ source }: { source?: 'kasir' | 'portal' }) {
   );
 }
 
-// Pesanan Kasir selalu status 'done' sejak dibuat — badge status cuma relevan untuk pesanan
-// Website ('portal'), yang perlu ditandai manual sebelum ikut terhitung di Laporan Keuangan.
+// Pesanan Kasir selalu status 'done' sejak dibuat — badge status baru/selesai cuma relevan untuk
+// pesanan Website ('portal'), yang perlu ditandai manual sebelum ikut terhitung di Laporan Keuangan.
+// Badge "Dibatalkan" berlaku untuk semua sumber pesanan.
 function StatusBadge({ source, status }: { source?: 'kasir' | 'portal'; status: string }) {
+  if (status === 'dibatalkan') return <span className="badge badge-red">Dibatalkan</span>;
   if (source !== 'portal') return null;
   return status === 'baru' ? (
     <span className="badge badge-amber">Baru</span>
@@ -111,14 +114,31 @@ export default function OrdersTab({ creds }: { creds: string }) {
   useEffect(() => { load(); }, []);
 
   const del = async (id: string) => {
-    if (!await confirm({ message: 'Hapus pesanan ini? Tindakan ini tidak bisa dibatalkan.', danger: true })) return;
+    if (!await confirm({ message: 'Hapus pesanan ini? Stok yang sudah terpotong akan dikembalikan ke gudang. Tindakan ini tidak bisa diurungkan.', danger: true })) return;
     const r = await fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers });
     if (r.ok) {
       setOrders(o => o.filter(x => x.id !== id));
-      toast.success('Pesanan berhasil dihapus.');
+      toast.success('Pesanan berhasil dihapus & stok dikembalikan ke gudang.');
     } else {
       toast.error('Gagal menghapus pesanan.');
     }
+  };
+
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const cancelOrder = async (id: string) => {
+    if (!await confirm({ message: 'Batalkan pesanan ini? Stok yang sudah terpotong akan dikembalikan ke gudang.', danger: true })) return;
+    setCancelingId(id);
+    const r = await fetch(`${API}/api/orders/${id}`, {
+      method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'dibatalkan' }),
+    });
+    if (r.ok) {
+      setOrders(o => o.map(x => x.id === id ? { ...x, status: 'dibatalkan', stockRestored: true } : x));
+      toast.success('Pesanan dibatalkan & stok dikembalikan ke gudang.');
+    } else {
+      toast.error('Gagal membatalkan pesanan.');
+    }
+    setCancelingId(null);
   };
 
   const [markingId, setMarkingId] = useState<string | null>(null);
@@ -424,8 +444,10 @@ export default function OrdersTab({ creds }: { creds: string }) {
     }
   };
 
-  const totalRevenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);
-  const avgOrder     = orders.length ? totalRevenue / orders.length : 0;
+  // Pesanan dibatalkan tidak ikut dihitung sebagai omzet
+  const activeOrders = orders.filter(o => o.status !== 'dibatalkan');
+  const totalRevenue = activeOrders.reduce((s, o) => s + (o.total ?? 0), 0);
+  const avgOrder     = activeOrders.length ? totalRevenue / activeOrders.length : 0;
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -495,7 +517,7 @@ export default function OrdersTab({ creds }: { creds: string }) {
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pesanan dari Kasir maupun checkout Website akan muncul di sini otomatis.</p>
         </div>
       ) : view === 'table' ? (
-        <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+        <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
           {orders.map(o => (
             <div key={o.id}>
               <div className="flex items-center gap-3 px-4 py-3.5">
@@ -534,10 +556,16 @@ export default function OrdersTab({ creds }: { creds: string }) {
                       {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Tandai Lunas'}
                     </button>
                   )}
+                  {o.status !== 'dibatalkan' && (
+                    <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
+                      className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
+                      {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                    </button>
+                  )}
                   <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
                     {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                   </button>
-                  <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                  <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -568,9 +596,17 @@ export default function OrdersTab({ creds }: { creds: string }) {
                       {o.invoiceNo} · {formatDate(o)}
                     </p>
                   </div>
-                  <button onClick={() => del(o.id)} className="btn-ghost p-2 flex-shrink-0" style={{ color: 'var(--danger)' }}>
-                    <Trash2 size={13} />
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {o.status !== 'dibatalkan' && (
+                      <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
+                        className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
+                        {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                      </button>
+                    )}
+                    <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-1" style={{ borderTop: '1px solid var(--border-2)' }}>

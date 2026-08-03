@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -407,7 +408,7 @@ export default function MaterialsTab({ creds }: { creds: string }) {
         {subTab === 'stok' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-5">
             {/* Header: search + actions in one row */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {materials.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -420,10 +421,10 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                   />
                 </div>
               )}
-              <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 {materials.length > 0 && <ViewToggle mode={materialView} onChange={setMaterialView} height={HEADER_BTN_H} />}
                 <button onClick={openCreateM} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Bahan Baku</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Bahan Baku</span>
                 </button>
               </div>
             </div>
@@ -458,7 +459,7 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada bahan baku yang cocok.</p>
                   </div>
                 ) : materialView === 'table' ? (
-                  <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                  <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                     {paginatedMaterials.map(m => {
                       const isSelected = selectedMaterials.has(m.id);
                       return (
@@ -607,9 +608,9 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                     />
                   </div>
                 )}
-                <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
+                <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
                   {purchases.length > 0 && <ViewToggle mode={purchaseView} onChange={setPurchaseView} height={HEADER_BTN_H} />}
-                  <button onClick={openCreatePurchase} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
+                  <button onClick={openCreatePurchase} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
                     <Plus size={13} /> <span className="hidden sm:inline">Catat Pembelian</span><span className="sm:hidden">Tambah</span>
                   </button>
                 </div>
@@ -641,7 +642,7 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                       <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada pembelian yang cocok.</p>
                     </div>
                   ) : purchaseView === 'table' ? (
-                    <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                    <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                       {paginatedPurchases.map(p => {
                         const isSelected = selectedPurchases.has(p.id);
                         return (
@@ -879,7 +880,7 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                   </div>
                   <div>
                     <label className="field-label">Harga Rata-rata Benar (Rp)</label>
-                    <input type="number" min="0" value={adjustAvgCost} onChange={e => setAdjustAvgCost(e.target.value)} className="input" />
+                    <NumberInput value={adjustAvgCost} onChange={setAdjustAvgCost} />
                   </div>
                 </div>
                 <div>
@@ -952,8 +953,8 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                             options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
                           <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })}
                             placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" />
-                          <input type="number" min="0" value={row.price} onChange={e => updateRow(i, { price: e.target.value })}
-                            placeholder="Harga/satuan" className="input" />
+                          <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })}
+                            placeholder="Harga/satuan" />
                           <button onClick={() => removeRow(i)} disabled={rows.length === 1}
                             className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
                             <X size={14} />

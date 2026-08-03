@@ -18,19 +18,24 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
   const data = await req.json() as {
-    date?: string; note?: string;
+    date?: string; note?: string; warehouseId?: string; warehouseName?: string;
     outputs: OutputInput[]; materialsUsed: MaterialUsedInput[]; otherCost?: number;
   };
   const materialsUsed = data.materialsUsed ?? [];
   const outputs = (data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
   const otherCost = Number(data.otherCost) || 0;
   const date = data.date || new Date().toISOString().slice(0, 10);
+  const warehouseId   = data.warehouseId ?? '';
+  const warehouseName = data.warehouseName ?? '';
   if (materialsUsed.length === 0) return Response.json({ error: 'Minimal 1 bahan baku dipakai.' }, { status: 400 });
   if (outputs.length === 0) return Response.json({ error: 'Minimal 1 produk hasil dengan jumlah lebih dari 0.' }, { status: 400 });
+  if (!warehouseId) return Response.json({ error: 'Pilih gudang tujuan.' }, { status: 400 });
 
   const db = getDb();
   const batchRef    = db.collection('productionBatches').doc();
   const productRefs = outputs.map(o => db.collection('products').doc(o.productId));
+  const warehouseStockRefs = outputs.map(o => db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`));
+  const stockLogRefs = outputs.map(() => db.collection('stock').doc());
   const expenseRef  = db.collection('expenses').doc();
 
   try {
@@ -81,6 +86,25 @@ export async function POST(req: NextRequest) {
           stock: product.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
           updatedAt: FieldValue.serverTimestamp(),
         });
+
+        // Stok hasil produksi masuk ke gudang tujuan (sama seperti stok-masuk manual di menu Gudang)
+        tx.set(
+          warehouseStockRefs[i],
+          {
+            warehouseId, productId: o.productId, productName: o.productName,
+            stockQty: FieldValue.increment(o.yieldQty),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        tx.set(stockLogRefs[i], {
+          warehouseId, warehouseName,
+          productId: o.productId, productName: o.productName,
+          type: 'in', qty: o.yieldQty,
+          note: `Hasil produksi${data.note ? ` - ${data.note}` : ''}`,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+
         return { ...o, costPerPcs };
       });
 
@@ -88,6 +112,7 @@ export async function POST(req: NextRequest) {
         date, outputs: outputsWithCost,
         materialsUsed: materialsWithCost,
         materialCost, otherCost, totalCost, totalYieldQty, costPerPcs,
+        warehouseId, warehouseName,
         note: data.note ?? '',
         expenseId: otherCost > 0 ? expenseRef.id : null,
         createdAt: FieldValue.serverTimestamp(),

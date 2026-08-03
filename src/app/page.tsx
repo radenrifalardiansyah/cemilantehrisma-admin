@@ -6,6 +6,7 @@ import {
   RefreshCw, MessageCircle, TrendingUp, Receipt, Package, Users,
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
+  MousePointerClick, Tag, ShoppingCart,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -36,6 +37,9 @@ interface WebStats {
   mobile: number; desktop: number;
   daily: { date: string; views: number; visitors: number }[];
   topPages: { path: string; visitors: number }[];
+  topMenu: { path: string; count: number }[];
+  topCategories: { id: string; name: string; emoji: string; count: number }[];
+  topProducts: { id: string; name: string; emoji: string; bgColor: string; clicks: number; addToCart: number }[];
 }
 interface DashData {
   orderCount: number; revenue: number;
@@ -216,6 +220,41 @@ function PageviewChart({ data }: { data: { date: string; views: number }[] }) {
   );
 }
 
+// ─── Top-N interactive bar list (hover to highlight + tooltip) ───────────────
+interface TopListItem { label: string; value: number; emoji?: string; sub?: string }
+function TopListChart({ items, color }: { items: TopListItem[]; color: string }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const max = Math.max(...items.map(i => i.value), 1);
+  return (
+    <div className="space-y-3.5">
+      {items.map((it, i) => {
+        const pct = Math.round((it.value / max) * 100);
+        const active = hoverIdx === i;
+        return (
+          <div key={i} onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}>
+            <div className="flex items-center justify-between mb-1.5 gap-2">
+              <span className="text-xs font-semibold flex items-center gap-1.5 truncate min-w-0"
+                style={{ color: active ? color : 'var(--text-secondary)' }}>
+                {it.emoji && <span className="flex-shrink-0">{it.emoji}</span>}
+                <span className="truncate">{it.label}</span>
+              </span>
+              <span className="text-xs font-bold tabular flex-shrink-0" style={{ color: active ? color : 'var(--text-primary)' }}>
+                {it.value.toLocaleString('id')}{it.sub ? <span className="font-medium opacity-60 ml-1">{it.sub}</span> : null}
+              </span>
+            </div>
+            <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--border-2)' }}>
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${pct}%`, background: color, opacity: active ? 1 : 0.72 }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
 
@@ -308,6 +347,9 @@ export default function AdminPage() {
           desktop:   devArr.find(d => d.type === 'desktop')?.count ?? 0,
           daily:     (ws.daily    as WebStats['daily'])    ?? [],
           topPages:  (ws.paths    as WebStats['topPages']) ?? [],
+          topMenu:       (ws.topMenu       as WebStats['topMenu'])       ?? [],
+          topCategories: (ws.topCategories as WebStats['topCategories']) ?? [],
+          topProducts:   (ws.topProducts   as WebStats['topProducts'])   ?? [],
         };
       } else {
         webStatsErr = !webRes
@@ -535,7 +577,7 @@ export default function AdminPage() {
                   <Receipt size={15} style={{ color: 'var(--accent)' }} />
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pesanan Terbaru</p>
                 </div>
-                <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                   {dashData.recentOrders.map((o, i) => (
                     <div key={i} className="px-5 py-3.5 flex items-center gap-3"
                       style={{ transition: 'background 0.12s', cursor: 'default' }}
@@ -571,7 +613,7 @@ export default function AdminPage() {
                 <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Produk Terlaris</p>
               </div>
               {dashData.topProducts.length > 0 ? (
-                <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                   {dashData.topProducts.map((prod, i) => {
                     const rankColors = [
                       { fg: '#B8860B', bg: '#FFFBEA' },
@@ -729,7 +771,7 @@ export default function AdminPage() {
                   <span>🔥</span>
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Halaman Terpopuler</p>
                 </div>
-                <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                   {ws.topPages.slice(0, 5).map((p, i) => {
                     const top = ws.topPages[0].visitors;
                     const pct = Math.round((p.visitors / top) * 100);
@@ -754,6 +796,74 @@ export default function AdminPage() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* Menu & Kategori terbanyak diklik */}
+            {(ws.topMenu.length > 0 || ws.topCategories.length > 0) && (
+              <div className="grid lg:grid-cols-2 gap-4">
+                {ws.topMenu.length > 0 && (
+                  <div className="card p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ background: '#EFF6FF', color: '#0EA5E9' }}>
+                        <MousePointerClick size={15} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Menu Paling Banyak Diklik</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik navigasi 30 hari terakhir</p>
+                      </div>
+                    </div>
+                    <TopListChart
+                      color="#0EA5E9"
+                      items={ws.topMenu.slice(0, 6).map(m => ({ label: pageLabel(m.path), value: m.count }))}
+                    />
+                  </div>
+                )}
+
+                {ws.topCategories.length > 0 && (
+                  <div className="card p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                        <Tag size={15} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Kategori Terpopuler</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik filter kategori produk</p>
+                      </div>
+                    </div>
+                    <TopListChart
+                      color="var(--accent)"
+                      items={ws.topCategories.map(c => ({ label: c.name, value: c.count, emoji: c.emoji }))}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Produk terbanyak diklik */}
+            {ws.topProducts.length > 0 && (
+              <div className="card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: '#FEF2F2', color: '#D4691E' }}>
+                    <ShoppingCart size={15} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Produk Paling Banyak Diklik</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik kartu produk · label menunjukkan yang ditambah ke keranjang</p>
+                  </div>
+                </div>
+                <TopListChart
+                  color="#D4691E"
+                  items={ws.topProducts.slice(0, 6).map(p => ({
+                    label: p.name,
+                    value: p.clicks,
+                    emoji: p.emoji,
+                    sub: p.addToCart > 0 ? `🛒${p.addToCart}` : undefined,
+                  }))}
+                />
               </div>
             )}
           </>

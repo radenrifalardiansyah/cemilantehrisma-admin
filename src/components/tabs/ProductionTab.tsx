@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -54,6 +55,7 @@ function formatDateDisplay(iso?: string) {
 interface RawMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
 interface BatchMaterialUsed { materialId?: string; materialName: string; unit: string; qty: number; costPerUnit: number; cost: number }
 interface BatchOutput { productId: string; productName: string; yieldQty: number; costPerPcs: number }
+interface Warehouse { id: string; name: string }
 interface ProductionBatch {
   id: string; materialsUsed: BatchMaterialUsed[];
   materialCost: number; otherCost: number; totalCost: number; costPerPcs: number;
@@ -62,6 +64,8 @@ interface ProductionBatch {
   outputs?: BatchOutput[]; totalYieldQty?: number;
   // Bentuk lama (satu produk per batch) — dipertahankan supaya riwayat sebelum fitur ini tetap tampil benar
   productName?: string; yieldQty?: number;
+  // Gudang tujuan stok hasil produksi — batch lama (sebelum fitur ini) tidak punya field ini
+  warehouseId?: string; warehouseName?: string;
 }
 
 // Normalisasi batch lama & baru jadi satu bentuk "outputs" supaya tampilan riwayat konsisten
@@ -108,7 +112,13 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     setBatchesLoading(false);
   };
 
-  useEffect(() => { loadMaterials(); loadBatches(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const loadWarehouses = async () => {
+    const r = await fetch(`${API}/api/warehouses`, { headers });
+    if (r.ok) setWarehouses((await r.json() as { warehouses: Warehouse[] }).warehouses);
+  };
+
+  useEffect(() => { loadMaterials(); loadBatches(); loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Form tambah/edit (modal) ──────────────────────────────────
   const [showForm,     setShowForm]     = useState(false);
@@ -116,6 +126,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const [date,       setDate]       = useState(todayISO());
   const [outputRows, setOutputRows] = useState<OutputRow[]>([{ ...EMPTY_OUTPUT_ROW }]);
   const [rows,       setRows]       = useState<MaterialRow[]>([{ ...EMPTY_ROW }]);
+  const [warehouseId, setWarehouseId] = useState('');
   const [otherCost,  setOtherCost]  = useState('');
   const [note,       setNote]       = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -123,6 +134,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const resetForm = () => {
     setEditingBatch(null); setDate(todayISO());
     setOutputRows([{ ...EMPTY_OUTPUT_ROW }]); setRows([{ ...EMPTY_ROW }]);
+    setWarehouseId(warehouses.length === 1 ? warehouses[0].id : '');
     setOtherCost(''); setNote('');
   };
   const openCreate = () => { resetForm(); setShowForm(true); };
@@ -131,6 +143,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     setDate(b.date || todayISO());
     setOutputRows((b.outputs ?? []).map(o => ({ productId: o.productId, qty: String(o.yieldQty) })));
     setRows(b.materialsUsed.map(m => ({ materialId: m.materialId ?? '', qty: String(m.qty) })));
+    setWarehouseId(b.warehouseId ?? (warehouses.length === 1 ? warehouses[0].id : ''));
     setOtherCost(b.otherCost ? String(b.otherCost) : '');
     setNote(b.note ?? '');
     setShowForm(true);
@@ -173,16 +186,18 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const costPerPcs    = totalYieldQty > 0 ? totalCost / totalYieldQty : 0;
   const hasShortage   = usedRows.some(r => r.shortage);
 
-  const canSubmit = !!date && usedOutputRows.length > 0 && usedRows.length > 0 && !hasShortage;
+  const canSubmit = !!date && !!warehouseId && usedOutputRows.length > 0 && usedRows.length > 0 && !hasShortage;
 
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
+      const warehouse = warehouses.find(w => w.id === warehouseId);
       const payload = {
         date,
         outputs: usedOutputRows.map(r => ({ productId: r.product.id, productName: r.product.name, yieldQty: r.qty })),
         materialsUsed: usedRows.map(r => ({ materialId: r.material.id, materialName: r.material.name, unit: r.material.unit, qty: r.qty })),
+        warehouseId, warehouseName: warehouse?.name ?? '',
         otherCost: otherCostNum, note,
       };
       const res = editingBatch
@@ -271,6 +286,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
   return (
+    <>
     <div className="p-4 lg:p-6 animate-fade-up space-y-5">
       <TopbarPortal>
         <button onClick={() => { loadMaterials(); loadBatches(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
@@ -279,7 +295,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       </TopbarPortal>
 
       {/* Header: search + actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex flex-row items-center gap-2 sm:gap-3">
         {batches.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -292,10 +308,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             />
           </div>
         )}
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
+        <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           {batches.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           <button onClick={openCreate} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Catat Produksi</span><span className="sm:hidden">Tambah</span>
+            <Plus size={13} /> <span className="hidden sm:inline">Catat Produksi</span>
           </button>
         </div>
       </div>
@@ -330,7 +346,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat produksi yang cocok.</p>
             </div>
           ) : view === 'table' ? (
-            <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+            <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
               {paginatedBatches.map(b => {
                 const isSelected = selected.has(b.id);
                 const editable   = isEditableBatch(b);
@@ -366,6 +382,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       <p className="text-xs mt-1 tabular" style={{ color: 'var(--text-muted)' }}>
                         Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
                       </p>
+                      {b.warehouseName && (
+                        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Masuk gudang: {b.warehouseName}</p>
+                      )}
                       {!editable && (
                         <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
                       )}
@@ -399,6 +418,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
                         Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
                       </p>
+                      {b.warehouseName && (
+                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Masuk gudang: {b.warehouseName}</p>
+                      )}
                       {!editable && (
                         <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
                       )}
@@ -477,9 +499,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
           </div>
         </div>
       )}
+    </div>
 
-      {/* Modal tambah/edit produksi */}
-      {showForm && (
+    {/* Modal tambah/edit produksi */}
+    {showForm && (
         <div className="modal-overlay" onClick={() => !submitting && closeForm()}>
           <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-accent" />
@@ -500,10 +523,23 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label style={fieldLabel}>Tanggal Produksi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input" style={{ maxWidth: 220 }} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label style={fieldLabel}>Tanggal Produksi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input" />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Gudang Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <SearchSelect value={warehouseId} onChange={setWarehouseId}
+                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+                  </div>
                 </div>
+                {warehouses.length === 0 && (
+                  <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                    <AlertTriangle size={12} /> Belum ada gudang — tambahkan gudang dulu di menu Gudang sebelum catat produksi.
+                  </p>
+                )}
 
                 <div>
                   <label style={fieldLabel}>Produk Hasil <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -545,9 +581,11 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                               <X size={14} />
                             </button>
                           </div>
-                          {material && qty > 0 && (
+                          {material && (
                             <p className="text-xs tabular mt-1" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
-                              {shortage
+                              {qty === 0
+                                ? `Stok tersedia: ${material.stockQty} ${material.unit}`
+                                : shortage
                                 ? `Stok kurang — tersedia ${material.stockQty} ${material.unit}`
                                 : `Biaya: ${formatRp(material.avgCost * qty)} (stok tersisa ${material.stockQty - qty} ${material.unit})`}
                             </p>
@@ -564,7 +602,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Biaya Lain (Tenaga Kerja/Overhead, opsional)</label>
-                    <input type="number" min="0" value={otherCost} onChange={e => setOtherCost(e.target.value)} placeholder="0" className="input" />
+                    <NumberInput value={otherCost} onChange={setOtherCost} placeholder="0" />
                   </div>
                   <div>
                     <label style={fieldLabel}>Total Hasil Produksi (pcs)</label>
@@ -613,7 +651,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             </div>
           </div>
         </div>
-      )}
-    </div>
+    )}
+    </>
   );
 }

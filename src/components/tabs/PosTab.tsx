@@ -13,6 +13,7 @@ import ScrollChips from '@/components/ScrollChips';
 import ImageCarousel from '@/components/ImageCarousel';
 import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
 import { useToast } from '@/components/Toast';
 import { recognizeTransferAmount } from '@/lib/receipt-ocr';
 import {
@@ -266,6 +267,7 @@ export default function PosTab({
   }, [selectedReseller, paymentMethod]);
 
   const filteredProducts = (activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat))
+    .filter(p => p.published !== false)
     .filter(p => query.trim() === '' || p.name.toLowerCase().includes(query.trim().toLowerCase()))
     .slice()
     .sort((a, b) => {
@@ -494,7 +496,7 @@ export default function PosTab({
       const finalCustName = custName.trim() || 'Pelanggan Umum';
       const items = cartItems.map(i => {
         const p = posProducts.find(pr => pr.id === i.productId)!;
-        return { name: p.name, weight: p.weight, qty: i.qty, price: p.price, subtotal: p.price * i.qty };
+        return { productId: i.productId, name: p.name, weight: p.weight, qty: i.qty, price: p.price, subtotal: p.price * i.qty };
       });
       const res = await fetch(`${MAIN_APP}/api/admin/invoice-pdf`, {
         method: 'POST',
@@ -685,7 +687,7 @@ export default function PosTab({
             </div>
           ) : (
             <>
-              <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                 {cartItems.map(item => {
                   const p = posProducts.find(pr => pr.id === item.productId);
                   if (!p) return null;
@@ -719,7 +721,7 @@ export default function PosTab({
                   );
                 })}
               </div>
-              <div className="divide-y" style={{ borderColor: 'var(--border-2)', borderTop: '1px solid var(--border-2)' }}>
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)', borderTop: '1px solid var(--border-2)' }}>
                 {discountAmount > 0 && (
                   <>
                     <div className="px-4 py-2.5 flex justify-between">
@@ -767,8 +769,13 @@ export default function PosTab({
                     </button>
                   ))}
                 </div>
-                <input type="number" min="0" value={discountRaw} onChange={e => setDiscountRaw(e.target.value)}
-                  className="input flex-1" placeholder={discountType === 'percent' ? 'Contoh: 10' : 'Contoh: 5000'} />
+                {discountType === 'percent' ? (
+                  <input type="number" min="0" value={discountRaw} onChange={e => setDiscountRaw(e.target.value)}
+                    className="input flex-1" placeholder="Contoh: 10" />
+                ) : (
+                  <NumberInput value={discountRaw} onChange={setDiscountRaw}
+                    className="input flex-1" placeholder="Contoh: 5.000" />
+                )}
                 {discountRaw && (
                   <button onClick={() => setDiscountRaw('')} className="btn-ghost px-3 text-xs" style={{ color: 'var(--danger)' }}>✕</button>
                 )}
@@ -808,8 +815,8 @@ export default function PosTab({
                       </button>
                     ))}
                   </div>
-                  <input type="number" min="0" value={amountPaidRaw} onChange={e => setAmountPaidRaw(e.target.value)}
-                    className="input" placeholder="Jumlah dibayar (Rp)" />
+                  <NumberInput value={amountPaidRaw} onChange={setAmountPaidRaw}
+                    placeholder="Jumlah dibayar (Rp)" />
                   {amountPaidRaw && (
                     <p className="text-xs font-semibold" style={{ color: changeAmount >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                       {changeAmount >= 0 ? `Kembalian: ${formatCurrency(changeAmount)}` : `Kurang ${formatCurrency(-changeAmount)}`}
@@ -869,8 +876,8 @@ export default function PosTab({
                     </p>
                   )}
 
-                  <input type="number" min="0" value={transferAmountRaw} onChange={e => setTransferAmountRaw(e.target.value)}
-                    className="input" placeholder="Nominal transfer (Rp)" />
+                  <NumberInput value={transferAmountRaw} onChange={setTransferAmountRaw}
+                    placeholder="Nominal transfer (Rp)" />
                   {transferAmountRaw && (
                     <p className="text-xs font-semibold" style={{ color: transferDiff >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                       {transferDiff === 0 ? 'Nominal sesuai total' : transferDiff > 0 ? `Lebih ${formatCurrency(transferDiff)}` : `Kurang ${formatCurrency(-transferDiff)}`}
@@ -1130,7 +1137,7 @@ export default function PosTab({
                 <p className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
                   <Award size={13} style={{ color: 'var(--accent)' }} /> Produk Terlaris Hari Ini
                 </p>
-                <div className="card divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="card divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                   {reportData.topProducts.map((p, i) => (
                     <div key={p.name} className="px-3.5 py-2.5 flex items-center gap-2.5">
                       <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--surface-2)', color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1175,8 +1182,7 @@ export default function PosTab({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
               <p className="section-label mb-1.5">{shiftModal === 'open' ? 'Kas Awal (Rp)' : 'Kas Aktual Dihitung (Rp)'}</p>
-              <input type="number" min="0" value={shiftInputRaw} onChange={e => setShiftInputRaw(e.target.value)}
-                className="input" placeholder="0" autoFocus />
+              <NumberInput value={shiftInputRaw} onChange={setShiftInputRaw} placeholder="0" autoFocus />
             </div>
             <div>
               <p className="section-label mb-1.5">Catatan (opsional)</p>

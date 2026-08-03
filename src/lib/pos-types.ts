@@ -5,7 +5,7 @@ export interface PosProduct {
   id: string; name: string; price: number; emoji: string;
   imageUrls: string[]; category: string; stock: string;
   bgColor: string; weight: string; badge?: string;
-  stockQty?: number; openPO?: boolean; order?: number; costPrice?: number;
+  stockQty?: number; openPO?: boolean; order?: number; costPrice?: number; published?: boolean;
 }
 
 export interface PosCategory_Entry { id: string; label: string; emoji: string }

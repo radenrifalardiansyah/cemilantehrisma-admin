@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
   X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, Package,
-  ArrowLeftRight, Check, Clock, ImageIcon,
+  ArrowLeftRight, Check, Clock, ImageIcon, Ban,
 } from 'lucide-react';
 import { useViewMode, type ViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -43,7 +43,7 @@ interface ProductStock {
 
 interface TxEntry {
   id: string;
-  type: 'in' | 'out' | 'transfer';
+  type: 'in' | 'out' | 'transfer' | 'reject';
   warehouseId?: string;
   warehouseName?: string;
   fromWarehouseId?: string;
@@ -171,6 +171,7 @@ function TxList({
   const typeBadge = (type: TxEntry['type']) => {
     if (type === 'in')       return { label: 'Masuk',    Icon: TrendingUp,     color: 'var(--success)', bg: 'var(--success-bg)' };
     if (type === 'out')      return { label: 'Keluar',   Icon: TrendingDown,   color: 'var(--danger)',  bg: 'var(--danger-bg)'  };
+    if (type === 'reject')   return { label: 'Reject',   Icon: Ban,            color: 'var(--danger)',  bg: 'var(--danger-bg)'  };
     return                          { label: 'Transfer', Icon: ArrowLeftRight, color: '#0284C7',        bg: '#EFF6FF'            };
   };
 
@@ -384,6 +385,38 @@ export default function StockTab({
     setStockLoading(false);
   };
 
+  // ── Kosongkan stok ──
+  const [clearingId, setClearingId]   = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
+
+  const clearProductStock = async (productId: string, productName: string) => {
+    if (!selectedWarehouse) return;
+    if (!await confirm({ message: `Kosongkan stok "${productName}" di gudang ini ke 0?`, danger: true })) return;
+    setClearingId(productId);
+    const r = await fetch(`${API}/api/warehouses/${selectedWarehouse.id}/stock/${productId}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      await loadStock(selectedWarehouse.id);
+      toast.success(`Stok "${productName}" berhasil dikosongkan.`);
+    } else {
+      toast.error('Gagal mengosongkan stok produk.');
+    }
+    setClearingId(null);
+  };
+
+  const clearAllStock = async () => {
+    if (!selectedWarehouse) return;
+    if (!await confirm({ message: `Kosongkan SEMUA stok di gudang "${selectedWarehouse.name}" ke 0? Tindakan ini tidak bisa diurungkan.`, danger: true })) return;
+    setClearingAll(true);
+    const r = await fetch(`${API}/api/warehouses/${selectedWarehouse.id}/stock/clear`, { method: 'POST', headers });
+    if (r.ok) {
+      await loadStock(selectedWarehouse.id);
+      toast.success('Semua stok di gudang ini berhasil dikosongkan.');
+    } else {
+      toast.error('Gagal mengosongkan stok gudang.');
+    }
+    setClearingAll(false);
+  };
+
   useEffect(() => { loadWarehouses(); }, []);
 
   useEffect(() => {
@@ -512,7 +545,7 @@ export default function StockTab({
   );
 
   const inTx       = transactions.filter(t => t.type === 'in');
-  const outTx      = transactions.filter(t => t.type === 'out');
+  const outTx      = transactions.filter(t => t.type === 'out' || t.type === 'reject');
   const transferTx = transactions.filter(t => t.type === 'transfer');
 
   const poProducts  = products.filter(p => p.stock === 'open_po');
@@ -729,7 +762,7 @@ export default function StockTab({
           </div>
         )}
 
-        {/* Stok per gudang — READ ONLY */}
+        {/* Stok per gudang */}
         {subTab === 'stok' && stokView === 'stock' && (
           <div className="p-4 lg:p-6 animate-fade-up">
             <div className="flex items-center gap-3 mb-6">
@@ -747,6 +780,13 @@ export default function StockTab({
                   </div>
                 )}
               </div>
+              {stocks.length > 0 && (
+                <button onClick={clearAllStock} disabled={clearingAll}
+                  className="btn-ghost px-3 py-2 text-xs font-semibold flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                  {clearingAll ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  Kosongkan Semua Stok
+                </button>
+              )}
             </div>
 
             <TopbarPortal>
@@ -855,13 +895,23 @@ export default function StockTab({
                                 style={{ color: 'var(--text-primary)' }}>
                                 {s.productName}
                               </p>
-                              {s.category && (
-                                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-1.5"
-                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                                  <span style={{ fontSize: 9, lineHeight: 1 }}>{catEmoji(s.category)}</span>
-                                  {catLabel(s.category)}
-                                </span>
-                              )}
+                              <div className="flex items-center justify-between gap-1.5 mt-1.5">
+                                {s.category ? (
+                                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                                    <span style={{ fontSize: 9, lineHeight: 1 }}>{catEmoji(s.category)}</span>
+                                    {catLabel(s.category)}
+                                  </span>
+                                ) : <span />}
+                                {qty > 0 && (
+                                  <button onClick={() => clearProductStock(s.productId, s.productName)}
+                                    disabled={clearingId === s.productId}
+                                    className="btn-ghost p-1 flex-shrink-0" style={{ color: 'var(--danger)' }}
+                                    title="Kosongkan Stok">
+                                    {clearingId === s.productId ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         );

@@ -8,11 +8,13 @@ export function useViewMode(key: string, defaultMode: ViewMode = 'table'): [View
   const [mode, setMode] = useState<ViewMode>(defaultMode);
 
   useEffect(() => {
+    if (window.innerWidth < 640) {
+      setMode('card');
+      return;
+    }
     const stored = window.localStorage.getItem(`viewMode:${key}`);
     if (stored === 'table' || stored === 'card') {
       setMode(stored);
-    } else if (window.innerWidth < 640) {
-      setMode('card');
     }
   }, [key]);
 

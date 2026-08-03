@@ -45,15 +45,18 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
   const data = await req.json() as {
-    date?: string; note?: string;
+    date?: string; note?: string; warehouseId?: string; warehouseName?: string;
     outputs: OutputInput[]; materialsUsed: MaterialUsedInput[]; otherCost?: number;
   };
   const newMaterialsUsed = data.materialsUsed ?? [];
   const newOutputs = (data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
   const newOtherCost = Number(data.otherCost) || 0;
   const date = data.date || new Date().toISOString().slice(0, 10);
+  const newWarehouseId   = data.warehouseId ?? '';
+  const newWarehouseName = data.warehouseName ?? '';
   if (newMaterialsUsed.length === 0) return Response.json({ error: 'Minimal 1 bahan baku dipakai.' }, { status: 400 });
   if (newOutputs.length === 0) return Response.json({ error: 'Minimal 1 produk hasil dengan jumlah lebih dari 0.' }, { status: 400 });
+  if (!newWarehouseId) return Response.json({ error: 'Pilih gudang tujuan.' }, { status: 400 });
 
   const db = getDb();
   const batchRef = db.collection('productionBatches').doc(id);
@@ -149,6 +152,34 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         });
       });
 
+      // Stok gudang: kembalikan efek batch lama di gudang lama, lalu terapkan output batch baru di gudang baru
+      // (batch lama sebelum fitur ini tidak punya warehouseId — tidak ada yang perlu dikembalikan).
+      const oldWarehouseId = batch.warehouseId as string | undefined;
+      if (oldWarehouseId) {
+        oldOutputs.forEach(o => {
+          const wsRef = db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`);
+          tx.set(wsRef, { warehouseId: oldWarehouseId, productId: o.productId, productName: o.productName,
+            stockQty: FieldValue.increment(-o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+          tx.set(db.collection('stock').doc(), {
+            warehouseId: oldWarehouseId, warehouseName: batch.warehouseName ?? '',
+            productId: o.productId, productName: o.productName,
+            type: 'out', qty: o.yieldQty, note: 'Koreksi edit produksi (batch lama)',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+      }
+      newOutputs.forEach(o => {
+        const wsRef = db.collection('warehouse_stock').doc(`${newWarehouseId}_${o.productId}`);
+        tx.set(wsRef, { warehouseId: newWarehouseId, productId: o.productId, productName: o.productName,
+          stockQty: FieldValue.increment(o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        tx.set(db.collection('stock').doc(), {
+          warehouseId: newWarehouseId, warehouseName: newWarehouseName,
+          productId: o.productId, productName: o.productName,
+          type: 'in', qty: o.yieldQty, note: 'Koreksi edit produksi (batch baru)',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
+
       // Sinkronkan Pengeluaran otomatis biaya lain dengan nilai terbaru.
       const oldExpenseExists = !!oldExpenseSnap?.exists;
       let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
@@ -179,6 +210,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       tx.update(batchRef, {
         date, outputs: outputsWithCost, materialsUsed: materialsWithCost,
         materialCost, otherCost: newOtherCost, totalCost, totalYieldQty, costPerPcs,
+        warehouseId: newWarehouseId, warehouseName: newWarehouseName,
         note: data.note ?? '',
         expenseId: expenseIdToStore,
         updatedAt: FieldValue.serverTimestamp(),
@@ -241,6 +273,22 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
           updatedAt: FieldValue.serverTimestamp(),
         });
       });
+
+      // Kembalikan stok gudang tujuan batch ini (batch lama sebelum fitur ini tidak punya warehouseId).
+      const warehouseId = batch.warehouseId as string | undefined;
+      if (warehouseId) {
+        outputs.forEach(o => {
+          const wsRef = db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`);
+          tx.set(wsRef, { warehouseId, productId: o.productId, productName: o.productName,
+            stockQty: FieldValue.increment(-o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+          tx.set(db.collection('stock').doc(), {
+            warehouseId, warehouseName: batch.warehouseName ?? '',
+            productId: o.productId, productName: o.productName,
+            type: 'out', qty: o.yieldQty, note: 'Hapus batch produksi',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+      }
 
       if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
       tx.delete(batchRef);

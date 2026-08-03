@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       details: [''], badge: (row.badge ?? '').toString().trim(),
       emoji: '🛍️', imageUrls: [],
       gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309',
-      stockQty, openPO,
+      stockQty, openPO, published: true,
       stock: openPO ? 'open_po' : stockQty > 0 ? 'ready' : 'habis',
       qrUrl: productUrl(ref.id),
       createdAt: FieldValue.serverTimestamp(),

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
+import NumberInput from '@/components/NumberInput';
 
 const API = '';
 
@@ -182,7 +183,7 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
   // Order/rekap "Belum Lunas" tidak ikut dihitung sebagai uang masuk sampai ditandai Lunas
   // (lihat menu Pesanan / riwayat Pembelian Bahan Baku & Rekap Konsinyasi). Field yang hilang
   // (data lama sebelum fitur ini ada) dianggap lunas.
-  const countedOrders = orders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas');
+  const countedOrders = orders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
   const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
   const kasirRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
   const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
@@ -453,7 +454,7 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
                 <ArrowUpCircle size={15} style={{ color: 'var(--success)' }} />
                 <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rincian Pendapatan</p>
               </div>
-              <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                 {[
                   { icon: <ShoppingCart size={14} />, label: 'Penjualan Kasir', val: kasirRevenue },
                   { icon: <Globe size={14} />, label: 'Penjualan Online', val: onlineRevenue },
@@ -479,7 +480,7 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
               {expenseByCategory.size === 0 ? (
                 <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada pengeluaran di periode ini.</p>
               ) : (
-                <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                   {[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
                     <div key={cat} className="px-5 py-3 flex items-center gap-3">
                       <span style={{ width: 8, height: 8, borderRadius: 4, background: EXPENSE_CATEGORY_COLORS[cat] ?? '#9CA3AF', flexShrink: 0 }} />
@@ -499,9 +500,9 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
         <div className="space-y-4">
           <div className="card p-4 flex items-center gap-3 flex-wrap">
             <label className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Saldo Awal (opsional)</label>
-            <input type="number" value={saldoAwalRaw}
-              onChange={e => { setSaldoAwalRaw(e.target.value); localStorage.setItem(SALDO_AWAL_KEY, e.target.value); }}
-              className="input" style={{ width: 180, height: 36 }} placeholder="0" />
+            <NumberInput value={saldoAwalRaw}
+              onChange={raw => { setSaldoAwalRaw(raw); localStorage.setItem(SALDO_AWAL_KEY, raw); }}
+              style={{ width: 180, height: 36 }} placeholder="0" />
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
               Saldo kas nyata sebelum periode ini dimulai (disimpan di browser ini saja, bukan data akuntansi baku).
             </p>
@@ -520,7 +521,7 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
                 <span className="text-[10px] font-bold uppercase tracking-wide w-28 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Kredit</span>
                 <span className="text-[10px] font-bold uppercase tracking-wide w-28 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Saldo</span>
               </div>
-              <div className="divide-y" style={{ borderColor: 'var(--border-2)' }}>
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
               {journalWithSaldo.map((j, i) => (
                 <div key={i} className="px-4 py-3 flex items-center gap-3">
                   <span className="text-xs tabular flex-shrink-0 w-20" style={{ color: 'var(--text-muted)' }}>

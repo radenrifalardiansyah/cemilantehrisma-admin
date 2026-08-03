@@ -6,6 +6,7 @@ import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
   Package, ChevronDown, ChevronUp, Search, QrCode,
   ChevronLeft, ChevronRight, ImageIcon, FileSpreadsheet, Upload,
+  Eye, EyeOff,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import ImageLightbox from '@/components/ImageLightbox';
@@ -15,6 +16,8 @@ import ViewToggle from '@/components/ViewToggle';
 import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import FilterSelect from '@/components/FilterSelect';
+import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
 import EmojiPicker from '@/components/EmojiPicker';
 import ColorThemePicker from '@/components/ColorThemePicker';
 import QRCodeModal from '@/components/QRCodeModal';
@@ -29,7 +32,7 @@ interface FireProduct {
   price: number; originalPrice?: number; costPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
   bgColor: string; weight: string; stockQty?: number; order?: number;
-  code?: string; openPO?: boolean; qrUrl?: string;
+  code?: string; openPO?: boolean; qrUrl?: string; published?: boolean;
 }
 
 interface FireCategory {
@@ -41,7 +44,7 @@ const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
   name: '', description: '', details: [''], price: 0, costPrice: 0, emoji: '🛍️',
   imageUrls: [], category: '', badge: '', stock: 'habis',
   gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309', weight: '', stockQty: 0,
-  code: '', openPO: false,
+  code: '', openPO: false, published: true,
 };
 
 const STOCK_MAP = {
@@ -150,10 +153,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [uploading,   setUploading]   = useState(false);
   const [search,      setSearch]      = useState('');
   const [catFilter,   setCatFilter]   = useState('semua');
+  const [pubFilter,   setPubFilter]   = useState('semua');
   const [page,        setPage]        = useState(1);
   const [pageSize,    setPageSize]    = useState(10);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
+  const [bulkPublishing, setBulkPublishing] = useState(false);
   const [exporting,     setExporting]     = useState(false);
   const [importing,     setImporting]     = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -443,6 +448,25 @@ export default function ProductsTab({ creds }: { creds: string }) {
     setBulkDeleting(false);
   };
 
+  const bulkSetPublished = async (published: boolean) => {
+    if (selected.size === 0) return;
+    setBulkPublishing(true);
+    const ids = [...selected];
+    const r = await fetch(`${API}/api/products/bulk-publish`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, published }),
+    });
+    if (r.ok) {
+      setProducts(p => p.map(x => ids.includes(x.id) ? { ...x, published } : x));
+      setSelected(new Set());
+      toast.success(published ? `${ids.length} produk berhasil dipublish.` : `${ids.length} produk disembunyikan dari frontend.`);
+    } else {
+      toast.error('Gagal mengubah status publish produk.');
+    }
+    setBulkPublishing(false);
+  };
+
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -474,6 +498,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         { header: 'Stok Qty',    key: 'stockQty',       width: 10 },
         { header: 'Badge',       key: 'badge',          width: 12 },
         { header: 'Buka PO',     key: 'openPO',         width: 10 },
+        { header: 'Publish',     key: 'published',      width: 10 },
         { header: 'Deskripsi',   key: 'description',    width: 45 },
       ];
       const colCount = COLS.length;
@@ -532,6 +557,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
           stockQty: p.stockQty ?? 0,
           badge: p.badge || '-',
           openPO: p.openPO ? 'Ya' : 'Tidak',
+          published: p.published !== false ? 'Ya' : 'Tidak',
           description: p.description,
         });
 
@@ -557,6 +583,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         row.getCell('no').alignment       = { horizontal: 'center', vertical: 'middle' };
         row.getCell('stockQty').alignment = { horizontal: 'center', vertical: 'middle' };
         row.getCell('openPO').alignment    = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('published').alignment = { horizontal: 'center', vertical: 'middle' };
         row.getCell('category').alignment  = { horizontal: 'center', vertical: 'middle' };
         row.getCell('description').alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
 
@@ -626,7 +653,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
     .filter(p => {
       const matchCat = catFilter === 'semua' || p.category === catFilter;
       const matchQ   = !search || p.name.toLowerCase().includes(search.toLowerCase());
-      return matchCat && matchQ;
+      const matchPub = pubFilter === 'semua'
+        || (pubFilter === 'published' && p.published !== false)
+        || (pubFilter === 'draft' && p.published === false);
+      return matchCat && matchQ && matchPub;
     })
     .sort((a, b) => {
       const aHabis = stockStatus(a) === STOCK_MAP.habis ? 1 : 0;
@@ -685,6 +715,34 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
       {/* ── Header: search + actions in one row ── */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {products.length > 0 && categories.length > 0 && (
+          <div className="w-full sm:w-[200px] flex-shrink-0">
+            <FilterSelect
+              value={catFilter}
+              onChange={v => { setCatFilter(v); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari kategori…"
+              options={[
+                { value: 'semua', label: 'Semua Kategori' },
+                ...categories.map(c => ({ value: c.id, label: `${c.emoji} ${c.name}` })),
+              ]}
+            />
+          </div>
+        )}
+        {products.length > 0 && (
+          <div className="w-full sm:w-[170px] flex-shrink-0">
+            <FilterSelect
+              value={pubFilter}
+              onChange={v => { setPubFilter(v); resetPage(); }}
+              height={HEADER_BTN_H}
+              options={[
+                { value: 'semua', label: 'Semua Status' },
+                { value: 'published', label: 'Published' },
+                { value: 'draft', label: 'Belum Publish' },
+              ]}
+            />
+          </div>
+        )}
         {products.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{
@@ -700,49 +758,37 @@ export default function ProductsTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        {products.length > 0 && categories.length > 0 && (
-          <div style={{ width: 200 }} className="flex-shrink-0">
-            <FilterSelect
-              value={catFilter}
-              onChange={v => { setCatFilter(v); resetPage(); }}
-              height={HEADER_BTN_H}
-              searchPlaceholder="Cari kategori…"
-              options={[
-                { value: 'semua', label: 'Semua Kategori' },
-                ...categories.map(c => ({ value: c.id, label: `${c.emoji} ${c.name}` })),
-              ]}
-            />
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
-          {products.length === 0 && (
-            <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-              {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
-              <span className="hidden sm:inline">Migrasi Data</span>
-            </button>
-          )}
-          <Tooltip label="Unduh Template">
-            <button onClick={downloadProductTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-              <FileSpreadsheet size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
-            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-            </button>
-          </Tooltip>
-          <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) importProductsFromExcel(f); e.target.value = ''; }} />
-          {products.length > 0 && (
-            <Tooltip label="Export Excel">
-              <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
-                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+          <div className="flex items-center gap-2 flex-wrap">
+            {products.length === 0 && (
+              <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+                {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
+                <span className="hidden sm:inline">Migrasi Data</span>
+              </button>
+            )}
+            <Tooltip label="Unduh Template">
+              <button onClick={downloadProductTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                <FileSpreadsheet size={14} />
               </button>
             </Tooltip>
-          )}
-          {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
-          <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
+            <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+              <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              </button>
+            </Tooltip>
+            <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) importProductsFromExcel(f); e.target.value = ''; }} />
+            {products.length > 0 && (
+              <Tooltip label="Export Excel">
+                <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                </button>
+              </Tooltip>
+            )}
+            {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+          </div>
+          <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
           </button>
         </div>
@@ -824,6 +870,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
                                 </span>
                               )}
                               {p.badge && <span className="badge badge-amber">{p.badge}</span>}
+                              <span className={`badge flex items-center gap-1 ${p.published === false ? 'badge-gray' : 'badge-green'}`}>
+                                {p.published === false ? <EyeOff size={9} /> : <Eye size={9} />}
+                                {p.published === false ? 'Draft' : 'Publish'}
+                              </span>
                               {!p.imageUrls?.length && (
                                 <span className="badge badge-gray flex items-center gap-1">
                                   <ImageIcon size={9} /> No img
@@ -902,6 +952,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             <Checkbox checked={isSelected} onChange={() => toggleSelect(p.id)} />
                           </div>
                           {p.badge && <span className="absolute top-2 right-2 badge badge-amber">{p.badge}</span>}
+                          <span className={`absolute top-9 left-2 badge flex items-center gap-1 ${p.published === false ? 'badge-gray' : 'badge-green'}`}>
+                            {p.published === false ? <EyeOff size={9} /> : <Eye size={9} />}
+                            {p.published === false ? 'Draft' : 'Publish'}
+                          </span>
                           {!p.imageUrls?.length && (
                             <span className="absolute bottom-2 right-2 badge badge-gray flex items-center gap-1">
                               <ImageIcon size={9} /> No img
@@ -1011,6 +1065,18 @@ export default function ProductsTab({ creds }: { creds: string }) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
               Export
+            </button>
+            <button onClick={() => bulkSetPublished(true)} disabled={bulkPublishing}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {bulkPublishing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />}
+              Publish
+            </button>
+            <button onClick={() => bulkSetPublished(false)} disabled={bulkPublishing}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {bulkPublishing ? <Loader2 size={13} className="animate-spin" /> : <EyeOff size={13} />}
+              Sembunyikan
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
@@ -1129,9 +1195,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     ] as const).map(f => (
                       <div key={f.key}>
                         <label className="field-label">{f.label}</label>
-                        <input type="number" value={(editing[f.key] as number | undefined) ?? ''}
-                          onChange={e => setEditing({ ...editing, [f.key]: Number(e.target.value) })}
-                          className="input" />
+                        <NumberInput value={(editing[f.key] as number | undefined) ?? ''}
+                          onChange={raw => setEditing({ ...editing, [f.key]: raw ? Number(raw) : 0 })}
+                        />
                       </div>
                     ))}
                     {!!editing.costPrice && editing.price > 0 && (
@@ -1144,20 +1210,17 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
                       <div>
                         <label className="field-label">Kategori</label>
-                        <select value={editing.category}
-                          onChange={e => setEditing({ ...editing, category: e.target.value })}
-                          className="input" style={{ fontSize: 12 }}>
-                          {categories.length === 0 && <option value="">— Belum ada —</option>}
-                          {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-                        </select>
+                        <SearchSelect value={editing.category}
+                          onChange={v => setEditing({ ...editing, category: v })}
+                          options={categories.map(c => ({ value: c.id, label: `${c.emoji} ${c.name}` }))}
+                          placeholder="— Belum ada —" searchPlaceholder="Cari kategori…" />
                       </div>
                       <div>
                         <label className="field-label">Badge</label>
-                        <select value={editing.badge ?? ''}
-                          onChange={e => setEditing({ ...editing, badge: e.target.value })}
-                          className="input" style={{ fontSize: 12 }}>
-                          {BADGE_OPTS.map(o => <option key={o} value={o}>{o || '–'}</option>)}
-                        </select>
+                        <SearchSelect value={editing.badge ?? ''}
+                          onChange={v => setEditing({ ...editing, badge: v })}
+                          options={BADGE_OPTS.map(o => ({ value: o, label: o || '–' }))}
+                          placeholder="–" searchPlaceholder="Cari badge…" />
                       </div>
                     </div>
 
@@ -1179,6 +1242,15 @@ export default function ProductsTab({ creds }: { creds: string }) {
                         <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Aktifkan untuk tetap menerima pesanan walau stok gudang 0</p>
                       </div>
                       <Switch checked={!!editing.openPO} onChange={() => setEditing({ ...editing, openPO: !editing.openPO })} />
+                    </div>
+
+                    {/* Toggle Publish */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div>
+                        <p className="field-label" style={{ marginBottom: 2 }}>Publish ke Frontend</p>
+                        <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Nonaktifkan untuk menyembunyikan produk ini dari toko online</p>
+                      </div>
+                      <Switch checked={editing.published !== false} onChange={() => setEditing({ ...editing, published: !(editing.published !== false) })} />
                     </div>
 
                     {/* Description */}
