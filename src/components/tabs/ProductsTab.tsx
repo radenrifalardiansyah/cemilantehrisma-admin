@@ -26,7 +26,7 @@ const API = '';
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 interface FireProduct {
   id: string; name: string; description: string; details: string[];
-  price: number; originalPrice?: number; emoji: string; imageUrls: string[];
+  price: number; originalPrice?: number; costPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
   bgColor: string; weight: string; stockQty?: number; order?: number;
   code?: string; openPO?: boolean; qrUrl?: string;
@@ -38,7 +38,7 @@ interface FireCategory {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
-  name: '', description: '', details: [''], price: 0, emoji: '🛍️',
+  name: '', description: '', details: [''], price: 0, costPrice: 0, emoji: '🛍️',
   imageUrls: [], category: '', badge: '', stock: 'habis',
   gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309', weight: '', stockQty: 0,
   code: '', openPO: false,
@@ -1123,8 +1123,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   {/* Col 2 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {([
-                      { label: 'Harga (Rp)',                 key: 'price'         as const },
-                      { label: 'Harga Coret (Rp, opsional)', key: 'originalPrice' as const },
+                      { label: 'Harga (Rp)',                       key: 'price'         as const },
+                      { label: 'Harga Modal / HPP (Rp, opsional)', key: 'costPrice'     as const },
+                      { label: 'Harga Coret (Rp, opsional)',       key: 'originalPrice' as const },
                     ] as const).map(f => (
                       <div key={f.key}>
                         <label className="field-label">{f.label}</label>
@@ -1133,6 +1134,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           className="input" />
                       </div>
                     ))}
+                    {!!editing.costPrice && editing.price > 0 && (
+                      <p style={{ fontSize: 10.5, marginTop: -8, color: 'var(--text-muted)' }}>
+                        Margin: {formatRp(editing.price - editing.costPrice)} / pcs ({Math.round(((editing.price - editing.costPrice) / editing.price) * 100)}%)
+                      </p>
+                    )}
 
                     {/* Selects */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>

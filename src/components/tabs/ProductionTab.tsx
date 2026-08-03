@@ -1,0 +1,619 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Factory, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, AlertTriangle,
+  Search, ChevronLeft, ChevronRight,
+} from 'lucide-react';
+import TopbarPortal from '@/components/TopbarPortal';
+import SearchSelect from '@/components/SearchSelect';
+import { useViewMode } from '@/lib/useViewMode';
+import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/Confirm';
+import type { PosProduct } from '@/lib/pos-types';
+
+const API = '';
+const HEADER_BTN_H = 34;
+
+function Checkbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate?: boolean; onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{
+        background:  checked || indeterminate ? 'var(--accent)' : 'transparent',
+        borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked
+          ? <Check size={11} color="#fff" strokeWidth={3} />
+          : null}
+    </button>
+  );
+}
+
+const formatRp = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatDateDisplay(iso?: string) {
+  if (!iso) return '–';
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+interface RawMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
+interface BatchMaterialUsed { materialId?: string; materialName: string; unit: string; qty: number; costPerUnit: number; cost: number }
+interface BatchOutput { productId: string; productName: string; yieldQty: number; costPerPcs: number }
+interface ProductionBatch {
+  id: string; materialsUsed: BatchMaterialUsed[];
+  materialCost: number; otherCost: number; totalCost: number; costPerPcs: number;
+  date?: string; note?: string; createdAt?: { seconds: number };
+  // Bentuk baru (multi-produk hasil)
+  outputs?: BatchOutput[]; totalYieldQty?: number;
+  // Bentuk lama (satu produk per batch) — dipertahankan supaya riwayat sebelum fitur ini tetap tampil benar
+  productName?: string; yieldQty?: number;
+}
+
+// Normalisasi batch lama & baru jadi satu bentuk "outputs" supaya tampilan riwayat konsisten
+function batchOutputs(b: ProductionBatch): { productName: string; yieldQty: number }[] {
+  if (b.outputs && b.outputs.length > 0) return b.outputs.map(o => ({ productName: o.productName, yieldQty: o.yieldQty }));
+  if (b.productName) return [{ productName: b.productName, yieldQty: b.yieldQty ?? 0 }];
+  return [];
+}
+function batchTotalYield(b: ProductionBatch): number {
+  return b.totalYieldQty ?? b.yieldQty ?? 0;
+}
+// Data lama (sebelum fitur multi-produk & id bahan baku tersimpan) tidak bisa dihitung ulang
+// dengan tepat kalau diedit/dihapus (tidak ada productId/materialId) — jadi dikunci read-only.
+function isEditableBatch(b: ProductionBatch): boolean {
+  return !!b.outputs && b.outputs.length > 0 && b.materialsUsed.every(m => !!m.materialId);
+}
+
+interface MaterialRow { materialId: string; qty: string }
+const EMPTY_ROW: MaterialRow = { materialId: '', qty: '' };
+
+interface OutputRow { productId: string; qty: string }
+const EMPTY_OUTPUT_ROW: OutputRow = { productId: '', qty: '' };
+
+export default function ProductionTab({ creds, products }: { creds: string; products: PosProduct[] }) {
+  const toast   = useToast();
+  const confirm = useConfirm();
+  const headers = { 'x-admin-auth': creds };
+
+  const [materials,        setMaterials]        = useState<RawMaterial[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState(true);
+  const loadMaterials = async () => {
+    setMaterialsLoading(true);
+    const r = await fetch(`${API}/api/materials`, { headers });
+    if (r.ok) setMaterials((await r.json() as { materials: RawMaterial[] }).materials);
+    setMaterialsLoading(false);
+  };
+
+  const [batches,        setBatches]        = useState<ProductionBatch[]>([]);
+  const [batchesLoading, setBatchesLoading] = useState(true);
+  const loadBatches = async () => {
+    setBatchesLoading(true);
+    const r = await fetch(`${API}/api/production?limit=50`, { headers });
+    if (r.ok) setBatches((await r.json() as { batches: ProductionBatch[] }).batches);
+    setBatchesLoading(false);
+  };
+
+  useEffect(() => { loadMaterials(); loadBatches(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Form tambah/edit (modal) ──────────────────────────────────
+  const [showForm,     setShowForm]     = useState(false);
+  const [editingBatch, setEditingBatch] = useState<ProductionBatch | null>(null);
+  const [date,       setDate]       = useState(todayISO());
+  const [outputRows, setOutputRows] = useState<OutputRow[]>([{ ...EMPTY_OUTPUT_ROW }]);
+  const [rows,       setRows]       = useState<MaterialRow[]>([{ ...EMPTY_ROW }]);
+  const [otherCost,  setOtherCost]  = useState('');
+  const [note,       setNote]       = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const resetForm = () => {
+    setEditingBatch(null); setDate(todayISO());
+    setOutputRows([{ ...EMPTY_OUTPUT_ROW }]); setRows([{ ...EMPTY_ROW }]);
+    setOtherCost(''); setNote('');
+  };
+  const openCreate = () => { resetForm(); setShowForm(true); };
+  const openEdit = (b: ProductionBatch) => {
+    setEditingBatch(b);
+    setDate(b.date || todayISO());
+    setOutputRows((b.outputs ?? []).map(o => ({ productId: o.productId, qty: String(o.yieldQty) })));
+    setRows(b.materialsUsed.map(m => ({ materialId: m.materialId ?? '', qty: String(m.qty) })));
+    setOtherCost(b.otherCost ? String(b.otherCost) : '');
+    setNote(b.note ?? '');
+    setShowForm(true);
+  };
+  const closeForm = () => { setShowForm(false); resetForm(); };
+
+  const addOutputRow    = () => setOutputRows(prev => [...prev, { ...EMPTY_OUTPUT_ROW }]);
+  const removeOutputRow = (i: number) => setOutputRows(prev => prev.filter((_, idx) => idx !== i));
+  const updateOutputRow = (i: number, patch: Partial<OutputRow>) => setOutputRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+
+  const addRow    = () => setRows(prev => [...prev, { ...EMPTY_ROW }]);
+  const removeRow = (i: number) => setRows(prev => prev.filter((_, idx) => idx !== i));
+  const updateRow = (i: number, patch: Partial<MaterialRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+
+  // Saat edit, stok bahan baku yang ditampilkan sudah dikembalikan (belum dikonsumsi ulang oleh
+  // batch ini) supaya validasi kekurangan stok di form tidak salah tuduh dengan qty batch lama sendiri.
+  const effectiveMaterials = editingBatch
+    ? materials.map(m => {
+        const used = editingBatch.materialsUsed.find(u => u.materialId === m.id);
+        return used ? { ...m, stockQty: m.stockQty + used.qty } : m;
+      })
+    : materials;
+
+  const usedRows = rows
+    .filter(r => r.materialId && (parseFloat(r.qty) || 0) > 0)
+    .map(r => {
+      const material = effectiveMaterials.find(m => m.id === r.materialId)!;
+      const qty = parseFloat(r.qty) || 0;
+      return { material, qty, cost: material.avgCost * qty, shortage: qty > material.stockQty };
+    });
+
+  const usedOutputRows = outputRows
+    .filter(r => r.productId && (parseFloat(r.qty) || 0) > 0)
+    .map(r => ({ product: products.find(p => p.id === r.productId)!, qty: parseFloat(r.qty) || 0 }));
+
+  const materialCost = usedRows.reduce((s, r) => s + r.cost, 0);
+  const otherCostNum = parseFloat(otherCost) || 0;
+  const totalCost     = materialCost + otherCostNum;
+  const totalYieldQty = usedOutputRows.reduce((s, r) => s + r.qty, 0);
+  const costPerPcs    = totalYieldQty > 0 ? totalCost / totalYieldQty : 0;
+  const hasShortage   = usedRows.some(r => r.shortage);
+
+  const canSubmit = !!date && usedOutputRows.length > 0 && usedRows.length > 0 && !hasShortage;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        date,
+        outputs: usedOutputRows.map(r => ({ productId: r.product.id, productName: r.product.name, yieldQty: r.qty })),
+        materialsUsed: usedRows.map(r => ({ materialId: r.material.id, materialName: r.material.name, unit: r.material.unit, qty: r.qty })),
+        otherCost: otherCostNum, note,
+      };
+      const res = editingBatch
+        ? await fetch(`${API}/api/production/${editingBatch.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        : await fetch(`${API}/api/production`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const dataRes = await res.json() as { id?: string; error?: string };
+      if (!res.ok) { toast.error(dataRes.error ?? 'Gagal menyimpan produksi.'); return; }
+      const productLabel = usedOutputRows.map(r => `${r.product.name} (${r.qty} pcs)`).join(', ');
+      toast.success(editingBatch
+        ? `Produksi berhasil diperbarui — HPP ${formatRp(costPerPcs)}/pcs untuk ${productLabel}.`
+        : `Produksi tersimpan — HPP ${formatRp(costPerPcs)}/pcs untuk ${productLabel}.`);
+      closeForm();
+      await Promise.all([loadMaterials(), loadBatches()]);
+    } finally { setSubmitting(false); }
+  };
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const deleteBatch = async (b: ProductionBatch) => {
+    const label = batchOutputs(b).map(o => o.productName).join(' & ');
+    if (!await confirm({ message: `Hapus batch produksi "${label}"? Stok bahan baku akan dikembalikan & stok produk hasil dikurangi lagi. Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    setDeletingId(b.id);
+    const r = await fetch(`${API}/api/production/${b.id}`, { method: 'DELETE', headers });
+    const dataRes = await r.json().catch(() => ({})) as { error?: string };
+    if (r.ok) {
+      setBatches(prev => prev.filter(x => x.id !== b.id));
+      setSelected(s => { const n = new Set(s); n.delete(b.id); return n; });
+      toast.success('Batch produksi berhasil dihapus, stok dikembalikan.');
+      await loadMaterials();
+    } else toast.error(dataRes.error ?? 'Gagal menghapus batch produksi.');
+    setDeletingId(null);
+  };
+
+  // ── Pencarian, tampilan, paginasi, pilih massal ───────────────
+  const [search,   setSearch]   = useState('');
+  const [page,     setPage]     = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [view, setView] = useViewMode('production');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelect = (id: string) =>
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selected.size} batch produksi yang dipilih? Stok bahan baku & produk terkait akan dikembalikan/dikurangi lagi.`, danger: true })) return;
+    setBulkDeleting(true);
+    const ids = [...selected];
+    let okCount = 0, blockedCount = 0;
+    for (const id of ids) {
+      const r = await fetch(`${API}/api/production/${id}`, { method: 'DELETE', headers });
+      if (r.ok) okCount++; else blockedCount++;
+    }
+    setSelected(new Set());
+    await Promise.all([loadMaterials(), loadBatches()]);
+    if (okCount > 0) toast.success(`${okCount} batch produksi berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena produknya sudah diproduksi lagi.` : ''}`);
+    else toast.error('Semua batch yang dipilih tidak bisa dihapus (produknya sudah diproduksi lagi setelahnya).');
+    setBulkDeleting(false);
+  };
+
+  const resetPage = () => setPage(1);
+  const filteredBatches = batches.filter(b => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return batchOutputs(b).some(o => o.productName.toLowerCase().includes(q))
+      || (b.note ?? '').toLowerCase().includes(q);
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredBatches.length / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const paginatedBatches = filteredBatches.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+
+  const togglePageAll = () => {
+    const pageIds     = paginatedBatches.map(b => b.id);
+    const allSelected = pageIds.every(id => selected.has(id));
+    setSelected(s => {
+      const n = new Set(s);
+      if (allSelected) pageIds.forEach(id => n.delete(id));
+      else             pageIds.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
+  const productOptions  = products.map(p => ({ value: p.id, label: p.name, emoji: p.emoji }));
+  const materialOptions = effectiveMaterials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${m.stockQty} ${m.unit}` }));
+  const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
+
+  return (
+    <div className="p-4 lg:p-6 animate-fade-up space-y-5">
+      <TopbarPortal>
+        <button onClick={() => { loadMaterials(); loadBatches(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+          <RefreshCw size={14} className={materialsLoading || batchesLoading ? 'animate-spin' : ''} />
+        </button>
+      </TopbarPortal>
+
+      {/* Header: search + actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {batches.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari nama produk / catatan…"
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
+          {batches.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+          <button onClick={openCreate} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
+            <Plus size={13} /> <span className="hidden sm:inline">Catat Produksi</span><span className="sm:hidden">Tambah</span>
+          </button>
+        </div>
+      </div>
+
+      {batchesLoading && batches.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
+        </div>
+      ) : batches.length === 0 ? (
+        <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+          <Factory size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+          <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat produksi</p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat produksi untuk mengurangi stok bahan baku & menambah stok produk</p>
+        </div>
+      ) : (
+        <>
+          {paginatedBatches.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+              <Checkbox
+                checked={paginatedBatches.every(b => selected.has(b.id))}
+                indeterminate={paginatedBatches.some(b => selected.has(b.id)) && !paginatedBatches.every(b => selected.has(b.id))}
+                onChange={togglePageAll}
+              />
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                {selected.size > 0 ? `${selected.size} dipilih` : `${paginatedBatches.length} batch di halaman ini`}
+              </span>
+            </div>
+          )}
+
+          {paginatedBatches.length === 0 ? (
+            <div className="card py-12 text-center">
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat produksi yang cocok.</p>
+            </div>
+          ) : view === 'table' ? (
+            <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
+              {paginatedBatches.map(b => {
+                const isSelected = selected.has(b.id);
+                const editable   = isEditableBatch(b);
+                return (
+                  <div key={b.id} className="px-4 py-3 flex items-start gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                    <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                          {batchOutputs(b).map(o => o.productName).join(' & ')}
+                        </p>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</span>
+                          {editable && (
+                            <>
+                              <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
+                                {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(b.date)}</p>
+                      <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                        {batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join(', ')}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        {b.materialsUsed.map(m => `${m.materialName} (${m.qty} ${m.unit})`).join(', ')}
+                      </p>
+                      <p className="text-xs mt-1 tabular" style={{ color: 'var(--text-muted)' }}>
+                        Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
+                      </p>
+                      {!editable && (
+                        <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {paginatedBatches.map(b => {
+                const isSelected = selected.has(b.id);
+                const editable   = isEditableBatch(b);
+                return (
+                  <div key={b.id} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                    <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                      <Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} />
+                    </div>
+                    <div className="pt-8 pb-3 px-4 flex flex-col items-center text-center gap-1">
+                      <div className="w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center mb-1" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                        <Factory size={20} />
+                      </div>
+                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                        {batchOutputs(b).map(o => o.productName).join(' & ')}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(b.date)}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join(', ')}
+                      </p>
+                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</p>
+                      <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
+                        Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
+                      </p>
+                      {!editable && (
+                        <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
+                      )}
+                    </div>
+                    {editable && (
+                      <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                        <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                          <Pencil size={12} />
+                        </button>
+                        <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                          {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {filteredBatches.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {filteredBatches.length} batch · halaman {safePage} dari {totalPages}
+                </p>
+                <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); resetPage(); }} />
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronLeft size={14} />
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goPage(n as number)}
+                            className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )
+                  }
+                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={bulkDelete} disabled={bulkDeleting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
+            </button>
+            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal tambah/edit produksi */}
+      {showForm && (
+        <div className="modal-overlay" onClick={() => !submitting && closeForm()}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Factory size={17} /></div>
+                <div>
+                  <p className="modal-title">{editingBatch ? 'Edit Produksi' : 'Catat Produksi Baru'}</p>
+                  <p className="modal-subtitle">
+                    {editingBatch
+                      ? 'Stok bahan baku & produk akan disesuaikan ulang sesuai perubahan'
+                      : 'Bahan baku terpakai otomatis mengurangi stok, produk hasil menambah stok'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={closeForm} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={fieldLabel}>Tanggal Produksi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input" style={{ maxWidth: 220 }} />
+                </div>
+
+                <div>
+                  <label style={fieldLabel}>Produk Hasil <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {outputRows.map((row, i) => (
+                      <div key={i} className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr auto', alignItems: 'center' }}>
+                        <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
+                          options={productOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
+                        <input type="number" min="0" value={row.qty} onChange={e => updateOutputRow(i, { qty: e.target.value })}
+                          placeholder="Jumlah (pcs)" className="input" />
+                        <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
+                          className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addOutputRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Produk Hasil (mis. varian rasa lain)
+                  </button>
+                </div>
+
+                <div>
+                  <label style={fieldLabel}>Bahan Baku Dipakai</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {rows.map((row, i) => {
+                      const material = effectiveMaterials.find(m => m.id === row.materialId);
+                      const qty = parseFloat(row.qty) || 0;
+                      const shortage = !!material && qty > material.stockQty;
+                      return (
+                        <div key={i}>
+                          <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr auto', alignItems: 'center' }}>
+                            <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
+                              options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                            <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })}
+                              placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" />
+                            <button onClick={() => removeRow(i)} disabled={rows.length === 1}
+                              className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                              <X size={14} />
+                            </button>
+                          </div>
+                          {material && qty > 0 && (
+                            <p className="text-xs tabular mt-1" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
+                              {shortage
+                                ? `Stok kurang — tersedia ${material.stockQty} ${material.unit}`
+                                : `Biaya: ${formatRp(material.avgCost * qty)} (stok tersisa ${material.stockQty - qty} ${material.unit})`}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={addRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Baris Bahan Baku
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label style={fieldLabel}>Biaya Lain (Tenaga Kerja/Overhead, opsional)</label>
+                    <input type="number" min="0" value={otherCost} onChange={e => setOtherCost(e.target.value)} placeholder="0" className="input" />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Total Hasil Produksi (pcs)</label>
+                    <input type="number" value={totalYieldQty || ''} readOnly disabled className="input" style={{ opacity: 0.7 }} placeholder="0" />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={fieldLabel}>Catatan</label>
+                  <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
+                </div>
+
+                {(materialCost > 0 || otherCostNum > 0) && (
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div className="card p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Biaya Bahan</p>
+                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(materialCost)}</p>
+                    </div>
+                    <div className="card p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Total Biaya</p>
+                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(totalCost)}</p>
+                    </div>
+                    <div className="card p-3" style={{ background: 'var(--accent-bg)' }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>HPP / pcs (semua produk hasil)</p>
+                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>{totalYieldQty > 0 ? formatRp(costPerPcs) : '–'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {hasShortage && (
+                  <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                    <AlertTriangle size={12} /> Ada bahan baku dengan stok kurang — catat pembelian dulu di menu Bahan Baku sebelum simpan produksi.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeForm} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={submit} disabled={submitting || !canSubmit}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                {submitting ? 'Menyimpan…' : editingBatch ? 'Simpan Perubahan' : 'Simpan Produksi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

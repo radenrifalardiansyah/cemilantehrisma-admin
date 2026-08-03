@@ -490,3 +490,19 @@ body {
 }
 
 } /* end @layer components */
+
+/* ── POS receipt (print only) ──────────────────────────────────
+ * Left unlayered (like everything above the @layer wrapper isn't —
+ * see comment at top of file) so it reliably wins over any Tailwind
+ * utility class when the browser print dialog is triggered. */
+#pos-receipt {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 80mm;
+}
+@media print {
+  body * { visibility: hidden; }
+  #pos-receipt, #pos-receipt * { visibility: visible; }
+  #pos-receipt { position: fixed; left: 0; top: 0; width: 80mm; }
+}

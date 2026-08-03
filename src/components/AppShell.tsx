@@ -7,9 +7,13 @@ import {
   BarChart2, ShoppingCart, Package, Receipt, Tag,
   Users, Contact, Warehouse, Settings, LogOut, Home,
   ChevronRight, ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
+  Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark,
 } from 'lucide-react';
 
-export type TabId = 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers' | 'stock' | 'settings';
+export type TabId =
+  | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
+  | 'stock' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'expenses'
+  | 'finance-report' | 'capital' | 'settings';
 
 interface NavTab {
   id: TabId; label: string; mobileLabel: string; Icon: LucideIcon;
@@ -26,7 +30,8 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
   {
     label: 'POS',
     tabs: [
-      { id: 'pos' as TabId, label: 'Kasir', mobileLabel: 'Kasir', Icon: ShoppingCart },
+      { id: 'pos'    as TabId, label: 'Kasir',   mobileLabel: 'Kasir',   Icon: ShoppingCart },
+      { id: 'orders' as TabId, label: 'Pesanan', mobileLabel: 'Pesanan', Icon: Receipt },
     ],
   },
   {
@@ -38,14 +43,34 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
           { id: 'categories' as TabId, label: 'Kategori', mobileLabel: 'Kategori', Icon: Tag },
         ],
       },
-      { id: 'orders'     as TabId, label: 'Pesanan',      mobileLabel: 'Pesanan',  Icon: Receipt },
       { id: 'resellers'  as TabId, label: 'Reseller',     mobileLabel: 'Reseller', Icon: Users },
       { id: 'customers'  as TabId, label: 'Pelanggan',    mobileLabel: 'Pelanggan', Icon: Contact },
-      { id: 'stock'      as TabId, label: 'Gudang',       mobileLabel: 'Gudang',   Icon: Warehouse },
+      { id: 'consignment' as TabId, label: 'Mitra', mobileLabel: 'Mitra', Icon: Store },
+    ],
+  },
+  {
+    label: 'Keuangan',
+    tabs: [
+      { id: 'expenses' as TabId, label: 'Pengeluaran', mobileLabel: 'Pengeluaran', Icon: Banknote },
+      { id: 'capital' as TabId, label: 'Modal & Prive', mobileLabel: 'Modal', Icon: Landmark },
+      { id: 'finance-report' as TabId, label: 'Laporan Keuangan', mobileLabel: 'Laporan', Icon: LineChart },
     ],
   },
   {
     label: 'Operasional',
+    tabs: [
+      { id: 'stock'      as TabId, label: 'Gudang',       mobileLabel: 'Gudang',   Icon: Warehouse },
+      {
+        id: 'materials' as TabId, label: 'Bahan Baku', mobileLabel: 'Bahan Baku', Icon: Boxes,
+        children: [
+          { id: 'suppliers'  as TabId, label: 'Supplier', mobileLabel: 'Supplier', Icon: Truck },
+          { id: 'production' as TabId, label: 'Produksi',  mobileLabel: 'Produksi', Icon: Factory },
+        ],
+      },
+    ],
+  },
+  {
+    label: 'Manajemen Aplikasi',
     tabs: [
       { id: 'settings'  as TabId, label: 'Pengaturan',   mobileLabel: 'Setelan',  Icon: Settings },
     ],

@@ -1,0 +1,253 @@
+import { NextRequest } from 'next/server';
+import { getDb } from '@/lib/firebase-admin';
+import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { FieldValue } from 'firebase-admin/firestore';
+
+type Ctx = { params: Promise<{ id: string }> };
+
+interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
+interface OutputInput { productId: string; productName: string; yieldQty: number }
+interface StoredOutput { productId: string; productName: string; yieldQty: number; costPerPcs: number }
+interface StoredMaterialUsed { materialId: string; materialName: string; unit: string; qty: number; costPerUnit: number; cost: number }
+
+// Reversal & re-terapan untuk bahan baku aman dilakukan kapan pun — avgCost bahan baku TIDAK
+// dipengaruhi produksi (hanya stockQty), jadi tambah-balik lalu kurangi-baru selalu tepat secara
+// kuantitas berapa pun urutan transaksi lain di antaranya.
+//
+// Untuk produk hasil, HPP (costPrice) memakai rata-rata tertimbang yang bersifat asosiatif — batch lain
+// yang ikut menambah produk yang sama masih bisa dihitung ulang dengan tepat. Yang TIDAK aman adalah
+// kejadian yang MENGURANGI stok produk itu (terjual, dikirim konsinyasi, transfer keluar, dsb) setelah
+// batch ini — makanya hanya diblokir kalau ada batch produksi LAIN yang lebih baru menyentuh produk yang
+// sama; kalau produk sudah terjual/berpindah stok, edit/hapus tetap dijalankan (best-effort) — cek &
+// koreksi manual lewat Edit Produk kalau HPP hasil akhirnya terasa tidak pas.
+async function findLaterProductionProductIds(db: FirebaseFirestore.Firestore, createdAt: FirebaseFirestore.Timestamp) {
+  const snap = await db.collection('productionBatches').where('createdAt', '>', createdAt).get();
+  const ids = new Set<string>();
+  snap.docs.forEach(d => {
+    ((d.data().outputs as StoredOutput[] | undefined) ?? []).forEach(o => ids.add(o.productId));
+  });
+  return ids;
+}
+
+function reverseProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
+  const newQty = curQty - yieldQty;
+  const newCost = newQty > 0 ? (curCost * curQty - yieldQty * costPerPcs) / newQty : 0;
+  return { qty: Math.max(0, newQty), cost: Math.max(0, newCost) };
+}
+
+function applyProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
+  const newQty = curQty + yieldQty;
+  const newCost = newQty > 0 ? (curCost * curQty + yieldQty * costPerPcs) / newQty : costPerPcs;
+  return { qty: newQty, cost: newCost };
+}
+
+export async function PUT(req: NextRequest, ctx: Ctx) {
+  if (!validateAdminAuth(req)) return unauthorized();
+  const { id } = await ctx.params;
+  const data = await req.json() as {
+    date?: string; note?: string;
+    outputs: OutputInput[]; materialsUsed: MaterialUsedInput[]; otherCost?: number;
+  };
+  const newMaterialsUsed = data.materialsUsed ?? [];
+  const newOutputs = (data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
+  const newOtherCost = Number(data.otherCost) || 0;
+  const date = data.date || new Date().toISOString().slice(0, 10);
+  if (newMaterialsUsed.length === 0) return Response.json({ error: 'Minimal 1 bahan baku dipakai.' }, { status: 400 });
+  if (newOutputs.length === 0) return Response.json({ error: 'Minimal 1 produk hasil dengan jumlah lebih dari 0.' }, { status: 400 });
+
+  const db = getDb();
+  const batchRef = db.collection('productionBatches').doc(id);
+  const newExpenseRef = db.collection('expenses').doc();
+
+  try {
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(batchRef);
+      if (!snap.exists) throw new Error('Batch produksi tidak ditemukan.');
+      const batch = snap.data()!;
+      const oldOutputs = (batch.outputs as StoredOutput[] | undefined) ?? [];
+      const oldMaterialsUsed = (batch.materialsUsed as StoredMaterialUsed[] | undefined) ?? [];
+      const oldExpenseId = batch.expenseId as string | null | undefined;
+
+      const productIds = [...new Set([...oldOutputs.map(o => o.productId), ...newOutputs.map(o => o.productId)])];
+      const laterTouched = await findLaterProductionProductIds(db, batch.createdAt);
+      const blocked = productIds.filter(pid => laterTouched.has(pid));
+      if (blocked.length > 0) {
+        const names = [...oldOutputs, ...newOutputs].filter(o => blocked.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa diedit — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.`);
+      }
+
+      const materialIds = [...new Set([...oldMaterialsUsed.map(m => m.materialId), ...newMaterialsUsed.map(m => m.materialId)])];
+      const materialRefs = materialIds.map(mid => db.collection('rawMaterials').doc(mid));
+      const productRefs = productIds.map(pid => db.collection('products').doc(pid));
+      const oldExpenseSnap = oldExpenseId ? await tx.get(db.collection('expenses').doc(oldExpenseId)) : null;
+      const [materialSnaps, productSnaps] = await Promise.all([
+        Promise.all(materialRefs.map(r => tx.get(r))),
+        Promise.all(productRefs.map(r => tx.get(r))),
+      ]);
+
+      newOutputs.forEach(o => {
+        const idx = productIds.indexOf(o.productId);
+        if (!productSnaps[idx].exists) throw new Error(`Produk "${o.productName}" tidak ditemukan.`);
+      });
+      newMaterialsUsed.forEach(m => {
+        const idx = materialIds.indexOf(m.materialId);
+        if (!materialSnaps[idx].exists) throw new Error(`Bahan baku "${m.materialName}" tidak ditemukan.`);
+      });
+
+      // Bahan baku: kembalikan dulu qty batch lama, lalu cek kecukupan stok memakai qty batch baru.
+      const materialState = new Map<string, number>();
+      materialIds.forEach((mid, i) => materialState.set(mid, Number(materialSnaps[i].data()!.stockQty) || 0));
+      oldMaterialsUsed.forEach(m => materialState.set(m.materialId, (materialState.get(m.materialId) ?? 0) + m.qty));
+
+      const shortages: string[] = [];
+      newMaterialsUsed.forEach(m => {
+        const stockQty = materialState.get(m.materialId) ?? 0;
+        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${stockQty} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+      });
+      if (shortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${shortages.join(', ')}`);
+
+      const materialsWithCost: StoredMaterialUsed[] = newMaterialsUsed.map(m => {
+        const idx = materialIds.indexOf(m.materialId);
+        const costPerUnit = Number(materialSnaps[idx].data()!.avgCost) || 0;
+        return { ...m, costPerUnit, cost: costPerUnit * m.qty };
+      });
+      newMaterialsUsed.forEach(m => materialState.set(m.materialId, (materialState.get(m.materialId) ?? 0) - m.qty));
+      materialIds.forEach((mid, i) => {
+        tx.update(materialRefs[i], { stockQty: Math.max(0, materialState.get(mid) ?? 0), updatedAt: FieldValue.serverTimestamp() });
+      });
+
+      const materialCost  = materialsWithCost.reduce((s, m) => s + m.cost, 0);
+      const totalCost     = materialCost + newOtherCost;
+      const totalYieldQty = newOutputs.reduce((s, o) => s + o.yieldQty, 0);
+      const costPerPcs    = totalCost / totalYieldQty;
+
+      // Produk hasil: kembalikan dulu efek output batch lama (rata-rata tertimbang bersifat asosiatif),
+      // lalu terapkan output batch baru dengan HPP/pcs yang baru dihitung.
+      const productState = new Map<string, { qty: number; cost: number }>();
+      productIds.forEach((pid, i) => {
+        const p = productSnaps[i].data()!;
+        productState.set(pid, { qty: Number(p.stockQty) || 0, cost: Number(p.costPrice) || 0 });
+      });
+      oldOutputs.forEach(o => {
+        const st = productState.get(o.productId)!;
+        productState.set(o.productId, reverseProductState(st.qty, st.cost, o.yieldQty, o.costPerPcs));
+      });
+      const outputsWithCost: StoredOutput[] = newOutputs.map(o => {
+        const st = productState.get(o.productId)!;
+        const applied = applyProductState(st.qty, st.cost, o.yieldQty, costPerPcs);
+        productState.set(o.productId, applied);
+        return { ...o, costPerPcs };
+      });
+      productIds.forEach((pid, i) => {
+        const st = productState.get(pid)!;
+        const product = productSnaps[i].data()!;
+        tx.update(productRefs[i], {
+          stockQty: st.qty,
+          costPrice: st.cost,
+          stock: product.openPO ? 'open_po' : st.qty > 0 ? 'ready' : 'habis',
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      });
+
+      // Sinkronkan Pengeluaran otomatis biaya lain dengan nilai terbaru.
+      const oldExpenseExists = !!oldExpenseSnap?.exists;
+      let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
+      const productNames = newOutputs.map(o => o.productName).join(' & ');
+      if (newOtherCost > 0) {
+        if (oldExpenseExists && oldExpenseId) {
+          tx.update(db.collection('expenses').doc(oldExpenseId), {
+            description: `Biaya produksi - ${productNames}`,
+            amount: newOtherCost, date, updatedAt: FieldValue.serverTimestamp(),
+          });
+        } else {
+          tx.set(newExpenseRef, {
+            category: 'Produksi',
+            description: `Biaya produksi - ${productNames}`,
+            amount: newOtherCost, date,
+            note: `Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`,
+            sourceType: 'production',
+            sourceId: id,
+            createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+          });
+          expenseIdToStore = newExpenseRef.id;
+        }
+      } else if (oldExpenseExists && oldExpenseId) {
+        tx.delete(db.collection('expenses').doc(oldExpenseId));
+        expenseIdToStore = null;
+      }
+
+      tx.update(batchRef, {
+        date, outputs: outputsWithCost, materialsUsed: materialsWithCost,
+        materialCost, otherCost: newOtherCost, totalCost, totalYieldQty, costPerPcs,
+        note: data.note ?? '',
+        expenseId: expenseIdToStore,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan perubahan.' }, { status: 400 });
+  }
+
+  return Response.json({ ok: true });
+}
+
+export async function DELETE(req: NextRequest, ctx: Ctx) {
+  if (!validateAdminAuth(req)) return unauthorized();
+  const { id } = await ctx.params;
+  const db = getDb();
+  const batchRef = db.collection('productionBatches').doc(id);
+
+  try {
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(batchRef);
+      if (!snap.exists) throw new Error('Batch produksi tidak ditemukan.');
+      const batch = snap.data()!;
+      const outputs = (batch.outputs as StoredOutput[] | undefined) ?? [];
+      const materialsUsed = (batch.materialsUsed as StoredMaterialUsed[] | undefined) ?? [];
+      const expenseId = batch.expenseId as string | null | undefined;
+
+      const productIds = outputs.map(o => o.productId);
+      const laterTouched = await findLaterProductionProductIds(db, batch.createdAt);
+      const blocked = productIds.filter(pid => laterTouched.has(pid));
+      if (blocked.length > 0) {
+        const names = outputs.filter(o => blocked.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa dihapus — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.`);
+      }
+
+      const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
+      const productRefs  = outputs.map(o => db.collection('products').doc(o.productId));
+      const expenseSnap = expenseId ? await tx.get(db.collection('expenses').doc(expenseId)) : null;
+      const [materialSnaps, productSnaps] = await Promise.all([
+        Promise.all(materialRefs.map(r => tx.get(r))),
+        Promise.all(productRefs.map(r => tx.get(r))),
+      ]);
+
+      materialsUsed.forEach((m, i) => {
+        if (!materialSnaps[i].exists) return;
+        const stockQty = Number(materialSnaps[i].data()!.stockQty) || 0;
+        tx.update(materialRefs[i], { stockQty: stockQty + m.qty, updatedAt: FieldValue.serverTimestamp() });
+      });
+
+      outputs.forEach((o, i) => {
+        if (!productSnaps[i].exists) return;
+        const product = productSnaps[i].data()!;
+        const curQty  = Number(product.stockQty) || 0;
+        const curCost = Number(product.costPrice) || 0;
+        const { qty, cost } = reverseProductState(curQty, curCost, o.yieldQty, o.costPerPcs);
+        tx.update(productRefs[i], {
+          stockQty: qty,
+          costPrice: cost,
+          stock: product.openPO ? 'open_po' : qty > 0 ? 'ready' : 'habis',
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      });
+
+      if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
+      tx.delete(batchRef);
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus batch produksi.' }, { status: 400 });
+  }
+
+  return Response.json({ ok: true });
+}

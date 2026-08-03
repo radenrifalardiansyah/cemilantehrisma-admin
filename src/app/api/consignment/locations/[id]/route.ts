@@ -8,17 +8,21 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
-  const { status, paymentStatus } = await req.json() as { status?: string; paymentStatus?: string };
-  const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
-  if (status !== undefined) update.status = status;
-  if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
-  await getDb().collection('orders').doc(id).update(update);
+  const data = await req.json() as Record<string, unknown>;
+  await getDb().collection('consignmentLocations').doc(id).update({
+    name: data.name,
+    contactName: data.contactName ?? '',
+    contactPhone: data.contactPhone ?? '',
+    address: data.address ?? '',
+    note: data.note ?? '',
+    updatedAt: FieldValue.serverTimestamp(),
+  });
   return Response.json({ ok: true });
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
-  await getDb().collection('orders').doc(id).delete();
+  await getDb().collection('consignmentLocations').doc(id).delete();
   return Response.json({ ok: true });
 }

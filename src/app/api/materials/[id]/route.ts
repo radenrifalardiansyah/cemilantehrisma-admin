@@ -5,20 +5,23 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
+// Cuma nama & satuan yang bisa diedit di sini — stockQty & avgCost hanya
+// berubah lewat /api/material-purchases (masuk) & /api/production (keluar).
 export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
-  const { status, paymentStatus } = await req.json() as { status?: string; paymentStatus?: string };
-  const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
-  if (status !== undefined) update.status = status;
-  if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
-  await getDb().collection('orders').doc(id).update(update);
+  const data = await req.json() as Record<string, unknown>;
+  await getDb().collection('rawMaterials').doc(id).update({
+    name: data.name,
+    unit: data.unit ?? '',
+    updatedAt: FieldValue.serverTimestamp(),
+  });
   return Response.json({ ok: true });
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
-  await getDb().collection('orders').doc(id).delete();
+  await getDb().collection('rawMaterials').doc(id).delete();
   return Response.json({ ok: true });
 }

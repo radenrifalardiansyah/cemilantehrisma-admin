@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -9,6 +9,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
+import ImageLightbox from '@/components/ImageLightbox';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -18,6 +19,36 @@ interface Order {
   id: string; invoiceNo: string; date: string; customerName: string; customerPhone: string;
   items: OrderItem[]; subtotal: number; discount?: { amount: number; label: string };
   total: number; pdfUrl?: string; status: string; createdAt?: { seconds: number };
+  paymentMethod?: 'cash' | 'transfer' | 'qris' | 'kredit';
+  paymentStatus?: 'lunas' | 'belum_lunas';
+  amountPaid?: number; changeAmount?: number;
+  transferBank?: string; transferAmount?: number; transferProofUrl?: string;
+  source?: 'kasir' | 'portal';
+  deliveryMethod?: 'pickup' | 'delivery'; address?: string; note?: string;
+}
+
+function SourceBadge({ source }: { source?: 'kasir' | 'portal' }) {
+  return source === 'portal' ? (
+    <span className="badge badge-blue" style={{ gap: 4 }}><Globe size={10} /> Website</span>
+  ) : (
+    <span className="badge badge-green" style={{ gap: 4 }}><ShoppingCart size={10} /> Kasir</span>
+  );
+}
+
+// Pesanan Kasir selalu status 'done' sejak dibuat — badge status cuma relevan untuk pesanan
+// Website ('portal'), yang perlu ditandai manual sebelum ikut terhitung di Laporan Keuangan.
+function StatusBadge({ source, status }: { source?: 'kasir' | 'portal'; status: string }) {
+  if (source !== 'portal') return null;
+  return status === 'baru' ? (
+    <span className="badge badge-amber">Baru</span>
+  ) : (
+    <span className="badge badge-green">Selesai</span>
+  );
+}
+
+// Belum Lunas bisa terjadi di transaksi Kredit (Reseller) dari Kasir — order lain selalu lunas seketika.
+function PaymentStatusBadge({ paymentStatus }: { paymentStatus?: 'lunas' | 'belum_lunas' }) {
+  return paymentStatus === 'belum_lunas' ? <span className="badge badge-red">Belum Lunas</span> : null;
 }
 
 const formatRp = (n: number) =>
@@ -90,6 +121,38 @@ export default function OrdersTab({ creds }: { creds: string }) {
     }
   };
 
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const markSelesai = async (id: string) => {
+    setMarkingId(id);
+    const r = await fetch(`${API}/api/orders/${id}`, {
+      method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'selesai' }),
+    });
+    if (r.ok) {
+      setOrders(o => o.map(x => x.id === id ? { ...x, status: 'selesai' } : x));
+      toast.success('Pesanan ditandai selesai — sudah ikut terhitung di Laporan Keuangan.');
+    } else {
+      toast.error('Gagal menandai pesanan selesai.');
+    }
+    setMarkingId(null);
+  };
+
+  const [markingLunasId, setMarkingLunasId] = useState<string | null>(null);
+  const markLunas = async (id: string) => {
+    setMarkingLunasId(id);
+    const r = await fetch(`${API}/api/orders/${id}`, {
+      method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentStatus: 'lunas' }),
+    });
+    if (r.ok) {
+      setOrders(o => o.map(x => x.id === id ? { ...x, paymentStatus: 'lunas' } : x));
+      toast.success('Pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.');
+    } else {
+      toast.error('Gagal menandai lunas.');
+    }
+    setMarkingLunasId(null);
+  };
+
   const exportExcel = async (rows: Order[]) => {
     if (rows.length === 0) { toast.error('Tidak ada pesanan untuk diexport.'); return; }
     setExporting(true);
@@ -102,6 +165,7 @@ export default function OrdersTab({ creds }: { creds: string }) {
       const COLS = [
         { header: 'No',          key: 'no',        width: 6  },
         { header: 'No. Invoice', key: 'invoiceNo', width: 18 },
+        { header: 'Sumber',      key: 'source',    width: 12 },
         { header: 'Tanggal',     key: 'date',      width: 20 },
         { header: 'Pelanggan',   key: 'customer',  width: 24 },
         { header: 'No. HP',      key: 'phone',     width: 18 },
@@ -155,6 +219,7 @@ export default function OrdersTab({ creds }: { creds: string }) {
         const row = ws.addRow({
           no: i + 1,
           invoiceNo: o.invoiceNo || '-',
+          source: o.source === 'portal' ? 'Website' : 'Kasir',
           date: formatDate(o),
           customer: o.customerName || '-',
           phone: o.customerPhone || '-',
@@ -179,6 +244,7 @@ export default function OrdersTab({ creds }: { creds: string }) {
         });
 
         row.getCell('no').alignment        = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('source').alignment    = { horizontal: 'center', vertical: 'middle' };
         row.getCell('itemCount').alignment = { horizontal: 'center', vertical: 'middle' };
         row.getCell('status').alignment    = { horizontal: 'center', vertical: 'middle' };
         row.getCell('items').alignment     = { horizontal: 'left', vertical: 'top', wrapText: true };
@@ -426,7 +492,7 @@ export default function OrdersTab({ creds }: { creds: string }) {
         <div className="card p-12 text-center">
           <div className="text-5xl mb-4">🧾</div>
           <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pesanan</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pesanan dari tab Kasir akan muncul di sini otomatis.</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pesanan dari Kasir maupun checkout Website akan muncul di sini otomatis.</p>
         </div>
       ) : view === 'table' ? (
         <div className="card overflow-hidden divide-y" style={{ borderColor: 'var(--border-2)' }}>
@@ -439,7 +505,12 @@ export default function OrdersTab({ creds }: { creds: string }) {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                    <SourceBadge source={o.source} />
+                    <StatusBadge source={o.source} status={o.status} />
+                    <PaymentStatusBadge paymentStatus={o.paymentStatus} />
+                  </div>
                   <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
                     {o.invoiceNo} · {formatDate(o)}
                   </p>
@@ -451,6 +522,18 @@ export default function OrdersTab({ creds }: { creds: string }) {
                 </div>
 
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  {o.source === 'portal' && o.status === 'baru' && (
+                    <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
+                      className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Tandai Selesai">
+                      {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                    </button>
+                  )}
+                  {o.paymentStatus === 'belum_lunas' && (
+                    <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
+                      className="btn-ghost px-2 py-2 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
+                      {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Tandai Lunas'}
+                    </button>
+                  )}
                   <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
                     {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                   </button>
@@ -475,7 +558,12 @@ export default function OrdersTab({ creds }: { creds: string }) {
                     <Receipt size={17} style={{ color: 'var(--accent)' }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                      <SourceBadge source={o.source} />
+                      <StatusBadge source={o.source} status={o.status} />
+                      <PaymentStatusBadge paymentStatus={o.paymentStatus} />
+                    </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
                       {o.invoiceNo} · {formatDate(o)}
                     </p>
@@ -490,10 +578,24 @@ export default function OrdersTab({ creds }: { creds: string }) {
                     <p className="text-base font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(o.total)}</p>
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
                   </div>
-                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)}
-                    className="btn-ghost px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1">
-                    Detail {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {o.source === 'portal' && o.status === 'baru' && (
+                      <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
+                        className="btn-ghost p-1.5" style={{ color: 'var(--success)' }} title="Tandai Selesai">
+                        {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                      </button>
+                    )}
+                    {o.paymentStatus === 'belum_lunas' && (
+                      <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
+                        className="btn-ghost px-2 py-1.5 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
+                        {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Lunas'}
+                      </button>
+                    )}
+                    <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)}
+                      className="btn-ghost px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1">
+                      Detail {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -507,9 +609,59 @@ export default function OrdersTab({ creds }: { creds: string }) {
 }
 
 function OrderDetail({ o }: { o: Order }) {
+  const [proofOpen, setProofOpen] = useState(false);
   return (
     <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
-      <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>📞 {o.customerPhone}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        {o.customerPhone && (
+          <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>📞 {o.customerPhone}</p>
+        )}
+        {o.paymentMethod && (
+          <span className={`badge ${o.paymentMethod === 'cash' ? 'badge-green' : o.paymentMethod === 'kredit' ? 'badge-amber' : 'badge-blue'}`}>
+            {o.paymentMethod === 'cash' ? 'Tunai' : o.paymentMethod === 'transfer' ? 'Transfer' : o.paymentMethod === 'kredit' ? 'Kredit' : 'QRIS'}
+          </span>
+        )}
+        {o.deliveryMethod && (
+          <span className="badge badge-gray" style={{ gap: 4 }}>
+            {o.deliveryMethod === 'delivery' ? <Truck size={10} /> : <Package size={10} />}
+            {o.deliveryMethod === 'delivery' ? 'Delivery' : 'Pickup'}
+          </span>
+        )}
+      </div>
+
+      {o.address && (
+        <p className="text-xs flex items-start gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+          <MapPin size={12} className="mt-0.5 flex-shrink-0" /> {o.address}
+        </p>
+      )}
+      {o.note && (
+        <p className="text-xs flex items-start gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+          <FileText size={12} className="mt-0.5 flex-shrink-0" /> {o.note}
+        </p>
+      )}
+
+      {o.paymentMethod === 'cash' && o.amountPaid != null && (
+        <div className="flex justify-between text-xs">
+          <span style={{ color: 'var(--text-muted)' }}>Dibayar {formatRp(o.amountPaid)} · Kembalian</span>
+          <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(o.changeAmount ?? 0)}</span>
+        </div>
+      )}
+      {o.paymentMethod === 'transfer' && o.transferAmount != null && (
+        <div className="flex justify-between text-xs">
+          <span style={{ color: 'var(--text-muted)' }}>Transfer via {o.transferBank ?? '–'}</span>
+          <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(o.transferAmount)}</span>
+        </div>
+      )}
+      {o.transferProofUrl && (
+        <button type="button" onClick={() => setProofOpen(true)}
+          className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--accent)' }}>
+          <Receipt size={12} /> Lihat Bukti Transfer →
+        </button>
+      )}
+      {proofOpen && o.transferProofUrl && (
+        <ImageLightbox images={[o.transferProofUrl]} index={0} title="Bukti Transfer"
+          onIndexChange={() => {}} onClose={() => setProofOpen(false)} />
+      )}
 
       <div className="space-y-1.5">
         {o.items?.map((item, i) => (
