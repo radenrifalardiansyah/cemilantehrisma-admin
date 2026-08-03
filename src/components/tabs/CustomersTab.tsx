@@ -11,6 +11,11 @@ import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import Tooltip from '@/components/Tooltip';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import FilterSelect from '@/components/FilterSelect';
+
+const HEADER_BTN_H = 34;
 
 const TEMPLATE_COLS = [
   { header: 'Kode',                       key: 'code',    width: 12 },
@@ -51,7 +56,6 @@ function initials(name: string) {
 }
 
 const API       = '';
-const PAGE_SIZE = 10;
 
 // ─── Checkbox ─────────────────────────────────────────────────────────────────
 function Checkbox({ checked, indeterminate, onChange }: {
@@ -105,7 +109,9 @@ export default function CustomersTab({ creds }: { creds: string }) {
   const [loading,     setLoading]     = useState(true);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
   const [search,      setSearch]      = useState('');
+  const [typeFilter,  setTypeFilter]  = useState<'semua' | 'personal' | 'company'>('semua');
   const [page,        setPage]        = useState(1);
+  const [pageSize,    setPageSize]    = useState(10);
   const [view, setView] = useViewMode('customers');
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -452,16 +458,26 @@ export default function CustomersTab({ creds }: { creds: string }) {
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const filtered = customers.filter(c =>
-    !search
-    || c.name.toLowerCase().includes(search.toLowerCase())
-    || c.phone.toLowerCase().includes(search.toLowerCase())
-    || (c.city ?? '').toLowerCase().includes(search.toLowerCase())
-    || (c.code ?? '').toLowerCase().includes(search.toLowerCase())
-  );
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const filtered = customers
+    .filter(c => {
+      const matchType = typeFilter === 'semua' || (c.type ?? 'personal') === typeFilter;
+      const matchQ = !search
+        || c.name.toLowerCase().includes(search.toLowerCase())
+        || c.phone.toLowerCase().includes(search.toLowerCase())
+        || (c.city ?? '').toLowerCase().includes(search.toLowerCase())
+        || (c.code ?? '').toLowerCase().includes(search.toLowerCase());
+      return matchType && matchQ;
+    })
+    .sort((a, b) => {
+      const ac = a.code ?? '', bc = b.code ?? '';
+      if (!ac && !bc) return 0;
+      if (!ac) return 1;
+      if (!bc) return -1;
+      return ac.localeCompare(bc, 'id', { numeric: true, sensitivity: 'base' });
+    });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
-  const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const goPage     = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const resetPage  = () => setPage(1);
 
@@ -485,26 +501,60 @@ export default function CustomersTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-5">
 
-      {/* Header */}
-      <div className="flex items-center justify-end flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={downloadTemplate} className="btn-ghost text-xs" style={{ height: 34 }}>
-            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
-          </button>
-          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: 34 }}>
-            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
-            <span className="sm:hidden">Upload</span>
-          </button>
+      {/* Header: search + actions in one row */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {customers.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{
+              position: 'absolute', left: 14, top: '50%',
+              transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+            }} />
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari kode, nama, No. HP, atau kota…"
+            />
+          </div>
+        )}
+        {customers.length > 0 && (
+          <div style={{ width: 200 }} className="flex-shrink-0">
+            <FilterSelect
+              value={typeFilter}
+              onChange={v => { setTypeFilter(v as 'semua' | 'personal' | 'company'); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari jenis…"
+              options={[
+                { value: 'semua', label: 'Semua Jenis' },
+                ...(['personal', 'company'] as const).map(t => ({ value: t, label: CUSTOMER_TYPE_MAP[t].label })),
+              ]}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importFromExcel(f); e.target.value = ''; }} />
           {customers.length > 0 && (
-            <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} className="btn-ghost text-xs" style={{ height: 34 }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
-            </button>
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+            </Tooltip>
           )}
-          <button onClick={openNew} className="btn-primary text-xs" style={{ height: 34 }}>
+          {customers.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+          <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Tambah Pelanggan</span><span className="sm:hidden">Tambah</span>
           </button>
         </div>
@@ -520,23 +570,6 @@ export default function CustomersTab({ creds }: { creds: string }) {
         </div>
       ) : (
         <>
-          {/* Search + view toggle */}
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
-              <Search size={14} style={{
-                position: 'absolute', left: 14, top: '50%',
-                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
-              }} />
-              <input
-                value={search}
-                onChange={e => { setSearch(e.target.value); resetPage(); }}
-                className="input text-sm w-full"
-                style={{ paddingLeft: 38 }}
-                placeholder="Cari kode, nama, No. HP, atau kota…"
-              />
-            </div>
-            <ViewToggle mode={view} onChange={setView} />
-          </div>
 
           {/* Select-all bar */}
           {paginated.length > 0 && (
@@ -562,7 +595,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
               {paginated.map((c, idx) => {
                 const isDeleting = deletingId === c.id;
                 const isSelected = selected.has(c.id);
-                const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
+                const rowNum     = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                 return (
                   <div key={c.id}
                     style={{
@@ -678,37 +711,42 @@ export default function CustomersTab({ creds }: { creds: string }) {
           )}
 
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {filtered.length} pelanggan · halaman {safePage} dari {totalPages}
-              </p>
-              <div className="flex items-center gap-1">
-                <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                  <ChevronLeft size={14} />
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
-                  .reduce<(number | '…')[]>((acc, n, i, arr) => {
-                    if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-                    acc.push(n); return acc;
-                  }, [])
-                  .map((n, i) =>
-                    n === '…'
-                      ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                      : <button key={n} onClick={() => goPage(n as number)}
-                          className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                          style={safePage === n
-                            ? { background: 'var(--accent)', color: '#fff' }
-                            : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                          {n}
-                        </button>
-                  )
-                }
-                <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                  <ChevronRight size={14} />
-                </button>
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {filtered.length} pelanggan · halaman {safePage} dari {totalPages}
+                </p>
+                <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); resetPage(); }} />
               </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronLeft size={14} />
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goPage(n as number)}
+                            className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={safePage === n
+                              ? { background: 'var(--accent)', color: '#fff' }
+                              : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )
+                  }
+                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>

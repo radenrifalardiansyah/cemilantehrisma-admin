@@ -33,8 +33,10 @@ export async function GET(req: NextRequest) {
       email: c?.email ?? '',
       address: c?.address ?? '',
       city: c?.city ?? '',
+      type: c?.type ?? 'personal',
     };
   });
+  merged.sort((a, b) => a.name.localeCompare(b.name, 'id'));
 
   return Response.json({ resellers: merged });
 }

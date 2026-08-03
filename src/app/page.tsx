@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import AppShell, { TabId } from '@/components/AppShell';
+import TopbarPortal from '@/components/TopbarPortal';
 import ScrollChips from '@/components/ScrollChips';
 import ImageCarousel from '@/components/ImageCarousel';
 import SearchSelect from '@/components/SearchSelect';
@@ -745,12 +746,11 @@ export default function AdminPage() {
   const dashboardContent = (
     <div className="p-4 lg:p-6 space-y-5">
 
-      {/* Header */}
-      <div className="flex items-center justify-end">
-        <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost p-2.5">
+      <TopbarPortal>
+        <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
-      </div>
+      </TopbarPortal>
 
       {/* Loading */}
       {loading && !dashData && (

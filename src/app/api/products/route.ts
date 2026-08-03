@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue } from 'firebase-admin/firestore';
+import { productUrl } from '@/lib/site';
 
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
@@ -15,10 +16,13 @@ export async function POST(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
-  const ref = await db.collection('products').add({
+  const ref = db.collection('products').doc();
+  const qrUrl = (data.qrUrl as string | undefined)?.trim() || productUrl(ref.id);
+  await ref.set({
     ...data,
+    qrUrl,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
-  return Response.json({ id: ref.id });
+  return Response.json({ id: ref.id, qrUrl });
 }

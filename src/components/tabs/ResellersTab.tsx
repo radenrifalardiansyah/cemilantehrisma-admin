@@ -5,16 +5,19 @@ import {
   Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Users,
   UserCheck, UserX, Clock, UserSearch, Landmark, Wallet, FileSpreadsheet, Upload,
+  User, Building2,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
-import ScrollChips from '@/components/ScrollChips';
+import FilterSelect from '@/components/FilterSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import Tooltip from '@/components/Tooltip';
+import PageSizeSelect from '@/components/PageSizeSelect';
 
 const API       = '';
-const PAGE_SIZE = 10;
+const HEADER_BTN_H = 34;
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -44,11 +47,13 @@ function initials(name: string) {
 }
 
 type Status = 'pending' | 'approved' | 'rejected';
+type CustomerType = 'personal' | 'company';
 
 interface Reseller {
   id: string; customerId?: string;
   name: string; phone: string; code?: string; email?: string;
   address?: string; city?: string;
+  type?: CustomerType;
   bankName?: string; bankAccount?: string; bankHolder?: string;
   status: Status;
   createdAt?: { seconds: number };
@@ -65,6 +70,11 @@ const STATUS_MAP = {
   pending:  { label: 'Menunggu',  cls: 'badge-amber', icon: Clock },
   approved: { label: 'Disetujui', cls: 'badge-green', icon: UserCheck },
   rejected: { label: 'Ditolak',   cls: 'badge-red',   icon: UserX },
+} as const;
+
+const CUSTOMER_TYPE_MAP = {
+  personal: { label: 'Personal',   cls: 'badge-blue',  icon: User },
+  company:  { label: 'Perusahaan', cls: 'badge-amber', icon: Building2 },
 } as const;
 
 function formatDate(r: Reseller) {
@@ -132,7 +142,9 @@ export default function ResellersTab({ creds }: { creds: string }) {
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
   const [search,      setSearch]      = useState('');
   const [statusFilter, setStatusFilter] = useState<Status | 'semua'>('semua');
+  const [typeFilter,   setTypeFilter]   = useState<CustomerType | 'semua'>('semua');
   const [page,        setPage]        = useState(1);
+  const [pageSize,    setPageSize]    = useState(10);
   const [view, setView] = useViewMode('resellers');
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -320,6 +332,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
         { header: 'No',           key: 'no',          width: 6  },
         { header: 'Kode',         key: 'code',        width: 10 },
         { header: 'Nama',         key: 'name',        width: 24 },
+        { header: 'Jenis',        key: 'type',        width: 14 },
         { header: 'No. HP',       key: 'phone',       width: 18 },
         { header: 'Email',        key: 'email',       width: 24 },
         { header: 'Kota',         key: 'city',        width: 16 },
@@ -376,6 +389,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
           no: i + 1,
           code: r.code || '-',
           name: r.name,
+          type: CUSTOMER_TYPE_MAP[r.type ?? 'personal'].label,
           phone: r.phone || '-',
           email: r.email || '-',
           city: r.city || '-',
@@ -400,6 +414,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
         });
 
         row.getCell('no').alignment     = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('type').alignment   = { horizontal: 'center', vertical: 'middle' };
         row.getCell('address').alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
         const statusCell = row.getCell('status');
         statusCell.font = { bold: true, color: { argb: STATUS_FONT_COLOR[r.status] } };
@@ -591,15 +606,16 @@ export default function ResellersTab({ creds }: { creds: string }) {
 
   const filtered = resellers.filter(r =>
     (statusFilter === 'semua' || r.status === statusFilter)
+    && (typeFilter === 'semua' || (r.type ?? 'personal') === typeFilter)
     && (!search
       || r.name.toLowerCase().includes(search.toLowerCase())
       || r.phone.toLowerCase().includes(search.toLowerCase())
       || (r.city ?? '').toLowerCase().includes(search.toLowerCase())
       || (r.bankAccount ?? '').toLowerCase().includes(search.toLowerCase()))
-  );
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  ).sort((a, b) => a.name.localeCompare(b.name, 'id'));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
-  const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const goPage     = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const resetPage  = () => setPage(1);
 
@@ -619,6 +635,8 @@ export default function ResellersTab({ creds }: { creds: string }) {
     pending:  resellers.filter(r => r.status === 'pending').length,
     approved: resellers.filter(r => r.status === 'approved').length,
     rejected: resellers.filter(r => r.status === 'rejected').length,
+    personal: resellers.filter(r => (r.type ?? 'personal') === 'personal').length,
+    company:  resellers.filter(r => (r.type ?? 'personal') === 'company').length,
   };
 
   if (loading) return (
@@ -630,26 +648,78 @@ export default function ResellersTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-5">
 
-      {/* Header */}
-      <div className="flex items-center justify-end flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={downloadResellerTemplate} className="btn-ghost text-xs" style={{ height: 34 }}>
-            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
-          </button>
-          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: 34 }}>
-            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
-            <span className="sm:hidden">Upload</span>
-          </button>
+      {/* Header: search + actions in one row */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {resellers.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{
+              position: 'absolute', left: 14, top: '50%',
+              transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+            }} />
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari nama, No. HP, kota, atau No. rekening…"
+            />
+          </div>
+        )}
+        {resellers.length > 0 && (
+          <div style={{ width: 200 }} className="flex-shrink-0">
+            <FilterSelect
+              value={statusFilter}
+              onChange={v => { setStatusFilter(v as Status | 'semua'); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari status…"
+              options={[
+                { value: 'semua', label: 'Semua Status', count: counts.total },
+                ...(['pending', 'approved', 'rejected'] as const).map(s => ({
+                  value: s, label: STATUS_MAP[s].label, count: counts[s],
+                })),
+              ]}
+            />
+          </div>
+        )}
+        {resellers.length > 0 && (
+          <div style={{ width: 180 }} className="flex-shrink-0">
+            <FilterSelect
+              value={typeFilter}
+              onChange={v => { setTypeFilter(v as CustomerType | 'semua'); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari jenis…"
+              options={[
+                { value: 'semua', label: 'Semua Jenis', count: counts.total },
+                ...(['personal', 'company'] as const).map(t => ({
+                  value: t, label: CUSTOMER_TYPE_MAP[t].label, count: counts[t],
+                })),
+              ]}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadResellerTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importResellersFromExcel(f); e.target.value = ''; }} />
           {resellers.length > 0 && (
-            <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} className="btn-ghost text-xs" style={{ height: 34 }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
-            </button>
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+            </Tooltip>
           )}
-          <button onClick={openNew} className="btn-primary text-xs" style={{ height: 34 }}>
+          {resellers.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+          <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Tambah Reseller</span><span className="sm:hidden">Tambah</span>
           </button>
         </div>
@@ -665,38 +735,6 @@ export default function ResellersTab({ creds }: { creds: string }) {
         </div>
       ) : (
         <>
-          {/* Search + view toggle */}
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
-              <Search size={14} style={{
-                position: 'absolute', left: 14, top: '50%',
-                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
-              }} />
-              <input
-                value={search}
-                onChange={e => { setSearch(e.target.value); resetPage(); }}
-                className="input text-sm w-full"
-                style={{ paddingLeft: 38 }}
-                placeholder="Cari nama, No. HP, kota, atau No. rekening…"
-              />
-            </div>
-            <ViewToggle mode={view} onChange={setView} />
-          </div>
-
-          {/* Status filter tabs */}
-          <ScrollChips>
-            <button onClick={() => { setStatusFilter('semua'); resetPage(); }}
-              className={`tab-chip text-xs py-1.5 ${statusFilter === 'semua' ? 'active' : ''}`}>
-              Semua ({counts.total})
-            </button>
-            {(['pending', 'approved', 'rejected'] as const).map(s => (
-              <button key={s} onClick={() => { setStatusFilter(s); resetPage(); }}
-                className={`tab-chip text-xs py-1.5 ${statusFilter === s ? 'active' : ''}`}>
-                {STATUS_MAP[s].label} ({counts[s]})
-              </button>
-            ))}
-          </ScrollChips>
-
           {/* Select-all bar */}
           {paginated.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-2.5 card"
@@ -721,7 +759,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
               {paginated.map((r, idx) => {
                 const isDeleting = deletingId === r.id;
                 const isSelected = selected.has(r.id);
-                const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
+                const rowNum     = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                 return (
                   <div key={r.id}
                     style={{
@@ -747,6 +785,9 @@ export default function ResellersTab({ creds }: { creds: string }) {
                           <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
                           <span className={`badge ${STATUS_MAP[r.status].cls} text-[10px]`}>
                             {STATUS_MAP[r.status].label}
+                          </span>
+                          <span className={`badge ${CUSTOMER_TYPE_MAP[r.type ?? 'personal'].cls} text-[10px]`}>
+                            {CUSTOMER_TYPE_MAP[r.type ?? 'personal'].label}
                           </span>
                         </div>
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
@@ -801,9 +842,14 @@ export default function ResellersTab({ creds }: { creds: string }) {
                         {initials(r.name)}
                       </div>
                       <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
-                      <span className={`badge ${STATUS_MAP[r.status].cls} text-[10px]`}>
-                        {STATUS_MAP[r.status].label}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                        <span className={`badge ${STATUS_MAP[r.status].cls} text-[10px]`}>
+                          {STATUS_MAP[r.status].label}
+                        </span>
+                        <span className={`badge ${CUSTOMER_TYPE_MAP[r.type ?? 'personal'].cls} text-[10px]`}>
+                          {CUSTOMER_TYPE_MAP[r.type ?? 'personal'].label}
+                        </span>
+                      </div>
                       <p className="text-xs truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
                         {r.phone}{r.city ? ` · ${r.city}` : ''}
                       </p>
@@ -843,37 +889,42 @@ export default function ResellersTab({ creds }: { creds: string }) {
           )}
 
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {filtered.length} reseller · halaman {safePage} dari {totalPages}
-              </p>
-              <div className="flex items-center gap-1">
-                <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                  <ChevronLeft size={14} />
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
-                  .reduce<(number | '…')[]>((acc, n, i, arr) => {
-                    if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-                    acc.push(n); return acc;
-                  }, [])
-                  .map((n, i) =>
-                    n === '…'
-                      ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                      : <button key={n} onClick={() => goPage(n as number)}
-                          className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                          style={safePage === n
-                            ? { background: 'var(--accent)', color: '#fff' }
-                            : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                          {n}
-                        </button>
-                  )
-                }
-                <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                  <ChevronRight size={14} />
-                </button>
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {filtered.length} reseller · halaman {safePage} dari {totalPages}
+                </p>
+                <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); resetPage(); }} />
               </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronLeft size={14} />
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goPage(n as number)}
+                            className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={safePage === n
+                              ? { background: 'var(--accent)', color: '#fff' }
+                              : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )
+                  }
+                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -1165,6 +1216,7 @@ function ResellerDetail({ r }: { r: Reseller }) {
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {[
           { label: 'Kode Pelanggan', val: r.code },
+          { label: 'Jenis', val: CUSTOMER_TYPE_MAP[r.type ?? 'personal'].label },
           { label: 'No. HP', val: r.phone },
           { label: 'Email', val: r.email },
           { label: 'Kota', val: r.city },

@@ -21,7 +21,12 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
     label: 'Utama',
     tabs: [
       { id: 'dashboard' as TabId, label: 'Analitik',    mobileLabel: 'Analitik', Icon: BarChart2 },
-      { id: 'pos'       as TabId, label: 'Kasir',        mobileLabel: 'Kasir',    Icon: ShoppingCart },
+    ],
+  },
+  {
+    label: 'POS',
+    tabs: [
+      { id: 'pos' as TabId, label: 'Kasir', mobileLabel: 'Kasir', Icon: ShoppingCart },
     ],
   },
   {
@@ -36,12 +41,12 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
       { id: 'orders'     as TabId, label: 'Pesanan',      mobileLabel: 'Pesanan',  Icon: Receipt },
       { id: 'resellers'  as TabId, label: 'Reseller',     mobileLabel: 'Reseller', Icon: Users },
       { id: 'customers'  as TabId, label: 'Pelanggan',    mobileLabel: 'Pelanggan', Icon: Contact },
+      { id: 'stock'      as TabId, label: 'Gudang',       mobileLabel: 'Gudang',   Icon: Warehouse },
     ],
   },
   {
     label: 'Operasional',
     tabs: [
-      { id: 'stock'     as TabId, label: 'Gudang',       mobileLabel: 'Gudang',   Icon: Warehouse },
       { id: 'settings'  as TabId, label: 'Pengaturan',   mobileLabel: 'Setelan',  Icon: Settings },
     ],
   },
@@ -81,11 +86,25 @@ export default function AppShell({
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<TabId>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const saved = localStorage.getItem('sb-collapsed');
     if (saved === 'true') setCollapsed(true);
+    const savedGroups = localStorage.getItem('sb-group-collapsed');
+    if (savedGroups) {
+      try { setCollapsedGroups(new Set(JSON.parse(savedGroups))); } catch { /* ignore */ }
+    }
   }, []);
+
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups(s => {
+      const next = new Set(s);
+      next.has(label) ? next.delete(label) : next.add(label);
+      localStorage.setItem('sb-group-collapsed', JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   const toggleCollapse = () => {
     setCollapsed(c => {
@@ -167,19 +186,34 @@ export default function AppShell({
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-4 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: 'none' }}>
-          {NAV_GROUPS.map((group, gi) => (
+          {NAV_GROUPS.map((group, gi) => {
+            const groupCollapsed = !collapsed && collapsedGroups.has(group.label);
+            return (
             <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
               {!collapsed && (
-                <p
-                  className="px-3 mb-1.5 text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
-                  style={{ color: 'rgba(138,98,72,0.85)' }}
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className="w-full flex items-center justify-between px-3 mb-1.5"
                 >
-                  {group.label}
-                </p>
+                  <span
+                    className="text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
+                    style={{ color: 'rgba(138,98,72,0.85)' }}
+                  >
+                    {group.label}
+                  </span>
+                  <ChevronDown
+                    size={11}
+                    style={{
+                      color: 'rgba(138,98,72,0.85)', transition: 'transform 0.15s',
+                      transform: groupCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    }}
+                  />
+                </button>
               )}
               {collapsed && gi > 0 && (
                 <div className="mx-auto mb-2 w-6" style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
               )}
+              {!groupCollapsed && (
               <div className="space-y-0.5">
                 {group.tabs.map(tab => {
                   const isActive     = activeTab === tab.id;
@@ -261,8 +295,10 @@ export default function AppShell({
                   );
                 })}
               </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Footer */}
@@ -270,21 +306,6 @@ export default function AppShell({
           className="flex-shrink-0 px-2 pb-4 pt-2"
           style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
         >
-          <a
-            href={MAIN_APP} target="_blank" rel="noopener noreferrer"
-            title={collapsed ? 'Lihat Toko' : undefined}
-            className="sidebar-nav-item w-full"
-            style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-          >
-            <Home size={15} style={{ color: '#8A6248', flexShrink: 0 }} />
-            {!collapsed && (
-              <>
-                <span className="flex-1 text-left whitespace-nowrap overflow-hidden" style={{ color: '#EDD9C4' }}>Lihat Toko</span>
-                <ChevronRight size={11} style={{ color: '#8A6248', flexShrink: 0 }} />
-              </>
-            )}
-          </a>
-
           {/* Collapse toggle */}
           <button
             onClick={toggleCollapse}
@@ -388,6 +409,16 @@ export default function AppShell({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div id="topbar-slot" className="flex items-center gap-2" />
+            <a
+              href={MAIN_APP} target="_blank" rel="noopener noreferrer"
+              title="Lihat Toko"
+              className="flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg text-xs font-semibold transition-colors"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+            >
+              <Home size={14} style={{ flexShrink: 0 }} />
+              <span className="hidden sm:inline">Lihat Toko</span>
+            </a>
             {topbarActions}
             <button
               onClick={onLogout}

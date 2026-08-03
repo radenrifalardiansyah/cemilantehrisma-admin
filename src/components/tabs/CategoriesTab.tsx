@@ -12,9 +12,11 @@ import ViewToggle from '@/components/ViewToggle';
 import EmojiPicker from '@/components/EmojiPicker';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import Tooltip from '@/components/Tooltip';
+import PageSizeSelect from '@/components/PageSizeSelect';
 
 const API       = '';
-const PAGE_SIZE = 10;
+const HEADER_BTN_H = 34;
 
 interface FireCategory {
   id: string; name: string; emoji: string; description?: string; order?: number; bannerUrl?: string;
@@ -84,6 +86,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
   const [catError,      setCatError]      = useState('');
   const [catSearch,     setCatSearch]     = useState('');
   const [catPage,       setCatPage]       = useState(1);
+  const [catPageSize,   setCatPageSize]   = useState(10);
   const [catView, setCatView] = useViewMode('categories');
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const bannerFileRef = useRef<HTMLInputElement>(null);
@@ -499,9 +502,9 @@ export default function CategoriesTab({ creds }: { creds: string }) {
   const filteredCats = categories.filter(c =>
     !catSearch || c.name.toLowerCase().includes(catSearch.toLowerCase()) || c.id.toLowerCase().includes(catSearch.toLowerCase())
   );
-  const catTotalPages = Math.max(1, Math.ceil(filteredCats.length / PAGE_SIZE));
+  const catTotalPages = Math.max(1, Math.ceil(filteredCats.length / catPageSize));
   const catSafePage   = Math.min(catPage, catTotalPages);
-  const catPaginated  = filteredCats.slice((catSafePage - 1) * PAGE_SIZE, catSafePage * PAGE_SIZE);
+  const catPaginated  = filteredCats.slice((catSafePage - 1) * catPageSize, catSafePage * catPageSize);
 
   const goCatPage    = (p: number) => setCatPage(Math.max(1, Math.min(p, catTotalPages)));
   const resetCatPage = () => setCatPage(1);
@@ -526,32 +529,52 @@ export default function CategoriesTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-4">
 
-      {/* Header */}
-      <div className="flex items-center justify-end flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
+      {/* Header: search + actions in one row */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {categories.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{
+              position: 'absolute', left: 14, top: '50%',
+              transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+            }} />
+            <input
+              value={catSearch}
+              onChange={e => { setCatSearch(e.target.value); resetCatPage(); }}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari kategori…"
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
           {categories.length === 0 && (
-            <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs" style={{ height: 34 }}>
+            <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
               {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
               <span className="hidden sm:inline">{seedingCats ? 'Menambahkan…' : 'Kategori Default'}</span>
             </button>
           )}
-          <button onClick={downloadCategoryTemplate} className="btn-ghost text-xs" style={{ height: 34 }}>
-            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
-          </button>
-          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: 34 }}>
-            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
-            <span className="sm:hidden">Upload</span>
-          </button>
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadCategoryTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importCategoriesFromExcel(f); e.target.value = ''; }} />
           {categories.length > 0 && (
-            <button onClick={() => exportExcel(filteredCats, 'sesuai filter')} disabled={exporting} className="btn-ghost text-xs" style={{ height: 34 }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
-            </button>
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportExcel(filteredCats, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+            </Tooltip>
           )}
-          <button onClick={openNewCat} className="btn-primary text-xs" style={{ height: 34 }}>
+          {categories.length > 0 && <ViewToggle mode={catView} onChange={setCatView} height={HEADER_BTN_H} />}
+          <button onClick={openNewCat} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Tambah Kategori</span><span className="sm:hidden">Tambah</span>
           </button>
         </div>
@@ -567,24 +590,6 @@ export default function CategoriesTab({ creds }: { creds: string }) {
         </div>
       ) : (
         <>
-          {/* Search + view toggle */}
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
-              <Search size={14} style={{
-                position: 'absolute', left: 14, top: '50%',
-                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
-              }} />
-              <input
-                value={catSearch}
-                onChange={e => { setCatSearch(e.target.value); resetCatPage(); }}
-                className="input text-sm w-full"
-                style={{ paddingLeft: 38 }}
-                placeholder="Cari kategori…"
-              />
-            </div>
-            <ViewToggle mode={catView} onChange={setCatView} />
-          </div>
-
           {/* Select-all bar */}
           {catPaginated.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-2.5 card"
@@ -723,37 +728,42 @@ export default function CategoriesTab({ creds }: { creds: string }) {
           )}
 
           {/* Pagination */}
-          {catTotalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {filteredCats.length} kategori · halaman {catSafePage} dari {catTotalPages}
-              </p>
-              <div className="flex items-center gap-1">
-                <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                  <ChevronLeft size={14} />
-                </button>
-                {Array.from({ length: catTotalPages }, (_, i) => i + 1)
-                  .filter(n => n === 1 || n === catTotalPages || Math.abs(n - catSafePage) <= 1)
-                  .reduce<(number | '…')[]>((acc, n, i, arr) => {
-                    if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-                    acc.push(n); return acc;
-                  }, [])
-                  .map((n, i) =>
-                    n === '…'
-                      ? <span key={`ce${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                      : <button key={n} onClick={() => goCatPage(n as number)}
-                          className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                          style={catSafePage === n
-                            ? { background: 'var(--accent)', color: '#fff' }
-                            : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                          {n}
-                        </button>
-                  )
-                }
-                <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
-                  <ChevronRight size={14} />
-                </button>
+          {filteredCats.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {filteredCats.length} kategori · halaman {catSafePage} dari {catTotalPages}
+                </p>
+                <PageSizeSelect value={catPageSize} onChange={n => { setCatPageSize(n); resetCatPage(); }} />
               </div>
+              {catTotalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronLeft size={14} />
+                  </button>
+                  {Array.from({ length: catTotalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === catTotalPages || Math.abs(n - catSafePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`ce${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goCatPage(n as number)}
+                            className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={catSafePage === n
+                              ? { background: 'var(--accent)', color: '#fff' }
+                              : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )
+                  }
+                  <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>

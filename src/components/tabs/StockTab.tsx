@@ -15,6 +15,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
 import ImageCarousel from '@/components/ImageCarousel';
+import TopbarPortal from '@/components/TopbarPortal';
 
 const API = '';
 
@@ -567,11 +568,11 @@ export default function StockTab({
         {/* ════ STOK ════════════════════════════════════════════ */}
         {subTab === 'stok' && stokView === 'warehouses' && (
           <div className="p-4 lg:p-6 animate-fade-up">
-            <div className="flex items-center justify-end mb-6">
-              <button onClick={loadWarehouses} className="btn-ghost p-2.5" title="Refresh">
+            <TopbarPortal>
+              <button onClick={loadWarehouses} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
                 <RefreshCw size={14} />
               </button>
-            </div>
+            </TopbarPortal>
 
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -746,11 +747,14 @@ export default function StockTab({
                   </div>
                 )}
               </div>
+            </div>
+
+            <TopbarPortal>
               <button onClick={() => selectedWarehouse && loadStock(selectedWarehouse.id)}
-                className="btn-ghost p-2.5 flex-shrink-0" title="Refresh">
+                className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
                 <RefreshCw size={14} className={stockLoading ? 'animate-spin' : ''} />
               </button>
-            </div>
+            </TopbarPortal>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               {[

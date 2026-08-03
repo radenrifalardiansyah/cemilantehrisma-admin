@@ -7,8 +7,11 @@ import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import TopbarPortal from '@/components/TopbarPortal';
+import Tooltip from '@/components/Tooltip';
 
 const API = '';
+const HEADER_BTN_H = 34;
 
 interface OrderItem { name: string; weight: string; qty: number; price: number; subtotal: number; }
 interface Order {
@@ -370,28 +373,34 @@ export default function OrdersTab({ creds }: { creds: string }) {
       {/* Header */}
       <div className="flex items-center justify-end flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={downloadOrderTemplate} className="btn-ghost text-xs" style={{ height: 34 }}>
-            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
-          </button>
-          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: 34 }}>
-            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
-            <span className="sm:hidden">Upload</span>
-          </button>
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadOrderTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importOrdersFromExcel(f); e.target.value = ''; }} />
           {orders.length > 0 && (
-            <button onClick={() => exportExcel(orders)} disabled={exporting} className="btn-ghost text-xs" style={{ height: 34 }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
-            </button>
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportExcel(orders)} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+            </Tooltip>
           )}
-          <ViewToggle mode={view} onChange={setView} />
-          <button onClick={load} disabled={loading} className="btn-ghost p-2.5">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />
         </div>
       </div>
+
+      <TopbarPortal>
+        <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </TopbarPortal>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">

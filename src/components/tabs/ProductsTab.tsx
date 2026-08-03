@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
-  Package, ChevronDown, ChevronUp, Search,
+  Package, ChevronDown, ChevronUp, Search, QrCode,
   ChevronLeft, ChevronRight, ImageIcon, FileSpreadsheet, Upload,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -12,14 +12,16 @@ import ImageLightbox from '@/components/ImageLightbox';
 import ImageCarousel from '@/components/ImageCarousel';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
-import ScrollChips from '@/components/ScrollChips';
+import Tooltip from '@/components/Tooltip';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import FilterSelect from '@/components/FilterSelect';
 import EmojiPicker from '@/components/EmojiPicker';
 import ColorThemePicker from '@/components/ColorThemePicker';
+import QRCodeModal from '@/components/QRCodeModal';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 
-const API       = '';
-const PAGE_SIZE = 10;
+const API = '';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 interface FireProduct {
@@ -27,7 +29,7 @@ interface FireProduct {
   price: number; originalPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
   bgColor: string; weight: string; stockQty?: number; order?: number;
-  code?: string; openPO?: boolean;
+  code?: string; openPO?: boolean; qrUrl?: string;
 }
 
 interface FireCategory {
@@ -149,6 +151,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [search,      setSearch]      = useState('');
   const [catFilter,   setCatFilter]   = useState('semua');
   const [page,        setPage]        = useState(1);
+  const [pageSize,    setPageSize]    = useState(10);
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
   const [exporting,     setExporting]     = useState(false);
@@ -157,6 +160,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [view, setView] = useViewMode('products');
   const fileRef = useRef<HTMLInputElement>(null);
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number; title?: string } | null>(null);
+  const [qrProduct, setQrProduct] = useState<FireProduct | null>(null);
   const openLightbox = (images: string[], index = 0, title?: string) => {
     if (images?.length) setLightbox({ images, index, title });
   };
@@ -630,9 +634,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
       if (aHabis !== bHabis) return aHabis - bHabis;
       return (a.order ?? 9999) - (b.order ?? 9999);
     });
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
-  const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const goPage    = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const resetPage = () => setPage(1);
@@ -679,32 +683,65 @@ export default function ProductsTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-4">
 
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-        <div className="flex items-center gap-2 flex-shrink-0">
+      {/* ── Header: search + actions in one row ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {products.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{
+              position: 'absolute', left: 14, top: '50%',
+              transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+            }} />
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari produk…"
+            />
+          </div>
+        )}
+        {products.length > 0 && categories.length > 0 && (
+          <div style={{ width: 200 }} className="flex-shrink-0">
+            <FilterSelect
+              value={catFilter}
+              onChange={v => { setCatFilter(v); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari kategori…"
+              options={[
+                { value: 'semua', label: 'Semua Kategori' },
+                ...categories.map(c => ({ value: c.id, label: `${c.emoji} ${c.name}` })),
+              ]}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end flex-shrink-0">
           {products.length === 0 && (
             <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
               {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
               <span className="hidden sm:inline">Migrasi Data</span>
             </button>
           )}
-          <button onClick={downloadProductTemplate} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-            <FileSpreadsheet size={13} /> <span className="hidden sm:inline">Unduh Template</span><span className="sm:hidden">Template</span>
-          </button>
-          <button onClick={() => importFileRef.current?.click()} disabled={importing} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-            {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-            <span className="hidden sm:inline">{importing ? 'Mengimpor…' : 'Upload Excel'}</span>
-            <span className="sm:hidden">Upload</span>
-          </button>
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadProductTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importProductsFromExcel(f); e.target.value = ''; }} />
           {products.length > 0 && (
-            <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting}
-              className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-              <span className="hidden sm:inline">Export Excel</span><span className="sm:hidden">Export</span>
-            </button>
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+            </Tooltip>
           )}
+          {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
           </button>
@@ -721,38 +758,6 @@ export default function ProductsTab({ creds }: { creds: string }) {
             </div>
           ) : (
             <>
-              {/* Search + view toggle */}
-              <div className="flex gap-2 items-center">
-                <div className="relative flex-1">
-                  <Search size={14} style={{
-                    position: 'absolute', left: 14, top: '50%',
-                    transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
-                  }} />
-                  <input
-                    value={search}
-                    onChange={e => { setSearch(e.target.value); resetPage(); }}
-                    className="input text-sm w-full"
-                    style={{ paddingLeft: 38 }}
-                    placeholder="Cari produk…"
-                  />
-                </div>
-                <ViewToggle mode={view} onChange={setView} />
-              </div>
-
-              {/* Category filter — scrolls horizontally with arrows when it overflows */}
-              <ScrollChips>
-                <button onClick={() => { setCatFilter('semua'); resetPage(); }}
-                  className={`tab-chip text-xs py-1.5 ${catFilter === 'semua' ? 'active' : ''}`}>
-                  Semua
-                </button>
-                {categories.map(c => (
-                  <button key={c.id} onClick={() => { setCatFilter(c.id); resetPage(); }}
-                    className={`tab-chip text-xs py-1.5 ${catFilter === c.id ? 'active' : ''}`}>
-                    {c.emoji} {c.name}
-                  </button>
-                ))}
-              </ScrollChips>
-
               {/* Select-all bar */}
               {paginated.length > 0 && (
                 <div className="flex items-center gap-3 px-4 py-2.5 card"
@@ -779,7 +784,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     const stock      = stockStatus(p);
                     const outOfStock = stock.label === 'Habis';
                     const isSelected = selected.has(p.id);
-                    const rowNum     = (safePage - 1) * PAGE_SIZE + idx + 1;
+                    const rowNum     = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                     return (
                       <div key={p.id}
                         style={{
@@ -824,6 +829,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                                   <ImageIcon size={9} /> No img
                                 </span>
                               )}
+                              {!p.qrUrl && (
+                                <span className="badge badge-gray flex items-center gap-1">
+                                  <QrCode size={9} /> No QR
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                               <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.price)}</span>
@@ -845,6 +855,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
                               {expandedId === p.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                             </button>
+                            <Tooltip label="QR Code">
+                              <button onClick={() => setQrProduct(p)} className="btn-ghost p-2" style={{ color: 'var(--text-secondary)' }}>
+                                <QrCode size={13} />
+                              </button>
+                            </Tooltip>
                             <button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                               <Pencil size={13} />
                             </button>
@@ -892,6 +907,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                               <ImageIcon size={9} /> No img
                             </span>
                           )}
+                          {!p.qrUrl && (
+                            <span className="absolute bottom-2 left-2 badge badge-gray flex items-center gap-1">
+                              <QrCode size={9} /> No QR
+                            </span>
+                          )}
                         </div>
 
                         <div className="p-3 flex-1 flex flex-col gap-1.5">
@@ -915,6 +935,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                               Detail {expandedId === p.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                             </button>
                             <div className="flex items-center gap-1 flex-shrink-0">
+                              <Tooltip label="QR Code">
+                                <button onClick={() => setQrProduct(p)} className="btn-ghost p-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                  <QrCode size={12} />
+                                </button>
+                              </Tooltip>
                               <button onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                                 <Pencil size={12} />
                               </button>
@@ -933,37 +958,42 @@ export default function ProductsTab({ creds }: { creds: string }) {
               )}
 
               {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between">
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {filtered.length} produk · halaman {safePage} dari {totalPages}
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                      <ChevronLeft size={14} />
-                    </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
-                      .reduce<(number | '…')[]>((acc, n, i, arr) => {
-                        if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-                        acc.push(n); return acc;
-                      }, [])
-                      .map((n, i) =>
-                        n === '…'
-                          ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                          : <button key={n} onClick={() => goPage(n as number)}
-                              className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                              style={safePage === n
-                                ? { background: 'var(--accent)', color: '#fff' }
-                                : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                              {n}
-                            </button>
-                      )
-                    }
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                      <ChevronRight size={14} />
-                    </button>
+              {filtered.length > 0 && (
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {filtered.length} produk · halaman {safePage} dari {totalPages}
+                    </p>
+                    <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); resetPage(); }} />
                   </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                        <ChevronLeft size={14} />
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                        .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                          if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                          acc.push(n); return acc;
+                        }, [])
+                        .map((n, i) =>
+                          n === '…'
+                            ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                            : <button key={n} onClick={() => goPage(n as number)}
+                                className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                                style={safePage === n
+                                  ? { background: 'var(--accent)', color: '#fff' }
+                                  : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                                {n}
+                              </button>
+                        )
+                      }
+                      <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -1191,6 +1221,16 @@ export default function ProductsTab({ creds }: { creds: string }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── QR Code modal ── */}
+      {qrProduct && (
+        <QRCodeModal
+          product={qrProduct}
+          headers={headers}
+          onClose={() => setQrProduct(null)}
+          onSaved={(id, qrUrl) => setProducts(ps => ps.map(x => x.id === id ? { ...x, qrUrl } : x))}
+        />
       )}
 
       {/* ── Image lightbox ── */}

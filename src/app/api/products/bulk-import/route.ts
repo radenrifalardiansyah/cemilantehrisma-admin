@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue } from 'firebase-admin/firestore';
+import { productUrl } from '@/lib/site';
 
 interface ImportRow {
   code?: string; name: string; category: string;
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
       gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309',
       stockQty, openPO,
       stock: openPO ? 'open_po' : stockQty > 0 ? 'ready' : 'habis',
+      qrUrl: productUrl(ref.id),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
