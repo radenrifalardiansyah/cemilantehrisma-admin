@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
-  Search, ChevronLeft, ChevronRight, FileSpreadsheet, Upload,
+  Search, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Upload,
   History, Warehouse, Ban,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -18,6 +19,8 @@ import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import type { PosProduct } from '@/lib/pos-types';
+import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
+import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -172,6 +175,20 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     if (r.ok) setWarehouses((await r.json() as { warehouses: ConsignmentWarehouse[] }).warehouses);
   };
   useEffect(() => { loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Info toko (nota/rekap PDF) ──────────────────────────────────
+  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  useEffect(() => {
+    fetch(`${API}/api/settings`, { headers }).then(async r => {
+      if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const storeHeader = {
+    name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
+    address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
+    phone:   storeInfo.whatsapp?.trim() || undefined,
+    logo:    storeInfo.logo,
+  };
 
   // ── Riwayat per lokasi (modal) ─────────────────────────────────
   const [historyLocation,  setHistoryLocation]  = useState<ConsignmentLocation | null>(null);
@@ -561,6 +578,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [exportingShipments, setExportingShipments] = useState(false);
   const [deletingShipmentId, setDeletingShipmentId] = useState<string | null>(null);
   const [bulkDeletingShipments, setBulkDeletingShipments] = useState(false);
+  const [printingShipmentId, setPrintingShipmentId] = useState<string | null>(null);
 
   const loadShipments = async () => {
     setShipmentsLoading(true);
@@ -745,6 +763,41 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setDeletingShipmentId(null);
   };
 
+  const printShipmentNota = async (s: Shipment) => {
+    setPrintingShipmentId(s.id);
+    try {
+      const location = locations.find(l => l.id === s.locationId);
+      const total = s.items.reduce((sum, it) => sum + it.subtotal, 0);
+      const blob = await pdf(
+        <ShipmentNotePDF
+          store={storeHeader}
+          data={{
+            locationName:   s.locationName,
+            contactName:    location?.contactName,
+            contactPhone:   location?.contactPhone,
+            address:        location?.address,
+            warehouseName:  s.warehouseName,
+            date:           formatDate(s.createdAt?.seconds),
+            note:           s.note,
+            items:          s.items,
+            total,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nota-kirim-${s.locationName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${toISODate(new Date((s.createdAt?.seconds ?? Date.now() / 1000) * 1000))}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat nota PDF.');
+    }
+    setPrintingShipmentId(null);
+  };
+
   const bulkDeleteShipments = async () => {
     if (selectedShipments.size === 0) return;
     if (!await confirm({ message: `Hapus ${selectedShipments.size} riwayat kirim yang dipilih? Stok toko akan dikembalikan.`, danger: true })) return;
@@ -808,6 +861,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [exportingRecaps, setExportingRecaps] = useState(false);
   const [deletingRecapId, setDeletingRecapId] = useState<string | null>(null);
   const [bulkDeletingRecaps, setBulkDeletingRecaps] = useState(false);
+  const [printingRecapId, setPrintingRecapId] = useState<string | null>(null);
 
   const loadRecaps = async () => {
     setRecapsLoading(true);
@@ -1043,6 +1097,40 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setDeletingRecapId(null);
   };
 
+  const printRecapNota = async (r: Recap) => {
+    setPrintingRecapId(r.id);
+    try {
+      const blob = await pdf(
+        <RecapNotePDF
+          store={storeHeader}
+          data={{
+            locationName:   r.locationName,
+            warehouseName:  r.warehouseName,
+            date:           formatDate(r.createdAt?.seconds),
+            paymentStatus:  r.paymentStatus,
+            note:           r.note,
+            items:          r.items,
+            totalSold:      r.totalSold,
+            totalRetur:     r.totalRetur,
+            totalReject:    r.totalReject,
+            totalRevenue:   r.totalRevenue,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rekap-harian-${r.locationName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${toISODate(new Date((r.createdAt?.seconds ?? Date.now() / 1000) * 1000))}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat rekap PDF.');
+    }
+    setPrintingRecapId(null);
+  };
+
   const bulkDeleteRecaps = async () => {
     if (selectedRecaps.size === 0) return;
     if (!await confirm({ message: `Hapus ${selectedRecaps.size} riwayat rekap yang dipilih? Stok titip di lokasi akan dikembalikan.`, danger: true })) return;
@@ -1250,16 +1338,14 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {paginatedLocations.map((l, i) => {
+                    {paginatedLocations.map((l) => {
                       const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
                       const isSelected = selectedLocations.has(l.id);
-                      const num = (safeLocationPage - 1) * locationPageSize + i + 1;
                       return (
                         <div key={l.id} className="card overflow-hidden p-5 relative"
                           style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                          <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
+                          <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                             <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
-                            <span className="text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                           </div>
                           <div className="flex items-start justify-between mb-3 pl-6">
                             <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
@@ -1402,6 +1488,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               </p>
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
+                                {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                              </button>
                               <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                 <Pencil size={12} />
                               </button>
@@ -1415,15 +1504,13 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {paginatedShipments.map((s, i) => {
+                      {paginatedShipments.map((s) => {
                         const isSelected = selectedShipments.has(s.id);
-                        const num = (safeShipmentPage - 1) * shipmentPageSize + i + 1;
                         return (
                           <div key={s.id} className="card overflow-hidden p-4 relative"
                             style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
+                            <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
-                              <span className="text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             </div>
                             <div className="flex items-center gap-2 mb-1 pl-6">
                               <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
@@ -1431,6 +1518,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               </div>
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
                               <div className="flex items-center gap-1 flex-shrink-0">
+                                <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
+                                  {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                </button>
                                 <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                   <Pencil size={12} />
                                 </button>
@@ -1562,6 +1652,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               )}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
+                                {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                              </button>
                               <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                 <Pencil size={12} />
                               </button>
@@ -1575,15 +1668,13 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {paginatedRecaps.map((r, i) => {
+                      {paginatedRecaps.map((r) => {
                         const isSelected = selectedRecaps.has(r.id);
-                        const num = (safeRecapPage - 1) * recapPageSize + i + 1;
                         return (
                           <div key={r.id} className="card overflow-hidden p-4 relative"
                             style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
+                            <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
-                              <span className="text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             </div>
                             <div className="flex items-center justify-between gap-2 mb-1 pl-6">
                               <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -1592,6 +1683,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                                 {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                               </div>
                               <div className="flex items-center gap-1 flex-shrink-0">
+                                <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
+                                  {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                </button>
                                 <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                   <Pencil size={12} />
                                 </button>

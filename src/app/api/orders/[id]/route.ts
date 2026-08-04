@@ -82,9 +82,21 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
             stock: product.openPO ? 'open_po' : newStockQty > 0 ? 'ready' : 'habis',
             updatedAt: FieldValue.serverTimestamp(),
           });
+
+          // Pesanan lama (sebelum gudang kasir dikonfigurasi) tidak punya warehouseId — stok gudang
+          // tidak pernah dikurangi untuk pesanan itu, jadi tidak ikut disesuaikan di sini juga.
+          if (order.warehouseId) {
+            const wsRef = db.collection('warehouse_stock').doc(`${order.warehouseId}_${pid}`);
+            tx.set(wsRef, {
+              warehouseId: order.warehouseId, productId: pid, productName: product.name ?? '',
+              stockQty: FieldValue.increment(-delta), updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+          }
+
           const stockRef = db.collection('stock').doc();
           tx.set(stockRef, {
             productId: pid,
+            ...(order.warehouseId ? { warehouseId: order.warehouseId, warehouseName: order.warehouseName ?? '' } : {}),
             type: delta > 0 ? 'out' : 'in',
             qty: Math.abs(delta),
             note: `Edit pesanan ${order.invoiceNo ?? ''}`,

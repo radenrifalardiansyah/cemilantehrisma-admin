@@ -7,11 +7,15 @@ interface RestorableOrder {
   source?: string;
   invoiceNo?: string;
   stockRestored?: boolean;
+  warehouseId?: string;
+  warehouseName?: string;
 }
 
 // Kasir memotong stok saat transaksi dibuat (lihat PosTab.tsx) — pesanan Website ('portal')
 // tidak pernah memotong stok, jadi tidak ada yang perlu dikembalikan untuknya.
 // Item lama (sebelum productId ikut disimpan) dicocokkan lewat nama produk sebagai fallback.
+// Pesanan lama (sebelum gudang kasir dikonfigurasi) tidak punya warehouseId — stok gudang
+// tidak ikut dikembalikan untuk pesanan itu, karena memang tidak pernah dikurangi.
 export async function restoreOrderStock(order: RestorableOrder): Promise<void> {
   if (order.stockRestored || order.source !== 'kasir') return;
   const items = order.items ?? [];
@@ -30,6 +34,7 @@ export async function restoreOrderStock(order: RestorableOrder): Promise<void> {
 
     await db.collection('stock').add({
       productId,
+      ...(order.warehouseId ? { warehouseId: order.warehouseId, warehouseName: order.warehouseName ?? '' } : {}),
       type: 'in',
       qty: item.qty,
       note: `Restore stok — pesanan ${order.invoiceNo ?? ''} dibatalkan/dihapus`,
@@ -48,6 +53,14 @@ export async function restoreOrderStock(order: RestorableOrder): Promise<void> {
         stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
         updatedAt: FieldValue.serverTimestamp(),
       });
+
+      if (order.warehouseId) {
+        const wsRef = db.collection('warehouse_stock').doc(`${order.warehouseId}_${productId}`);
+        tx.set(wsRef, {
+          warehouseId: order.warehouseId, productId, productName: product?.name ?? item.name,
+          stockQty: FieldValue.increment(item.qty), updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
     });
   }));
 }

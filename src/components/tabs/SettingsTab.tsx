@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, RefreshCw, Landmark, Upload, X, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, RefreshCw, Landmark, Upload, X, Image as ImageIcon, Warehouse } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
+import SearchSelect from '@/components/SearchSelect';
 import { useToast } from '@/components/Toast';
 
 const API = '';
@@ -15,7 +16,10 @@ interface StoreSettings {
   minOrderWhatsapp?: string; openHours?: string;
   freeShippingMin?: number; resellerDiscount?: number;
   announcementBanner?: string; announcementActive?: boolean;
+  posWarehouseId?: string; posWarehouseName?: string;
 }
+
+interface SettingsWarehouse { id: string; name: string }
 
 const FIELD_GROUPS = [
   {
@@ -70,6 +74,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [bankCount,   setBankCount]   = useState<number | null>(null);
   const [syncingBanks, setSyncingBanks] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [warehouses, setWarehouses] = useState<SettingsWarehouse[]>([]);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
@@ -80,6 +85,13 @@ export default function SettingsTab({ creds }: { creds: string }) {
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const r = await fetch(`${API}/api/warehouses`, { headers });
+      if (r.ok) setWarehouses((await r.json() as { warehouses: SettingsWarehouse[] }).warehouses);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadBankCount = async () => {
     const r = await fetch(`${API}/api/master-banks`, { headers });
@@ -268,6 +280,23 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   </div>
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                     Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos.
+                  </p>
+                </div>
+              )}
+              {activeGrp === 'operational' && (
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    <Warehouse size={12} /> Gudang untuk Kasir
+                  </label>
+                  <SearchSelect value={settings.posWarehouseId ?? ''}
+                    onChange={id => {
+                      const w = warehouses.find(x => x.id === id);
+                      setSettings(s => ({ ...s, posWarehouseId: id, posWarehouseName: w?.name ?? '' }));
+                    }}
+                    options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                    placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Setiap transaksi kasir akan mengurangi stok gudang ini juga (selain stok toko). Kosongkan kalau kasir belum diambil dari gudang tertentu.
                   </p>
                 </div>
               )}

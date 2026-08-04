@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -11,6 +11,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
+import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -151,6 +152,29 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  // ── Info toko — dipakai saat cetak ulang struk ──
+  interface StoreInfo { storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string; }
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
+  useEffect(() => {
+    fetch(`${API}/api/settings`, { headers }).then(async r => {
+      if (r.ok) setStoreInfo((await r.json() as { settings: StoreInfo }).settings ?? {});
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const storeName    = storeInfo.storeName?.trim() || 'Cemilan Teh Risma';
+  const storeAddress = [storeInfo.address, storeInfo.city].filter(Boolean).join(', ');
+  const storePhone   = (storeInfo.whatsapp?.trim() || WHATSAPP_NUMBER)
+    .replace(/^62/, '0').replace(/(\d{4})(\d{4})(\d+)/, '$1-$2-$3');
+  const storeLogo    = storeInfo.logo;
+
+  // ── Cetak ulang struk pesanan ──
+  const [printOrder, setPrintOrder] = useState<Order | null>(null);
+  useEffect(() => {
+    if (!printOrder) return;
+    const t = setTimeout(() => window.print(), 60);
+    return () => clearTimeout(t);
+  }, [printOrder]);
+  const printReceiptFor = (o: Order) => setPrintOrder({ ...o });
 
   // Datang dari klik invoice di Jurnal Kas (Laporan Keuangan) — buka & scroll ke pesanan itu.
   useEffect(() => {
@@ -804,6 +828,9 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                       {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
                     </button>
                   )}
+                  <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
+                    <Printer size={13} />
+                  </button>
                   <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
                     {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                   </button>
@@ -857,6 +884,9 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                         {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
                       </button>
                     )}
+                    <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
+                      <Printer size={13} />
+                    </button>
                     <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
                       <Trash2 size={13} />
                     </button>
@@ -1088,6 +1118,56 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                 {savingEdit ? 'Menyimpan…' : 'Simpan Perubahan'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Struk cetak ulang (tersembunyi di layar, tampil hanya saat print) ─── */}
+      {printOrder && (
+        <div id="order-receipt-print">
+          <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#000', padding: 8, width: '80mm', boxSizing: 'border-box' }}>
+            {storeLogo && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={storeLogo} alt={storeName} style={{ display: 'block', maxHeight: 44, maxWidth: '55%', margin: '0 auto 4px' }} />
+            )}
+            <p style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, margin: 0 }}>{storeName}</p>
+            {storeAddress && <p style={{ textAlign: 'center', fontSize: 10, margin: '2px 0 0' }}>{storeAddress}</p>}
+            <p style={{ textAlign: 'center', fontSize: 10, margin: '2px 0 0' }}>{storePhone}</p>
+            <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+            <p style={{ margin: 0 }}>No: {printOrder.invoiceNo}</p>
+            <p style={{ margin: 0 }}>{formatDate(printOrder)}</p>
+            <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+            {printOrder.items.map((it, i) => (
+              <div key={i} style={{ marginBottom: 3 }}>
+                <div>{it.name} ({it.weight})</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{it.qty} x {formatRp(it.price)}</span>
+                  <span>{formatRp(it.subtotal)}</span>
+                </div>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal</span><span>{formatRp(printOrder.subtotal)}</span></div>
+            {printOrder.discount && printOrder.discount.amount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Diskon ({printOrder.discount.label})</span><span>-{formatRp(printOrder.discount.amount)}</span></div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 12 }}><span>TOTAL</span><span>{formatRp(printOrder.total)}</span></div>
+            <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+            {printOrder.paymentMethod === 'cash' ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Tunai</span><span>{formatRp(printOrder.amountPaid ?? 0)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Kembali</span><span>{formatRp(printOrder.changeAmount ?? 0)}</span></div>
+              </>
+            ) : printOrder.paymentMethod === 'kredit' ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Status</span><span>{printOrder.paymentStatus === 'lunas' ? 'LUNAS' : 'BELUM LUNAS (KREDIT)'}</span></div>
+            ) : printOrder.paymentMethod === 'transfer' ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Transfer {printOrder.transferBank}</span><span>{formatRp(printOrder.transferAmount ?? 0)}</span></div>
+            ) : null}
+            <p style={{ marginTop: 6 }}>Pelanggan: {printOrder.customerName}</p>
+            <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
+            <p style={{ textAlign: 'center', fontWeight: 700 }}>SALINAN STRUK</p>
+            <p style={{ textAlign: 'center' }}>Terima kasih telah berbelanja!</p>
+            <p style={{ textAlign: 'center', fontSize: 10 }}>{storeName}{storeAddress ? ` · ${storeAddress}` : ''}</p>
           </div>
         </div>
       )}

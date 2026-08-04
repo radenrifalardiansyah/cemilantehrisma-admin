@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 export async function POST(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { productId } = await ctx.params;
-  const data = await req.json() as Record<string, unknown>;
+  const data = await req.json() as Record<string, unknown> & { warehouseId?: string; warehouseName?: string };
   const db = getDb();
   const ref = await db.collection('stock').add({
     productId,
@@ -29,7 +29,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   });
 
   // Update running stock on product document, and derive its ready/habis status from the new total
-  // (unless "Buka PO" is manually enabled on the product, which always wins)
+  // (unless "Buka PO" is manually enabled on the product, which always wins). Kalau warehouseId
+  // dikirim (mis. gudang kasir dikonfigurasi di Pengaturan), stok gudang itu ikut disesuaikan.
   const qty = typeof data.qty === 'number' ? data.qty : 0;
   const type = data.type as 'in' | 'out';
   const delta = type === 'in' ? qty : -qty;
@@ -44,6 +45,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    if (data.warehouseId) {
+      const wsRef = db.collection('warehouse_stock').doc(`${data.warehouseId}_${productId}`);
+      tx.set(wsRef, {
+        warehouseId: data.warehouseId, productId, productName: product?.name ?? '',
+        stockQty: FieldValue.increment(delta), updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
   });
 
   return Response.json({ id: ref.id });

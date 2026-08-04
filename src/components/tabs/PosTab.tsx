@@ -48,6 +48,7 @@ interface ReceiptData {
 // (nama, alamat, telepon, logo), dengan fallback ke nilai hardcoded lama kalau belum diisi.
 interface StoreInfo {
   storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string;
+  posWarehouseId?: string; posWarehouseName?: string;
 }
 
 type OcrStatus = 'idle' | 'reading' | 'done' | 'failed';
@@ -287,6 +288,8 @@ export default function PosTab({
   const storePhone   = (storeInfo.whatsapp?.trim() || WHATSAPP_NUMBER)
     .replace(/^62/, '0').replace(/(\d{4})(\d{4})(\d+)/, '$1-$2-$3');
   const storeLogo    = storeInfo.logo;
+  const posWarehouseId   = storeInfo.posWarehouseId || '';
+  const posWarehouseName = storeInfo.posWarehouseName || '';
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -603,6 +606,7 @@ export default function PosTab({
           ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
           ...(currentShift ? { shiftId: currentShift.id } : {}),
+          ...(posWarehouseId ? { warehouseId: posWarehouseId, warehouseName: posWarehouseName } : {}),
         }),
       });
 
@@ -611,7 +615,10 @@ export default function PosTab({
         fetch(`/api/stock/${i.productId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
-          body: JSON.stringify({ type: 'out', qty: i.qty, date: dateStr, note: `Penjualan Kasir - ${invNo}` }),
+          body: JSON.stringify({
+            type: 'out', qty: i.qty, date: dateStr, note: `Penjualan Kasir - ${invNo}`,
+            ...(posWarehouseId ? { warehouseId: posWarehouseId, warehouseName: posWarehouseName } : {}),
+          }),
         }).catch(() => null)
       )).then(results => {
         if (results.some(r => !r || !r.ok)) toast.error('Sebagian stok gagal diperbarui otomatis, cek menu Stok.');

@@ -504,7 +504,7 @@ body {
  * Left unlayered (like everything above the @layer wrapper isn't —
  * see comment at top of file) so it reliably wins over any Tailwind
  * utility class when the browser print dialog is triggered. */
-#pos-receipt {
+#pos-receipt, #order-receipt-print {
   position: fixed;
   left: -9999px;
   top: 0;
@@ -514,6 +514,6 @@ body {
 @media print {
   @page { size: 80mm auto; margin: 0; }
   body * { visibility: hidden; }
-  #pos-receipt, #pos-receipt * { visibility: visible; }
-  #pos-receipt { position: fixed; left: 0; top: 0; width: 80mm; box-sizing: border-box; }
+  #pos-receipt, #pos-receipt *, #order-receipt-print, #order-receipt-print * { visibility: visible; }
+  #pos-receipt, #order-receipt-print { position: fixed; left: 0; top: 0; width: 80mm; box-sizing: border-box; }
 }
