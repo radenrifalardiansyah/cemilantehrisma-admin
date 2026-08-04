@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Boxes, ShoppingBag, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban,
+  ChevronLeft, ChevronRight, Wrench, Ban, FileSpreadsheet, Upload,
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
+import Tooltip from '@/components/Tooltip';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -79,6 +81,44 @@ const EMPTY_MATERIAL: MaterialForm = { name: '', unit: '' };
 interface PurchaseRow { materialId: string; qty: string; price: string }
 const EMPTY_ROW: PurchaseRow = { materialId: '', qty: '', price: '' };
 
+// ─── Excel import/export — Bahan Baku (Stok) ───────────────────────────────
+const MATERIAL_TEMPLATE_COLS = [
+  { header: 'Nama*',   key: 'name', width: 26 },
+  { header: 'Satuan*', key: 'unit', width: 14 },
+] as const;
+type MaterialTemplateKey = typeof MATERIAL_TEMPLATE_COLS[number]['key'];
+
+function detectMaterialColumn(header: string): MaterialTemplateKey | null {
+  const h = header.toLowerCase();
+  if (h.includes('nama')) return 'name';
+  if (h.includes('satuan') || h.includes('unit')) return 'unit';
+  return null;
+}
+
+// ─── Excel import/export — Pembelian ───────────────────────────────────────
+const PURCHASE_TEMPLATE_COLS = [
+  { header: 'Tanggal (YYYY-MM-DD)', key: 'date',          width: 20 },
+  { header: 'Supplier',             key: 'supplierName',  width: 22 },
+  { header: 'Bahan Baku*',          key: 'materialName',  width: 24 },
+  { header: 'Qty*',                 key: 'qty',           width: 10 },
+  { header: 'Harga Satuan*',        key: 'price',         width: 16 },
+  { header: 'Status Pembayaran',    key: 'paymentStatus', width: 18 },
+  { header: 'Catatan',              key: 'note',          width: 28 },
+] as const;
+type PurchaseTemplateKey = typeof PURCHASE_TEMPLATE_COLS[number]['key'];
+
+function detectPurchaseColumn(header: string): PurchaseTemplateKey | null {
+  const h = header.toLowerCase();
+  if (h.includes('tanggal') || h.includes('date')) return 'date';
+  if (h.includes('supplier')) return 'supplierName';
+  if (h.includes('bahan')) return 'materialName';
+  if (h.includes('qty') || h.includes('jumlah')) return 'qty';
+  if (h.includes('harga')) return 'price';
+  if (h.includes('status') || h.includes('bayar') || h.includes('lunas')) return 'paymentStatus';
+  if (h.includes('catatan') || h.includes('note')) return 'note';
+  return null;
+}
+
 export default function MaterialsTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -101,6 +141,9 @@ export default function MaterialsTab({ creds }: { creds: string }) {
   const [materialView, setMaterialView] = useViewMode('materials');
   const [selectedMaterials, setSelectedMaterials] = useState<Set<string>>(new Set());
   const [bulkDeletingMaterials, setBulkDeletingMaterials] = useState(false);
+  const [exportingMaterials, setExportingMaterials] = useState(false);
+  const [importingMaterials, setImportingMaterials] = useState(false);
+  const importMaterialFileRef = useRef<HTMLInputElement>(null);
 
   const loadMaterials = async () => {
     setMaterialsLoading(true);
@@ -208,6 +251,242 @@ export default function MaterialsTab({ creds }: { creds: string }) {
       toast.error('Gagal menghapus bahan baku yang dipilih.');
     }
     setBulkDeletingMaterials(false);
+  };
+
+  // ── Excel template + import (Bahan Baku) ────────────────────────────
+  const downloadMaterialTemplate = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Cemilan Teh Risma Admin';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Template Bahan Baku');
+    const colCount = MATERIAL_TEMPLATE_COLS.length;
+    ws.columns = MATERIAL_TEMPLATE_COLS.map(c => ({ key: c.key, width: c.width }));
+
+    ws.mergeCells(1, 1, 1, colCount);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = 'TEMPLATE IMPORT BAHAN BAKU — CEMILAN TEH RISMA';
+    titleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+    ws.getRow(1).height = 26;
+
+    ws.mergeCells(2, 1, 2, colCount);
+    const noteCell = ws.getCell(2, 1);
+    noteCell.value =
+      'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3. '
+      + 'Mulai isi data dari baris 4 ke bawah, satu bahan baku per baris. Stok & harga rata-rata otomatis mulai dari 0, '
+      + 'nanti terisi lewat pencatatan Pembelian.';
+    noteCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+    ws.getRow(2).height = 40;
+
+    const HEADER_ROW_NUM = 3;
+    const headerRow = ws.getRow(HEADER_ROW_NUM);
+    MATERIAL_TEMPLATE_COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+    headerRow.height = 24;
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFC96018' } },
+        bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+        left: { style: 'thin', color: { argb: 'FFC96018' } },
+        right: { style: 'thin', color: { argb: 'FFC96018' } },
+      };
+    });
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+    const exampleRow = ws.addRow({ name: 'Tepung Terigu', unit: 'kg' });
+    exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-bahan-baku.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importMaterialsFromExcel = async (file: File) => {
+    setImportingMaterials(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) { toast.error('File Excel tidak valid.'); return; }
+
+      let headerRowNum = -1;
+      let colField = new Map<number, MaterialTemplateKey>();
+      for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+        const map = new Map<number, MaterialTemplateKey>();
+        ws.getRow(r).eachCell((cell, colNumber) => {
+          const field = detectMaterialColumn(cell.value?.toString() ?? '');
+          if (field) map.set(colNumber, field);
+        });
+        const fields = new Set(map.values());
+        if (fields.has('name')) { headerRowNum = r; colField = map; break; }
+      }
+      if (headerRowNum === -1) {
+        toast.error('Kolom "Nama" tidak ditemukan. Gunakan template yang disediakan.');
+        return;
+      }
+
+      const rows: MaterialForm[] = [];
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNum) return;
+        const raw = Object.fromEntries(MATERIAL_TEMPLATE_COLS.map(c => [c.key, ''])) as Record<MaterialTemplateKey, string>;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const field = colField.get(colNumber);
+          if (!field) return;
+          raw[field] = cell.value?.toString().trim() ?? '';
+        });
+        if (raw.name.trim() && raw.unit.trim()) rows.push({ name: raw.name, unit: raw.unit });
+      });
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada data bahan baku valid pada file tersebut. Pastikan kolom Nama & Satuan terisi.');
+        return;
+      }
+
+      const r = await fetch(`${API}/api/materials/bulk-import`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materials: rows }),
+      });
+      if (r.ok) {
+        const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
+        await loadMaterials();
+        const extra = [
+          d.skippedDuplicate > 0 ? `${d.skippedDuplicate} nama duplikat dilewati` : '',
+          d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
+        ].filter(Boolean).join(', ');
+        toast.success(`${d.created} bahan baku berhasil diimpor.${extra ? ` (${extra})` : ''}`);
+      } else {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(d.error ?? 'Gagal mengimpor data bahan baku.');
+      }
+    } catch {
+      toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImportingMaterials(false);
+    }
+  };
+
+  const exportMaterialsExcel = async (rows: RawMaterial[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada bahan baku untuk diexport.'); return; }
+    setExportingMaterials(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Bahan Baku');
+
+      const COLS = [
+        { header: 'No',                key: 'no',        width: 6  },
+        { header: 'Nama',              key: 'name',      width: 26 },
+        { header: 'Satuan',            key: 'unit',      width: 12 },
+        { header: 'Stok',              key: 'stockQty',  width: 12 },
+        { header: 'Harga Rata-rata',   key: 'avgCost',   width: 18 },
+        { header: 'Nilai Stok',        key: 'value',     width: 18 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'LAPORAN STOK BAHAN BAKU — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      subCell.value = `${rows.length} bahan baku (${label}) · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      rows.forEach((m, i) => {
+        const row = ws.addRow({
+          no: i + 1, name: m.name, unit: m.unit, stockQty: m.stockQty,
+          avgCost: m.avgCost, value: m.stockQty * m.avgCost,
+        });
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top:    { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left:   { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right:  { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+        row.getCell('no').alignment       = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('unit').alignment     = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('stockQty').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('avgCost').numFmt = '"Rp"#,##0';
+        row.getCell('avgCost').alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell('value').numFmt = '"Rp"#,##0';
+        row.getCell('value').alignment = { horizontal: 'right', vertical: 'middle' };
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      ws.columns.forEach(column => {
+        let maxLen = 8;
+        for (let r = HEADER_ROW_NUM; r <= ws.rowCount; r++) {
+          const v = ws.getRow(r).getCell(column.number!).value;
+          const len = v == null ? 0 : v.toString().length;
+          if (len > maxLen) maxLen = len;
+        }
+        column.width = Math.min(maxLen + 2, 50);
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bahan-baku-cemilantehrisma-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} bahan baku (${label}) ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExportingMaterials(false);
+    }
   };
 
   const filteredMaterials = materials
@@ -333,6 +612,9 @@ export default function MaterialsTab({ creds }: { creds: string }) {
   const [purchaseView, setPurchaseView] = useViewMode('material-purchases');
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [bulkDeletingPurchases, setBulkDeletingPurchases] = useState(false);
+  const [exportingPurchases, setExportingPurchases] = useState(false);
+  const [importingPurchases, setImportingPurchases] = useState(false);
+  const importPurchaseFileRef = useRef<HTMLInputElement>(null);
 
   const toggleSelectPurchase = (id: string) =>
     setSelectedPurchases(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -354,6 +636,265 @@ export default function MaterialsTab({ creds }: { creds: string }) {
     if (okCount > 0) toast.success(`${okCount} pembelian berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena sudah dipakai/dibeli lagi.` : ''}`);
     else toast.error('Semua pembelian yang dipilih tidak bisa dihapus (sudah dipakai/dibeli lagi setelahnya).');
     setBulkDeletingPurchases(false);
+  };
+
+  // ── Excel template + import (Pembelian) ──────────────────────────────
+  const downloadPurchaseTemplate = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Cemilan Teh Risma Admin';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Template Pembelian');
+    const colCount = PURCHASE_TEMPLATE_COLS.length;
+    ws.columns = PURCHASE_TEMPLATE_COLS.map(c => ({ key: c.key, width: c.width }));
+
+    ws.mergeCells(1, 1, 1, colCount);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = 'TEMPLATE IMPORT PEMBELIAN BAHAN BAKU — CEMILAN TEH RISMA';
+    titleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+    ws.getRow(1).height = 26;
+
+    ws.mergeCells(2, 1, 2, colCount);
+    const noteCell = ws.getCell(2, 1);
+    const matNames = materials.map(m => m.name).join(', ') || '(belum ada bahan baku)';
+    noteCell.value =
+      'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3. Satu baris = satu bahan baku yang dibeli. '
+      + `Kolom Bahan Baku harus persis sama dengan salah satu bahan baku yang sudah ada: ${matNames}. `
+      + 'Kolom Status Pembayaran diisi "Lunas" atau "Belum Lunas" (kosong dianggap Lunas).';
+    noteCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    noteCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+    ws.getRow(2).height = 46;
+
+    const HEADER_ROW_NUM = 3;
+    const headerRow = ws.getRow(HEADER_ROW_NUM);
+    PURCHASE_TEMPLATE_COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+    headerRow.height = 24;
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFC96018' } },
+        bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+        left: { style: 'thin', color: { argb: 'FFC96018' } },
+        right: { style: 'thin', color: { argb: 'FFC96018' } },
+      };
+    });
+    ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+    const exampleRow = ws.addRow({
+      date: todayISO(), supplierName: suppliers[0]?.name ?? 'UD Sumber Tani', materialName: materials[0]?.name ?? 'Tepung Terigu',
+      qty: 50, price: 12000, paymentStatus: 'Lunas', note: 'Contoh — timpa dengan data pembelian Anda',
+    });
+    exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-pembelian-bahan-baku.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importPurchasesFromExcel = async (file: File) => {
+    setImportingPurchases(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) { toast.error('File Excel tidak valid.'); return; }
+
+      let headerRowNum = -1;
+      let colField = new Map<number, PurchaseTemplateKey>();
+      for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
+        const map = new Map<number, PurchaseTemplateKey>();
+        ws.getRow(r).eachCell((cell, colNumber) => {
+          const field = detectPurchaseColumn(cell.value?.toString() ?? '');
+          if (field) map.set(colNumber, field);
+        });
+        const fields = new Set(map.values());
+        if (fields.has('materialName')) { headerRowNum = r; colField = map; break; }
+      }
+      if (headerRowNum === -1) {
+        toast.error('Kolom "Bahan Baku" tidak ditemukan. Gunakan template yang disediakan.');
+        return;
+      }
+
+      const matIdByName = new Map(materials.map(m => [m.name.trim().toLowerCase(), m]));
+      let skippedInvalidClient = 0;
+      const rows: {
+        materialId: string; materialName: string; unit: string; qty: number; price: number;
+        supplierName: string; date: string; note: string; paymentStatus: 'lunas' | 'belum_lunas';
+      }[] = [];
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNum) return;
+        const raw = Object.fromEntries(PURCHASE_TEMPLATE_COLS.map(c => [c.key, ''])) as Record<PurchaseTemplateKey, string>;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const field = colField.get(colNumber);
+          if (!field) return;
+          raw[field] = cell.value?.toString().trim() ?? '';
+        });
+        if (!raw.materialName.trim()) return;
+        const material = matIdByName.get(raw.materialName.trim().toLowerCase());
+        const qty = Number(raw.qty.replace(/[^0-9.-]/g, '')) || 0;
+        const price = Number(raw.price.replace(/[^0-9.-]/g, '')) || 0;
+        if (!material || qty <= 0 || price <= 0) { skippedInvalidClient++; return; }
+        rows.push({
+          materialId: material.id, materialName: material.name, unit: material.unit, qty, price,
+          supplierName: raw.supplierName, date: raw.date || todayISO(), note: raw.note,
+          paymentStatus: /^belum/i.test(raw.paymentStatus.trim()) ? 'belum_lunas' : 'lunas',
+        });
+      });
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada data pembelian valid pada file tersebut. Pastikan Bahan Baku sesuai daftar yang ada, dan Qty & Harga terisi.');
+        return;
+      }
+
+      const r = await fetch(`${API}/api/material-purchases/bulk-import`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ purchases: rows }),
+      });
+      if (r.ok) {
+        const d = await r.json() as { created: number; skippedInvalid: number };
+        await Promise.all([loadMaterials(), loadPurchases()]);
+        const totalSkipped = d.skippedInvalid + skippedInvalidClient;
+        toast.success(`${d.created} pembelian berhasil diimpor.${totalSkipped > 0 ? ` (${totalSkipped} baris tidak valid dilewati)` : ''}`);
+      } else {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(d.error ?? 'Gagal mengimpor data pembelian.');
+      }
+    } catch {
+      toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImportingPurchases(false);
+    }
+  };
+
+  const exportPurchasesExcel = async (rows: Purchase[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada pembelian untuk diexport.'); return; }
+    setExportingPurchases(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Pembelian');
+
+      const COLS = [
+        { header: 'No',        key: 'no',       width: 6  },
+        { header: 'Tanggal',   key: 'date',     width: 16 },
+        { header: 'Supplier',  key: 'supplier', width: 22 },
+        { header: 'Bahan Baku Dibeli', key: 'items', width: 40 },
+        { header: 'Total',     key: 'total',    width: 16 },
+        { header: 'Status Bayar', key: 'payment', width: 14 },
+        { header: 'Status',    key: 'status',   width: 12 },
+        { header: 'Catatan',   key: 'note',     width: 28 },
+      ];
+      const colCount = COLS.length;
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = 'LAPORAN PEMBELIAN BAHAN BAKU — CEMILAN TEH RISMA';
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, colCount);
+      const subCell = ws.getCell(2, 1);
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      subCell.value = `${rows.length} pembelian (${label}) · Diexport ${todayLabel}`;
+      subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const HEADER_ROW_NUM = 3;
+      const headerRow = ws.getRow(HEADER_ROW_NUM);
+      COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFC96018' } },
+          bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+          left: { style: 'thin', color: { argb: 'FFC96018' } },
+          right: { style: 'thin', color: { argb: 'FFC96018' } },
+        };
+      });
+      ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+      rows.forEach((p, i) => {
+        const row = ws.addRow({
+          no: i + 1,
+          date: p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds),
+          supplier: p.supplierName || 'Tanpa nama',
+          items: p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', '),
+          total: p.total,
+          payment: p.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+          status: p.voided ? 'Dibatalkan' : 'Aktif',
+          note: p.note || '-',
+        });
+        const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+          cell.border = {
+            top:    { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left:   { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right:  { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          cell.alignment = { vertical: 'middle', wrapText: false };
+        });
+        row.getCell('no').alignment    = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('total').numFmt    = '"Rp"#,##0';
+        row.getCell('total').alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell('payment').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('status').alignment  = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('items').alignment   = { horizontal: 'left', vertical: 'top', wrapText: true };
+        row.getCell('note').alignment    = { horizontal: 'left', vertical: 'top', wrapText: true };
+      });
+
+      const lastColLetter = ws.getColumn(colCount).letter;
+      ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+
+      ws.columns.forEach(column => {
+        let maxLen = 8;
+        for (let r = HEADER_ROW_NUM; r <= ws.rowCount; r++) {
+          const v = ws.getRow(r).getCell(column.number!).value;
+          const len = v == null ? 0 : v.toString().length;
+          if (len > maxLen) maxLen = len;
+        }
+        column.width = Math.min(maxLen + 2, 50);
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pembelian-bahan-baku-cemilantehrisma-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} pembelian (${label}) ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExportingPurchases(false);
+    }
   };
 
   const filteredPurchases = purchases
@@ -422,6 +963,26 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                 </div>
               )}
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                <Tooltip label="Unduh Template">
+                  <button onClick={downloadMaterialTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    <FileSpreadsheet size={14} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={importingMaterials ? 'Mengimpor…' : 'Upload Excel'}>
+                  <button onClick={() => importMaterialFileRef.current?.click()} disabled={importingMaterials} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {importingMaterials ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  </button>
+                </Tooltip>
+                <input ref={importMaterialFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importMaterialsFromExcel(f); e.target.value = ''; }} />
+                {materials.length > 0 && (
+                  <Tooltip label="Export Excel">
+                    <button onClick={() => exportMaterialsExcel(filteredMaterials, 'sesuai filter')} disabled={exportingMaterials} aria-label="Export Excel"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingMaterials ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
                 {materials.length > 0 && <ViewToggle mode={materialView} onChange={setMaterialView} height={HEADER_BTN_H} />}
                 <button onClick={openCreateM} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Tambah Bahan Baku</span>
@@ -460,11 +1021,15 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                   </div>
                 ) : materialView === 'table' ? (
                   <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                    {paginatedMaterials.map(m => {
+                    {paginatedMaterials.map((m, idx) => {
                       const isSelected = selectedMaterials.has(m.id);
+                      const rowNum = (materialSafePage - 1) * materialPageSize + idx + 1;
                       return (
                         <div key={m.id} className="px-4 py-3 flex items-center gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                           <Checkbox checked={isSelected} onChange={() => toggleSelectMaterial(m.id)} />
+                          <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
+                            {rowNum}
+                          </span>
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                             <Package size={16} />
                           </div>
@@ -609,7 +1174,29 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                   </div>
                 )}
                 <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                  {purchases.length > 0 && <ViewToggle mode={purchaseView} onChange={setPurchaseView} height={HEADER_BTN_H} />}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Tooltip label="Unduh Template">
+                      <button onClick={downloadPurchaseTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                        <FileSpreadsheet size={14} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={importingPurchases ? 'Mengimpor…' : 'Upload Excel'}>
+                      <button onClick={() => importPurchaseFileRef.current?.click()} disabled={importingPurchases} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                        {importingPurchases ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                      </button>
+                    </Tooltip>
+                    <input ref={importPurchaseFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) importPurchasesFromExcel(f); e.target.value = ''; }} />
+                    {purchases.length > 0 && (
+                      <Tooltip label="Export Excel">
+                        <button onClick={() => exportPurchasesExcel(filteredPurchases, 'sesuai filter')} disabled={exportingPurchases} aria-label="Export Excel"
+                          className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                          {exportingPurchases ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                        </button>
+                      </Tooltip>
+                    )}
+                    {purchases.length > 0 && <ViewToggle mode={purchaseView} onChange={setPurchaseView} height={HEADER_BTN_H} />}
+                  </div>
                   <button onClick={openCreatePurchase} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
                     <Plus size={13} /> <span className="hidden sm:inline">Catat Pembelian</span><span className="sm:hidden">Tambah</span>
                   </button>
@@ -643,12 +1230,16 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                     </div>
                   ) : purchaseView === 'table' ? (
                     <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                      {paginatedPurchases.map(p => {
+                      {paginatedPurchases.map((p, idx) => {
                         const isSelected = selectedPurchases.has(p.id);
+                        const rowNum = (purchaseSafePage - 1) * purchasePageSize + idx + 1;
                         return (
                           <div key={p.id} className="px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: p.voided ? 0.55 : 1 }}>
                             <div className="flex items-start gap-3">
                               <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectPurchase(p.id)} /></div>
+                              <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                {rowNum}
+                              </span>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-1.5 flex-wrap">

@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import ExcelJS from 'exceljs';
 import {
   Factory, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, AlertTriangle,
-  Search, ChevronLeft, ChevronRight,
+  Search, ChevronLeft, ChevronRight, FileSpreadsheet, Upload,
 } from 'lucide-react';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
+import Tooltip from '@/components/Tooltip';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -237,6 +239,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const [view, setView] = useViewMode('production');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -256,6 +261,220 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     if (okCount > 0) toast.success(`${okCount} batch produksi berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena produknya sudah diproduksi lagi.` : ''}`);
     else toast.error('Semua batch yang dipilih tidak bisa dihapus (produknya sudah diproduksi lagi setelahnya).');
     setBulkDeleting(false);
+  };
+
+  // ── Export / Import Excel ──────────────────────────────────────
+  const exportProductionExcel = async (rows: ProductionBatch[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada riwayat produksi untuk diexport.'); return; }
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Produksi');
+      ws.columns = [
+        { key: 'no', width: 5 }, { key: 'tgl', width: 14 }, { key: 'produk', width: 32 },
+        { key: 'bahan', width: 40 }, { key: 'biayaBahan', width: 16 }, { key: 'biayaLain', width: 16 },
+        { key: 'total', width: 16 }, { key: 'hpp', width: 14 }, { key: 'gudang', width: 18 }, { key: 'catatan', width: 28 },
+      ];
+
+      ws.mergeCells(1, 1, 1, 10);
+      const t = ws.getCell(1, 1);
+      t.value = 'RIWAYAT PRODUKSI — CEMILAN TEH RISMA';
+      t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      t.alignment = { horizontal: 'center', vertical: 'middle' };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells(2, 1, 2, 10);
+      const s = ws.getCell(2, 1);
+      s.value = `${rows.length} batch produksi (${label})`;
+      s.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      s.alignment = { horizontal: 'center', vertical: 'middle' };
+      s.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const headerRow = ws.getRow(3);
+      ['No', 'Tanggal', 'Produk Hasil', 'Bahan Baku', 'Biaya Bahan', 'Biaya Lain', 'Total Biaya', 'HPP/pcs', 'Gudang', 'Catatan']
+        .forEach((h, i) => { headerRow.getCell(i + 1).value = h; });
+      headerRow.height = 24;
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      ws.views = [{ state: 'frozen', ySplit: 3 }];
+
+      rows.forEach((b, i) => {
+        const rowNum = 4 + i;
+        const row = ws.getRow(rowNum);
+        row.getCell(1).value = i + 1;
+        row.getCell(2).value = formatDateDisplay(b.date);
+        row.getCell(3).value = batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join('; ');
+        row.getCell(4).value = b.materialsUsed.map(m => `${m.materialName}: ${m.qty} ${m.unit}`).join('; ');
+        row.getCell(5).value = b.materialCost; row.getCell(5).numFmt = '"Rp"#,##0';
+        row.getCell(6).value = b.otherCost;    row.getCell(6).numFmt = '"Rp"#,##0';
+        row.getCell(7).value = b.totalCost;    row.getCell(7).numFmt = '"Rp"#,##0';
+        row.getCell(8).value = b.costPerPcs;   row.getCell(8).numFmt = '"Rp"#,##0';
+        row.getCell(9).value = b.warehouseName ?? '';
+        row.getCell(10).value = b.note ?? '';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
+          cell.alignment = { wrapText: true, vertical: 'middle' };
+          cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+        });
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `produksi-cemilantehrisma-${todayISO()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} batch produksi ke Excel.`);
+    } finally { setExporting(false); }
+  };
+
+  const PRODUCTION_TEMPLATE_COLS = [
+    { header: 'Tanggal* (YYYY-MM-DD)', key: 'tgl', width: 20 },
+    { header: 'Gudang Tujuan*', key: 'gudang', width: 18 },
+    { header: 'Produk Hasil* (Nama:Qty; Nama2:Qty2)', key: 'produk', width: 34 },
+    { header: 'Bahan Baku* (Nama:Qty; Nama2:Qty2)', key: 'bahan', width: 34 },
+    { header: 'Biaya Lain (Rp)', key: 'biayaLain', width: 16 },
+    { header: 'Catatan', key: 'catatan', width: 28 },
+  ];
+
+  const downloadProductionTemplate = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Cemilan Teh Risma Admin';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('Template Produksi');
+    ws.columns = PRODUCTION_TEMPLATE_COLS.map(c => ({ key: c.key, width: c.width }));
+
+    ws.mergeCells(1, 1, 1, PRODUCTION_TEMPLATE_COLS.length);
+    const info = ws.getCell(1, 1);
+    info.value = 'Kolom bertanda * wajib diisi. Untuk produk hasil / bahan baku lebih dari satu, pisahkan dengan " ; " — nama harus sama persis dengan nama di menu Produk / Bahan Baku.';
+    info.font = { italic: true, size: 9, color: { argb: 'FF6B7280' } };
+    info.alignment = { wrapText: true, vertical: 'middle' };
+    ws.getRow(1).height = 30;
+
+    const headerRow = ws.getRow(2);
+    PRODUCTION_TEMPLATE_COLS.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+    headerRow.height = 28;
+    headerRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    });
+
+    const exampleMaterial = materials[0];
+    const exampleProduct  = products[0];
+    const exampleRow = ws.getRow(3);
+    exampleRow.getCell(1).value = todayISO();
+    exampleRow.getCell(2).value = warehouses[0]?.name ?? 'Gudang Utama';
+    exampleRow.getCell(3).value = exampleProduct ? `${exampleProduct.name}:10` : 'Keripik Original:10';
+    exampleRow.getCell(4).value = exampleMaterial ? `${exampleMaterial.name}:1` : 'Tepung:1';
+    exampleRow.getCell(5).value = 0;
+    exampleRow.getCell(6).value = 'Contoh baris — hapus sebelum upload';
+    exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template-produksi.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // Parse "Nama:Qty; Nama2:Qty2" -> [{ name, qty }]
+  const parseNameQtyList = (raw: string): { name: string; qty: number }[] =>
+    raw.split(';').map(part => part.trim()).filter(Boolean).map(part => {
+      const idx = part.lastIndexOf(':');
+      const name = (idx === -1 ? part : part.slice(0, idx)).trim();
+      const qty  = idx === -1 ? 0 : parseFloat(part.slice(idx + 1).replace(',', '.')) || 0;
+      return { name, qty };
+    });
+
+  const importProductionFromExcel = async (file: File) => {
+    setImporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) { toast.error('File Excel kosong atau format tidak dikenali.'); return; }
+
+      // Cari baris header (mengandung kolom "Tanggal") di antara 5 baris pertama
+      let headerRowNum = -1;
+      for (let r = 1; r <= Math.min(5, ws.rowCount); r++) {
+        const values = ws.getRow(r).values as unknown[];
+        if (values.some(v => typeof v === 'string' && v.toLowerCase().includes('tanggal'))) { headerRowNum = r; break; }
+      }
+      if (headerRowNum === -1) { toast.error('Baris header (Tanggal, Gudang, Produk Hasil, dst) tidak ditemukan.'); return; }
+
+      const errors: string[] = [];
+      let created = 0;
+      for (let r = headerRowNum + 1; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r);
+        const get = (col: number) => { const v = row.getCell(col).value; return v == null ? '' : String(v).trim(); };
+        const tglRaw = get(1), gudangRaw = get(2), produkRaw = get(3), bahanRaw = get(4), biayaLainRaw = get(5), catatanRaw = get(6);
+        if (!tglRaw && !gudangRaw && !produkRaw && !bahanRaw) continue; // baris kosong, lewati
+
+        const rowLabel = `Baris ${r}`;
+        const warehouse = warehouses.find(w => w.name.toLowerCase() === gudangRaw.toLowerCase());
+        if (!warehouse) { errors.push(`${rowLabel}: gudang "${gudangRaw}" tidak ditemukan.`); continue; }
+
+        const outputParsed = parseNameQtyList(produkRaw);
+        const outputs: { productId: string; productName: string; yieldQty: number }[] = [];
+        let outputError = '';
+        for (const o of outputParsed) {
+          const product = products.find(p => p.name.toLowerCase() === o.name.toLowerCase());
+          if (!product) { outputError = `produk "${o.name}" tidak ditemukan`; break; }
+          if (o.qty <= 0) { outputError = `jumlah produk "${o.name}" harus lebih dari 0`; break; }
+          outputs.push({ productId: product.id, productName: product.name, yieldQty: o.qty });
+        }
+        if (outputError) { errors.push(`${rowLabel}: ${outputError}.`); continue; }
+        if (outputs.length === 0) { errors.push(`${rowLabel}: kolom Produk Hasil kosong.`); continue; }
+
+        const materialParsed = parseNameQtyList(bahanRaw);
+        const materialsUsed: { materialId: string; materialName: string; unit: string; qty: number }[] = [];
+        let materialError = '';
+        for (const m of materialParsed) {
+          const material = materials.find(x => x.name.toLowerCase() === m.name.toLowerCase());
+          if (!material) { materialError = `bahan baku "${m.name}" tidak ditemukan`; break; }
+          if (m.qty <= 0) { materialError = `jumlah bahan baku "${m.name}" harus lebih dari 0`; break; }
+          materialsUsed.push({ materialId: material.id, materialName: material.name, unit: material.unit, qty: m.qty });
+        }
+        if (materialError) { errors.push(`${rowLabel}: ${materialError}.`); continue; }
+        if (materialsUsed.length === 0) { errors.push(`${rowLabel}: kolom Bahan Baku kosong.`); continue; }
+
+        const payload = {
+          date: /^\d{4}-\d{2}-\d{2}$/.test(tglRaw) ? tglRaw : todayISO(),
+          outputs, materialsUsed,
+          warehouseId: warehouse.id, warehouseName: warehouse.name,
+          otherCost: parseFloat(biayaLainRaw.replace(/[^0-9.-]/g, '')) || 0,
+          note: catatanRaw,
+        };
+        const res = await fetch(`${API}/api/production`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (res.ok) created++;
+        else {
+          const err = await res.json().catch(() => ({})) as { error?: string };
+          errors.push(`${rowLabel}: ${err.error ?? 'gagal disimpan'}.`);
+        }
+      }
+
+      await Promise.all([loadMaterials(), loadBatches()]);
+      if (created > 0) toast.success(`${created} batch produksi berhasil diimport.${errors.length > 0 ? ` ${errors.length} baris dilewati.` : ''}`);
+      if (errors.length > 0) toast.error(errors.slice(0, 3).join(' ') + (errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ''));
+      if (created === 0 && errors.length === 0) toast.error('Tidak ada baris data yang bisa diimport.');
+    } finally { setImporting(false); }
   };
 
   const resetPage = () => setPage(1);
@@ -282,7 +501,12 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   };
 
   const productOptions  = products.map(p => ({ value: p.id, label: p.name, emoji: p.emoji }));
-  const materialOptions = effectiveMaterials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${m.stockQty} ${m.unit}` }));
+  // Hanya tampilkan bahan baku yang masih ada stoknya; bahan yang sudah dipilih di baris tetap
+  // ditampilkan meski stoknya 0 supaya baris yang sudah terisi tidak jadi kosong.
+  const selectedMaterialIds = new Set(rows.map(r => r.materialId).filter(Boolean));
+  const materialOptions = effectiveMaterials
+    .filter(m => m.stockQty > 0 || selectedMaterialIds.has(m.id))
+    .map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${m.stockQty} ${m.unit}` }));
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
   return (
@@ -309,6 +533,25 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
           </div>
         )}
         <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadProductionTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
+          <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) importProductionFromExcel(f); e.target.value = ''; }} />
+          {batches.length > 0 && (
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportProductionExcel(filteredBatches, 'sesuai filter')} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+            </Tooltip>
+          )}
           {batches.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           <button onClick={openCreate} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Catat Produksi</span>
@@ -347,12 +590,14 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             </div>
           ) : view === 'table' ? (
             <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-              {paginatedBatches.map(b => {
+              {paginatedBatches.map((b, i) => {
                 const isSelected = selected.has(b.id);
                 const editable   = isEditableBatch(b);
+                const rowNumber  = (safePage - 1) * pageSize + i + 1;
                 return (
                   <div key={b.id} className="px-4 py-3 flex items-start gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                     <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} /></div>
+                    <span className="text-xs font-semibold tabular pt-0.5" style={{ color: 'var(--text-muted)', minWidth: 20 }}>{rowNumber}.</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -384,6 +629,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       </p>
                       {b.warehouseName && (
                         <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Masuk gudang: {b.warehouseName}</p>
+                      )}
+                      {b.note && (
+                        <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-secondary)' }}>Catatan: {b.note}</p>
                       )}
                       {!editable && (
                         <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
@@ -420,6 +668,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       </p>
                       {b.warehouseName && (
                         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Masuk gudang: {b.warehouseName}</p>
+                      )}
+                      {b.note && (
+                        <p className="text-[11px] italic" style={{ color: 'var(--text-secondary)' }}>Catatan: {b.note}</p>
                       )}
                       {!editable && (
                         <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
