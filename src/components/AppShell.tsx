@@ -156,7 +156,7 @@ export default function AppShell({
     setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--ground)' }}>
+    <div className="flex h-app-screen overflow-hidden" style={{ background: 'var(--ground)' }}>
 
       {/* ═══ Desktop Sidebar ═══════════════════════════════════ */}
       <aside

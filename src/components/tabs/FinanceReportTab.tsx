@@ -517,7 +517,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             </div>
           ) : (
             <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-              <div className="px-4 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+              <div className="hidden lg:flex px-4 py-2.5 items-center gap-3" style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
                 <span className="text-[10px] font-bold uppercase tracking-wide flex-shrink-0 w-20" style={{ color: 'var(--text-muted)' }}>Tanggal</span>
                 <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Keterangan</span>
                 <span className="text-[10px] font-bold uppercase tracking-wide w-28 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Debit</span>
@@ -526,28 +526,41 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
               </div>
               <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
               {journalDisplay.map((j, i) => (
-                <div key={i} className="px-4 py-3 flex items-center gap-3">
-                  <span className="text-xs tabular flex-shrink-0 w-20" style={{ color: 'var(--text-muted)' }}>
-                    {j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : '–'}
-                  </span>
-                  {j.invoiceNo ? (
-                    <button type="button" onClick={() => onOpenOrder?.(j.invoiceNo!)}
-                      className="flex-1 min-w-0 text-sm text-left truncate hover:underline"
-                      style={{ color: 'var(--accent)' }} title="Lihat transaksi di menu Pesanan">
-                      {j.description}
-                    </button>
-                  ) : (
-                    <span className="flex-1 min-w-0 text-sm truncate" style={{ color: 'var(--text-primary)' }}>{j.description}</span>
-                  )}
-                  <span className="text-sm font-bold tabular w-28 text-right flex-shrink-0" style={{ color: j.debit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-                    {j.debit > 0 ? formatRp(j.debit) : '–'}
-                  </span>
-                  <span className="text-sm font-bold tabular w-28 text-right flex-shrink-0" style={{ color: j.kredit > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                    {j.kredit > 0 ? formatRp(j.kredit) : '–'}
-                  </span>
-                  <span className="text-sm font-bold tabular w-28 text-right flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
-                    {formatRp(j.saldo)}
-                  </span>
+                <div key={i} className="px-4 py-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+                  <div className="flex items-center gap-3 lg:contents">
+                    <span className="text-xs tabular flex-shrink-0 w-16 lg:w-20" style={{ color: 'var(--text-muted)' }}>
+                      {j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : '–'}
+                    </span>
+                    {j.invoiceNo ? (
+                      <button type="button" onClick={() => onOpenOrder?.(j.invoiceNo!)}
+                        className="flex-1 min-w-0 text-sm text-left truncate hover:underline"
+                        style={{ color: 'var(--accent)' }} title="Lihat transaksi di menu Pesanan">
+                        {j.description}
+                      </button>
+                    ) : (
+                      <span className="flex-1 min-w-0 text-sm truncate" style={{ color: 'var(--text-primary)' }}>{j.description}</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pl-0 lg:contents">
+                    <div className="lg:w-28 lg:flex-shrink-0 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Debit</p>
+                      <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: j.debit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+                        {j.debit > 0 ? formatRp(j.debit) : '–'}
+                      </p>
+                    </div>
+                    <div className="lg:w-28 lg:flex-shrink-0 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Kredit</p>
+                      <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: j.kredit > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                        {j.kredit > 0 ? formatRp(j.kredit) : '–'}
+                      </p>
+                    </div>
+                    <div className="lg:w-28 lg:flex-shrink-0 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Saldo</p>
+                      <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: 'var(--text-primary)' }}>
+                        {formatRp(j.saldo)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ))}
               </div>

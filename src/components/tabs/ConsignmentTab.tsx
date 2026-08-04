@@ -1190,11 +1190,13 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   </div>
                 ) : locationView === 'table' ? (
                   <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                    {paginatedLocations.map(l => {
+                    {paginatedLocations.map((l, i) => {
                       const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
                       const isSelected = selectedLocations.has(l.id);
+                      const num = (safeLocationPage - 1) * locationPageSize + i + 1;
                       return (
                         <div key={l.id} className="flex items-center gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <span className="w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                           <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)' }}>
                             <Store size={16} style={{ color: 'var(--accent)' }} />
@@ -1238,14 +1240,16 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {paginatedLocations.map(l => {
+                    {paginatedLocations.map((l, i) => {
                       const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
                       const isSelected = selectedLocations.has(l.id);
+                      const num = (safeLocationPage - 1) * locationPageSize + i + 1;
                       return (
                         <div key={l.id} className="card overflow-hidden p-5 relative"
                           style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                          <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                          <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                             <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
+                            <span className="text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                           </div>
                           <div className="flex items-start justify-between mb-3 pl-6">
                             <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
@@ -1368,10 +1372,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     </div>
                   ) : shipmentView === 'table' ? (
                     <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                      {paginatedShipments.map(s => {
+                      {paginatedShipments.map((s, i) => {
                         const isSelected = selectedShipments.has(s.id);
+                        const num = (safeShipmentPage - 1) * shipmentPageSize + i + 1;
                         return (
                           <div key={s.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                            <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} /></div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
@@ -1399,13 +1405,15 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {paginatedShipments.map(s => {
+                      {paginatedShipments.map((s, i) => {
                         const isSelected = selectedShipments.has(s.id);
+                        const num = (safeShipmentPage - 1) * shipmentPageSize + i + 1;
                         return (
                           <div key={s.id} className="card overflow-hidden p-4 relative"
                             style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                            <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
+                              <span className="text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             </div>
                             <div className="flex items-center gap-2 mb-1 pl-6">
                               <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
@@ -1508,10 +1516,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     </div>
                   ) : recapView === 'table' ? (
                     <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                      {paginatedRecaps.map(r => {
+                      {paginatedRecaps.map((r, i) => {
                         const isSelected = selectedRecaps.has(r.id);
+                        const num = (safeRecapPage - 1) * recapPageSize + i + 1;
                         return (
                           <div key={r.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                            <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-2">
@@ -1555,13 +1565,15 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {paginatedRecaps.map(r => {
+                      {paginatedRecaps.map((r, i) => {
                         const isSelected = selectedRecaps.has(r.id);
+                        const num = (safeRecapPage - 1) * recapPageSize + i + 1;
                         return (
                           <div key={r.id} className="card overflow-hidden p-4 relative"
                             style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                            <div className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
+                              <span className="text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             </div>
                             <div className="flex items-center justify-between gap-2 mb-1 pl-6">
                               <div className="flex items-center gap-1.5 flex-wrap min-w-0">

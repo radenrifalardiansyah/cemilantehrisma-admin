@@ -5,8 +5,8 @@ import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
-  X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, Package,
-  ArrowLeftRight, Check, Clock, ImageIcon, Ban,
+  X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, ChevronLeft, Package,
+  ArrowLeftRight, Clock, ImageIcon, Ban, Search,
 } from 'lucide-react';
 import { useViewMode, type ViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -16,8 +16,10 @@ import { useConfirm } from '@/components/Confirm';
 import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
 import ImageCarousel from '@/components/ImageCarousel';
 import TopbarPortal from '@/components/TopbarPortal';
+import PageSizeSelect from '@/components/PageSizeSelect';
 
 const API = '';
+const HEADER_BTN_H = 34;
 
 type SubTab = 'stok' | 'masuk' | 'keluar' | 'transfer';
 
@@ -151,9 +153,228 @@ function WarehouseModal({
   );
 }
 
+// ── TxModal — add stok masuk / keluar ─────────────────────────────────────────
+function TxModal({
+  type, warehouseOptions, productOptions,
+  wId, pId, qty, note, onWId, onPId, onQty, onNote,
+  submitting, onClose, onSubmit,
+}: {
+  type: 'in' | 'out';
+  warehouseOptions: SearchSelectOption[];
+  productOptions: SearchSelectOption[];
+  wId: string; pId: string; qty: string; note: string;
+  onWId: (v: string) => void; onPId: (v: string) => void;
+  onQty: (v: string) => void; onNote: (v: string) => void;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (typeof document === 'undefined') return null;
+  const isIn = type === 'in';
+  const canSubmit = !!wId && !!pId && !!qty && Number(qty) > 0;
+  return createPortal(
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
+      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-accent" />
+        <span className="modal-handle" />
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon" style={isIn ? undefined : { background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+              {isIn ? <TrendingUp size={17} /> : <TrendingDown size={17} />}
+            </div>
+            <div>
+              <p className="modal-title">{isIn ? 'Catat Stok Masuk' : 'Catat Stok Keluar'}</p>
+              <p className="modal-subtitle">
+                {isIn ? 'Penerimaan barang dari supplier atau penambahan stok' : 'Pengurangan stok — rusak, terpakai, retur, dll.'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="modal-close"><X size={14} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
+                  placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+              </div>
+              <div>
+                <label className="field-label">Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={pId} onChange={onPId} options={productOptions}
+                  placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <input type="number" min={1} placeholder={isIn ? 'cth: 50' : 'cth: 10'} value={qty}
+                  onChange={e => onQty(e.target.value)} className="input" autoFocus />
+              </div>
+              <div>
+                <label className="field-label">Keterangan</label>
+                <input type="text" placeholder={isIn ? 'cth: Restock dari supplier (opsional)' : 'cth: Barang rusak saat pengiriman (opsional)'}
+                  value={note} onChange={e => onNote(e.target.value)} className="input" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+            Batal
+          </button>
+          <button onClick={onSubmit} disabled={submitting || !canSubmit}
+            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: isIn ? undefined : 'linear-gradient(135deg,#DC2626,#B91C1C)' }}>
+            {submitting
+              ? <Loader2 size={14} className="animate-spin" />
+              : isIn ? <Plus size={14} /> : <TrendingDown size={14} />}
+            {submitting ? 'Menyimpan…' : isIn ? 'Tambah Stok Masuk' : 'Kurangi Stok'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── TransferModal — transfer stok antar gudang ────────────────────────────────
+function TransferModal({
+  warehouseOptions, productOptions,
+  fromWId, toWId, pId, qty, note,
+  onFromWId, onToWId, onPId, onQty, onNote,
+  submitting, onClose, onSubmit,
+}: {
+  warehouseOptions: SearchSelectOption[];
+  productOptions: SearchSelectOption[];
+  fromWId: string; toWId: string; pId: string; qty: string; note: string;
+  onFromWId: (v: string) => void; onToWId: (v: string) => void; onPId: (v: string) => void;
+  onQty: (v: string) => void; onNote: (v: string) => void;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (typeof document === 'undefined') return null;
+  const sameWarehouse = !!fromWId && !!toWId && fromWId === toWId;
+  const canSubmit = !!fromWId && !!toWId && !!pId && !!qty && Number(qty) > 0 && !sameWarehouse;
+  return createPortal(
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
+      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-accent" />
+        <span className="modal-handle" />
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon" style={{ background: '#EFF6FF', color: '#0284C7' }}>
+              <ArrowLeftRight size={17} />
+            </div>
+            <div>
+              <p className="modal-title">Transfer Antar Gudang</p>
+              <p className="modal-subtitle">Pindahkan stok dari satu gudang ke gudang lain</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="modal-close"><X size={14} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Dari Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={fromWId} onChange={onFromWId} options={warehouseOptions}
+                  placeholder="– Pilih Asal –" searchPlaceholder="Cari gudang…" />
+              </div>
+              <div>
+                <label className="field-label">Ke Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={toWId} onChange={onToWId}
+                  options={warehouseOptions.filter(o => o.value !== fromWId)}
+                  placeholder="– Pilih Tujuan –" searchPlaceholder="Cari gudang…" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={pId} onChange={onPId} options={productOptions}
+                  placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
+              </div>
+              <div>
+                <label className="field-label">Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <input type="number" min={1} placeholder="cth: 20" value={qty}
+                  onChange={e => onQty(e.target.value)} className="input" />
+              </div>
+            </div>
+            <div>
+              <label className="field-label">Keterangan</label>
+              <input type="text" placeholder="cth: Redistribusi stok akhir bulan (opsional)" value={note}
+                onChange={e => onNote(e.target.value)} className="input" />
+            </div>
+            {sameWarehouse && (
+              <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>
+                Gudang asal dan tujuan tidak boleh sama.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+            Batal
+          </button>
+          <button onClick={onSubmit} disabled={submitting || !canSubmit}
+            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: 'linear-gradient(135deg,#0284C7,#0369A1)' }}>
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
+            {submitting ? 'Memproses…' : 'Proses Transfer'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Pagination — shared bar across the tx lists in this tab ──────────────────
+function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPage, unit }: {
+  total: number; safePage: number; totalPages: number; pageSize: number;
+  onPageSize: (n: number) => void; onGoPage: (p: number) => void; unit: string;
+}) {
+  if (total === 0) return null;
+  return (
+    <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center gap-3 flex-wrap">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {total} {unit} · halaman {safePage} dari {totalPages}
+        </p>
+        <PageSizeSelect value={pageSize} onChange={onPageSize} />
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+            <ChevronLeft size={14} />
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+            .reduce<(number | '…')[]>((acc, n, i, arr) => {
+              if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+              acc.push(n); return acc;
+            }, [])
+            .map((n, i) =>
+              n === '…'
+                ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                : <button key={n} onClick={() => onGoPage(n as number)}
+                    className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                    style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                    {n}
+                  </button>
+            )
+          }
+          <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── TxList — shared transaction list component ────────────────────────────────
 function TxList({
-  entries, loading, emptyLabel, warehouses, products, view,
+  entries, loading, emptyLabel, warehouses, products, view, startIndex = 0,
 }: {
   entries: TxEntry[];
   loading: boolean;
@@ -161,6 +382,7 @@ function TxList({
   warehouses: WarehouseData[];
   products: Product[];
   view: ViewMode;
+  startIndex?: number;
 }) {
   const wName = (id?: string) => warehouses.find(w => w.id === id)?.name ?? id ?? '–';
   const pName = (entry: TxEntry) => entry.productName || products.find(p => p.id === entry.productId)?.name || entry.productId;
@@ -188,24 +410,27 @@ function TxList({
     </div>
   );
 
-  const rows = entries.map(e => {
+  const rows = entries.map((e, i) => {
     const isIn = e.type === 'in';
     const isTransfer = e.type === 'transfer';
     const badge = typeBadge(e.type);
     const locationLabel = isTransfer
       ? `${e.fromWarehouseName || wName(e.fromWarehouseId)}  →  ${e.toWarehouseName || wName(e.toWarehouseId)}`
       : (e.warehouseName || wName(e.warehouseId));
-    return { e, isIn, isTransfer, badge, locationLabel };
+    return { e, isIn, isTransfer, badge, locationLabel, num: startIndex + i + 1 };
   });
 
   if (view === 'table') return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {rows.map(({ e, isIn, isTransfer, badge, locationLabel }) => (
+      {rows.map(({ e, isIn, isTransfer, badge, locationLabel, num }) => (
         <div key={e.id} style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '10px 14px', borderRadius: 12,
           background: 'var(--surface)', border: '1px solid var(--border-2)',
         }}>
+          <span style={{ width: 22, flexShrink: 0, textAlign: 'right', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+            {num}
+          </span>
           <div style={{
             width: 36, height: 36, borderRadius: 10, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -257,7 +482,7 @@ function TxList({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {rows.map(({ e, isIn, isTransfer, badge, locationLabel }) => (
+      {rows.map(({ e, isIn, isTransfer, badge, locationLabel, num }) => (
         <div key={e.id} className="card overflow-hidden flex flex-col" style={{ borderColor: 'var(--border-2)' }}>
           <div className="relative w-full aspect-square" style={{ background: `${pBgColor(e.productId)}22` }}>
             <ImageCarousel
@@ -267,6 +492,13 @@ function TxList({
               sizes="(max-width: 640px) 50vw, 200px"
               emojiClassName="text-4xl"
             />
+            <span className="absolute top-2 left-2 flex items-center justify-center" style={{
+              width: 18, height: 18, borderRadius: 999, fontSize: 9.5, fontWeight: 800,
+              color: 'var(--text-secondary)', background: 'var(--surface)',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.12)', fontVariantNumeric: 'tabular-nums',
+            }}>
+              {num}
+            </span>
             <span className="absolute top-2 right-2" style={{
               display: 'inline-flex', alignItems: 'center', gap: 3,
               fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em',
@@ -336,22 +568,33 @@ export default function StockTab({
   const [savingW, setSavingW]           = useState(false);
   const [deletingId, setDeletingId]     = useState<string | null>(null);
 
-  // Masuk / Keluar form
+  // Masuk / Keluar modal
+  const [showTxModal, setShowTxModal] = useState<'in' | 'out' | null>(null);
   const [txWId, setTxWId]           = useState('');
   const [txPId, setTxPId]           = useState('');
   const [txQty, setTxQty]           = useState('');
   const [txNote, setTxNote]         = useState('');
   const [txSubmitting, setTxSub]    = useState(false);
-  const [txSuccess, setTxSuccess]   = useState(false);
 
-  // Transfer form
+  // Transfer modal
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [fromWId, setFromWId]       = useState('');
   const [toWId, setToWId]           = useState('');
   const [trPId, setTrPId]           = useState('');
   const [trQty, setTrQty]           = useState('');
   const [trNote, setTrNote]         = useState('');
   const [trSubmitting, setTrSub]    = useState(false);
-  const [trSuccess, setTrSuccess]   = useState(false);
+
+  // Masuk / Keluar / Transfer — pencarian & paginasi riwayat
+  const [masukSearch, setMasukSearch]         = useState('');
+  const [masukPage, setMasukPage]             = useState(1);
+  const [masukPageSize, setMasukPageSize]     = useState(10);
+  const [keluarSearch, setKeluarSearch]       = useState('');
+  const [keluarPage, setKeluarPage]           = useState(1);
+  const [keluarPageSize, setKeluarPageSize]   = useState(10);
+  const [transferSearch, setTransferSearch]       = useState('');
+  const [transferPage, setTransferPage]           = useState(1);
+  const [transferPageSize, setTransferPageSize]   = useState(10);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
@@ -499,8 +742,7 @@ export default function StockTab({
     });
     if (r.ok) {
       setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
-      setTxSuccess(true);
-      setTimeout(() => setTxSuccess(false), 2500);
+      setShowTxModal(null);
       await loadTx();
       toast.success(type === 'in' ? 'Stok masuk berhasil dicatat.' : 'Stok keluar berhasil dicatat.');
     } else {
@@ -527,8 +769,7 @@ export default function StockTab({
     });
     if (r.ok) {
       setFromWId(''); setToWId(''); setTrPId(''); setTrQty(''); setTrNote('');
-      setTrSuccess(true);
-      setTimeout(() => setTrSuccess(false), 2500);
+      setShowTransferModal(false);
       await loadTx();
       toast.success('Transfer stok berhasil.');
     } else {
@@ -569,8 +810,43 @@ export default function StockTab({
     value: w.id, label: w.name, sublabel: w.location || undefined, emoji: '🏬',
   }));
 
-  // ── Shared form row style ──
-  const fieldLabel = { fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 6, display: 'block' };
+  // ── Modal open helpers ──
+  const openTxModal = (type: 'in' | 'out') => {
+    setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
+    setShowTxModal(type);
+  };
+  const openTransferModal = () => {
+    setFromWId(''); setToWId(''); setTrPId(''); setTrQty(''); setTrNote('');
+    setShowTransferModal(true);
+  };
+
+  // ── Pencarian & paginasi riwayat masuk / keluar / transfer ──
+  const wName = (id?: string) => warehouses.find(w => w.id === id)?.name ?? '';
+  const txSearchText = (e: TxEntry) => [
+    e.productName || products.find(p => p.id === e.productId)?.name || '',
+    e.warehouseName || wName(e.warehouseId),
+    e.fromWarehouseName || wName(e.fromWarehouseId),
+    e.toWarehouseName || wName(e.toWarehouseId),
+    e.note ?? '',
+  ].join(' ').toLowerCase();
+
+  const filteredMasuk = masukSearch ? inTx.filter(e => txSearchText(e).includes(masukSearch.toLowerCase())) : inTx;
+  const totalMasukPages = Math.max(1, Math.ceil(filteredMasuk.length / masukPageSize));
+  const safeMasukPage   = Math.min(masukPage, totalMasukPages);
+  const paginatedMasuk  = filteredMasuk.slice((safeMasukPage - 1) * masukPageSize, safeMasukPage * masukPageSize);
+  const goMasukPage     = (p: number) => setMasukPage(Math.max(1, Math.min(p, totalMasukPages)));
+
+  const filteredKeluar = keluarSearch ? outTx.filter(e => txSearchText(e).includes(keluarSearch.toLowerCase())) : outTx;
+  const totalKeluarPages = Math.max(1, Math.ceil(filteredKeluar.length / keluarPageSize));
+  const safeKeluarPage   = Math.min(keluarPage, totalKeluarPages);
+  const paginatedKeluar  = filteredKeluar.slice((safeKeluarPage - 1) * keluarPageSize, safeKeluarPage * keluarPageSize);
+  const goKeluarPage     = (p: number) => setKeluarPage(Math.max(1, Math.min(p, totalKeluarPages)));
+
+  const filteredTransfer = transferSearch ? transferTx.filter(e => txSearchText(e).includes(transferSearch.toLowerCase())) : transferTx;
+  const totalTransferPages = Math.max(1, Math.ceil(filteredTransfer.length / transferPageSize));
+  const safeTransferPage   = Math.min(transferPage, totalTransferPages);
+  const paginatedTransfer  = filteredTransfer.slice((safeTransferPage - 1) * transferPageSize, safeTransferPage * transferPageSize);
+  const goTransferPage     = (p: number) => setTransferPage(Math.max(1, Math.min(p, totalTransferPages)));
 
   return (
     <div className="flex flex-col" style={{ height: '100%' }}>
@@ -926,248 +1202,195 @@ export default function StockTab({
 
         {/* ════ MASUK ═══════════════════════════════════════════ */}
         {subTab === 'masuk' && (
-          <div className="p-4 lg:p-6 animate-fade-up space-y-5">
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
-                  <TrendingUp size={17} />
+          <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {inTx.length > 0 && (
+                <div className="relative flex-1 min-w-0">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={masukSearch}
+                    onChange={e => { setMasukSearch(e.target.value); setMasukPage(1); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari produk, gudang, atau catatan…"
+                  />
                 </div>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Catat Stok Masuk</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Penerimaan barang dari supplier atau penambahan stok</p>
+              )}
+              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                  <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
+                    <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                  {inTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
                 </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Gudang</label>
-                    <SearchSelect value={txWId} onChange={setTxWId} options={warehouseOptions}
-                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Produk</label>
-                    <SearchSelect value={txPId} onChange={setTxPId} options={productOptions}
-                      placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="number" min={1} placeholder="cth: 50" value={txQty}
-                      onChange={e => setTxQty(e.target.value)} className="input" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Keterangan</label>
-                    <input type="text" placeholder="cth: Restock dari supplier (opsional)" value={txNote}
-                      onChange={e => setTxNote(e.target.value)} className="input" />
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => submitTx('in')}
-                  disabled={txSubmitting || !txWId || !txPId || !txQty || Number(txQty) <= 0}
-                  className="btn-primary justify-center py-3 text-sm"
-                  style={{ background: txSuccess ? 'var(--success)' : undefined }}
-                >
-                  {txSubmitting
-                    ? <><Loader2 size={15} className="animate-spin" /> Menyimpan…</>
-                    : txSuccess
-                      ? <><Check size={15} /> Tersimpan!</>
-                      : <><Plus size={15} /> Tambah Stok Masuk</>}
+                <button onClick={() => openTxModal('in')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Stok Masuk</span><span className="sm:hidden">Tambah</span>
                 </button>
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Clock size={11} /> Riwayat Masuk ({inTx.length})
-                </p>
-                <div className="flex items-center gap-2">
-                  <ViewToggle mode={historyView} onChange={setHistoryView} />
-                  <button onClick={loadTx} className="btn-ghost p-1.5 flex items-center justify-center" style={{ height: 42, width: 42 }} title="Refresh">
-                    <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
-                  </button>
-                </div>
+            {txLoading && inTx.length === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
               </div>
-              <TxList entries={inTx} loading={txLoading} emptyLabel="Belum ada transaksi stok masuk"
-                warehouses={warehouses} products={products} view={historyView} />
-            </div>
+            ) : inTx.length === 0 ? (
+              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+                <TrendingUp size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi stok masuk</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat penerimaan barang dari supplier atau penambahan stok</p>
+              </div>
+            ) : paginatedMasuk.length === 0 ? (
+              <div className="card py-12 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi yang cocok.</p>
+              </div>
+            ) : (
+              <>
+                <TxList entries={paginatedMasuk} loading={false} emptyLabel="Belum ada transaksi stok masuk"
+                  warehouses={warehouses} products={products} view={historyView}
+                  startIndex={(safeMasukPage - 1) * masukPageSize} />
+                <Pagination total={filteredMasuk.length} safePage={safeMasukPage} totalPages={totalMasukPages}
+                  pageSize={masukPageSize} onPageSize={n => { setMasukPageSize(n); setMasukPage(1); }}
+                  onGoPage={goMasukPage} unit="transaksi" />
+              </>
+            )}
           </div>
         )}
 
         {/* ════ KELUAR ══════════════════════════════════════════ */}
         {subTab === 'keluar' && (
-          <div className="p-4 lg:p-6 animate-fade-up space-y-5">
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                  <TrendingDown size={17} />
+          <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {outTx.length > 0 && (
+                <div className="relative flex-1 min-w-0">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={keluarSearch}
+                    onChange={e => { setKeluarSearch(e.target.value); setKeluarPage(1); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari produk, gudang, atau catatan…"
+                  />
                 </div>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Catat Stok Keluar</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pengurangan stok — rusak, terpakai, retur, dll.</p>
+              )}
+              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                  <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
+                    <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                  {outTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
                 </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Gudang</label>
-                    <SearchSelect value={txWId} onChange={setTxWId} options={warehouseOptions}
-                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Produk</label>
-                    <SearchSelect value={txPId} onChange={setTxPId} options={productOptions}
-                      placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="number" min={1} placeholder="cth: 10" value={txQty}
-                      onChange={e => setTxQty(e.target.value)} className="input" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Keterangan</label>
-                    <input type="text" placeholder="cth: Barang rusak saat pengiriman (opsional)" value={txNote}
-                      onChange={e => setTxNote(e.target.value)} className="input" />
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => submitTx('out')}
-                  disabled={txSubmitting || !txWId || !txPId || !txQty || Number(txQty) <= 0}
-                  className="btn-primary justify-center py-3 text-sm"
-                  style={{
-                    background: txSuccess
-                      ? 'var(--success)'
-                      : 'linear-gradient(135deg,#DC2626,#B91C1C)',
-                  }}
-                >
-                  {txSubmitting
-                    ? <><Loader2 size={15} className="animate-spin" /> Menyimpan…</>
-                    : txSuccess
-                      ? <><Check size={15} /> Tersimpan!</>
-                      : <><TrendingDown size={15} /> Kurangi Stok</>}
+                <button onClick={() => openTxModal('out')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, background: 'linear-gradient(135deg,#DC2626,#B91C1C)' }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Stok Keluar</span><span className="sm:hidden">Tambah</span>
                 </button>
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Clock size={11} /> Riwayat Keluar ({outTx.length})
-                </p>
-                <div className="flex items-center gap-2">
-                  <ViewToggle mode={historyView} onChange={setHistoryView} />
-                  <button onClick={loadTx} className="btn-ghost p-1.5 flex items-center justify-center" style={{ height: 42, width: 42 }} title="Refresh">
-                    <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
-                  </button>
-                </div>
+            {txLoading && outTx.length === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
               </div>
-              <TxList entries={outTx} loading={txLoading} emptyLabel="Belum ada transaksi stok keluar"
-                warehouses={warehouses} products={products} view={historyView} />
-            </div>
+            ) : outTx.length === 0 ? (
+              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+                <TrendingDown size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi stok keluar</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat pengurangan stok — rusak, terpakai, retur, dll.</p>
+              </div>
+            ) : paginatedKeluar.length === 0 ? (
+              <div className="card py-12 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi yang cocok.</p>
+              </div>
+            ) : (
+              <>
+                <TxList entries={paginatedKeluar} loading={false} emptyLabel="Belum ada transaksi stok keluar"
+                  warehouses={warehouses} products={products} view={historyView}
+                  startIndex={(safeKeluarPage - 1) * keluarPageSize} />
+                <Pagination total={filteredKeluar.length} safePage={safeKeluarPage} totalPages={totalKeluarPages}
+                  pageSize={keluarPageSize} onPageSize={n => { setKeluarPageSize(n); setKeluarPage(1); }}
+                  onGoPage={goKeluarPage} unit="transaksi" />
+              </>
+            )}
           </div>
         )}
 
         {/* ════ TRANSFER ════════════════════════════════════════ */}
         {subTab === 'transfer' && (
-          <div className="p-4 lg:p-6 animate-fade-up space-y-5">
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: '#EFF6FF', color: '#0284C7' }}>
-                  <ArrowLeftRight size={17} />
+          <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {transferTx.length > 0 && (
+                <div className="relative flex-1 min-w-0">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={transferSearch}
+                    onChange={e => { setTransferSearch(e.target.value); setTransferPage(1); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari produk, gudang, atau catatan…"
+                  />
                 </div>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Transfer Antar Gudang</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pindahkan stok dari satu gudang ke gudang lain</p>
+              )}
+              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                  <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
+                    <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                  {transferTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
                 </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Dari Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={fromWId} onChange={setFromWId} options={warehouseOptions}
-                      placeholder="– Pilih Asal –" searchPlaceholder="Cari gudang…" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Ke Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={toWId} onChange={setToWId}
-                      options={warehouseOptions.filter(o => o.value !== fromWId)}
-                      placeholder="– Pilih Tujuan –" searchPlaceholder="Cari gudang…" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={trPId} onChange={setTrPId} options={productOptions}
-                      placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="number" min={1} placeholder="cth: 20" value={trQty}
-                      onChange={e => setTrQty(e.target.value)} className="input" />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={fieldLabel}>Keterangan</label>
-                  <input type="text" placeholder="cth: Redistribusi stok akhir bulan (opsional)" value={trNote}
-                    onChange={e => setTrNote(e.target.value)} className="input" />
-                </div>
-
-                {fromWId && toWId && fromWId === toWId && (
-                  <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>
-                    Gudang asal dan tujuan tidak boleh sama.
-                  </p>
-                )}
-
-                <button
-                  onClick={submitTransfer}
-                  disabled={trSubmitting || !fromWId || !toWId || !trPId || !trQty || Number(trQty) <= 0 || fromWId === toWId}
-                  className="btn-primary justify-center py-3 text-sm"
-                  style={{
-                    background: trSuccess
-                      ? 'var(--success)'
-                      : 'linear-gradient(135deg,#0284C7,#0369A1)',
-                  }}
-                >
-                  {trSubmitting
-                    ? <><Loader2 size={15} className="animate-spin" /> Memproses…</>
-                    : trSuccess
-                      ? <><Check size={15} /> Transfer Berhasil!</>
-                      : <><ArrowLeftRight size={15} /> Proses Transfer</>}
+                <button onClick={openTransferModal} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, background: 'linear-gradient(135deg,#0284C7,#0369A1)' }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Transfer</span><span className="sm:hidden">Tambah</span>
                 </button>
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Clock size={11} /> Riwayat Transfer ({transferTx.length})
-                </p>
-                <div className="flex items-center gap-2">
-                  <ViewToggle mode={historyView} onChange={setHistoryView} />
-                  <button onClick={loadTx} className="btn-ghost p-1.5 flex items-center justify-center" style={{ height: 42, width: 42 }} title="Refresh">
-                    <RefreshCw size={13} className={txLoading ? 'animate-spin' : ''} />
-                  </button>
-                </div>
+            {txLoading && transferTx.length === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
               </div>
-              <TxList entries={transferTx} loading={txLoading} emptyLabel="Belum ada transaksi transfer"
-                warehouses={warehouses} products={products} view={historyView} />
-            </div>
+            ) : transferTx.length === 0 ? (
+              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+                <ArrowLeftRight size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi transfer</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Pindahkan stok dari satu gudang ke gudang lain</p>
+              </div>
+            ) : paginatedTransfer.length === 0 ? (
+              <div className="card py-12 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi yang cocok.</p>
+              </div>
+            ) : (
+              <>
+                <TxList entries={paginatedTransfer} loading={false} emptyLabel="Belum ada transaksi transfer"
+                  warehouses={warehouses} products={products} view={historyView}
+                  startIndex={(safeTransferPage - 1) * transferPageSize} />
+                <Pagination total={filteredTransfer.length} safePage={safeTransferPage} totalPages={totalTransferPages}
+                  pageSize={transferPageSize} onPageSize={n => { setTransferPageSize(n); setTransferPage(1); }}
+                  onGoPage={goTransferPage} unit="transaksi" />
+              </>
+            )}
           </div>
+        )}
+
+        {showTxModal && (
+          <TxModal
+            type={showTxModal}
+            warehouseOptions={warehouseOptions}
+            productOptions={productOptions}
+            wId={txWId} pId={txPId} qty={txQty} note={txNote}
+            onWId={setTxWId} onPId={setTxPId} onQty={setTxQty} onNote={setTxNote}
+            submitting={txSubmitting}
+            onClose={() => setShowTxModal(null)}
+            onSubmit={() => submitTx(showTxModal)}
+          />
+        )}
+
+        {showTransferModal && (
+          <TransferModal
+            warehouseOptions={warehouseOptions}
+            productOptions={productOptions}
+            fromWId={fromWId} toWId={toWId} pId={trPId} qty={trQty} note={trNote}
+            onFromWId={setFromWId} onToWId={setToWId} onPId={setTrPId} onQty={setTrQty} onNote={setTrNote}
+            submitting={trSubmitting}
+            onClose={() => setShowTransferModal(false)}
+            onSubmit={submitTransfer}
+          />
         )}
 
       </div>
