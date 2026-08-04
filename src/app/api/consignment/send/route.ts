@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
   const data = await req.json() as {
-    locationId: string; locationName: string; note?: string; items: SendItemInput[];
+    locationId: string; locationName: string; note?: string; items: SendItemInput[]; date?: string;
   };
   const items = data.items ?? [];
   if (items.length === 0) return Response.json({ error: 'Minimal 1 produk dikirim.' }, { status: 400 });
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       tx.set(shipmentRef, {
         locationId: data.locationId, locationName: data.locationName,
         items: itemsWithSubtotal, note: data.note ?? '',
-        createdAt: FieldValue.serverTimestamp(),
+        createdAt: data.date ? Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) : FieldValue.serverTimestamp(),
       });
     });
   } catch (err) {

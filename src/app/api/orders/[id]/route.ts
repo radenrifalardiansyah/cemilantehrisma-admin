@@ -1,17 +1,121 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { restoreOrderStock } from '@/lib/order-stock';
 
 type Ctx = { params: Promise<{ id: string }> };
 
+interface OrderItemInput { productId?: string; name: string; weight: string; qty: number; price: number; subtotal: number; }
+interface OrderEditInput {
+  customerName: string; customerPhone?: string; items: OrderItemInput[];
+  subtotal: number; discount?: { amount: number; label: string }; total: number;
+  paymentMethod?: 'cash' | 'transfer' | 'qris' | 'kredit';
+  amountPaid?: number; changeAmount?: number;
+  transferBank?: string; transferAmount?: number; transferProofUrl?: string;
+  paymentStatus?: 'lunas' | 'belum_lunas'; note?: string;
+  date?: string; transactionAt?: string;
+}
+
+function qtyByProduct(items: OrderItemInput[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const it of items) {
+    if (!it.productId || !it.qty) continue;
+    map.set(it.productId, (map.get(it.productId) ?? 0) + it.qty);
+  }
+  return map;
+}
+
 export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
-  const { status, paymentStatus } = await req.json() as { status?: string; paymentStatus?: string };
+  const body = await req.json() as { status?: string; paymentStatus?: string; items?: OrderItemInput[] } & Partial<OrderEditInput>;
   const db = getDb();
   const ref = db.collection('orders').doc(id);
+
+  // Edit lengkap — dikirim dengan `items` (bisa tambah/hapus/ubah qty produk, ganti data
+  // pelanggan/diskon/pembayaran). Selisih qty per produk disesuaikan ke stok gudang dalam
+  // satu transaksi yang sama, mengikuti pola edit di rekap konsinyasi (validasi dulu, baru terapkan).
+  if (Array.isArray(body.items)) {
+    const data = body as OrderEditInput;
+    try {
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const order = snap.data();
+        if (!order) throw new Error('Pesanan tidak ditemukan.');
+        if (order.status === 'dibatalkan') throw new Error('Pesanan yang sudah dibatalkan tidak bisa diedit.');
+
+        const deltas = new Map<string, number>();
+        if (order.source === 'kasir') {
+          const oldQty = qtyByProduct(order.items ?? []);
+          const newQty = qtyByProduct(data.items);
+          const productIds = new Set([...oldQty.keys(), ...newQty.keys()]);
+          for (const pid of productIds) {
+            const delta = (newQty.get(pid) ?? 0) - (oldQty.get(pid) ?? 0);
+            if (delta !== 0) deltas.set(pid, delta);
+          }
+        }
+
+        const productIds = [...deltas.keys()];
+        const productRefs = productIds.map(pid => db.collection('products').doc(pid));
+        const productSnaps = await Promise.all(productRefs.map(r => tx.get(r)));
+
+        const shortages: string[] = [];
+        productIds.forEach((pid, i) => {
+          const delta = deltas.get(pid)!;
+          if (delta <= 0) return;
+          const product = productSnaps[i].data();
+          const stockQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
+          if (!productSnaps[i].exists || stockQty < delta) {
+            shortages.push(`${product?.name ?? pid} (stok tersisa ${stockQty}, butuh tambahan ${delta})`);
+          }
+        });
+        if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
+
+        productIds.forEach((pid, i) => {
+          const delta = deltas.get(pid)!;
+          const product = productSnaps[i].data()!;
+          const currentQty = typeof product.stockQty === 'number' ? product.stockQty as number : 0;
+          const newStockQty = currentQty - delta;
+          tx.update(productRefs[i], {
+            stockQty: newStockQty,
+            stock: product.openPO ? 'open_po' : newStockQty > 0 ? 'ready' : 'habis',
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          const stockRef = db.collection('stock').doc();
+          tx.set(stockRef, {
+            productId: pid,
+            type: delta > 0 ? 'out' : 'in',
+            qty: Math.abs(delta),
+            note: `Edit pesanan ${order.invoiceNo ?? ''}`,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        });
+
+        const items = data.items.map(it => ({ ...it, subtotal: it.price * it.qty }));
+        const orderUpdate: Record<string, unknown> = {
+          customerName: data.customerName, customerPhone: data.customerPhone, items,
+          subtotal: data.subtotal, discount: data.discount, total: data.total,
+          paymentMethod: data.paymentMethod, amountPaid: data.amountPaid, changeAmount: data.changeAmount,
+          transferBank: data.transferBank, transferAmount: data.transferAmount, transferProofUrl: data.transferProofUrl,
+          paymentStatus: data.paymentStatus, note: data.note,
+          // Kasir bisa mengedit tanggal & jam transaksi (mis. salah input awal) — dipakai buat urutan
+          // & filter periode di Pesanan/Laporan Keuangan, sama seperti saat pesanan dibuat.
+          date: data.date,
+          createdAt: data.transactionAt ? Timestamp.fromDate(new Date(data.transactionAt)) : undefined,
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        Object.keys(orderUpdate).forEach(k => { if (orderUpdate[k] === undefined) delete orderUpdate[k]; });
+        tx.update(ref, orderUpdate);
+      });
+    } catch (err) {
+      return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui pesanan.' }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
+
+  // Update status/paymentStatus saja (batalkan, tandai selesai, tandai lunas)
+  const { status, paymentStatus } = body;
   const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
   if (status !== undefined) update.status = status;
   if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;

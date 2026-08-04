@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -10,6 +10,7 @@ import { useConfirm } from '@/components/Confirm';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import ImageLightbox from '@/components/ImageLightbox';
+import SearchSelect from '@/components/SearchSelect';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -27,6 +28,9 @@ interface Order {
   deliveryMethod?: 'pickup' | 'delivery'; address?: string; note?: string;
   stockRestored?: boolean;
 }
+
+interface EditItem { productId?: string; name: string; weight: string; qty: number; price: number; }
+interface PickerProduct { id: string; name: string; price: number; weight: string; published?: boolean; }
 
 function SourceBadge({ source }: { source?: 'kasir' | 'portal' }) {
   return source === 'portal' ? (
@@ -54,6 +58,27 @@ function PaymentStatusBadge({ paymentStatus }: { paymentStatus?: 'lunas' | 'belu
   return paymentStatus === 'belum_lunas' ? <span className="badge badge-red">Belum Lunas</span> : null;
 }
 
+function Checkbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate?: boolean; onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{
+        background:  checked || indeterminate ? 'var(--accent)' : 'transparent',
+        borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked
+          ? <Check size={11} color="#fff" strokeWidth={3} />
+          : null}
+    </button>
+  );
+}
+
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
@@ -61,6 +86,13 @@ function formatDate(o: Order) {
   if (o.createdAt?.seconds)
     return new Date(o.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   return o.date ?? '–';
+}
+
+// Format Date lokal ke value <input type="datetime-local"> ("YYYY-MM-DDTHH:mm") tanpa lewat UTC
+// (beda dengan toISOString(), yang menggeser jam sesuai timezone browser).
+function toDateTimeLocal(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // ─── Excel import ─────────────────────────────────────────────────────────────
@@ -92,16 +124,23 @@ function detectOrderColumn(header: string): OrderTemplateKey | null {
   return null;
 }
 
-export default function OrdersTab({ creds }: { creds: string }) {
+export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled }: {
+  creds: string; highlightInvoice?: string | null; onHighlightHandled?: () => void;
+}) {
   const toast = useToast();
   const confirm = useConfirm();
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [view, setView] = useViewMode('orders');
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const headers = { 'x-admin-auth': creds };
 
@@ -112,6 +151,19 @@ export default function OrdersTab({ creds }: { creds: string }) {
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  // Datang dari klik invoice di Jurnal Kas (Laporan Keuangan) — buka & scroll ke pesanan itu.
+  useEffect(() => {
+    if (!highlightInvoice || orders.length === 0) return;
+    const target = orders.find(o => o.invoiceNo === highlightInvoice);
+    if (!target) { onHighlightHandled?.(); return; }
+    setExpandedId(target.id);
+    setHighlightedId(target.id);
+    requestAnimationFrame(() => rowRefs.current[target.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    onHighlightHandled?.();
+    const t = setTimeout(() => setHighlightedId(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightInvoice, orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const del = async (id: string) => {
     if (!await confirm({ message: 'Hapus pesanan ini? Stok yang sudah terpotong akan dikembalikan ke gudang. Tindakan ini tidak bisa diurungkan.', danger: true })) return;
@@ -171,6 +223,152 @@ export default function OrdersTab({ creds }: { creds: string }) {
       toast.error('Gagal menandai lunas.');
     }
     setMarkingLunasId(null);
+  };
+
+  // ─── Pencarian & seleksi massal ─────────────────────────────────────────────
+  const filtered = orders.filter(o => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return o.customerName?.toLowerCase().includes(q)
+      || o.invoiceNo?.toLowerCase().includes(q)
+      || o.customerPhone?.toLowerCase().includes(q);
+  });
+
+  const toggleSelect = (id: string) =>
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const toggleAll = () => {
+    const ids = filtered.map(o => o.id);
+    const allSelected = ids.every(id => selected.has(id));
+    setSelected(s => {
+      const n = new Set(s);
+      if (allSelected) ids.forEach(id => n.delete(id));
+      else             ids.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selected.size} pesanan yang dipilih? Stok yang sudah terpotong akan dikembalikan ke gudang. Tindakan ini tidak bisa diurungkan.`, danger: true })) return;
+    setBulkDeleting(true);
+    const ids = [...selected];
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
+    const deleted = results.filter(Boolean).length;
+    await load();
+    setSelected(new Set());
+    if (deleted === ids.length) toast.success(`${deleted} pesanan berhasil dihapus & stok dikembalikan ke gudang.`);
+    else toast.error(`${deleted} dari ${ids.length} pesanan berhasil dihapus, sisanya gagal.`);
+    setBulkDeleting(false);
+  };
+
+  // ─── Edit pesanan ───────────────────────────────────────────────────────────
+  const [editingOrder,   setEditingOrder]   = useState<Order | null>(null);
+  const [savingEdit,     setSavingEdit]     = useState(false);
+  const [editItems,      setEditItems]      = useState<EditItem[]>([]);
+  const [editCustomerName,  setEditCustomerName]  = useState('');
+  const [editCustomerPhone, setEditCustomerPhone] = useState('');
+  const [editTransactionAt, setEditTransactionAt] = useState('');
+  const [editDiscountType, setEditDiscountType] = useState<'percent' | 'nominal'>('nominal');
+  const [editDiscountRaw,  setEditDiscountRaw]  = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<'cash' | 'transfer' | 'qris' | 'kredit'>('cash');
+  const [editAmountPaid,    setEditAmountPaid]    = useState('');
+  const [editTransferBank,  setEditTransferBank]  = useState('');
+  const [editTransferAmount, setEditTransferAmount] = useState('');
+  const [editPaymentStatus, setEditPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
+  const [editNote, setEditNote] = useState('');
+  const [addProductId, setAddProductId] = useState('');
+  const [pickerProducts, setPickerProducts] = useState<PickerProduct[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+
+  const openEdit = async (o: Order) => {
+    let products = pickerProducts;
+    if (products.length === 0) {
+      setPickerLoading(true);
+      const r = await fetch(`${API}/api/products`, { headers });
+      if (r.ok) {
+        const { products: p } = await r.json() as { products: PickerProduct[] };
+        products = p;
+        setPickerProducts(p);
+      }
+      setPickerLoading(false);
+    }
+    setEditItems((o.items ?? []).map(it => ({
+      productId: it.productId ?? products.find(p => p.name === it.name)?.id,
+      name: it.name, weight: it.weight, qty: it.qty, price: it.price,
+    })));
+    setEditCustomerName(o.customerName ?? '');
+    setEditCustomerPhone(o.customerPhone ?? '');
+    setEditTransactionAt(o.createdAt?.seconds ? toDateTimeLocal(new Date(o.createdAt.seconds * 1000)) : '');
+    setEditDiscountType('nominal');
+    setEditDiscountRaw(o.discount?.amount ? String(o.discount.amount) : '');
+    setEditPaymentMethod(o.paymentMethod ?? 'cash');
+    setEditAmountPaid(o.amountPaid != null ? String(o.amountPaid) : '');
+    setEditTransferBank(o.transferBank ?? '');
+    setEditTransferAmount(o.transferAmount != null ? String(o.transferAmount) : '');
+    setEditPaymentStatus(o.paymentStatus ?? 'lunas');
+    setEditNote(o.note ?? '');
+    setAddProductId('');
+    setEditingOrder(o);
+  };
+
+  const addEditItem = (productId: string) => {
+    const product = pickerProducts.find(p => p.id === productId);
+    if (!product) return;
+    setEditItems(prev => {
+      const idx = prev.findIndex(i => i.productId === productId);
+      if (idx >= 0) return prev.map((i, ix) => ix === idx ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { productId: product.id, name: product.name, weight: product.weight, qty: 1, price: product.price }];
+    });
+    setAddProductId('');
+  };
+  const removeEditItem = (index: number) => setEditItems(prev => prev.filter((_, i) => i !== index));
+  const setEditItemQty = (index: number, qty: number) =>
+    setEditItems(prev => prev.map((it, i) => i === index ? { ...it, qty: Math.max(1, qty) } : it));
+
+  const editSubtotal = editItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const editDiscountNum = parseFloat(editDiscountRaw) || 0;
+  const editDiscountAmount = editDiscountType === 'percent'
+    ? Math.min(Math.round(editSubtotal * editDiscountNum / 100), editSubtotal)
+    : Math.min(editDiscountNum, editSubtotal);
+  const editDiscountLabel = editDiscountType === 'percent' ? `${editDiscountNum}%` : formatRp(editDiscountAmount);
+  const editTotal = editSubtotal - editDiscountAmount;
+  const editAmountPaidNum = parseFloat(editAmountPaid) || 0;
+  const editChangeAmount = editAmountPaidNum - editTotal;
+  const editTransferAmountNum = parseFloat(editTransferAmount) || 0;
+
+  const submitEdit = async () => {
+    if (!editingOrder) return;
+    if (editItems.length === 0) { toast.error('Pesanan harus punya minimal 1 produk.'); return; }
+    if (!editCustomerName.trim()) { toast.error('Nama pelanggan wajib diisi.'); return; }
+
+    setSavingEdit(true);
+    const items = editItems.map(i => ({ productId: i.productId, name: i.name, weight: i.weight, qty: i.qty, price: i.price, subtotal: i.price * i.qty }));
+    const txDate = editTransactionAt ? new Date(editTransactionAt) : null;
+    const r = await fetch(`${API}/api/orders/${editingOrder.id}`, {
+      method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerName: editCustomerName.trim(), customerPhone: editCustomerPhone.trim(), items,
+        subtotal: editSubtotal,
+        discount: editDiscountAmount > 0 ? { amount: editDiscountAmount, label: editDiscountLabel } : undefined,
+        total: editTotal,
+        paymentMethod: editPaymentMethod,
+        ...(editPaymentMethod === 'cash' ? { amountPaid: editAmountPaidNum, changeAmount: editChangeAmount } : {}),
+        ...(editPaymentMethod === 'transfer' ? { transferBank: editTransferBank, transferAmount: editTransferAmountNum } : {}),
+        ...(editPaymentMethod === 'kredit' ? { paymentStatus: editPaymentStatus } : {}),
+        note: editNote.trim() || undefined,
+        ...(txDate ? { transactionAt: txDate.toISOString(), date: txDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) } : {}),
+      }),
+    });
+    if (r.ok) {
+      await load();
+      toast.success('Pesanan berhasil diperbarui.');
+      setEditingOrder(null);
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal memperbarui pesanan.');
+    }
+    setSavingEdit(false);
   };
 
   const exportExcel = async (rows: Order[]) => {
@@ -459,8 +657,20 @@ export default function OrdersTab({ creds }: { creds: string }) {
     <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-end flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        {orders.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari nama pelanggan, no. invoice, atau no. HP…"
+            />
+          </div>
+        )}
+        <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap flex-shrink-0">
           <Tooltip label="Unduh Template">
             <button onClick={downloadOrderTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
               <FileSpreadsheet size={14} />
@@ -516,11 +726,38 @@ export default function OrdersTab({ creds }: { creds: string }) {
           <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pesanan</p>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pesanan dari Kasir maupun checkout Website akan muncul di sini otomatis.</p>
         </div>
-      ) : view === 'table' ? (
+      ) : (
+        <>
+          {/* Select-all bar */}
+          {filtered.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+              <Checkbox
+                checked={filtered.every(o => selected.has(o.id))}
+                indeterminate={filtered.some(o => selected.has(o.id)) && !filtered.every(o => selected.has(o.id))}
+                onChange={toggleAll}
+              />
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                {selected.size > 0 ? `${selected.size} dipilih` : `${filtered.length} pesanan`}
+              </span>
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="card py-12 text-center">
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada pesanan yang cocok.</p>
+            </div>
+          ) : view === 'table' ? (
         <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-          {orders.map(o => (
-            <div key={o.id}>
+          {filtered.map((o, idx) => {
+            const isSelected = selected.has(o.id);
+            return (
+            <div key={o.id} ref={el => { rowRefs.current[o.id] = el; }}
+              style={{ transition: 'background-color 0.6s ease', backgroundColor: highlightedId === o.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
               <div className="flex items-center gap-3 px-4 py-3.5">
+                <Checkbox checked={isSelected} onChange={() => toggleSelect(o.id)} />
+                <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
+                  {idx + 1}
+                </span>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{ background: 'var(--accent-bg)' }}>
                   <Receipt size={17} style={{ color: 'var(--accent)' }} />
@@ -557,6 +794,11 @@ export default function OrdersTab({ creds }: { creds: string }) {
                     </button>
                   )}
                   {o.status !== 'dibatalkan' && (
+                    <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  {o.status !== 'dibatalkan' && (
                     <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
                       className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
                       {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
@@ -573,14 +815,21 @@ export default function OrdersTab({ creds }: { creds: string }) {
 
               {expandedId === o.id && <OrderDetail o={o} />}
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {orders.map(o => (
-            <div key={o.id} className="card overflow-hidden">
+          {filtered.map(o => {
+            const isSelected = selected.has(o.id);
+            return (
+            <div key={o.id} ref={el => { rowRefs.current[o.id] = el; }} className="card overflow-hidden relative"
+              style={{ transition: 'background-color 0.6s ease', backgroundColor: highlightedId === o.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
               <div className="p-4 space-y-3">
                 <div className="flex items-start gap-3">
+                  <div className="pt-0.5">
+                    <Checkbox checked={isSelected} onChange={() => toggleSelect(o.id)} />
+                  </div>
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ background: 'var(--accent-bg)' }}>
                     <Receipt size={17} style={{ color: 'var(--accent)' }} />
@@ -597,6 +846,11 @@ export default function OrdersTab({ creds }: { creds: string }) {
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    {o.status !== 'dibatalkan' && (
+                      <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
+                        <Pencil size={13} />
+                      </button>
+                    )}
                     {o.status !== 'dibatalkan' && (
                       <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
                         className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
@@ -637,7 +891,204 @@ export default function OrdersTab({ creds }: { creds: string }) {
 
               {expandedId === o.id && <OrderDetail o={o} />}
             </div>
-          ))}
+            );
+          })}
+        </div>
+          )}
+        </>
+      )}
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => exportExcel(orders.filter(o => selected.has(o.id)))} disabled={exporting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              Export
+            </button>
+            <button onClick={bulkDelete} disabled={bulkDeleting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
+            </button>
+            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editingOrder && (
+        <div className="modal-overlay" onClick={() => !savingEdit && setEditingOrder(null)}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Pencil size={17} /></div>
+                <div>
+                  <p className="modal-title">Edit Pesanan</p>
+                  <p className="modal-subtitle">{editingOrder.invoiceNo} · {formatDate(editingOrder)}</p>
+                </div>
+              </div>
+              <button onClick={() => setEditingOrder(null)} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="field-label">Nama Pelanggan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)} className="input" />
+                  </div>
+                  <div>
+                    <label className="field-label">No. HP</label>
+                    <input type="text" value={editCustomerPhone} onChange={e => setEditCustomerPhone(e.target.value)} className="input" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="field-label">Tanggal &amp; Waktu Transaksi</label>
+                  <input type="datetime-local" value={editTransactionAt} onChange={e => setEditTransactionAt(e.target.value)} className="input" />
+                </div>
+
+                <div>
+                  <label className="field-label">Produk</label>
+                  {pickerLoading ? (
+                    <div className="flex items-center justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {editItems.map((it, i) => (
+                        <div key={i} className="flex items-center gap-2 p-2.5 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{it.name}</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{it.weight} · {formatRp(it.price)}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button type="button" onClick={() => setEditItemQty(i, it.qty - 1)} className="btn-ghost p-1.5"><Minus size={12} /></button>
+                            <span className="text-sm font-bold tabular" style={{ width: 22, textAlign: 'center' }}>{it.qty}</span>
+                            <button type="button" onClick={() => setEditItemQty(i, it.qty + 1)} className="btn-ghost p-1.5"><Plus size={12} /></button>
+                          </div>
+                          <p className="text-sm font-bold tabular flex-shrink-0" style={{ width: 80, textAlign: 'right', color: 'var(--text-primary)' }}>{formatRp(it.price * it.qty)}</p>
+                          <button type="button" onClick={() => removeEditItem(i)} className="btn-ghost p-1.5 flex-shrink-0" style={{ color: 'var(--danger)' }}><Trash2 size={12} /></button>
+                        </div>
+                      ))}
+                      <SearchSelect value={addProductId} onChange={addEditItem}
+                        options={pickerProducts.filter(p => p.published !== false).map(p => ({ value: p.id, label: p.name, sublabel: `${p.weight} · ${formatRp(p.price)}` }))}
+                        placeholder="+ Tambah Produk" searchPlaceholder="Cari produk…" />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="field-label">Diskon</label>
+                  <div className="flex gap-2">
+                    <div className="flex rounded-xl overflow-hidden border flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+                      {(['nominal', 'percent'] as const).map(t => (
+                        <button key={t} type="button" onClick={() => setEditDiscountType(t)}
+                          className="px-3 py-2.5 text-xs font-bold transition-all"
+                          style={editDiscountType === t ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                          {t === 'nominal' ? 'Rp' : '%'}
+                        </button>
+                      ))}
+                    </div>
+                    <input type="number" min="0" value={editDiscountRaw} onChange={e => setEditDiscountRaw(e.target.value)}
+                      placeholder="0" className="input" style={{ flex: 1 }} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="field-label">Metode Pembayaran</label>
+                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                    {(['cash', 'transfer', 'qris', 'kredit'] as const).map(m => (
+                      <button key={m} type="button" onClick={() => setEditPaymentMethod(m)}
+                        className="flex-1 px-2 py-2.5 text-xs font-bold transition-all"
+                        style={editPaymentMethod === m ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                        {m === 'cash' ? 'Tunai' : m === 'transfer' ? 'Transfer' : m === 'qris' ? 'QRIS' : 'Kredit'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {editPaymentMethod === 'cash' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="field-label">Dibayar</label>
+                      <input type="number" min="0" value={editAmountPaid} onChange={e => setEditAmountPaid(e.target.value)} placeholder="0" className="input" />
+                    </div>
+                    <div>
+                      <label className="field-label">Kembalian</label>
+                      <p className="text-sm font-bold tabular px-3.5 py-2.5" style={{ color: editChangeAmount < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                        {formatRp(editChangeAmount)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {editPaymentMethod === 'transfer' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="field-label">Bank</label>
+                      <input type="text" value={editTransferBank} onChange={e => setEditTransferBank(e.target.value)} className="input" />
+                    </div>
+                    <div>
+                      <label className="field-label">Jumlah Transfer</label>
+                      <input type="number" min="0" value={editTransferAmount} onChange={e => setEditTransferAmount(e.target.value)} className="input" />
+                    </div>
+                  </div>
+                )}
+                {editPaymentMethod === 'kredit' && (
+                  <div>
+                    <label className="field-label">Status Pembayaran</label>
+                    <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                      {(['lunas', 'belum_lunas'] as const).map(s => (
+                        <button key={s} type="button" onClick={() => setEditPaymentStatus(s)}
+                          className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
+                          style={editPaymentStatus === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                          {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="field-label">Catatan</label>
+                  <input type="text" value={editNote} onChange={e => setEditNote(e.target.value)} className="input" />
+                </div>
+
+                <div className="space-y-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                  <div className="flex justify-between text-xs">
+                    <span style={{ color: 'var(--text-muted)' }}>Subtotal</span>
+                    <span className="tabular font-semibold" style={{ color: 'var(--text-primary)' }}>{formatRp(editSubtotal)}</span>
+                  </div>
+                  {editDiscountAmount > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span style={{ color: 'var(--success)' }}>Diskon ({editDiscountLabel})</span>
+                      <span className="tabular font-semibold" style={{ color: 'var(--success)' }}>− {formatRp(editDiscountAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-bold pt-1">
+                    <span style={{ color: 'var(--text-primary)' }}>Total</span>
+                    <span className="tabular" style={{ color: 'var(--accent)' }}>{formatRp(editTotal)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setEditingOrder(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={submitEdit} disabled={savingEdit} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {savingEdit ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />}
+                {savingEdit ? 'Menyimpan…' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

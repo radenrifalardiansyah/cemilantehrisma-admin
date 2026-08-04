@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import {
-  RefreshCw, MessageCircle, TrendingUp, Receipt, Package, Users,
+  RefreshCw, TrendingUp, Receipt, Package, Users,
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
-  MousePointerClick, Tag, ShoppingCart,
+  MousePointerClick, Tag, ShoppingCart, Download,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
+import { usePwaInstall } from '@/lib/usePwaInstall';
 import TopbarPortal from '@/components/TopbarPortal';
 import ProductsTab   from '@/components/tabs/ProductsTab';
 import CategoriesTab from '@/components/tabs/CategoriesTab';
@@ -26,8 +27,6 @@ import CapitalTab from '@/components/tabs/CapitalTab';
 import SettingsTab  from '@/components/tabs/SettingsTab';
 import PosTab from '@/components/tabs/PosTab';
 import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer } from '@/lib/pos-types';
-
-const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -59,6 +58,27 @@ const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+function parseWebStats(ws: Record<string, unknown>): WebStats {
+  const devArr = (ws.devices as { type: string; count: number }[]) ?? [];
+  return {
+    visitors:  ((ws.stats as Record<string, number>)?.visitors  ?? 0),
+    pageViews: ((ws.stats as Record<string, number>)?.pageViews ?? 0),
+    mobile:    devArr.find(d => d.type === 'mobile')?.count  ?? 0,
+    desktop:   devArr.find(d => d.type === 'desktop')?.count ?? 0,
+    daily:     (ws.daily    as WebStats['daily'])    ?? [],
+    topPages:  (ws.paths    as WebStats['topPages']) ?? [],
+    topMenu:       (ws.topMenu       as WebStats['topMenu'])       ?? [],
+    topCategories: (ws.topCategories as WebStats['topCategories']) ?? [],
+    topProducts:   (ws.topProducts   as WebStats['topProducts'])   ?? [],
+  };
+}
+
+function webStatsErrMsg(res: Response | null): string {
+  if (!res) return 'Tidak dapat terhubung ke server.';
+  if (res.status === 401) return 'Sesi admin tidak valid, silakan login ulang.';
+  return `Gagal memuat data pengunjung (status ${res.status}).`;
+}
 
 // ─── Revenue Chart — smooth bezier line + hover tooltip ──────────────────────
 function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
@@ -268,13 +288,17 @@ export default function AdminPage() {
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [authUser, setAuthUser] = useState<{ username: string; role: string } | null>(null);
+  const { canInstall, installed, promptInstall } = usePwaInstall();
 
   // ── Tab ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
 
   // ── Analytics ────────────────────────────────────────────
   const [dashData, setDashData] = useState<DashData | null>(null);
   const [loading,  setLoading]  = useState(false);
+  const [webRange, setWebRange] = useState<7 | 30>(30);
+  const [webLoading, setWebLoading] = useState(false);
 
   // ── POS (shared data — PosTab owns cart/checkout state itself) ─────
   const [posProducts,    setPosProducts]    = useState<PosProduct[]>([]);
@@ -297,7 +321,7 @@ export default function AdminPage() {
         fetch('/api/categories',   { headers: h }),
         fetch('/api/master-banks', { headers: h }),
         fetch('/api/customers',    { headers: h }),
-        fetch(`${MAIN_APP}/api/admin/stats`, { headers: h }).catch(() => null),
+        fetch(`/api/web-stats?days=${webRange}`, { headers: h }).catch(() => null),
       ]);
 
       // ── Firestore data ────────────────────────────────────
@@ -334,29 +358,13 @@ export default function AdminPage() {
         return { date: label, revenue: dayOrders.reduce((s, o) => s + o.total, 0), count: dayOrders.length };
       });
 
-      // ── Web analytics (main app) ──────────────────────────
+      // ── Web analytics (Firestore, same project) ───────────
       let webStats: WebStats | null = null;
       let webStatsErr = '';
       if (webRes?.ok) {
-        const ws = await webRes.json() as Record<string, unknown>;
-        const devArr = (ws.devices as { type: string; count: number }[]) ?? [];
-        webStats = {
-          visitors:  ((ws.stats as Record<string, number>)?.visitors  ?? 0),
-          pageViews: ((ws.stats as Record<string, number>)?.pageViews ?? 0),
-          mobile:    devArr.find(d => d.type === 'mobile')?.count  ?? 0,
-          desktop:   devArr.find(d => d.type === 'desktop')?.count ?? 0,
-          daily:     (ws.daily    as WebStats['daily'])    ?? [],
-          topPages:  (ws.paths    as WebStats['topPages']) ?? [],
-          topMenu:       (ws.topMenu       as WebStats['topMenu'])       ?? [],
-          topCategories: (ws.topCategories as WebStats['topCategories']) ?? [],
-          topProducts:   (ws.topProducts   as WebStats['topProducts'])   ?? [],
-        };
+        webStats = parseWebStats(await webRes.json() as Record<string, unknown>);
       } else {
-        webStatsErr = !webRes
-          ? 'Tidak dapat terhubung ke main app.'
-          : webRes.status === 401
-            ? 'Kredensial tidak cocok. Cek env ADMIN_USERNAME/PASSWORD di Vercel main app.'
-            : `Gagal memuat data pengunjung (status ${webRes.status}).`;
+        webStatsErr = webStatsErrMsg(webRes);
       }
 
       const salesMap: Record<string, number> = {};
@@ -372,6 +380,24 @@ export default function AdminPage() {
       setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, topProducts, webStats, webStatsErr });
     } catch {}
     setLoading(false);
+  }, [creds, webRange]);
+
+  // ── Web stats range toggle — refetch only the analytics section ──
+  const changeWebRange = useCallback(async (range: 7 | 30) => {
+    setWebRange(range);
+    setWebLoading(true);
+    try {
+      const res = await fetch(`/api/web-stats?days=${range}`, { headers: { 'x-admin-auth': creds } });
+      if (res.ok) {
+        const webStats = parseWebStats(await res.json() as Record<string, unknown>);
+        setDashData(d => d ? { ...d, webStats, webStatsErr: '' } : d);
+      } else {
+        setDashData(d => d ? { ...d, webStats: null, webStatsErr: webStatsErrMsg(res) } : d);
+      }
+    } catch {
+      setDashData(d => d ? { ...d, webStats: null, webStatsErr: webStatsErrMsg(null) } : d);
+    }
+    setWebLoading(false);
   }, [creds]);
 
   // ── Session restore ──────────────────────────────────────
@@ -494,6 +520,18 @@ export default function AdminPage() {
               Masuk ke Dashboard
             </button>
           </form>
+
+          {canInstall && !installed && (
+            <button
+              type="button"
+              onClick={promptInstall}
+              className="btn-ghost w-full justify-center py-3 text-sm mt-3 flex items-center gap-2"
+              style={{ border: '1px solid var(--border-2)' }}
+            >
+              <Download size={15} />
+              Install Aplikasi Admin
+            </button>
+          )}
 
           <p className="text-center text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
             Dikembangkan oleh PT. Eleven Digital Indonesia
@@ -654,14 +692,30 @@ export default function AdminPage() {
       )}
 
       {/* ── Analitik Pengunjung Web ── */}
-      <div className="flex items-center gap-2.5 pt-2">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: '#EFF6FF', color: '#0284C7' }}>
-          <Globe size={16} />
+      <div className="flex items-center justify-between gap-2.5 pt-2 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: '#EFF6FF', color: '#0284C7' }}>
+            <Globe size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>Analitik Pengunjung Web</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Data kunjungan situs toko</p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>Analitik Pengunjung Web</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Data dari main app (30 hari terakhir)</p>
+
+        <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+          {([7, 30] as const).map(r => (
+            <button key={r} onClick={() => changeWebRange(r)} disabled={webLoading}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+              style={{
+                background: webRange === r ? 'var(--surface)' : 'transparent',
+                color: webRange === r ? 'var(--accent)' : 'var(--text-muted)',
+                boxShadow: webRange === r ? '0 1px 4px rgba(30,16,8,0.10)' : 'none',
+              }}>
+              {r} hari
+            </button>
+          ))}
         </div>
       </div>
 
@@ -687,13 +741,12 @@ export default function AdminPage() {
         const todayViews = ws.daily.length > 0 ? ws.daily[ws.daily.length - 1].views : 0;
         return (
           <>
-            {/* Stat cards */}
+            {/* Stat cards — Perangkat gabung jadi 1 kartu (mobile/desktop split) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { icon: <Users      size={15}/>, label: 'Pengunjung Unik', val: ws.visitors.toLocaleString('id'),  color: '#0284C7', bg: '#EFF6FF' },
                 { icon: <Eye        size={15}/>, label: 'Total Pageview',  val: ws.pageViews.toLocaleString('id'), color: '#7C3AED', bg: '#F5F3FF' },
                 { icon: <BarChart2  size={15}/>, label: 'Hlm / Pengunjung',val: avgPages,                          color: '#059669', bg: '#ECFDF5' },
-                { icon: <Eye        size={15}/>, label: 'Pageview Hari Ini',val: todayViews.toString(),             color: 'var(--accent)', bg: 'var(--accent-bg)' },
               ].map((c, i) => (
                 <div key={i} className="card relative p-4 overflow-hidden">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
@@ -706,63 +759,44 @@ export default function AdminPage() {
                     style={{ background: `linear-gradient(90deg, ${c.color}, ${c.color}88)` }} />
                 </div>
               ))}
-            </div>
 
-            {/* Pageview trend + device split */}
-            <div className="grid lg:grid-cols-3 gap-4">
-              {/* Pageview chart */}
-              {ws.daily.length > 0 && (
-                <div className="card p-5 lg:col-span-2">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Pageview 7 Hari</p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Kunjungan halaman per hari</p>
-                    </div>
-                    <span className="badge" style={{ background: '#EFF6FF', color: '#0284C7' }}>
-                      Hari ini: {todayViews}
-                    </span>
+              {/* Perangkat — mobile/desktop split dalam 1 kartu */}
+              <div className="card relative p-4 overflow-hidden">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Smartphone size={13} style={{ color: '#0284C7' }} />
+                    <Monitor size={13} style={{ color: '#7C3AED' }} />
                   </div>
-                  <PageviewChart data={ws.daily.slice(-7)} />
+                  <span className="text-[10px] font-semibold tabular" style={{ color: 'var(--text-muted)' }}>
+                    {devTotal.toLocaleString('id')} sesi
+                  </span>
                 </div>
-              )}
-
-              {/* Device split */}
-              <div className="card p-5">
-                <div className="flex items-center gap-2 mb-5">
-                  <Smartphone size={15} style={{ color: '#0284C7' }} />
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perangkat</p>
-                </div>
-                <div className="space-y-4">
-                  {[
-                    { icon: <Smartphone size={14}/>, label: 'Mobile',  pct: mPct, cnt: ws.mobile,  color: '#0284C7', bg: '#EFF6FF' },
-                    { icon: <Monitor    size={14}/>, label: 'Desktop', pct: dPct, cnt: ws.desktop, color: '#7C3AED', bg: '#F5F3FF' },
-                  ].map(d => (
-                    <div key={d.label}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                            style={{ background: d.bg, color: d.color }}>
-                            {d.icon}
-                          </div>
-                          <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{d.label}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold tabular" style={{ color: 'var(--text-primary)' }}>{d.cnt.toLocaleString('id')}</span>
-                          <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>{d.pct}%</span>
-                        </div>
-                      </div>
-                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-2)' }}>
-                        <div className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${d.pct}%`, background: d.color }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs mt-5 text-center tabular" style={{ color: 'var(--text-muted)' }}>
-                  Total {devTotal.toLocaleString('id')} sesi
+                <p className="text-xl font-extrabold tabular leading-tight mb-2" style={{ color: 'var(--text-primary)' }}>
+                  {mPct}% <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>mobile</span>
                 </p>
+                <div className="h-2 rounded-full overflow-hidden flex" style={{ background: 'var(--border-2)' }}>
+                  <div style={{ width: `${mPct}%`, background: '#0284C7' }} />
+                  <div style={{ width: `${dPct}%`, background: '#7C3AED' }} />
+                </div>
+                <p className="text-[11px] font-semibold mt-1.5" style={{ color: 'var(--text-muted)' }}>Perangkat</p>
               </div>
             </div>
+
+            {/* Pageview trend */}
+            {ws.daily.length > 0 && (
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Pageview 7 Hari</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Kunjungan halaman per hari</p>
+                  </div>
+                  <span className="badge" style={{ background: '#EFF6FF', color: '#0284C7' }}>
+                    Hari ini: {todayViews}
+                  </span>
+                </div>
+                <PageviewChart data={ws.daily.slice(-7)} />
+              </div>
+            )}
 
             {/* Top pages */}
             {ws.topPages.length > 0 && (
@@ -811,7 +845,7 @@ export default function AdminPage() {
                       </div>
                       <div>
                         <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Menu Paling Banyak Diklik</p>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik navigasi 30 hari terakhir</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik navigasi {webRange} hari terakhir</p>
                       </div>
                     </div>
                     <TopListChart
@@ -870,19 +904,6 @@ export default function AdminPage() {
         );
       })()}
 
-      {/* WA Rekap */}
-      <button
-        onClick={() => {
-          const date = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-          const ws = dashData?.webStats;
-          const msg = `*Rekap Toko Cemilan Teh Risma*\n_${date}_\n\n📦 Total Pesanan: ${dashData?.orderCount ?? 0}\n💰 Total Omzet: ${formatRp(dashData?.revenue ?? 0)}\n🛍️ Produk Aktif: ${dashData?.productCount ?? 0}\n👥 Total Reseller: ${dashData?.resellerCount ?? 0}${ws ? `\n\n🌐 *Pengunjung Web*\n👤 Unik: ${ws.visitors}\n👁️ Pageview: ${ws.pageViews}\n📱 Mobile: ${ws.mobile} | 💻 Desktop: ${ws.desktop}` : ''}\n\n_Dashboard Admin Cemilan Teh Risma_`;
-          window.open(`https://wa.me/6281212132014?text=${encodeURIComponent(msg)}`, '_blank');
-        }}
-        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl text-sm font-bold text-white shadow-md"
-        style={{ background: 'linear-gradient(135deg,#16A34A,#22C55E)' }}>
-        <MessageCircle size={17} /> Kirim Rekap ke WhatsApp
-      </button>
-
       <p className="text-center text-xs pb-4" style={{ color: 'var(--text-muted)' }}>
         Dikembangkan oleh{' '}
         <a href="https://eleven-digital.id/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
@@ -917,10 +938,14 @@ export default function AdminPage() {
         username={adminUsername}
         onCartChange={setPosCartCount}
         onGoToOrders={() => setActiveTab('orders')}
+        onRefresh={() => fetchDash()}
       />
       {activeTab === 'products'   && <ProductsTab   creds={creds} />}
       {activeTab === 'categories' && <CategoriesTab creds={creds} />}
-      {activeTab === 'orders'     && <OrdersTab    creds={creds} />}
+      {activeTab === 'orders'     && (
+        <OrdersTab creds={creds} highlightInvoice={highlightInvoice}
+          onHighlightHandled={() => setHighlightInvoice(null)} />
+      )}
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
       {activeTab === 'customers'  && <CustomersTab creds={creds} />}
       {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
@@ -930,7 +955,10 @@ export default function AdminPage() {
       {activeTab === 'consignment' && <ConsignmentTab creds={creds} products={posProducts} />}
       {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
       {activeTab === 'capital'    && <CapitalTab    creds={creds} />}
-      {activeTab === 'finance-report' && <FinanceReportTab creds={creds} />}
+      {activeTab === 'finance-report' && (
+        <FinanceReportTab creds={creds}
+          onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />
+      )}
       {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
     </AppShell>
   );

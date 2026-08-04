@@ -133,9 +133,18 @@ body {
   border-radius: 0 3px 3px 0;
 }
 
+/* ── App shell height (falls back to 100vh on browsers without dvh) ── */
+.h-app-screen {
+  height: 100vh;
+  height: 100dvh;
+}
+
 /* ── Mobile content padding (clears fixed bottom nav) ───────── */
+:root {
+  --bottom-nav-h: 64px;
+}
 .mobile-content-pad {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--bottom-nav-h) + 8px + env(safe-area-inset-bottom));
 }
 @media (min-width: 1024px) {
   .mobile-content-pad { padding-bottom: 0; }
@@ -500,9 +509,11 @@ body {
   left: -9999px;
   top: 0;
   width: 80mm;
+  box-sizing: border-box;
 }
 @media print {
+  @page { size: 80mm auto; margin: 0; }
   body * { visibility: hidden; }
   #pos-receipt, #pos-receipt * { visibility: visible; }
-  #pos-receipt { position: fixed; left: 0; top: 0; width: 80mm; }
+  #pos-receipt { position: fixed; left: 0; top: 0; width: 80mm; box-sizing: border-box; }
 }

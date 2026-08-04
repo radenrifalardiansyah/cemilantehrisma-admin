@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AdminSplashScreen from "@/components/AdminSplashScreen";
@@ -16,6 +16,23 @@ export const metadata: Metadata = {
   title: "Dashboard Admin — Cemilan Teh Risma",
   description: "Admin dashboard Cemilan Teh Risma",
   robots: { index: false, follow: false },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "CTR Admin",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#D4691E",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

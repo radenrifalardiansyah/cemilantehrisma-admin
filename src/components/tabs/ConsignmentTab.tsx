@@ -53,6 +53,10 @@ function formatDate(seconds?: number) {
   });
 }
 
+function toISODate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 type SubTab = 'lokasi' | 'kirim' | 'rekap';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'lokasi', label: 'Lokasi',      Icon: Store },
@@ -68,10 +72,10 @@ const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: 
 
 interface ConsignmentStockItem { productId: string; productName: string; stockQty: number; hargaTitip: number }
 
-interface ShipmentItem { productName: string; qty: number; hargaTitip: number; subtotal: number }
+interface ShipmentItem { productId: string; productName: string; qty: number; hargaTitip: number; subtotal: number }
 interface Shipment { id: string; locationId?: string; locationName: string; items: ShipmentItem[]; note?: string; createdAt?: { seconds: number } }
 
-interface RecapItem { productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; revenue: number }
+interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; revenue: number }
 interface Recap {
   id: string; locationId?: string; locationName: string; items: RecapItem[];
   totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number; note?: string;
@@ -535,9 +539,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   };
 
   // ── Kirim Stok ───────────────────────────────────────────────
+  const [showSendForm,   setShowSendForm]   = useState(false);
+  const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
   const [sendLocationId, setSendLocationId] = useState('');
   const [sendRows,       setSendRows]       = useState<SendRow[]>([{ ...EMPTY_SEND_ROW }]);
   const [sendNote,       setSendNote]       = useState('');
+  const [sendDate,       setSendDate]       = useState(() => toISODate(new Date()));
   const [sending,        setSending]        = useState(false);
   const [shipments,        setShipments]        = useState<Shipment[]>([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(true);
@@ -548,6 +555,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [shipmentPageSize, setShipmentPageSize] = useState(10);
   const [selectedShipments, setSelectedShipments] = useState<Set<string>>(new Set());
   const [exportingShipments, setExportingShipments] = useState(false);
+  const [deletingShipmentId, setDeletingShipmentId] = useState<string | null>(null);
+  const [bulkDeletingShipments, setBulkDeletingShipments] = useState(false);
 
   const loadShipments = async () => {
     setShipmentsLoading(true);
@@ -564,6 +573,20 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const sendTotal = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.hargaTitip) || 0), 0);
   const canSubmitSend = !!sendLocationId && sendRows.some(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0);
 
+  const openCreateSend = () => {
+    setEditingShipment(null); setSendLocationId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
+    setSendDate(toISODate(new Date()));
+    setShowSendForm(true);
+  };
+  const openEditSend = (s: Shipment) => {
+    setEditingShipment(s);
+    setSendLocationId(s.locationId ?? '');
+    setSendRows(s.items.map(it => ({ productId: it.productId, qty: String(it.qty), hargaTitip: String(it.hargaTitip) })));
+    setSendNote(s.note ?? '');
+    setSendDate(s.createdAt?.seconds ? toISODate(new Date(s.createdAt.seconds * 1000)) : toISODate(new Date()));
+    setShowSendForm(true);
+  };
+
   const submitSend = async () => {
     if (!canSubmitSend) return;
     setSending(true);
@@ -575,13 +598,19 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
           const p = products.find(pp => pp.id === r.productId)!;
           return { productId: p.id, productName: p.name, qty: parseFloat(r.qty) || 0, hargaTitip: parseFloat(r.hargaTitip) || 0 };
         });
-      const res = await fetch(`${API}/api/consignment/send`, {
-        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locationId: location.id, locationName: location.name, items, note: sendNote }),
-      });
+      const res = editingShipment
+        ? await fetch(`${API}/api/consignment/send/${editingShipment.id}`, {
+            method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationId: location.id, locationName: location.name, items, note: sendNote, date: sendDate }),
+          })
+        : await fetch(`${API}/api/consignment/send`, {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationId: location.id, locationName: location.name, items, note: sendNote, date: sendDate }),
+          });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan pengiriman.'); return; }
-      toast.success(`Stok berhasil dikirim ke "${location.name}".`);
+      toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Stok berhasil dikirim ke "${location.name}".`);
+      setShowSendForm(false); setEditingShipment(null);
       setSendLocationId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
       await Promise.all([loadShipments(), loadLocations()]);
     } finally { setSending(false); }
@@ -690,6 +719,38 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const toggleSelectShipment = (id: string) =>
     setSelectedShipments(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  const deleteShipment = async (s: Shipment) => {
+    if (!await confirm({ message: `Hapus riwayat kirim ke "${s.locationName}"? Stok toko akan dikembalikan.`, danger: true })) return;
+    setDeletingShipmentId(s.id);
+    const r = await fetch(`${API}/api/consignment/send/${s.id}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      setShipments(prev => prev.filter(x => x.id !== s.id));
+      setSelectedShipments(sel => { const n = new Set(sel); n.delete(s.id); return n; });
+      toast.success('Riwayat kirim berhasil dihapus.');
+      await loadLocations();
+    } else {
+      const data = await r.json().catch(() => ({} as { error?: string }));
+      toast.error(data.error ?? 'Gagal menghapus riwayat kirim.');
+    }
+    setDeletingShipmentId(null);
+  };
+
+  const bulkDeleteShipments = async () => {
+    if (selectedShipments.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selectedShipments.size} riwayat kirim yang dipilih? Stok toko akan dikembalikan.`, danger: true })) return;
+    setBulkDeletingShipments(true);
+    const count = selectedShipments.size;
+    const ids = [...selectedShipments];
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/send/${id}`, { method: 'DELETE', headers })));
+    const okIds = ids.filter((_, i) => results[i].ok);
+    setShipments(prev => prev.filter(s => !okIds.includes(s.id)));
+    setSelectedShipments(new Set());
+    await loadLocations();
+    if (okIds.length === count) toast.success(`${count} riwayat kirim berhasil dihapus.`);
+    else toast.error(`Hanya ${okIds.length} dari ${count} riwayat kirim berhasil dihapus.`);
+    setBulkDeletingShipments(false);
+  };
+
   const filteredShipments = shipments.filter(s => {
     if (!shipmentSearch) return true;
     const q = shipmentSearch.toLowerCase();
@@ -715,6 +776,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   };
 
   // ── Rekap Harian ─────────────────────────────────────────────
+  const [showRecapForm,  setShowRecapForm]  = useState(false);
+  const [editingRecap,   setEditingRecap]   = useState<Recap | null>(null);
   const [recapLocationId,   setRecapLocationId]   = useState('');
   const [recapStock,        setRecapStock]        = useState<ConsignmentStockItem[]>([]);
   const [recapStockLoading, setRecapStockLoading] = useState(false);
@@ -733,6 +796,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [recapPageSize, setRecapPageSize] = useState(10);
   const [selectedRecaps, setSelectedRecaps] = useState<Set<string>>(new Set());
   const [exportingRecaps, setExportingRecaps] = useState(false);
+  const [deletingRecapId, setDeletingRecapId] = useState<string | null>(null);
+  const [bulkDeletingRecaps, setBulkDeletingRecaps] = useState(false);
 
   const loadRecaps = async () => {
     setRecapsLoading(true);
@@ -767,6 +832,37 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const canSubmitRecap    = !!recapLocationId && recapRows.some(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
     && !recapHasExceeds && (!recapNeedsWarehouse || !!recapWarehouseId);
 
+  const openCreateRecap = () => {
+    setEditingRecap(null);
+    setRecapLocationId(''); setRecapStock([]); setRecapInputs({});
+    setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
+    setShowRecapForm(true);
+  };
+  const openEditRecap = async (r: Recap) => {
+    setEditingRecap(r);
+    setRecapNote(r.note ?? '');
+    setRecapPaymentStatus(r.paymentStatus ?? 'lunas');
+    setRecapWarehouseId(r.warehouseId ?? '');
+    setRecapLocationId(r.locationId ?? '');
+    await loadRecapStock(r.locationId ?? '');
+    // Kembalikan qty rekap ini ke stok lokasi secara sementara di UI, supaya validasi
+    // "sisa stok di lokasi" konsisten dengan reversal yang dilakukan backend saat disimpan.
+    setRecapStock(prev => {
+      const map = new Map(prev.map(it => [it.productId, { ...it }]));
+      r.items.forEach(it => {
+        const restore = it.qtySold + it.qtyRetur + it.qtyReject;
+        const existing = map.get(it.productId);
+        if (existing) existing.stockQty += restore;
+        else map.set(it.productId, { productId: it.productId, productName: it.productName, stockQty: restore, hargaTitip: it.hargaTitip });
+      });
+      return [...map.values()];
+    });
+    setRecapInputs(Object.fromEntries(r.items.map(it => [it.productId, {
+      sold: it.qtySold ? String(it.qtySold) : '', retur: it.qtyRetur ? String(it.qtyRetur) : '', reject: it.qtyReject ? String(it.qtyReject) : '',
+    }])));
+    setShowRecapForm(true);
+  };
+
   const submitRecap = async () => {
     if (!canSubmitRecap) return;
     setSubmittingRecap(true);
@@ -776,26 +872,27 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       const items = recapRows
         .filter(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
         .map(r => ({ productId: r.item.productId, productName: r.item.productName, qtySold: r.sold, qtyRetur: r.retur, qtyReject: r.reject }));
-      const res = await fetch(`${API}/api/consignment/recap`, {
-        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId: location.id, locationName: location.name, items, note: recapNote,
-          paymentStatus: recapPaymentStatus,
-          warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
-          warehouseName: recapNeedsWarehouse ? warehouse?.name : undefined,
-        }),
+      const body = JSON.stringify({
+        locationId: location.id, locationName: location.name, items, note: recapNote,
+        paymentStatus: recapPaymentStatus,
+        warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
+        warehouseName: recapNeedsWarehouse ? warehouse?.name : undefined,
       });
+      const res = editingRecap
+        ? await fetch(`${API}/api/consignment/recap/${editingRecap.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body })
+        : await fetch(`${API}/api/consignment/recap`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan rekap.'); return; }
-      toast.success(`Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
+      toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
+      setShowRecapForm(false); setEditingRecap(null);
       setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
-      await Promise.all([loadRecapStock(recapLocationId), loadRecaps(), loadLocations()]);
+      await Promise.all([loadRecaps(), loadLocations()]);
     } finally { setSubmittingRecap(false); }
   };
 
   const markRecapLunas = async (id: string) => {
     setMarkingRecapId(id);
-    const r = await fetch(`${API}/api/consignment/recap/${id}`, { method: 'PUT', headers });
+    const r = await fetch(`${API}/api/consignment/recap/${id}`, { method: 'PATCH', headers });
     if (r.ok) { toast.success('Rekap ditandai lunas.'); await loadRecaps(); }
     else toast.error('Gagal menandai lunas.');
     setMarkingRecapId(null);
@@ -919,6 +1016,38 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
 
   const toggleSelectRecap = (id: string) =>
     setSelectedRecaps(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const deleteRecap = async (r: Recap) => {
+    if (!await confirm({ message: `Hapus riwayat rekap "${r.locationName}"? Stok titip di lokasi akan dikembalikan.`, danger: true })) return;
+    setDeletingRecapId(r.id);
+    const res = await fetch(`${API}/api/consignment/recap/${r.id}`, { method: 'DELETE', headers });
+    if (res.ok) {
+      setRecaps(prev => prev.filter(x => x.id !== r.id));
+      setSelectedRecaps(sel => { const n = new Set(sel); n.delete(r.id); return n; });
+      toast.success('Riwayat rekap berhasil dihapus.');
+      await loadLocations();
+    } else {
+      const data = await res.json().catch(() => ({} as { error?: string }));
+      toast.error(data.error ?? 'Gagal menghapus riwayat rekap.');
+    }
+    setDeletingRecapId(null);
+  };
+
+  const bulkDeleteRecaps = async () => {
+    if (selectedRecaps.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selectedRecaps.size} riwayat rekap yang dipilih? Stok titip di lokasi akan dikembalikan.`, danger: true })) return;
+    setBulkDeletingRecaps(true);
+    const count = selectedRecaps.size;
+    const ids = [...selectedRecaps];
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/recap/${id}`, { method: 'DELETE', headers })));
+    const okIds = ids.filter((_, i) => results[i].ok);
+    setRecaps(prev => prev.filter(r => !okIds.includes(r.id)));
+    setSelectedRecaps(new Set());
+    await loadLocations();
+    if (okIds.length === count) toast.success(`${count} riwayat rekap berhasil dihapus.`);
+    else toast.error(`Hanya ${okIds.length} dari ${count} riwayat rekap berhasil dihapus.`);
+    setBulkDeletingRecaps(false);
+  };
 
   const filteredRecaps = recaps.filter(r => {
     if (!recapSearch) return true;
@@ -1178,78 +1307,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
 
         {/* ════ KIRIM STOK ═════════════════════════════════════ */}
         {subTab === 'kirim' && (
-          <div className="p-4 lg:p-6 animate-fade-up space-y-5">
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                  <Send size={17} />
+          <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {shipments.length > 0 && (
+                <div className="relative flex-1 min-w-0">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={shipmentSearch}
+                    onChange={e => { setShipmentSearch(e.target.value); resetShipmentPage(); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari lokasi, produk, atau catatan…"
+                  />
                 </div>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Kirim Stok Konsinyasi</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Stok toko berkurang, stok titip di lokasi bertambah</p>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label style={fieldLabel}>Lokasi Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptions}
-                    placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
-                </div>
-
-                <div>
-                  <label style={fieldLabel}>Produk Dikirim</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {sendRows.map((row, i) => {
-                      const qty = parseFloat(row.qty) || 0;
-                      const harga = parseFloat(row.hargaTitip) || 0;
-                      return (
-                        <div key={i}>
-                          <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', alignItems: 'center' }}>
-                            <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
-                              options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
-                            <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
-                              placeholder="Qty (pcs)" className="input" />
-                            <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
-                              placeholder="Harga titip" />
-                            <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
-                              className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                              <X size={14} />
-                            </button>
-                          </div>
-                          {qty > 0 && harga > 0 && (
-                            <p className="text-xs tabular mt-1" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button onClick={addSendRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
-                    <Plus size={12} /> Tambah Baris Produk
-                  </button>
-                </div>
-
-                <div>
-                  <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
-                </div>
-
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Nilai Titip</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(sendTotal)}</span>
-                </div>
-
-                <button onClick={submitSend} disabled={sending || !canSubmitSend} className="btn-primary justify-center py-3 text-sm disabled:opacity-40">
-                  {sending ? <><Loader2 size={15} className="animate-spin" /> Menyimpan…</> : <><Send size={15} /> Kirim Stok</>}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Clock size={11} /> Riwayat Kirim ({shipments.length})
-                </p>
+              )}
+              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
                 <div className="flex items-center gap-2 flex-wrap">
                   {shipments.length > 0 && (
                     <Tooltip label="Export Excel">
@@ -1261,28 +1333,23 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   )}
                   {shipments.length > 0 && <ViewToggle mode={shipmentView} onChange={setShipmentView} height={HEADER_BTN_H} />}
                 </div>
+                <button onClick={openCreateSend} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Kirim</span><span className="sm:hidden">Tambah</span>
+                </button>
               </div>
+            </div>
 
-              {shipments.length > 0 && (
-                <div className="relative">
-                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                  <input
-                    value={shipmentSearch}
-                    onChange={e => { setShipmentSearch(e.target.value); resetShipmentPage(); }}
-                    className="input text-sm w-full"
-                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-                    placeholder="Cari lokasi, produk, atau catatan…"
-                  />
-                </div>
-              )}
-
-              {shipmentsLoading && shipments.length === 0 ? (
-                <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
-              ) : shipments.length === 0 ? (
-                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat pengiriman.</p>
-              ) : (
-                <>
-                  {paginatedShipments.length > 0 && (
+            {shipmentsLoading && shipments.length === 0 ? (
+              <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+            ) : shipments.length === 0 ? (
+              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+                <Send size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat pengiriman</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Kirim stok titip ke lokasi mitra untuk mulai konsinyasi</p>
+              </div>
+            ) : (
+              <>
+                {paginatedShipments.length > 0 && (
                     <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
                       <Checkbox
                         checked={paginatedShipments.every(s => selectedShipments.has(s.id))}
@@ -1318,6 +1385,14 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                                 {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
                               </p>
                             </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </div>
                           </div>
                         );
                       })}
@@ -1337,6 +1412,14 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                                 <Send size={14} />
                               </div>
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                                <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                  {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </div>
                             </div>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
                             <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
@@ -1357,30 +1440,337 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   <Pagination total={filteredShipments.length} safePage={safeShipmentPage} totalPages={totalShipmentPages}
                     pageSize={shipmentPageSize} onPageSize={n => { setShipmentPageSize(n); resetShipmentPage(); }}
                     onGoPage={goShipmentPage} unit="pengiriman" />
-                </>
-              )}
-            </div>
+              </>
+            )}
           </div>
         )}
 
         {/* ════ REKAP HARIAN ═══════════════════════════════════ */}
         {subTab === 'rekap' && (
-          <div className="p-4 lg:p-6 animate-fade-up space-y-5">
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
-                  <ClipboardList size={17} />
+          <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {recaps.length > 0 && (
+                <div className="relative flex-1 min-w-0">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    value={recapSearch}
+                    onChange={e => { setRecapSearch(e.target.value); resetRecapPage(); }}
+                    className="input text-sm w-full"
+                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                    placeholder="Cari lokasi, produk, atau catatan…"
+                  />
                 </div>
+              )}
+              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {recaps.length > 0 && (
+                    <Tooltip label="Export Excel">
+                      <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
+                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                        {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      </button>
+                    </Tooltip>
+                  )}
+                  {recaps.length > 0 && <ViewToggle mode={recapView} onChange={setRecapView} height={HEADER_BTN_H} />}
+                </div>
+                <button onClick={openCreateRecap} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Rekap</span><span className="sm:hidden">Tambah</span>
+                </button>
+              </div>
+            </div>
+
+            {recapsLoading && recaps.length === 0 ? (
+              <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+            ) : recaps.length === 0 ? (
+              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+                <ClipboardList size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat rekap</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat qty terjual & retur harian dari lokasi mitra</p>
+              </div>
+            ) : (
+              <>
+                {paginatedRecaps.length > 0 && (
+                    <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                      <Checkbox
+                        checked={paginatedRecaps.every(r => selectedRecaps.has(r.id))}
+                        indeterminate={paginatedRecaps.some(r => selectedRecaps.has(r.id)) && !paginatedRecaps.every(r => selectedRecaps.has(r.id))}
+                        onChange={togglePageAllRecaps}
+                      />
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                        {selectedRecaps.size > 0 ? `${selectedRecaps.size} dipilih` : `${paginatedRecaps.length} rekap di halaman ini`}
+                      </span>
+                    </div>
+                  )}
+
+                  {paginatedRecaps.length === 0 ? (
+                    <div className="card py-12 text-center">
+                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat yang cocok.</p>
+                    </div>
+                  ) : recapView === 'table' ? (
+                    <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                      {paginatedRecaps.map(r => {
+                        const isSelected = selectedRecaps.has(r.id);
+                        return (
+                          <div key={r.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                            <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                                  {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                                  {r.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
+                                  {r.paymentStatus === 'belum_lunas' && (
+                                    <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
+                                      className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                      {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
+                                {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
+                              </p>
+                              <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
+                              </p>
+                              {r.note && (
+                                <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{r.note}&rdquo;</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => deleteRecap(r)} disabled={deletingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {paginatedRecaps.map(r => {
+                        const isSelected = selectedRecaps.has(r.id);
+                        return (
+                          <div key={r.id} className="card overflow-hidden p-4 relative"
+                            style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                              <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
+                            </div>
+                            <div className="flex items-center justify-between gap-2 mb-1 pl-6">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                                {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
+                                {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
+                              </div>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                                <button onClick={() => deleteRecap(r)} disabled={deletingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                  {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
+                              {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
+                            </p>
+                            <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+                              {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
+                            </p>
+                            <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                              <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
+                              {r.paymentStatus === 'belum_lunas' && (
+                                <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
+                                  className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                  {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <Pagination total={filteredRecaps.length} safePage={safeRecapPage} totalPages={totalRecapPages}
+                    pageSize={recapPageSize} onPageSize={n => { setRecapPageSize(n); resetRecapPage(); }}
+                    onGoPage={goRecapPage} unit="rekap" />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {showLForm && (
+        <div className="modal-overlay" onClick={() => !savingL && setShowLForm(false)}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Store size={17} /></div>
                 <div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rekap Harian</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Catat qty terjual & retur — sisanya tetap tertahan di lokasi</p>
+                  <p className="modal-title">{editingL ? 'Edit Lokasi' : 'Tambah Lokasi Baru'}</p>
+                  <p className="modal-subtitle">{editingL ? 'Perbarui informasi lokasi' : 'Isi detail lapak/UMKM mitra'}</p>
                 </div>
               </div>
-
+              <button onClick={() => setShowLForm(false)} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
-                  <label style={fieldLabel}>Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={recapLocationId}
+                  <label className="field-label">Nama Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
+                    placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
+                </div>
+                <div>
+                  <label className="field-label">Nama Kontak</label>
+                  <input type="text" value={lForm.contactName} onChange={e => setLForm({ ...lForm, contactName: e.target.value })}
+                    placeholder="cth: Bu Yanti" className="input" />
+                </div>
+                <div>
+                  <label className="field-label">Telepon</label>
+                  <input type="tel" value={lForm.contactPhone} onChange={e => setLForm({ ...lForm, contactPhone: e.target.value })}
+                    placeholder="cth: 08123456789" className="input" />
+                </div>
+                <div>
+                  <label className="field-label">Alamat</label>
+                  <input type="text" value={lForm.address} onChange={e => setLForm({ ...lForm, address: e.target.value })}
+                    placeholder="cth: Jl. Melati No. 3" className="input" />
+                </div>
+                <div>
+                  <label className="field-label">Catatan</label>
+                  <textarea rows={3} value={lForm.note} onChange={e => setLForm({ ...lForm, note: e.target.value })}
+                    placeholder="Catatan tambahan (opsional)" className="input resize-none" />
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowLForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={saveLocation} disabled={savingL || !lForm.name.trim()} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {savingL ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                {savingL ? 'Menyimpan…' : editingL ? 'Simpan Perubahan' : 'Tambah Lokasi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSendForm && (
+        <div className="modal-overlay" onClick={() => !sending && setShowSendForm(false)}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Send size={17} /></div>
+                <div>
+                  <p className="modal-title">{editingShipment ? 'Edit Kirim Stok' : 'Kirim Stok Konsinyasi'}</p>
+                  <p className="modal-subtitle">Stok toko berkurang, stok titip di lokasi bertambah</p>
+                </div>
+              </div>
+              <button onClick={() => setShowSendForm(false)} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="field-label">Lokasi Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptions}
+                      placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                  </div>
+                  <div>
+                    <label className="field-label">Tanggal Kirim</label>
+                    <input type="date" value={sendDate} onChange={e => setSendDate(e.target.value)} className="input" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="field-label">Produk Dikirim</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {sendRows.map((row, i) => {
+                      const qty = parseFloat(row.qty) || 0;
+                      const harga = parseFloat(row.hargaTitip) || 0;
+                      return (
+                        <div key={i}>
+                          <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', alignItems: 'center' }}>
+                            <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
+                              options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
+                            <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
+                              placeholder="Qty (pcs)" className="input" />
+                            <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
+                              placeholder="Harga titip" />
+                            <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
+                              className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                              <X size={14} />
+                            </button>
+                          </div>
+                          {qty > 0 && harga > 0 && (
+                            <p className="text-xs tabular mt-1" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={addSendRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Baris Produk
+                  </button>
+                </div>
+
+                <div>
+                  <label className="field-label">Catatan</label>
+                  <input type="text" value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
+                </div>
+
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Nilai Titip</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(sendTotal)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowSendForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={submitSend} disabled={sending || !canSubmitSend} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                {sending ? 'Menyimpan…' : editingShipment ? 'Simpan Perubahan' : 'Kirim Stok'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRecapForm && (
+        <div className="modal-overlay" onClick={() => !submittingRecap && setShowRecapForm(false)}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><ClipboardList size={17} /></div>
+                <div>
+                  <p className="modal-title">{editingRecap ? 'Edit Rekap Harian' : 'Rekap Harian'}</p>
+                  <p className="modal-subtitle">Catat qty terjual & retur — sisanya tetap tertahan di lokasi</p>
+                </div>
+              </div>
+              <button onClick={() => setShowRecapForm(false)} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label className="field-label">Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={recapLocationId} disabled={!!editingRecap}
                     onChange={id => { setRecapLocationId(id); loadRecapStock(id); }}
                     options={locationOptions} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
                 </div>
@@ -1446,7 +1836,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                 )}
 
                 <div>
-                  <label style={fieldLabel}>Catatan</label>
+                  <label className="field-label">Catatan</label>
                   <input type="text" value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="cth: kemasan penyok, expired, komplain pelanggan…" className="input" />
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                     Dipakai juga sebagai keterangan retur/reject di riwayat &amp; catatan gudang.
@@ -1454,7 +1844,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                 </div>
 
                 <div>
-                  <label style={fieldLabel}>Status Pembayaran</label>
+                  <label className="field-label">Status Pembayaran</label>
                   <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
                     {(['lunas', 'belum_lunas'] as const).map(s => (
                       <button key={s} type="button" onClick={() => setRecapPaymentStatus(s)}
@@ -1483,206 +1873,15 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     <AlertTriangle size={12} /> Ada qty yang melebihi stok di lokasi — periksa kembali sebelum simpan.
                   </p>
                 )}
-
-                <button onClick={submitRecap} disabled={submittingRecap || !canSubmitRecap} className="btn-primary justify-center py-3 text-sm disabled:opacity-40">
-                  {submittingRecap ? <><Loader2 size={15} className="animate-spin" /> Menyimpan…</> : <><ClipboardList size={15} /> Simpan Rekap</>}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                  <Clock size={11} /> Riwayat Rekap ({recaps.length})
-                </p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {recaps.length > 0 && (
-                    <Tooltip label="Export Excel">
-                      <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
-                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                        {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  {recaps.length > 0 && <ViewToggle mode={recapView} onChange={setRecapView} height={HEADER_BTN_H} />}
-                </div>
-              </div>
-
-              {recaps.length > 0 && (
-                <div className="relative">
-                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                  <input
-                    value={recapSearch}
-                    onChange={e => { setRecapSearch(e.target.value); resetRecapPage(); }}
-                    className="input text-sm w-full"
-                    style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-                    placeholder="Cari lokasi, produk, atau catatan…"
-                  />
-                </div>
-              )}
-
-              {recapsLoading && recaps.length === 0 ? (
-                <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
-              ) : recaps.length === 0 ? (
-                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat rekap.</p>
-              ) : (
-                <>
-                  {paginatedRecaps.length > 0 && (
-                    <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
-                      <Checkbox
-                        checked={paginatedRecaps.every(r => selectedRecaps.has(r.id))}
-                        indeterminate={paginatedRecaps.some(r => selectedRecaps.has(r.id)) && !paginatedRecaps.every(r => selectedRecaps.has(r.id))}
-                        onChange={togglePageAllRecaps}
-                      />
-                      <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-                        {selectedRecaps.size > 0 ? `${selectedRecaps.size} dipilih` : `${paginatedRecaps.length} rekap di halaman ini`}
-                      </span>
-                    </div>
-                  )}
-
-                  {paginatedRecaps.length === 0 ? (
-                    <div className="card py-12 text-center">
-                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat yang cocok.</p>
-                    </div>
-                  ) : recapView === 'table' ? (
-                    <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                      {paginatedRecaps.map(r => {
-                        const isSelected = selectedRecaps.has(r.id);
-                        return (
-                          <div key={r.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
-                            <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
-                                  {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
-                                  {r.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
-                                  {r.paymentStatus === 'belum_lunas' && (
-                                    <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
-                                      className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                                      {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
-                                {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
-                              </p>
-                              <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                                {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
-                              </p>
-                              {r.note && (
-                                <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{r.note}&rdquo;</p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {paginatedRecaps.map(r => {
-                        const isSelected = selectedRecaps.has(r.id);
-                        return (
-                          <div key={r.id} className="card overflow-hidden p-4 relative"
-                            style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
-                              <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
-                            </div>
-                            <div className="flex items-center justify-between gap-2 mb-1 pl-6">
-                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
-                                {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
-                                {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
-                              </div>
-                            </div>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
-                              {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
-                            </p>
-                            <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                              {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
-                            </p>
-                            <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
-                              <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
-                              {r.paymentStatus === 'belum_lunas' && (
-                                <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
-                                  className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                                  {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <Pagination total={filteredRecaps.length} safePage={safeRecapPage} totalPages={totalRecapPages}
-                    pageSize={recapPageSize} onPageSize={n => { setRecapPageSize(n); resetRecapPage(); }}
-                    onGoPage={goRecapPage} unit="rekap" />
-                </>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {showLForm && (
-        <div className="modal-overlay" onClick={() => !savingL && setShowLForm(false)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Store size={17} /></div>
-                <div>
-                  <p className="modal-title">{editingL ? 'Edit Lokasi' : 'Tambah Lokasi Baru'}</p>
-                  <p className="modal-subtitle">{editingL ? 'Perbarui informasi lokasi' : 'Isi detail lapak/UMKM mitra'}</p>
-                </div>
-              </div>
-              <button onClick={() => setShowLForm(false)} className="modal-close"><X size={14} /></button>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label className="field-label">Nama Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
-                    placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Nama Kontak</label>
-                  <input type="text" value={lForm.contactName} onChange={e => setLForm({ ...lForm, contactName: e.target.value })}
-                    placeholder="cth: Bu Yanti" className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Telepon</label>
-                  <input type="tel" value={lForm.contactPhone} onChange={e => setLForm({ ...lForm, contactPhone: e.target.value })}
-                    placeholder="cth: 08123456789" className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Alamat</label>
-                  <input type="text" value={lForm.address} onChange={e => setLForm({ ...lForm, address: e.target.value })}
-                    placeholder="cth: Jl. Melati No. 3" className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Catatan</label>
-                  <textarea rows={3} value={lForm.note} onChange={e => setLForm({ ...lForm, note: e.target.value })}
-                    placeholder="Catatan tambahan (opsional)" className="input resize-none" />
-                </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button onClick={() => setShowLForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              <button onClick={() => setShowRecapForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
                 Batal
               </button>
-              <button onClick={saveLocation} disabled={savingL || !lForm.name.trim()} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {savingL ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                {savingL ? 'Menyimpan…' : editingL ? 'Simpan Perubahan' : 'Tambah Lokasi'}
+              <button onClick={submitRecap} disabled={submittingRecap || !canSubmitRecap} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {submittingRecap ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
+                {submittingRecap ? 'Menyimpan…' : editingRecap ? 'Simpan Perubahan' : 'Simpan Rekap'}
               </button>
             </div>
           </div>
@@ -1837,6 +2036,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
               {exportingShipments ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
               Export
             </button>
+            <button onClick={bulkDeleteShipments} disabled={bulkDeletingShipments}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeletingShipments ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
+            </button>
             <button onClick={() => setSelectedShipments(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
               Batal
             </button>
@@ -1856,6 +2061,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingRecaps ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
               Export
+            </button>
+            <button onClick={bulkDeleteRecaps} disabled={bulkDeletingRecaps}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeletingRecaps ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
             </button>
             <button onClick={() => setSelectedRecaps(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
               Batal

@@ -9,6 +9,7 @@ import {
   ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
   Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark,
 } from 'lucide-react';
+import { useConfirm } from '@/components/Confirm';
 
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
@@ -112,6 +113,13 @@ export default function AppShell({
   const [collapsed,  setCollapsed]  = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<TabId>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const confirm = useConfirm();
+
+  const handleLogout = async () => {
+    if (await confirm({ message: 'Yakin ingin keluar dari akun ini?', danger: true, confirmLabel: 'Keluar' })) {
+      onLogout();
+    }
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('sb-collapsed');
@@ -369,7 +377,7 @@ export default function AppShell({
                 <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>Administrator</p>
               </div>
               <button
-                onClick={onLogout}
+                onClick={handleLogout}
                 title="Keluar"
                 style={{
                   width: 28, height: 28, borderRadius: 7, flexShrink: 0,
@@ -389,7 +397,7 @@ export default function AppShell({
           {/* User card — collapsed: logout icon */}
           {collapsed && (
             <button
-              onClick={onLogout}
+              onClick={handleLogout}
               title="Keluar"
               className="sidebar-nav-item w-full mt-0.5"
               style={{ justifyContent: 'center' }}
@@ -585,7 +593,7 @@ export default function AppShell({
 
               <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>
                 <button
-                  onClick={() => { setMoreOpen(false); onLogout(); }}
+                  onClick={() => { setMoreOpen(false); handleLogout(); }}
                   className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl"
                   style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}
                 >

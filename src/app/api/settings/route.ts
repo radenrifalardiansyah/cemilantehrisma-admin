@@ -8,7 +8,7 @@ const DOC = 'main';
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
   const doc = await getDb().collection('settings').doc(DOC).get();
-  return Response.json(doc.exists ? doc.data() : {});
+  return Response.json({ settings: doc.exists ? doc.data() : {} });
 }
 
 export async function PUT(req: NextRequest) {

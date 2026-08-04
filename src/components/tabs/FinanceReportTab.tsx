@@ -50,6 +50,7 @@ interface OrderRecord {
   source?: 'kasir' | 'portal'; status: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
 }
+
 interface RecapRecord {
   locationName: string; totalRevenue: number; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
@@ -57,7 +58,7 @@ interface RecapRecord {
 interface ExpenseRecord { category: string; description: string; amount: number; date: string }
 interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string }
 
-interface JournalEntry { seconds: number; description: string; debit: number; kredit: number }
+interface JournalEntry { seconds: number; description: string; debit: number; kredit: number; invoiceNo?: string }
 
 const EXPENSE_CATEGORY_COLORS: Record<string, string> = {
   'Bahan Baku': '#B45309', 'Produksi': '#A84F10', 'Sewa': '#7C3AED', 'Gaji': '#0284C7',
@@ -137,7 +138,7 @@ function TrendChart({ data }: { data: { date: string; income: number; expense: n
   );
 }
 
-export default function FinanceReportTab({ creds }: { creds: string }) {
+export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string; onOpenOrder?: (invoiceNo: string) => void }) {
   const headers = { 'x-admin-auth': creds };
 
   const [period,     setPeriod]     = useState<PeriodKey>('month');
@@ -205,6 +206,7 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
       seconds: o.createdAt?.seconds ?? 0,
       description: `Penjualan ${o.source === 'portal' ? 'Online' : 'Kasir'} - ${o.invoiceNo || o.customerName}`,
       debit: o.total ?? 0, kredit: 0,
+      invoiceNo: o.invoiceNo || undefined,
     })),
     ...countedRecaps.map(r => ({
       seconds: r.createdAt?.seconds ?? 0,
@@ -228,6 +230,7 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
     acc.push({ ...j, saldo: prevSaldo + j.debit - j.kredit });
     return acc;
   }, []);
+  const journalDisplay = [...journalWithSaldo].reverse();
 
   // ── Chart tren harian ────────────────────────────────────────
   const dailyMap = new Map<string, { income: number; expense: number }>();
@@ -522,12 +525,20 @@ export default function FinanceReportTab({ creds }: { creds: string }) {
                 <span className="text-[10px] font-bold uppercase tracking-wide w-28 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Saldo</span>
               </div>
               <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-              {journalWithSaldo.map((j, i) => (
+              {journalDisplay.map((j, i) => (
                 <div key={i} className="px-4 py-3 flex items-center gap-3">
                   <span className="text-xs tabular flex-shrink-0 w-20" style={{ color: 'var(--text-muted)' }}>
                     {j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : '–'}
                   </span>
-                  <span className="flex-1 min-w-0 text-sm truncate" style={{ color: 'var(--text-primary)' }}>{j.description}</span>
+                  {j.invoiceNo ? (
+                    <button type="button" onClick={() => onOpenOrder?.(j.invoiceNo!)}
+                      className="flex-1 min-w-0 text-sm text-left truncate hover:underline"
+                      style={{ color: 'var(--accent)' }} title="Lihat transaksi di menu Pesanan">
+                      {j.description}
+                    </button>
+                  ) : (
+                    <span className="flex-1 min-w-0 text-sm truncate" style={{ color: 'var(--text-primary)' }}>{j.description}</span>
+                  )}
                   <span className="text-sm font-bold tabular w-28 text-right flex-shrink-0" style={{ color: j.debit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
                     {j.debit > 0 ? formatRp(j.debit) : '–'}
                   </span>

@@ -21,7 +21,11 @@ export async function GET(req: NextRequest) {
   }
 
   const snap = await query.get();
-  const recaps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const recaps = snap.docs.map(d => {
+    const data = d.data();
+    const createdAt = data.createdAt as Timestamp | undefined;
+    return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
+  });
   return Response.json({ recaps });
 }
 

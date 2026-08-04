@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, RefreshCw, Landmark } from 'lucide-react';
+import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, RefreshCw, Landmark, Upload, X, Image as ImageIcon } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import { useToast } from '@/components/Toast';
 
 const API = '';
 
 interface StoreSettings {
-  storeName?: string; storeTagline?: string; storeDescription?: string;
+  storeName?: string; storeTagline?: string; storeDescription?: string; logo?: string;
   whatsapp?: string; instagramUrl?: string; tiktokUrl?: string;
   address?: string; city?: string;
   privacyPolicy?: string; termsOfService?: string; returnPolicy?: string;
@@ -69,6 +69,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [activeGrp, setActiveGrp] = useState('store');
   const [bankCount,   setBankCount]   = useState<number | null>(null);
   const [syncingBanks, setSyncingBanks] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
@@ -117,6 +118,23 @@ export default function SettingsTab({ creds }: { creds: string }) {
 
   const set = (key: string, val: string | number | boolean) =>
     setSettings(s => ({ ...s, [key]: val }));
+
+  const uploadLogo = async (file: File | undefined) => {
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      set('logo', url);
+    } catch {
+      toast.error('Gagal mengunggah logo.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -219,6 +237,40 @@ export default function SettingsTab({ creds }: { creds: string }) {
               </div>
             ) : (
             <div className="space-y-4">
+              {activeGrp === 'store' && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Logo Toko
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {settings.logo ? (
+                      <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={settings.logo} alt="Logo toko" className="w-full h-full object-contain" />
+                        <button type="button" onClick={() => set('logo', '')}
+                          className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ border: '1px dashed var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                        <ImageIcon size={20} />
+                      </div>
+                    )}
+                    <label className="btn-ghost text-xs cursor-pointer">
+                      <input type="file" accept="image/*" className="hidden" disabled={logoUploading}
+                        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadLogo(f); }} />
+                      {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                      {logoUploading ? 'Mengunggah…' : settings.logo ? 'Ganti Logo' : 'Upload Logo'}
+                    </label>
+                  </div>
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos.
+                  </p>
+                </div>
+              )}
               {activeGroup.fields.map(f => (
                 <div key={f.key}>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>

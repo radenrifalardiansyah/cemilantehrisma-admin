@@ -6,6 +6,7 @@ import {
   ShoppingCart, Plus, Minus, ChevronLeft, CheckCircle2, Loader2, User, Phone,
   Trash2, Tag, Send, Search, Wallet, X, Banknote, Printer, FileText,
   MessageCircle, Receipt, ArrowRight, Camera, PauseCircle, BarChart2, TrendingUp, Award, CalendarClock,
+  RefreshCw,
 } from 'lucide-react';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -41,6 +42,12 @@ interface ReceiptData {
   amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   customerName: string; customerPhone: string; cashier: string; pdfUrl?: string;
+}
+
+// Info toko diambil dari /api/settings — dipakai untuk melengkapi struk cetak & pesan WA
+// (nama, alamat, telepon, logo), dengan fallback ke nilai hardcoded lama kalau belum diisi.
+interface StoreInfo {
+  storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string;
 }
 
 type OcrStatus = 'idle' | 'reading' | 'done' | 'failed';
@@ -80,9 +87,43 @@ function normalizePhone(raw: string) {
   const d = raw.replace(/\D/g, '');
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
-function formatWAMessage(custName: string, invoiceNo: string, total: number, pdfUrl: string) {
-  const tel = WHATSAPP_NUMBER.replace(/^62/, '0').replace(/(\d{4})(\d{4})(\d+)/, '$1-$2-$3');
-  return `Halo *${custName}*! 👋\n\nInvoice pesanan Anda dari *Cemilan Teh Risma* 🧾\n\nNo. Invoice : *${invoiceNo}*\nTotal Bayar : *${formatCurrency(total)}*\n\n📄 *Invoice PDF:*\n${pdfUrl}\n\nTerima kasih! 🙏\n_Cemilan Teh Risma · 📞 ${tel}_`.trim();
+
+// Struk lengkap (bukan cuma link PDF) dikirim lewat WhatsApp — dibuat sedekat mungkin dengan
+// struk cetak (nama toko, alamat, telepon, rincian item, total, pembayaran) supaya pelanggan
+// tetap dapat rincian belanja meski tidak menerima struk fisik.
+function formatWAMessage(receipt: ReceiptData, store: { name: string; address: string; phone: string }) {
+  const SEP = '─────────────────────';
+  const itemLines = receipt.items
+    .map((it, i) => `${i + 1}. ${it.name} (${it.weight})\n   ${it.qty} x ${formatCurrency(it.price)} = *${formatCurrency(it.subtotal)}*`)
+    .join('\n');
+  const discountLine = receipt.discount && receipt.discount.amount > 0
+    ? `Diskon (${receipt.discount.label}) : -${formatCurrency(receipt.discount.amount)}\n`
+    : '';
+  const paymentLines = receipt.paymentMethod === 'cash'
+    ? `Tunai   : ${formatCurrency(receipt.amountPaid ?? 0)}\nKembali : ${formatCurrency(receipt.changeAmount ?? 0)}`
+    : receipt.paymentMethod === 'kredit'
+    ? `Status  : *BELUM LUNAS (KREDIT)*`
+    : `Transfer ${receipt.transferBank ?? ''} : ${formatCurrency(receipt.transferAmount ?? 0)}`;
+  const pdfLines = receipt.pdfUrl ? `\n📄 Invoice PDF:\n${receipt.pdfUrl}\n${SEP}\n` : '';
+
+  return `*${store.name.toUpperCase()}* 🧾
+${store.address ? `${store.address}\n` : ''}📞 ${store.phone}
+${SEP}
+
+Halo *${receipt.customerName}*! 👋
+Berikut struk pesanan Anda:
+
+No. Invoice : *${receipt.invoiceNo}*
+Tanggal     : ${receipt.dateStr}
+${SEP}
+${itemLines}
+${SEP}
+Subtotal : ${formatCurrency(receipt.subtotal)}
+${discountLine}*Total    : ${formatCurrency(receipt.total)}*
+${paymentLines}
+${SEP}
+${pdfLines}Terima kasih telah berbelanja! 🙏
+_${store.name}_`.trim();
 }
 
 // Format default untuk input datetime-local — dipakai supaya tanggal/jam transaksi bisa diedit
@@ -187,11 +228,12 @@ interface PosTabProps {
   username: string;
   onCartChange: (count: number) => void;
   onGoToOrders: () => void;
+  onRefresh: () => Promise<void> | void;
 }
 
 export default function PosTab({
   creds, posProducts, posCategories, resellerList, customerList, bankOptions,
-  isActive, username, onCartChange, onGoToOrders,
+  isActive, username, onCartChange, onGoToOrders, onRefresh,
 }: PosTabProps) {
   const [posView,      setPosView]      = useState<PosView>('products');
   const [activeCat,    setActiveCat]    = useState<string>('semua');
@@ -229,7 +271,41 @@ export default function PosTab({
   const [reportData,      setReportData]      = useState<SalesReportData | null>(null);
   const [txDateTime, setTxDateTime] = useState('');
   useEffect(() => { setTxDateTime(nowLocalInput()); }, []);
+  const [refreshing, setRefreshing] = useState(false);
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
   const toast = useToast();
+
+  // ── Info toko (nama, alamat, telepon, logo) — dipakai di struk cetak & pesan WA ──
+  useEffect(() => {
+    if (!creds) return;
+    fetch('/api/settings', { headers: { 'x-admin-auth': creds } }).then(async r => {
+      if (r.ok) setStoreInfo((await r.json() as { settings: StoreInfo }).settings ?? {});
+    }).catch(() => {});
+  }, [creds]);
+  const storeName    = storeInfo.storeName?.trim() || 'Cemilan Teh Risma';
+  const storeAddress = [storeInfo.address, storeInfo.city].filter(Boolean).join(', ');
+  const storePhone   = (storeInfo.whatsapp?.trim() || WHATSAPP_NUMBER)
+    .replace(/^62/, '0').replace(/(\d{4})(\d{4})(\d+)/, '$1-$2-$3');
+  const storeLogo    = storeInfo.logo;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+      toast.success('Data kasir diperbarui.');
+    } catch {
+      toast.error('Gagal memuat ulang data.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Mulai transaksi baru: reset form lalu muat ulang data kasir (produk/stok terbaru)
+  // secara otomatis di latar belakang, tanpa menahan kasir menunggu.
+  const handleNewTransaction = () => {
+    resetPOS();
+    Promise.resolve(onRefresh()).catch(() => toast.error('Gagal memuat ulang data.'));
+  };
 
   // ── Cart computations ────────────────────────────────────
   const getQty       = (id: string) => cart.find(i => i.productId === id)?.qty ?? 0;
@@ -501,7 +577,11 @@ export default function PosTab({
       const res = await fetch(`${MAIN_APP}/api/admin/invoice-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
-        body: JSON.stringify({ invoiceNo: invNo, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, logo: '', halalLogo: '' }),
+        body: JSON.stringify({
+          invoiceNo: invNo, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, logo: '', halalLogo: '',
+          source: 'kasir',
+          paymentStatus: paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas',
+        }),
       });
       if (!res.ok) throw new Error('Gagal generate PDF');
       const { url: pdfUrl } = await res.json() as { url: string };
@@ -553,11 +633,12 @@ export default function PosTab({
   };
 
   const sendWhatsApp = () => {
-    if (!lastReceipt?.pdfUrl) return;
+    if (!lastReceipt) return;
     const phone = waPhoneDraft.trim();
     if (!phone) { toast.error('Isi nomor WhatsApp pelanggan dulu.'); return; }
+    const message = formatWAMessage(lastReceipt, { name: storeName, address: storeAddress, phone: storePhone });
     window.open(
-      `https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(formatWAMessage(lastReceipt.customerName, lastReceipt.invoiceNo, lastReceipt.total, lastReceipt.pdfUrl))}`,
+      `https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`,
       '_blank'
     );
   };
@@ -619,7 +700,7 @@ export default function PosTab({
           ))}
         </ScrollChips>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-24 lg:pb-4 thin-scrollbar">
+      <div className="flex-1 overflow-y-auto px-4 pb-44 lg:pb-4 thin-scrollbar">
         {posProducts.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
@@ -638,8 +719,11 @@ export default function PosTab({
         )}
       </div>
       {hasCart && (
-        <div className="lg:hidden absolute bottom-0 left-0 right-0 px-4 pb-5 pt-2"
-          style={{ background: 'linear-gradient(to top, var(--ground) 70%, transparent)' }}>
+        <div className="lg:hidden fixed left-0 right-0 px-4 pt-3 z-40"
+          style={{
+            bottom: 'calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 10px)',
+            background: 'linear-gradient(to top, var(--ground) 75%, transparent)',
+          }}>
           <button onClick={() => setPosView('cart')}
             className="w-full flex items-center gap-3 px-5 py-4 rounded-2xl text-white font-bold shadow-2xl"
             style={{ background: 'linear-gradient(135deg,#E8821A,#C96018)' }}>
@@ -649,11 +733,11 @@ export default function PosTab({
                 {cartCount}
               </span>
             </div>
-            <div className="flex-1 text-left">
-              <p className="text-[11px] text-white/70">{cartItems.length} produk · {cartCount} pcs</p>
+            <div className="flex-1 text-left min-w-0">
+              <p className="text-[11px] text-white/70 truncate">{cartItems.length} produk · {cartCount} pcs</p>
               <p className="text-[15px] font-black tabular">{formatCurrency(cartTotal)}</p>
             </div>
-            <span className="text-sm opacity-90">Checkout →</span>
+            <span className="text-sm opacity-90 flex-shrink-0">Checkout →</span>
           </button>
         </div>
       )}
@@ -993,7 +1077,7 @@ export default function PosTab({
         <button onClick={onGoToOrders} className="btn-ghost flex-1 justify-center gap-2 py-3 text-sm font-semibold">
           <Receipt size={15} /> Lihat di Pesanan
         </button>
-        <button onClick={resetPOS} className="btn-primary flex-1 justify-center gap-2 py-3 text-sm">
+        <button onClick={handleNewTransaction} className="btn-primary flex-1 justify-center gap-2 py-3 text-sm">
           Transaksi Baru <ArrowRight size={14} />
         </button>
       </div>
@@ -1023,6 +1107,13 @@ export default function PosTab({
   const reportBar = (
     <button onClick={() => setReportOpen(true)} className="btn-ghost gap-2 text-xs py-2" style={{ color: '#0284C7' }}>
       <BarChart2 size={14} /> Laporan
+    </button>
+  );
+
+  const refreshBar = (
+    <button onClick={handleRefresh} disabled={refreshing} title="Muat ulang data"
+      className="btn-ghost h-9 w-9 p-0 flex items-center justify-center disabled:opacity-60" style={{ color: 'var(--text-secondary)' }}>
+      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
     </button>
   );
 
@@ -1204,8 +1295,14 @@ export default function PosTab({
   // ─── Struk cetak (tersembunyi di layar, tampil hanya saat print) ──────────
   const receiptPrintBlock = lastReceipt && (
     <div id="pos-receipt">
-      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#000', padding: 8, width: '80mm' }}>
-        <p style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, margin: 0 }}>Cemilan Teh Risma</p>
+      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#000', padding: 8, width: '80mm', boxSizing: 'border-box' }}>
+        {storeLogo && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={storeLogo} alt={storeName} style={{ display: 'block', maxHeight: 44, maxWidth: '55%', margin: '0 auto 4px' }} />
+        )}
+        <p style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, margin: 0 }}>{storeName}</p>
+        {storeAddress && <p style={{ textAlign: 'center', fontSize: 10, margin: '2px 0 0' }}>{storeAddress}</p>}
+        <p style={{ textAlign: 'center', fontSize: 10, margin: '2px 0 0' }}>{storePhone}</p>
         <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
         <p style={{ margin: 0 }}>No: {lastReceipt.invoiceNo}</p>
         <p style={{ margin: 0 }}>{lastReceipt.dateStr} · Kasir: {lastReceipt.cashier}</p>
@@ -1239,6 +1336,7 @@ export default function PosTab({
         <p style={{ marginTop: 6 }}>Pelanggan: {lastReceipt.customerName}</p>
         <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
         <p style={{ textAlign: 'center' }}>Terima kasih telah berbelanja!</p>
+        <p style={{ textAlign: 'center', fontSize: 10 }}>{storeName}{storeAddress ? ` · ${storeAddress}` : ''}</p>
       </div>
     </div>
   );
@@ -1258,7 +1356,7 @@ export default function PosTab({
 
   return (
     <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-      {isActive && <TopbarPortal>{reportBar}{heldBar}{shiftBar}</TopbarPortal>}
+      {isActive && <TopbarPortal>{refreshBar}{reportBar}{heldBar}{shiftBar}</TopbarPortal>}
 
       {/* Desktop: catalog + order panel selalu berdampingan */}
       <div className="hidden lg:grid flex-1 min-h-0" style={{ gridTemplateColumns: '1fr 400px' }}>
