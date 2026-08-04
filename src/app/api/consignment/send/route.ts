@@ -10,7 +10,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
   const snap = await getDb().collection('consignmentShipments').orderBy('createdAt', 'desc').limit(limit).get();
-  const shipments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const shipments = snap.docs.map(d => {
+    const data = d.data();
+    const createdAt = data.createdAt as Timestamp | undefined;
+    return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
+  });
   return Response.json({ shipments });
 }
 

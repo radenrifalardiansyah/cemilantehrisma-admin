@@ -916,15 +916,16 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     await loadRecapStock(r.locationId ?? '');
     // Kembalikan qty rekap ini ke stok lokasi secara sementara di UI, supaya validasi
     // "sisa stok di lokasi" konsisten dengan reversal yang dilakukan backend saat disimpan.
+    // Hanya item milik transaksi ini yang ditampilkan, bukan seluruh stok titip di lokasi.
     setRecapStock(prev => {
       const map = new Map(prev.map(it => [it.productId, { ...it }]));
-      r.items.forEach(it => {
+      return r.items.map(it => {
         const restore = it.qtySold + it.qtyRetur + it.qtyReject;
         const existing = map.get(it.productId);
-        if (existing) existing.stockQty += restore;
-        else map.set(it.productId, { productId: it.productId, productName: it.productName, stockQty: restore, hargaTitip: it.hargaTitip });
+        return existing
+          ? { ...existing, stockQty: existing.stockQty + restore }
+          : { productId: it.productId, productName: it.productName, stockQty: restore, hargaTitip: it.hargaTitip };
       });
-      return [...map.values()];
     });
     setRecapInputs(Object.fromEntries(r.items.map(it => [it.productId, {
       sold: it.qtySold ? String(it.qtySold) : '', retur: it.qtyRetur ? String(it.qtyRetur) : '', reject: it.qtyReject ? String(it.qtyReject) : '',
