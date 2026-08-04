@@ -177,7 +177,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   useEffect(() => { loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko (nota/rekap PDF) ──────────────────────────────────
-  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
   useEffect(() => {
     fetch(`${API}/api/settings`, { headers }).then(async r => {
       if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
@@ -185,6 +185,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const storeHeader = {
     name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
+    tagline: storeInfo.storeTagline?.trim() || undefined,
     address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
     phone:   storeInfo.whatsapp?.trim() || undefined,
     logo:    storeInfo.logo,
@@ -778,6 +779,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
             address:        location?.address,
             warehouseName:  s.warehouseName,
             date:           formatDate(s.createdAt?.seconds),
+            docNo:          `KRM-${s.id.slice(-6).toUpperCase()}`,
             note:           s.note,
             items:          s.items,
             total,
@@ -848,6 +850,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [recapNote,         setRecapNote]         = useState('');
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [recapWarehouseId,  setRecapWarehouseId]  = useState('');
+  const [recapDate,         setRecapDate]         = useState(() => toISODate(new Date()));
   const [submittingRecap,   setSubmittingRecap]   = useState(false);
   const [recaps,        setRecaps]        = useState<Recap[]>([]);
   const [recapsLoading, setRecapsLoading] = useState(true);
@@ -900,6 +903,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setEditingRecap(null);
     setRecapLocationId(''); setRecapStock([]); setRecapInputs({});
     setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
+    setRecapDate(toISODate(new Date()));
     setShowRecapForm(true);
   };
   const openEditRecap = async (r: Recap) => {
@@ -908,6 +912,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setRecapPaymentStatus(r.paymentStatus ?? 'lunas');
     setRecapWarehouseId(r.warehouseId ?? '');
     setRecapLocationId(r.locationId ?? '');
+    setRecapDate(r.createdAt?.seconds ? toISODate(new Date(r.createdAt.seconds * 1000)) : toISODate(new Date()));
     await loadRecapStock(r.locationId ?? '');
     // Kembalikan qty rekap ini ke stok lokasi secara sementara di UI, supaya validasi
     // "sisa stok di lokasi" konsisten dengan reversal yang dilakukan backend saat disimpan.
@@ -941,6 +946,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
         paymentStatus: recapPaymentStatus,
         warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
         warehouseName: recapNeedsWarehouse ? warehouse?.name : undefined,
+        date: recapDate,
       });
       const res = editingRecap
         ? await fetch(`${API}/api/consignment/recap/${editingRecap.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body })
@@ -950,6 +956,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
       setShowRecapForm(false); setEditingRecap(null);
       setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
+      setRecapDate(toISODate(new Date()));
       await Promise.all([loadRecaps(), loadLocations()]);
     } finally { setSubmittingRecap(false); }
   };
@@ -1107,6 +1114,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
             locationName:   r.locationName,
             warehouseName:  r.warehouseName,
             date:           formatDate(r.createdAt?.seconds),
+            docNo:          `RKP-${r.id.slice(-6).toUpperCase()}`,
             paymentStatus:  r.paymentStatus,
             note:           r.note,
             items:          r.items,
@@ -1486,6 +1494,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
                                 {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
                               </p>
+                              {s.note && (
+                                <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{s.note}&rdquo;</p>
+                              )}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
@@ -1533,6 +1544,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                             <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
                               {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
                             </p>
+                            {s.note && (
+                              <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{s.note}&rdquo;</p>
+                            )}
                             <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total nilai titip</span>
                               <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
@@ -1892,11 +1906,17 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label className="field-label">Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={recapLocationId} disabled={!!editingRecap}
-                    onChange={id => { setRecapLocationId(id); loadRecapStock(id); }}
-                    options={locationOptions} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="field-label">Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <SearchSelect value={recapLocationId} disabled={!!editingRecap}
+                      onChange={id => { setRecapLocationId(id); loadRecapStock(id); }}
+                      options={locationOptions} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                  </div>
+                  <div>
+                    <label className="field-label">Tanggal</label>
+                    <input type="date" value={recapDate} onChange={e => setRecapDate(e.target.value)} className="input" />
+                  </div>
                 </div>
 
                 {recapLocationId && (

@@ -9,6 +9,7 @@ export interface RecapNoteData {
   locationName:    string;
   warehouseName?:  string;
   date:            string;
+  docNo?:          string;
   paymentStatus?:  'lunas' | 'belum_lunas';
   note?:           string;
   items:           RecapNoteItem[];
@@ -37,15 +38,20 @@ const C = {
 const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', color: C.dark, padding: 40, fontSize: 10 },
 
+  topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
+
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logo: { width: 40, height: 40, borderRadius: 20, objectFit: 'cover' },
-  storeName: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: C.dark },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white },
+  storeName: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.dark },
+  storeTagline: { fontSize: 8.5, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8.5, color: C.muted, marginTop: 2 },
   headerRight: { alignItems: 'flex-end' },
   docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
   docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
-  docDate: { fontSize: 9, color: C.muted, marginTop: 3 },
+  docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 4 },
+  docMetaLabel: { fontSize: 8.5, color: C.muted },
+  docMetaValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark },
 
   divider: { borderBottomWidth: 1.5, borderBottomColor: C.accent, marginTop: 14, marginBottom: 14 },
 
@@ -92,11 +98,14 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
   return (
     <Document>
       <Page size="A4" style={s.page}>
+        <View style={s.topBar} />
+
         <View style={s.headerRow}>
           <View style={s.headerLeft}>
             {store.logo && <Image src={store.logo} style={s.logo} />}
             <View>
               <Text style={s.storeName}>{store.name}</Text>
+              {store.tagline && <Text style={s.storeTagline}>{store.tagline}</Text>}
               {store.address && <Text style={s.storeMeta}>{store.address}</Text>}
               {store.phone && <Text style={s.storeMeta}>{store.phone}</Text>}
             </View>
@@ -104,7 +113,16 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
           <View style={s.headerRight}>
             <Text style={s.docTitle}>REKAP HARIAN</Text>
             <Text style={s.docSub}>Dokumen Internal</Text>
-            <Text style={s.docDate}>{data.date}</Text>
+            {data.docNo && (
+              <View style={s.docMetaRow}>
+                <Text style={s.docMetaLabel}>No:</Text>
+                <Text style={s.docMetaValue}>{data.docNo}</Text>
+              </View>
+            )}
+            <View style={s.docMetaRow}>
+              <Text style={s.docMetaLabel}>Tanggal:</Text>
+              <Text style={s.docMetaValue}>{data.date}</Text>
+            </View>
           </View>
         </View>
 

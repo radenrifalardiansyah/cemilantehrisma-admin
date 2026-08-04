@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas';
-    warehouseId?: string; warehouseName?: string;
+    warehouseId?: string; warehouseName?: string; date?: string;
   };
   const items = (data.items ?? [])
     .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
-        createdAt: FieldValue.serverTimestamp(),
+        createdAt: data.date ? Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) : FieldValue.serverTimestamp(),
       });
     });
   } catch (err) {

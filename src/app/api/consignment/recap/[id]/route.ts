@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number }
@@ -103,7 +103,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas';
-    warehouseId?: string; warehouseName?: string;
+    warehouseId?: string; warehouseName?: string; date?: string;
   };
   const newItems = (data.items ?? [])
     .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
@@ -272,6 +272,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
+        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
