@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ id: string }> };
 interface ShipmentItem { productId: string; productName: string; qty: number }
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
-// Hapus riwayat kirim — mengembalikan stok toko & mengurangi stok titip di lokasi.
+// Hapus riwayat kirim — mengembalikan stok toko & stok gudang asal, dan mengurangi stok titip di lokasi.
 // Ditolak jika stok titip sudah terpakai (terjual/direkap) sehingga tidak cukup untuk dibalik.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
@@ -19,7 +19,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     await db.runTransaction(async tx => {
       const shipmentSnap = await tx.get(shipmentRef);
       if (!shipmentSnap.exists) throw new Error('Riwayat kirim tidak ditemukan.');
-      const shipment = shipmentSnap.data()! as { locationId: string; items: ShipmentItem[] };
+      const shipment = shipmentSnap.data()! as { locationId: string; warehouseId?: string; items: ShipmentItem[] };
       const items = shipment.items ?? [];
 
       const productRefs = items.map(it => db.collection('products').doc(it.productId));
@@ -50,6 +50,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         }
         const stockQty = Number(stockSnaps[i].data()!.stockQty) || 0;
         tx.update(stockRefs[i], { stockQty: stockQty - it.qty, updatedAt: FieldValue.serverTimestamp() });
+
+        // Kiriman lama (sebelum fitur gudang asal) tidak pernah mengurangi warehouse_stock — jangan dibalik.
+        if (shipment.warehouseId) {
+          tx.set(db.collection('warehouse_stock').doc(`${shipment.warehouseId}_${it.productId}`), {
+            warehouseId: shipment.warehouseId, productId: it.productId, productName: it.productName,
+            stockQty: FieldValue.increment(it.qty), updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
       });
 
       tx.delete(shipmentRef);
@@ -61,14 +69,19 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   return Response.json({ ok: true });
 }
 
-// Edit riwayat kirim — membalik efek stok yang lama, lalu menerapkan efek stok yang baru
-// dalam satu transaksi. Ditolak jika stok lama sudah terpakai atau stok toko tidak cukup.
+// Edit riwayat kirim — membalik efek stok yang lama (termasuk stok gudang asal lama, jika ada),
+// lalu menerapkan efek stok yang baru dalam satu transaksi. Ditolak jika stok lama sudah terpakai
+// atau stok toko tidak cukup. Log gudang lama dibiarkan sebagai riwayat historis.
 export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { id } = await ctx.params;
-  const data = await req.json() as { locationId: string; locationName: string; note?: string; items: SendItemInput[]; date?: string };
+  const data = await req.json() as {
+    locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
+    note?: string; items: SendItemInput[]; date?: string;
+  };
   const newItems = data.items ?? [];
   if (newItems.length === 0) return Response.json({ error: 'Minimal 1 produk dikirim.' }, { status: 400 });
+  if (!data.warehouseId) return Response.json({ error: 'Pilih gudang asal pengiriman.' }, { status: 400 });
 
   const db = getDb();
   const shipmentRef = db.collection('consignmentShipments').doc(id);
@@ -77,10 +90,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     await db.runTransaction(async tx => {
       const shipmentSnap = await tx.get(shipmentRef);
       if (!shipmentSnap.exists) throw new Error('Riwayat kirim tidak ditemukan.');
-      const oldShipment = shipmentSnap.data()! as { locationId: string; items: ShipmentItem[] };
+      const oldShipment = shipmentSnap.data()! as { locationId: string; warehouseId?: string; items: ShipmentItem[] };
       const oldItems = oldShipment.items ?? [];
 
       const productIds = [...new Set([...oldItems.map(it => it.productId), ...newItems.map(it => it.productId)])];
+      const productNameByPid = new Map<string, string>();
+      [...oldItems, ...newItems].forEach(it => { if (!productNameByPid.has(it.productId)) productNameByPid.set(it.productId, it.productName); });
 
       const stockMeta = new Map<string, { locationId: string; productId: string; productName: string }>();
       oldItems.forEach(it => {
@@ -109,6 +124,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         stockQty: stockSnaps[i].exists ? Number(stockSnaps[i].data()!.stockQty) || 0 : 0,
         hargaTitip: stockSnaps[i].exists ? Number(stockSnaps[i].data()!.hargaTitip) || 0 : 0,
       }]));
+      // key = doc id `${warehouseId}_${productId}` — kept alongside the parsed pair so we never
+      // have to split it back apart (warehouse/product IDs could theoretically contain '_').
+      const wsDelta = new Map<string, { warehouseId: string; productId: string; delta: number }>();
+      const bumpWs = (warehouseId: string, productId: string, delta: number) => {
+        const key = `${warehouseId}_${productId}`;
+        const cur = wsDelta.get(key);
+        if (cur) cur.delta += delta;
+        else wsDelta.set(key, { warehouseId, productId, delta });
+      };
 
       // 1) Balik efek kiriman lama
       for (const it of oldItems) {
@@ -120,6 +144,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         s.stockQty -= it.qty;
         const p = productState.get(it.productId)!;
         p.stockQty += it.qty;
+
+        // Kiriman lama (sebelum fitur gudang asal) tidak pernah mengurangi warehouse_stock — jangan dibalik.
+        if (oldShipment.warehouseId) bumpWs(oldShipment.warehouseId, it.productId, it.qty);
       }
 
       // 2) Validasi & terapkan kiriman baru
@@ -140,9 +167,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const newQty = s.stockQty + it.qty;
         s.hargaTitip = newQty > 0 ? (s.stockQty * s.hargaTitip + it.qty * it.hargaTitip) / newQty : 0;
         s.stockQty = newQty;
+
+        bumpWs(data.warehouseId, it.productId, -it.qty);
       });
 
-      // 3) Tulis ulang state produk & stok titip
+      // 3) Tulis ulang state produk, stok titip & stok gudang
       productIds.forEach(pid => {
         const p = productState.get(pid)!;
         if (!p.exists) return;
@@ -160,10 +189,31 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           stockQty: s.stockQty, hargaTitip: s.hargaTitip, updatedAt: FieldValue.serverTimestamp(),
         });
       });
+      wsDelta.forEach(({ warehouseId, productId, delta }, key) => {
+        if (delta === 0) return;
+        tx.set(db.collection('warehouse_stock').doc(key), {
+          warehouseId, productId, productName: productNameByPid.get(productId) ?? '',
+          stockQty: FieldValue.increment(delta), updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+
+      // Log gudang baru untuk kiriman hasil edit — log lama dari kiriman sebelum diedit
+      // dibiarkan sebagai riwayat historis (tidak dihapus/diubah).
+      newItems.forEach(it => {
+        const logRef = db.collection('stock').doc();
+        tx.set(logRef, {
+          warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
+          productId: it.productId, productName: it.productName,
+          type: 'out', qty: it.qty,
+          note: `Kirim konsinyasi (diedit) – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      });
 
       const itemsWithSubtotal = newItems.map(it => ({ ...it, subtotal: it.qty * it.hargaTitip }));
       tx.update(shipmentRef, {
         locationId: data.locationId, locationName: data.locationName,
+        warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
         ...(data.date ? { createdAt: Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) } : {}),
         updatedAt: FieldValue.serverTimestamp(),

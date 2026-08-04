@@ -73,7 +73,10 @@ const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: 
 interface ConsignmentStockItem { productId: string; productName: string; stockQty: number; hargaTitip: number }
 
 interface ShipmentItem { productId: string; productName: string; qty: number; hargaTitip: number; subtotal: number }
-interface Shipment { id: string; locationId?: string; locationName: string; items: ShipmentItem[]; note?: string; createdAt?: { seconds: number } }
+interface Shipment {
+  id: string; locationId?: string; locationName: string; warehouseId?: string; warehouseName?: string;
+  items: ShipmentItem[]; note?: string; createdAt?: { seconds: number };
+}
 
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; revenue: number }
 interface Recap {
@@ -541,7 +544,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   // ── Kirim Stok ───────────────────────────────────────────────
   const [showSendForm,   setShowSendForm]   = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
-  const [sendLocationId, setSendLocationId] = useState('');
+  const [sendLocationId,  setSendLocationId]  = useState('');
+  const [sendWarehouseId, setSendWarehouseId] = useState('');
   const [sendRows,       setSendRows]       = useState<SendRow[]>([{ ...EMPTY_SEND_ROW }]);
   const [sendNote,       setSendNote]       = useState('');
   const [sendDate,       setSendDate]       = useState(() => toISODate(new Date()));
@@ -571,16 +575,18 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const updateSendRow = (i: number, patch: Partial<SendRow>) => setSendRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
 
   const sendTotal = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.hargaTitip) || 0), 0);
-  const canSubmitSend = !!sendLocationId && sendRows.some(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0);
+  const canSubmitSend = !!sendLocationId && !!sendWarehouseId
+    && sendRows.some(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0);
 
   const openCreateSend = () => {
-    setEditingShipment(null); setSendLocationId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
+    setEditingShipment(null); setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
     setSendDate(toISODate(new Date()));
     setShowSendForm(true);
   };
   const openEditSend = (s: Shipment) => {
     setEditingShipment(s);
     setSendLocationId(s.locationId ?? '');
+    setSendWarehouseId(s.warehouseId ?? '');
     setSendRows(s.items.map(it => ({ productId: it.productId, qty: String(it.qty), hargaTitip: String(it.hargaTitip) })));
     setSendNote(s.note ?? '');
     setSendDate(s.createdAt?.seconds ? toISODate(new Date(s.createdAt.seconds * 1000)) : toISODate(new Date()));
@@ -592,26 +598,30 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setSending(true);
     try {
       const location = locations.find(l => l.id === sendLocationId)!;
+      const warehouse = warehouses.find(w => w.id === sendWarehouseId)!;
       const items = sendRows
         .filter(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0)
         .map(r => {
           const p = products.find(pp => pp.id === r.productId)!;
           return { productId: p.id, productName: p.name, qty: parseFloat(r.qty) || 0, hargaTitip: parseFloat(r.hargaTitip) || 0 };
         });
+      const body = JSON.stringify({
+        locationId: location.id, locationName: location.name,
+        warehouseId: warehouse.id, warehouseName: warehouse.name,
+        items, note: sendNote, date: sendDate,
+      });
       const res = editingShipment
         ? await fetch(`${API}/api/consignment/send/${editingShipment.id}`, {
-            method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ locationId: location.id, locationName: location.name, items, note: sendNote, date: sendDate }),
+            method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body,
           })
         : await fetch(`${API}/api/consignment/send`, {
-            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ locationId: location.id, locationName: location.name, items, note: sendNote, date: sendDate }),
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body,
           });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan pengiriman.'); return; }
       toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Stok berhasil dikirim ke "${location.name}".`);
       setShowSendForm(false); setEditingShipment(null);
-      setSendLocationId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
+      setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
       await Promise.all([loadShipments(), loadLocations()]);
     } finally { setSending(false); }
   };
@@ -1688,7 +1698,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                 <div className="modal-icon"><Send size={17} /></div>
                 <div>
                   <p className="modal-title">{editingShipment ? 'Edit Kirim Stok' : 'Kirim Stok Konsinyasi'}</p>
-                  <p className="modal-subtitle">Stok toko berkurang, stok titip di lokasi bertambah</p>
+                  <p className="modal-subtitle">Stok gudang & stok toko berkurang, stok titip di lokasi bertambah</p>
                 </div>
               </div>
               <button onClick={() => setShowSendForm(false)} className="modal-close"><X size={14} /></button>
@@ -1700,6 +1710,14 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                     <label className="field-label">Lokasi Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
                     <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptions}
                       placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                  </div>
+                  <div>
+                    <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Warehouse size={11} /> Gudang Asal <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
+                    <SearchSelect value={sendWarehouseId} onChange={setSendWarehouseId}
+                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
                   </div>
                   <div>
                     <label className="field-label">Tanggal Kirim</label>

@@ -17,10 +17,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
   const data = await req.json() as {
-    locationId: string; locationName: string; note?: string; items: SendItemInput[]; date?: string;
+    locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
+    note?: string; items: SendItemInput[]; date?: string;
   };
   const items = data.items ?? [];
   if (items.length === 0) return Response.json({ error: 'Minimal 1 produk dikirim.' }, { status: 400 });
+  if (!data.warehouseId) return Response.json({ error: 'Pilih gudang asal pengiriman.' }, { status: 400 });
 
   const db = getDb();
   const shipmentRef = db.collection('consignmentShipments').doc();
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
     await db.runTransaction(async tx => {
       const productRefs = items.map(it => db.collection('products').doc(it.productId));
       const stockRefs   = items.map(it => db.collection('consignmentStock').doc(`${data.locationId}_${it.productId}`));
+      const wsRefs      = items.map(it => db.collection('warehouse_stock').doc(`${data.warehouseId}_${it.productId}`));
       const [productSnaps, stockSnaps] = await Promise.all([
         Promise.all(productRefs.map(r => tx.get(r))),
         Promise.all(stockRefs.map(r => tx.get(r))),
@@ -53,6 +56,20 @@ export async function POST(req: NextRequest) {
           updatedAt: FieldValue.serverTimestamp(),
         });
 
+        tx.set(wsRefs[i], {
+          warehouseId: data.warehouseId, productId: it.productId, productName: it.productName,
+          stockQty: FieldValue.increment(-it.qty), updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        const logRef = db.collection('stock').doc();
+        tx.set(logRef, {
+          warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
+          productId: it.productId, productName: it.productName,
+          type: 'out', qty: it.qty,
+          note: `Kirim konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+
         const existing = stockSnaps[i].exists ? stockSnaps[i].data()! : null;
         const oldQty   = existing ? Number(existing.stockQty) || 0 : 0;
         const oldHarga = existing ? Number(existing.hargaTitip) || 0 : 0;
@@ -66,6 +83,7 @@ export async function POST(req: NextRequest) {
 
       tx.set(shipmentRef, {
         locationId: data.locationId, locationName: data.locationName,
+        warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
         createdAt: data.date ? Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) : FieldValue.serverTimestamp(),
       });
