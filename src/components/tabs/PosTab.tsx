@@ -563,6 +563,11 @@ export default function PosTab({
     }).catch(() => setShiftLoaded(true));
   }, [isActive, creds, shiftLoaded]);
 
+  // ── Refresh stok otomatis setiap kali tab Kasir dibuka ──
+  useEffect(() => {
+    if (isActive) Promise.resolve(onRefresh()).catch(() => {});
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Proses transaksi ──────────────────────────────────────
   const processTransaction = async () => {
     if (!canProcess) return;
