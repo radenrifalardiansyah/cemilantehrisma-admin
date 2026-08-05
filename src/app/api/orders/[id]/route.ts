@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { restoreOrderStock } from '@/lib/order-stock';
+import { restoreOrderStockInTx, RestorableOrder } from '@/lib/order-stock';
+import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -45,8 +46,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (!order) throw new Error('Pesanan tidak ditemukan.');
         if (order.status === 'dibatalkan') throw new Error('Pesanan yang sudah dibatalkan tidak bisa diedit.');
 
+        // Selisih qty hanya disesuaikan ke stok kalau pesanan ini memang sudah pernah memotong
+        // stok (kasir sejak dibuat, atau pesanan online yang sudah "Selesai") — sama seperti
+        // aturan restore, supaya edit pesanan yang belum memotong stok tidak ikut memotongnya.
+        const stockCut = order.source === 'kasir' || order.stockCut === true;
         const deltas = new Map<string, number>();
-        if (order.source === 'kasir') {
+        if (stockCut) {
           const oldQty = qtyByProduct(order.items ?? []);
           const newQty = qtyByProduct(data.items);
           const productIds = new Set([...oldQty.keys(), ...newQty.keys()]);
@@ -56,53 +61,23 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           }
         }
 
-        const productIds = [...deltas.keys()];
-        const productRefs = productIds.map(pid => db.collection('products').doc(pid));
-        const productSnaps = await Promise.all(productRefs.map(r => tx.get(r)));
+        if (deltas.size > 0) {
+          // qtyByProduct delta di atas positif = lebih banyak dipesan = stok berkurang, jadi
+          // dibalik tandanya untuk dipakai sebagai delta stok (negatif = keluar).
+          const stockDeltas = new Map([...deltas].map(([pid, d]) => [pid, -d]));
+          const { products, shortages } = await readProductsForDeltas(tx, db, stockDeltas);
+          if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
-        const shortages: string[] = [];
-        productIds.forEach((pid, i) => {
-          const delta = deltas.get(pid)!;
-          if (delta <= 0) return;
-          const product = productSnaps[i].data();
-          const stockQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
-          if (!productSnaps[i].exists || stockQty < delta) {
-            shortages.push(`${product?.name ?? pid} (stok tersisa ${stockQty}, butuh tambahan ${delta})`);
+          for (const [pid, stockDelta] of stockDeltas) {
+            const product = products.get(pid)!;
+            applyStockDelta(tx, db, { productId: pid, product, warehouseId: order.warehouseId, delta: stockDelta });
+            writeStockLedgerEntry(tx, db, {
+              productId: pid, warehouseId: order.warehouseId, warehouseName: order.warehouseName,
+              type: stockDelta < 0 ? 'out' : 'in', qty: stockDelta,
+              note: `Edit pesanan ${order.invoiceNo ?? ''}`,
+            });
           }
-        });
-        if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
-
-        productIds.forEach((pid, i) => {
-          const delta = deltas.get(pid)!;
-          const product = productSnaps[i].data()!;
-          const currentQty = typeof product.stockQty === 'number' ? product.stockQty as number : 0;
-          const newStockQty = currentQty - delta;
-          tx.update(productRefs[i], {
-            stockQty: newStockQty,
-            stock: product.openPO ? 'open_po' : newStockQty > 0 ? 'ready' : 'habis',
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-
-          // Pesanan lama (sebelum gudang kasir dikonfigurasi) tidak punya warehouseId — stok gudang
-          // tidak pernah dikurangi untuk pesanan itu, jadi tidak ikut disesuaikan di sini juga.
-          if (order.warehouseId) {
-            const wsRef = db.collection('warehouse_stock').doc(`${order.warehouseId}_${pid}`);
-            tx.set(wsRef, {
-              warehouseId: order.warehouseId, productId: pid, productName: product.name ?? '',
-              stockQty: FieldValue.increment(-delta), updatedAt: FieldValue.serverTimestamp(),
-            }, { merge: true });
-          }
-
-          const stockRef = db.collection('stock').doc();
-          tx.set(stockRef, {
-            productId: pid,
-            ...(order.warehouseId ? { warehouseId: order.warehouseId, warehouseName: order.warehouseName ?? '' } : {}),
-            type: delta > 0 ? 'out' : 'in',
-            qty: Math.abs(delta),
-            note: `Edit pesanan ${order.invoiceNo ?? ''}`,
-            createdAt: FieldValue.serverTimestamp(),
-          });
-        });
+        }
 
         const items = data.items.map(it => ({ ...it, subtotal: it.price * it.qty }));
         const orderUpdate: Record<string, unknown> = {
@@ -128,21 +103,69 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   // Update status/paymentStatus saja (batalkan, tandai selesai, tandai lunas)
   const { status, paymentStatus } = body;
-  const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
-  if (status !== undefined) update.status = status;
-  if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
+  try {
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      const order = snap.data() as (RestorableOrder & Record<string, unknown>) | undefined;
+      if (!order) throw new Error('Pesanan tidak ditemukan.');
 
-  // Batalkan pesanan → kembalikan stok yang sudah dipotong ke gudang (sekali saja per pesanan)
-  if (status === 'dibatalkan') {
-    const snap = await ref.get();
-    const order = snap.data();
-    if (order) {
-      await restoreOrderStock({ ...order, invoiceNo: order.invoiceNo });
-      update.stockRestored = true;
-    }
+      const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+      if (status !== undefined) update.status = status;
+      if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
+
+      // Pesanan online ditandai selesai → baru sekarang stoknya dipotong (pesanan 'baru' yang
+      // belum dikonfirmasi tidak pernah mengunci stok). Dipotong dari gudang yang sama dengan
+      // kasir (Pengaturan > Gudang Kasir). Kalau stok kurang, batalkan — status tetap 'baru'.
+      if (status === 'selesai' && order.source === 'portal' && !order.stockCut) {
+        const settingsSnap = await tx.get(db.collection('settings').doc('main'));
+        const settings = settingsSnap.data() ?? {};
+        const warehouseId = settings.posWarehouseId as string | undefined;
+        const warehouseName = settings.posWarehouseName as string | undefined;
+
+        const items = order.items ?? [];
+        const resolved = await Promise.all(items.map(async item => {
+          if (item.productId || !item.qty) return item;
+          const s = await tx.get(db.collection('products').where('name', '==', item.name).limit(1));
+          if (s.empty) return item;
+          return { ...item, productId: s.docs[0].id };
+        }));
+
+        const deltas = new Map<string, number>();
+        for (const item of resolved) {
+          if (!item.productId || !item.qty) continue;
+          deltas.set(item.productId, (deltas.get(item.productId) ?? 0) - item.qty);
+        }
+
+        if (deltas.size > 0) {
+          const { products, shortages } = await readProductsForDeltas(tx, db, deltas);
+          if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
+
+          for (const [productId, delta] of deltas) {
+            const product = products.get(productId)!;
+            applyStockDelta(tx, db, { productId, product, warehouseId, delta });
+            writeStockLedgerEntry(tx, db, {
+              productId, warehouseId, warehouseName, type: 'out', qty: delta,
+              note: `Penjualan Online - ${order.invoiceNo ?? ''}`,
+            });
+          }
+        }
+
+        update.stockCut = true;
+        if (warehouseId) { update.warehouseId = warehouseId; update.warehouseName = warehouseName ?? ''; }
+      }
+
+      // Batalkan pesanan → kembalikan stok yang sudah dipotong ke gudang (sekali saja per pesanan)
+      if (status === 'dibatalkan') {
+        await restoreOrderStockInTx(tx, db, order);
+        update.stockRestored = true;
+      }
+
+      tx.update(ref, update);
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui pesanan.' }, { status: 400 });
   }
 
-  await ref.update(update);
   return Response.json({ ok: true });
 }
 
@@ -152,11 +175,15 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const ref = db.collection('orders').doc(id);
 
-  // Hapus pesanan juga mengembalikan stok (kecuali sudah dikembalikan lewat pembatalan sebelumnya)
-  const snap = await ref.get();
-  const order = snap.data();
-  if (order) await restoreOrderStock(order);
+  // Hapus pesanan juga mengembalikan stok (kecuali sudah dikembalikan lewat pembatalan
+  // sebelumnya) — restore dan hapus digabung dalam satu transaksi supaya tidak ada state
+  // parsial kalau salah satu gagal.
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const order = snap.data() as RestorableOrder | undefined;
+    if (order) await restoreOrderStockInTx(tx, db, order);
+    tx.delete(ref);
+  });
 
-  await ref.delete();
   return Response.json({ ok: true });
 }

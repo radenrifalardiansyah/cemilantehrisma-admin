@@ -399,10 +399,13 @@ export default function ProductsTab({ creds }: { creds: string }) {
     if (!editing) return;
     setSaving(true);
     const { id, ...rest } = editing;
-    const data = {
-      ...rest,
-      stock: editing.openPO ? 'open_po' : (editing.stockQty ?? 0) > 0 ? 'ready' : 'habis',
-    };
+    // Stok bukan field yang bisa diedit di form ini (lihat status stok read-only di bawah) —
+    // produk baru boleh mulai dari stockQty default (0), tapi edit produk tidak boleh ikut
+    // mengirim ulang angka stok lama, supaya tidak menimpa balik stok yang mungkin sudah berubah
+    // (mis. ada penjualan) sejak form ini dibuka. Koreksi stok wajib lewat menu Stok.
+    const data = isNew
+      ? { ...rest, stock: editing.openPO ? 'open_po' : (editing.stockQty ?? 0) > 0 ? 'ready' : 'habis' }
+      : (() => { const { stockQty: _stockQty, stock: _stock, ...withoutStock } = rest; return withoutStock; })();
     const r = isNew
       ? await fetch(`${API}/api/products`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       : await fetch(`${API}/api/products/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });

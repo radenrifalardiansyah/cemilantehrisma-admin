@@ -1,66 +1,55 @@
-import { getDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { Firestore, Transaction } from 'firebase-admin/firestore';
+import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 
-interface RestorableOrderItem { productId?: string; name: string; qty: number; }
-interface RestorableOrder {
+export interface RestorableOrderItem { productId?: string; name: string; qty: number; }
+export interface RestorableOrder {
   items?: RestorableOrderItem[];
   source?: string;
   invoiceNo?: string;
+  stockCut?: boolean;
   stockRestored?: boolean;
   warehouseId?: string;
   warehouseName?: string;
 }
 
-// Kasir memotong stok saat transaksi dibuat (lihat PosTab.tsx) — pesanan Website ('portal')
-// tidak pernah memotong stok, jadi tidak ada yang perlu dikembalikan untuknya.
-// Item lama (sebelum productId ikut disimpan) dicocokkan lewat nama produk sebagai fallback.
-// Pesanan lama (sebelum gudang kasir dikonfigurasi) tidak punya warehouseId — stok gudang
-// tidak ikut dikembalikan untuk pesanan itu, karena memang tidak pernah dikurangi.
-export async function restoreOrderStock(order: RestorableOrder): Promise<void> {
-  if (order.stockRestored || order.source !== 'kasir') return;
-  const items = order.items ?? [];
+// Kembalikan stok satu pesanan yang stoknya sudah pernah dipotong. Dua sumber kebenaran:
+// - `source === 'kasir'`: kasir SELALU memotong stok sejak dibuat (termasuk pesanan lama dari
+//   sebelum flag `stockCut` ada — kalau digantung ke flag saja, pesanan lama tidak akan pernah
+//   di-restore saat dibatalkan/dihapus).
+// - `stockCut === true`: dipakai pesanan online, yang baru memotong stok begitu ditandai selesai
+//   (lihat PUT /api/orders/[id]).
+// No-op kalau belum pernah dipotong atau sudah pernah dikembalikan sebelumnya. Harus dipanggil di
+// dalam transaksi milik caller (mis. digabung dengan `tx.update(status)` atau `tx.delete(orderRef)`)
+// supaya restore + perubahan order jadi satu operasi atomik.
+export async function restoreOrderStockInTx(tx: Transaction, db: Firestore, order: RestorableOrder): Promise<void> {
+  const wasStockCut = order.source === 'kasir' || order.stockCut === true;
+  if (!wasStockCut || order.stockRestored) return;
+  const items = (order.items ?? []).filter(i => i.qty > 0);
   if (items.length === 0) return;
 
-  const db = getDb();
-
-  await Promise.all(items.map(async item => {
-    if (!item.qty || item.qty <= 0) return;
-    let productId = item.productId;
-    if (!productId) {
-      const snap = await db.collection('products').where('name', '==', item.name).limit(1).get();
-      if (snap.empty) return;
-      productId = snap.docs[0].id;
-    }
-
-    await db.collection('stock').add({
-      productId,
-      ...(order.warehouseId ? { warehouseId: order.warehouseId, warehouseName: order.warehouseName ?? '' } : {}),
-      type: 'in',
-      qty: item.qty,
-      note: `Restore stok — pesanan ${order.invoiceNo ?? ''} dibatalkan/dihapus`,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    const productRef = db.collection('products').doc(productId);
-    await db.runTransaction(async tx => {
-      const snap = await tx.get(productRef);
-      if (!snap.exists) return;
-      const product = snap.data();
-      const currentQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
-      const newQty = currentQty + item.qty;
-      tx.update(productRef, {
-        stockQty: newQty,
-        stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-
-      if (order.warehouseId) {
-        const wsRef = db.collection('warehouse_stock').doc(`${order.warehouseId}_${productId}`);
-        tx.set(wsRef, {
-          warehouseId: order.warehouseId, productId, productName: product?.name ?? item.name,
-          stockQty: FieldValue.increment(item.qty), updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-      }
-    });
+  // Item lama (sebelum productId ikut disimpan di tiap item order) dicocokkan lewat nama produk.
+  const resolved = await Promise.all(items.map(async item => {
+    if (item.productId) return item;
+    const snap = await tx.get(db.collection('products').where('name', '==', item.name).limit(1));
+    if (snap.empty) return null;
+    return { ...item, productId: snap.docs[0].id };
   }));
+
+  const deltas = new Map<string, number>();
+  for (const item of resolved) {
+    if (!item?.productId) continue;
+    deltas.set(item.productId, (deltas.get(item.productId) ?? 0) + item.qty);
+  }
+  if (deltas.size === 0) return;
+
+  const { products } = await readProductsForDeltas(tx, db, deltas);
+  for (const [productId, delta] of deltas) {
+    const product = products.get(productId)!;
+    applyStockDelta(tx, db, { productId, product, warehouseId: order.warehouseId, delta });
+    writeStockLedgerEntry(tx, db, {
+      productId, warehouseId: order.warehouseId, warehouseName: order.warehouseName,
+      type: 'in', qty: delta,
+      note: `Restore stok — pesanan ${order.invoiceNo ?? ''} dibatalkan/dihapus`,
+    });
+  }
 }

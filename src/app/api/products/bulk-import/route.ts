@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
   let batch = db.batch();
   let opsInBatch = 0;
+  // Produk yang diimpor dengan stockQty > 0 juga perlu entri warehouse_stock awal (gudang kasir
+  // dari Pengaturan), supaya langsung muncul di tab Stok Per Gudang, bukan cuma di daftar Produk.
+  const createdWithStock: { id: string; name: string; stockQty: number }[] = [];
 
   for (const row of products) {
     const name     = (row.name ?? '').toString().trim();
@@ -58,6 +61,7 @@ export async function POST(req: NextRequest) {
     });
     created++;
     opsInBatch++;
+    if (stockQty > 0) createdWithStock.push({ id: ref.id, name, stockQty });
 
     if (opsInBatch >= BATCH_LIMIT) {
       await batch.commit();
@@ -66,6 +70,26 @@ export async function POST(req: NextRequest) {
     }
   }
   if (opsInBatch > 0) await batch.commit();
+
+  if (createdWithStock.length > 0) {
+    const settingsSnap = await db.collection('settings').doc('main').get();
+    const settings = settingsSnap.data() ?? {};
+    const warehouseId = settings.posWarehouseId as string | undefined;
+    const warehouseName = (settings.posWarehouseName as string | undefined) ?? '';
+    if (warehouseId) {
+      await Promise.all(createdWithStock.map(p => Promise.all([
+        db.collection('warehouse_stock').doc(`${warehouseId}_${p.id}`).set({
+          warehouseId, productId: p.id, productName: p.name,
+          stockQty: FieldValue.increment(p.stockQty), updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true }),
+        db.collection('stock').add({
+          productId: p.id, warehouseId, warehouseName,
+          type: 'in', qty: p.stockQty, note: 'Impor produk',
+          createdAt: FieldValue.serverTimestamp(),
+        }),
+      ])));
+    }
+  }
 
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

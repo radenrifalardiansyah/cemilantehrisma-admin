@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store,
+  Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store, Coins,
   ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark, FileSpreadsheet,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -55,6 +55,7 @@ interface RecapRecord {
   locationName: string; totalRevenue: number; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
 }
+interface IncomeRecord { category: string; description: string; amount: number; date: string }
 interface ExpenseRecord { category: string; description: string; amount: number; date: string }
 interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string }
 
@@ -149,6 +150,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [loading,  setLoading]  = useState(true);
   const [orders,   setOrders]   = useState<OrderRecord[]>([]);
   const [recaps,   setRecaps]   = useState<RecapRecord[]>([]);
+  const [income,   setIncome]   = useState<IncomeRecord[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [capital,  setCapital]  = useState<CapitalRecord[]>([]);
   const [exporting, setExporting] = useState(false);
@@ -166,14 +168,16 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     setLoading(true);
     try {
       const qs = `from=${from}&to=${to}`;
-      const [oRes, rRes, eRes, cRes] = await Promise.all([
+      const [oRes, rRes, iRes, eRes, cRes] = await Promise.all([
         fetch(`${API}/api/orders?${qs}`, { headers }),
         fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
+        fetch(`${API}/api/income?${qs}`, { headers }),
         fetch(`${API}/api/expenses?${qs}`, { headers }),
         fetch(`${API}/api/capital?${qs}`, { headers }),
       ]);
       setOrders(oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : []);
       setRecaps(rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : []);
+      setIncome(iRes.ok ? (await iRes.json() as { income: IncomeRecord[] }).income : []);
       setExpenses(eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : []);
       setCapital(cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : []);
     } finally { setLoading(false); }
@@ -189,7 +193,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const kasirRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
   const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
   const consignmentRevenue = countedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
-  const totalPendapatan = kasirRevenue + onlineRevenue + consignmentRevenue;
+  const totalPendapatanLain = income.reduce((s, i) => s + i.amount, 0);
+  const totalPendapatan = kasirRevenue + onlineRevenue + consignmentRevenue + totalPendapatanLain;
 
   const expenseByCategory = new Map<string, number>();
   expenses.forEach(e => expenseByCategory.set(e.category, (expenseByCategory.get(e.category) ?? 0) + e.amount));
@@ -212,6 +217,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       seconds: r.createdAt?.seconds ?? 0,
       description: `Pendapatan Konsinyasi - ${r.locationName}`,
       debit: r.totalRevenue ?? 0, kredit: 0,
+    })),
+    ...income.map(i => ({
+      seconds: new Date(`${i.date}T12:00:00`).getTime() / 1000,
+      description: `${i.category} - ${i.description}`,
+      debit: i.amount, kredit: 0,
     })),
     ...expenses.map(e => ({
       seconds: new Date(`${e.date}T12:00:00`).getTime() / 1000,
@@ -245,6 +255,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     const key = new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 10);
     const cur = dailyMap.get(key) ?? { income: 0, expense: 0 };
     cur.income += r.totalRevenue ?? 0; dailyMap.set(key, cur);
+  });
+  income.forEach(i => {
+    const cur = dailyMap.get(i.date) ?? { income: 0, expense: 0 };
+    cur.income += i.amount; dailyMap.set(i.date, cur);
   });
   expenses.forEach(e => {
     const cur = dailyMap.get(e.date) ?? { income: 0, expense: 0 };
@@ -300,6 +314,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       styleHeader(wsLR, 3, ['Keterangan', 'Jumlah']);
       const lrRows: [string, number][] = [
         ['Penjualan Kasir', kasirRevenue], ['Penjualan Online', onlineRevenue], ['Pendapatan Konsinyasi', consignmentRevenue],
+        ['Pendapatan Lain-lain', totalPendapatanLain],
         ['Total Pendapatan', totalPendapatan],
         ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}`, v] as [string, number]),
         ['Total Beban', totalBeban],
@@ -462,6 +477,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                   { icon: <ShoppingCart size={14} />, label: 'Penjualan Kasir', val: kasirRevenue },
                   { icon: <Globe size={14} />, label: 'Penjualan Online', val: onlineRevenue },
                   { icon: <Store size={14} />, label: 'Pendapatan Konsinyasi', val: consignmentRevenue },
+                  { icon: <Coins size={14} />, label: 'Pendapatan Lain-lain', val: totalPendapatanLain },
                 ].map((r, i) => (
                   <div key={i} className="px-5 py-3 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>{r.icon}</div>

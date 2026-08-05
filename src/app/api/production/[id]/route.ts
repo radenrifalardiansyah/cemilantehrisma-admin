@@ -83,9 +83,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const materialRefs = materialIds.map(mid => db.collection('rawMaterials').doc(mid));
       const productRefs = productIds.map(pid => db.collection('products').doc(pid));
       const oldExpenseSnap = oldExpenseId ? await tx.get(db.collection('expenses').doc(oldExpenseId)) : null;
-      const [materialSnaps, productSnaps] = await Promise.all([
+      const oldWarehouseId = batch.warehouseId as string | undefined;
+      const oldWsRefs = oldWarehouseId
+        ? oldOutputs.map(o => db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`))
+        : [];
+      const [materialSnaps, productSnaps, oldWsSnaps] = await Promise.all([
         Promise.all(materialRefs.map(r => tx.get(r))),
         Promise.all(productRefs.map(r => tx.get(r))),
+        Promise.all(oldWsRefs.map(r => tx.get(r))),
       ]);
 
       newOutputs.forEach(o => {
@@ -154,12 +159,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       // Stok gudang: kembalikan efek batch lama di gudang lama, lalu terapkan output batch baru di gudang baru
       // (batch lama sebelum fitur ini tidak punya warehouseId — tidak ada yang perlu dikembalikan).
-      const oldWarehouseId = batch.warehouseId as string | undefined;
+      // Di-floor ke 0 sama seperti reverseProductState di atas — kalau tidak, stok gudang bisa minus
+      // sementara stok produk sudah di-floor duluan, dan dua-duanya jadi tidak sinkron lagi.
       if (oldWarehouseId) {
-        oldOutputs.forEach(o => {
+        oldOutputs.forEach((o, i) => {
           const wsRef = db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`);
+          const curWsQty = typeof oldWsSnaps[i].data()?.stockQty === 'number' ? oldWsSnaps[i].data()!.stockQty as number : 0;
           tx.set(wsRef, { warehouseId: oldWarehouseId, productId: o.productId, productName: o.productName,
-            stockQty: FieldValue.increment(-o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            stockQty: Math.max(0, curWsQty - o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
           tx.set(db.collection('stock').doc(), {
             warehouseId: oldWarehouseId, warehouseName: batch.warehouseName ?? '',
             productId: o.productId, productName: o.productName,
@@ -249,9 +256,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
       const productRefs  = outputs.map(o => db.collection('products').doc(o.productId));
       const expenseSnap = expenseId ? await tx.get(db.collection('expenses').doc(expenseId)) : null;
-      const [materialSnaps, productSnaps] = await Promise.all([
+      const warehouseId = batch.warehouseId as string | undefined;
+      const wsRefs = warehouseId
+        ? outputs.map(o => db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`))
+        : [];
+      const [materialSnaps, productSnaps, wsSnaps] = await Promise.all([
         Promise.all(materialRefs.map(r => tx.get(r))),
         Promise.all(productRefs.map(r => tx.get(r))),
+        Promise.all(wsRefs.map(r => tx.get(r))),
       ]);
 
       materialsUsed.forEach((m, i) => {
@@ -275,12 +287,13 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       });
 
       // Kembalikan stok gudang tujuan batch ini (batch lama sebelum fitur ini tidak punya warehouseId).
-      const warehouseId = batch.warehouseId as string | undefined;
+      // Di-floor ke 0 sama seperti reverseProductState di atas, supaya tidak minus & tidak sinkron.
       if (warehouseId) {
-        outputs.forEach(o => {
+        outputs.forEach((o, i) => {
           const wsRef = db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`);
+          const curWsQty = typeof wsSnaps[i].data()?.stockQty === 'number' ? wsSnaps[i].data()!.stockQty as number : 0;
           tx.set(wsRef, { warehouseId, productId: o.productId, productName: o.productName,
-            stockQty: FieldValue.increment(-o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            stockQty: Math.max(0, curWsQty - o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
           tx.set(db.collection('stock').doc(), {
             warehouseId, warehouseName: batch.warehouseName ?? '',
             productId: o.productId, productName: o.productName,

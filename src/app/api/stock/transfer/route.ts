@@ -29,31 +29,37 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
-
-  await db.collection('stock').add({
-    type: 'transfer',
-    fromWarehouseId,
-    fromWarehouseName,
-    toWarehouseId,
-    toWarehouseName,
-    productId,
-    productName,
-    qty,
-    note: note ?? '',
-    createdAt: FieldValue.serverTimestamp(),
-  });
-
   const fromRef = db.collection('warehouse_stock').doc(`${fromWarehouseId}_${productId}`);
-  await fromRef.set(
-    { warehouseId: fromWarehouseId, productId, productName, stockQty: FieldValue.increment(-qty), updatedAt: FieldValue.serverTimestamp() },
-    { merge: true },
-  );
-
   const toRef = db.collection('warehouse_stock').doc(`${toWarehouseId}_${productId}`);
-  await toRef.set(
-    { warehouseId: toWarehouseId, productId, productName, stockQty: FieldValue.increment(qty), updatedAt: FieldValue.serverTimestamp() },
-    { merge: true },
-  );
+
+  try {
+    await db.runTransaction(async tx => {
+      const fromSnap = await tx.get(fromRef);
+      const fromQty = typeof fromSnap.data()?.stockQty === 'number' ? fromSnap.data()!.stockQty as number : 0;
+      if (fromQty < qty) {
+        throw new Error(`Stok ${productName} di ${fromWarehouseName} tidak cukup (tersisa ${fromQty}, butuh ${qty})`);
+      }
+
+      tx.set(fromRef, {
+        warehouseId: fromWarehouseId, productId, productName,
+        stockQty: FieldValue.increment(-qty), updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      tx.set(toRef, {
+        warehouseId: toWarehouseId, productId, productName,
+        stockQty: FieldValue.increment(qty), updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      const stockRef = db.collection('stock').doc();
+      tx.set(stockRef, {
+        type: 'transfer',
+        fromWarehouseId, fromWarehouseName, toWarehouseId, toWarehouseName,
+        productId, productName, qty, note: note ?? '',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal transfer stok.' }, { status: 400 });
+  }
 
   return Response.json({ ok: true });
 }

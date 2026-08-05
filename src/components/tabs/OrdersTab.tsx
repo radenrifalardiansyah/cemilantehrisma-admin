@@ -228,7 +228,8 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
       setOrders(o => o.map(x => x.id === id ? { ...x, status: 'selesai' } : x));
       toast.success('Pesanan ditandai selesai — sudah ikut terhitung di Laporan Keuangan.');
     } else {
-      toast.error('Gagal menandai pesanan selesai.');
+      const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(error ?? 'Gagal menandai pesanan selesai.');
     }
     setMarkingId(null);
   };

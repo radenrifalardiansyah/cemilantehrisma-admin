@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
+import ExcelJS from 'exceljs';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
   X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, ChevronLeft, Package,
-  ArrowLeftRight, Clock, ImageIcon, Ban, Search,
+  ArrowLeftRight, Clock, ImageIcon, Ban, Search, FileBarChart, FileSpreadsheet,
+  AlertTriangle, Wallet, Boxes,
 } from 'lucide-react';
 import { useViewMode, type ViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -21,14 +23,46 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 const API = '';
 const HEADER_BTN_H = 34;
 
-type SubTab = 'stok' | 'masuk' | 'keluar' | 'transfer';
+type SubTab = 'stok' | 'masuk' | 'keluar' | 'transfer' | 'laporan';
 
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stok',     label: 'Stok',     Icon: Warehouse },
   { id: 'masuk',    label: 'Masuk',    Icon: TrendingUp },
   { id: 'keluar',   label: 'Keluar',   Icon: TrendingDown },
   { id: 'transfer', label: 'Transfer', Icon: ArrowLeftRight },
+  { id: 'laporan',  label: 'Laporan',  Icon: FileBarChart },
 ];
+
+// ── Laporan Stok — periode ────────────────────────────────────────────────────
+type ReportPeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'custom';
+const REPORT_PERIOD_OPTIONS: { id: ReportPeriodKey; label: string }[] = [
+  { id: 'today',  label: 'Hari Ini' },
+  { id: '7d',     label: '7 Hari' },
+  { id: '30d',    label: '30 Hari' },
+  { id: 'month',  label: 'Bulan Ini' },
+  { id: 'year',   label: 'Tahun Ini' },
+  { id: 'custom', label: 'Custom' },
+];
+
+function reportToISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function reportPeriodRange(period: ReportPeriodKey, customFrom: string, customTo: string): { from: string; to: string } {
+  const now = new Date();
+  const today = reportToISO(now);
+  switch (period) {
+    case 'today': return { from: today, to: today };
+    case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: reportToISO(d), to: today }; }
+    case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: reportToISO(d), to: today }; }
+    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: reportToISO(d), to: today }; }
+    case 'year': { const d = new Date(now.getFullYear(), 0, 1); return { from: reportToISO(d), to: today }; }
+    case 'custom': return { from: customFrom || today, to: customTo || today };
+  }
+}
+
+const formatRp = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
 interface WarehouseData {
   id: string;
@@ -68,6 +102,15 @@ interface Product {
   category?: string;
   stock?: string;
   stockQty?: number;
+  costPrice?: number;
+}
+
+interface WhStockRow {
+  warehouseId: string;
+  warehouseName: string;
+  productId: string;
+  productName: string;
+  stockQty: number;
 }
 
 interface Category {
@@ -156,22 +199,22 @@ function WarehouseModal({
 // ── TxModal — add stok masuk / keluar ─────────────────────────────────────────
 function TxModal({
   type, warehouseOptions, productOptions,
-  wId, pId, qty, note, onWId, onPId, onQty, onNote,
+  wId, pId, qty, note, noWarehouse, onWId, onPId, onQty, onNote, onNoWarehouse,
   submitting, onClose, onSubmit,
 }: {
   type: 'in' | 'out';
   warehouseOptions: SearchSelectOption[];
   productOptions: SearchSelectOption[];
-  wId: string; pId: string; qty: string; note: string;
+  wId: string; pId: string; qty: string; note: string; noWarehouse: boolean;
   onWId: (v: string) => void; onPId: (v: string) => void;
-  onQty: (v: string) => void; onNote: (v: string) => void;
+  onQty: (v: string) => void; onNote: (v: string) => void; onNoWarehouse: (v: boolean) => void;
   submitting: boolean;
   onClose: () => void;
   onSubmit: () => void;
 }) {
   if (typeof document === 'undefined') return null;
   const isIn = type === 'in';
-  const canSubmit = !!wId && !!pId && !!qty && Number(qty) > 0;
+  const canSubmit = (noWarehouse || !!wId) && !!pId && !!qty && Number(qty) > 0;
   return createPortal(
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
       <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
@@ -193,13 +236,24 @@ function TxModal({
         </div>
         <div className="modal-body">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {!isIn && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={noWarehouse}
+                  onChange={e => { onNoWarehouse(e.target.checked); if (e.target.checked) onWId(''); }} />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  Koreksi stok — tanpa gudang (tidak mengubah stok per gudang)
+                </span>
+              </label>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
-                  placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-              </div>
-              <div>
+              {!noWarehouse && (
+                <div>
+                  <label className="field-label">Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
+                    placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+                </div>
+              )}
+              <div className={noWarehouse ? 'sm:col-span-2' : undefined}>
                 <label className="field-label">Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
                 <SearchSelect value={pId} onChange={onPId} options={productOptions}
                   placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
@@ -532,6 +586,108 @@ function TxList({
   );
 }
 
+// ── ReportTable — tabel detail stok per produk pada Laporan Stok ─────────────
+interface ReportRow {
+  product: Product;
+  qty: number;
+  costPrice: number;
+  nilai: number;
+  masuk: number;
+  keluar: number;
+  net: number;
+  status: 'habis' | 'rendah' | 'normal' | 'open_po';
+}
+
+const REPORT_STATUS_STYLE = {
+  habis:   { label: 'Habis',   color: '#DC2626', bg: '#FEF2F2' },
+  rendah:  { label: 'Rendah',  color: '#A84F10', bg: '#FDF0E6' },
+  normal:  { label: 'Normal',  color: '#15803D', bg: '#F0FDF4' },
+  open_po: { label: 'Open PO', color: '#A84F10', bg: '#FDF0E6' },
+} as const;
+
+function ReportTable({ rows, categories, startIndex = 0 }: {
+  rows: ReportRow[];
+  categories: Category[];
+  startIndex?: number;
+}) {
+  const catLabel = (id?: string) => categories.find(c => c.id === id)?.label;
+  const formatRpCell = (n: number) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+  return (
+    <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+      <div className="hidden lg:flex px-4 py-2.5 items-center gap-3" style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+        <span className="w-6 flex-shrink-0" />
+        <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Produk</span>
+        <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Stok</span>
+        <span className="w-24 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>HPP</span>
+        <span className="w-28 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Nilai Stok</span>
+        <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Masuk</span>
+        <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Keluar</span>
+        <span className="w-20 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Status</span>
+      </div>
+      <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+        {rows.map((r, i) => {
+          const st = REPORT_STATUS_STYLE[r.status];
+          const cat = catLabel(r.product.category);
+          return (
+            <div key={r.product.id} className="px-4 py-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+              <div className="flex items-center gap-3 lg:contents">
+                <span className="hidden lg:inline-block w-6 flex-shrink-0 text-right text-[11px] font-bold tabular" style={{ color: 'var(--text-muted)' }}>
+                  {startIndex + i + 1}
+                </span>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-base relative overflow-hidden" style={{ background: `${r.product.bgColor}22` }}>
+                  {r.product.imageUrls?.[0]
+                    ? <Image src={r.product.imageUrls[0]} alt={r.product.name} fill className="object-contain" sizes="36px" unoptimized />
+                    : r.product.emoji}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{r.product.name}</p>
+                  {cat && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-muted)' }}>{cat}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 lg:contents">
+                <div className="lg:w-16 lg:flex-shrink-0 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Stok</p>
+                  <p className="text-sm font-bold tabular lg:text-right" style={{ color: 'var(--text-primary)' }}>{r.qty}</p>
+                </div>
+                <div className="lg:w-24 lg:flex-shrink-0 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>HPP</p>
+                  <p className="text-sm tabular truncate lg:text-right" style={{ color: 'var(--text-secondary)' }}>{formatRpCell(r.costPrice)}</p>
+                </div>
+                <div className="lg:w-28 lg:flex-shrink-0 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Nilai Stok</p>
+                  <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: 'var(--accent)' }}>{formatRpCell(r.nilai)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 lg:contents">
+                <div className="lg:w-16 lg:flex-shrink-0 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Masuk</p>
+                  <p className="text-sm font-bold tabular lg:text-right" style={{ color: r.masuk > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+                    {r.masuk > 0 ? `+${r.masuk}` : '–'}
+                  </p>
+                </div>
+                <div className="lg:w-16 lg:flex-shrink-0 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Keluar</p>
+                  <p className="text-sm font-bold tabular lg:text-right" style={{ color: r.keluar > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                    {r.keluar > 0 ? `–${r.keluar}` : '–'}
+                  </p>
+                </div>
+                <div className="lg:w-20 lg:flex-shrink-0 min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Status</p>
+                  <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full lg:ml-auto" style={{ color: st.color, background: st.bg }}>
+                    {st.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function StockTab({
   creds,
@@ -574,6 +730,7 @@ export default function StockTab({
   const [txPId, setTxPId]           = useState('');
   const [txQty, setTxQty]           = useState('');
   const [txNote, setTxNote]         = useState('');
+  const [txNoWarehouse, setTxNoWarehouse] = useState(false);
   const [txSubmitting, setTxSub]    = useState(false);
 
   // Transfer modal
@@ -595,6 +752,23 @@ export default function StockTab({
   const [transferSearch, setTransferSearch]       = useState('');
   const [transferPage, setTransferPage]           = useState(1);
   const [transferPageSize, setTransferPageSize]   = useState(10);
+
+  // Laporan Stok
+  const [reportPeriod, setReportPeriod]         = useState<ReportPeriodKey>('month');
+  const [reportCustomFrom, setReportCustomFrom] = useState('');
+  const [reportCustomTo, setReportCustomTo]     = useState('');
+  const [reportWhFilter, setReportWhFilter]     = useState('semua');
+  const [reportCatFilter, setReportCatFilter]   = useState('semua');
+  const [reportSearch, setReportSearch]         = useState('');
+  const [reportPage, setReportPage]             = useState(1);
+  const [reportPageSize, setReportPageSize]     = useState(10);
+  const [reportTxPage, setReportTxPage]         = useState(1);
+  const [reportTxPageSize, setReportTxPageSize] = useState(10);
+  const [reportLedger, setReportLedger]         = useState<TxEntry[]>([]);
+  const [reportLedgerLoading, setReportLedgerLoading] = useState(false);
+  const [allWhStocks, setAllWhStocks]           = useState<WhStockRow[]>([]);
+  const [allWhStocksLoading, setAllWhStocksLoading] = useState(false);
+  const [exportingReport, setExportingReport]   = useState(false);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
@@ -626,6 +800,32 @@ export default function StockTab({
       setStocks(s);
     }
     setStockLoading(false);
+  };
+
+  // ── Laporan Stok — mutasi periode & stok per gudang ──
+  const { from: reportFrom, to: reportTo } = reportPeriodRange(reportPeriod, reportCustomFrom, reportCustomTo);
+
+  const loadReportLedger = async () => {
+    setReportLedgerLoading(true);
+    const r = await fetch(`${API}/api/stock?from=${reportFrom}&to=${reportTo}`, { headers });
+    if (r.ok) {
+      const { entries } = await r.json() as { entries: TxEntry[] };
+      setReportLedger(entries);
+    }
+    setReportLedgerLoading(false);
+  };
+
+  const loadAllWhStocks = async () => {
+    if (warehouses.length === 0) { setAllWhStocks([]); return; }
+    setAllWhStocksLoading(true);
+    const results = await Promise.all(warehouses.map(async w => {
+      const r = await fetch(`${API}/api/warehouses/${w.id}/stock`, { headers });
+      if (!r.ok) return [];
+      const { stocks: s } = await r.json() as { stocks: ProductStock[] };
+      return s.map(x => ({ warehouseId: w.id, warehouseName: w.name, ...x }));
+    }));
+    setAllWhStocks(results.flat());
+    setAllWhStocksLoading(false);
   };
 
   // ── Kosongkan stok ──
@@ -663,8 +863,12 @@ export default function StockTab({
   useEffect(() => { loadWarehouses(); }, []);
 
   useEffect(() => {
-    if (subTab !== 'stok') loadTx();
+    if (subTab !== 'stok' && subTab !== 'laporan') loadTx();
   }, [subTab]);
+
+  useEffect(() => {
+    if (subTab === 'laporan') { loadReportLedger(); loadAllWhStocks(); }
+  }, [subTab, reportFrom, reportTo, warehouses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Warehouse actions ──
   const openWarehouse = async (w: WarehouseData) => {
@@ -727,26 +931,32 @@ export default function StockTab({
 
   // ── Submit masuk / keluar ──
   const submitTx = async (type: 'in' | 'out') => {
-    if (!txWId || !txPId || !txQty || Number(txQty) <= 0) return;
+    if (!txPId || !txQty || Number(txQty) <= 0) return;
+    if (!txNoWarehouse && !txWId) return;
     setTxSub(true);
-    const wh   = warehouses.find(w => w.id === txWId);
     const prod = products.find(p => p.id === txPId);
-    const r = await fetch(`${API}/api/warehouses/${txWId}/stock`, {
-      method: 'POST', headers,
-      body: JSON.stringify({
-        productId: txPId,
-        productName: prod?.name ?? '',
-        warehouseName: wh?.name ?? '',
-        type, qty: Number(txQty), note: txNote,
-      }),
-    });
+    const r = txNoWarehouse
+      ? await fetch(`${API}/api/stock/${txPId}`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ productName: prod?.name ?? '', type, qty: Number(txQty), note: txNote }),
+        })
+      : await fetch(`${API}/api/warehouses/${txWId}/stock`, {
+          method: 'POST', headers,
+          body: JSON.stringify({
+            productId: txPId,
+            productName: prod?.name ?? '',
+            warehouseName: warehouses.find(w => w.id === txWId)?.name ?? '',
+            type, qty: Number(txQty), note: txNote,
+          }),
+        });
     if (r.ok) {
-      setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
+      setTxWId(''); setTxPId(''); setTxQty(''); setTxNote(''); setTxNoWarehouse(false);
       setShowTxModal(null);
       await loadTx();
       toast.success(type === 'in' ? 'Stok masuk berhasil dicatat.' : 'Stok keluar berhasil dicatat.');
     } else {
-      toast.error('Gagal mencatat transaksi stok.');
+      const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(error ?? 'Gagal mencatat transaksi stok.');
     }
     setTxSub(false);
   };
@@ -773,7 +983,8 @@ export default function StockTab({
       await loadTx();
       toast.success('Transfer stok berhasil.');
     } else {
-      toast.error('Gagal melakukan transfer stok.');
+      const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(error ?? 'Gagal melakukan transfer stok.');
     }
     setTrSub(false);
   };
@@ -812,7 +1023,7 @@ export default function StockTab({
 
   // ── Modal open helpers ──
   const openTxModal = (type: 'in' | 'out') => {
-    setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
+    setTxWId(''); setTxPId(''); setTxQty(''); setTxNote(''); setTxNoWarehouse(false);
     setShowTxModal(type);
   };
   const openTransferModal = () => {
@@ -847,6 +1058,206 @@ export default function StockTab({
   const safeTransferPage   = Math.min(transferPage, totalTransferPages);
   const paginatedTransfer  = filteredTransfer.slice((safeTransferPage - 1) * transferPageSize, safeTransferPage * transferPageSize);
   const goTransferPage     = (p: number) => setTransferPage(Math.max(1, Math.min(p, totalTransferPages)));
+
+  // ── Laporan Stok — mutasi periode terpilih, gudang terpilih ──
+  const reportLedgerFiltered = reportWhFilter === 'semua'
+    ? reportLedger
+    : reportLedger.filter(e =>
+        e.warehouseId === reportWhFilter ||
+        e.fromWarehouseId === reportWhFilter ||
+        e.toWarehouseId === reportWhFilter,
+      );
+
+  const sumQty = (entries: TxEntry[], types: TxEntry['type'][]) =>
+    entries.filter(e => types.includes(e.type)).reduce((s, e) => s + e.qty, 0);
+
+  const reportMasukQty   = sumQty(reportLedgerFiltered, ['in']);
+  const reportKeluarQty  = sumQty(reportLedgerFiltered, ['out', 'reject']);
+  const reportTrIn       = reportWhFilter === 'semua' ? 0 : reportLedgerFiltered.filter(e => e.type === 'transfer' && e.toWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
+  const reportTrOut      = reportWhFilter === 'semua' ? 0 : reportLedgerFiltered.filter(e => e.type === 'transfer' && e.fromWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
+  const reportTransferCt = reportLedgerFiltered.filter(e => e.type === 'transfer').length;
+  const reportNetQty     = reportMasukQty + reportTrIn - reportKeluarQty - reportTrOut;
+
+  // Stok saat ini — global (semua gudang) atau khusus satu gudang
+  const currentQtyMap = new Map<string, number>();
+  if (reportWhFilter === 'semua') {
+    products.forEach(p => currentQtyMap.set(p.id, p.stockQty ?? 0));
+  } else {
+    allWhStocks.filter(s => s.warehouseId === reportWhFilter).forEach(s => currentQtyMap.set(s.productId, s.stockQty));
+  }
+
+  const reportRowsAll = products.map(p => {
+    const qty = currentQtyMap.get(p.id) ?? 0;
+    const costPrice = p.costPrice ?? 0;
+    const ledgerForP = reportLedgerFiltered.filter(e => e.productId === p.id);
+    const masuk = sumQty(ledgerForP, ['in']);
+    const keluar = sumQty(ledgerForP, ['out', 'reject']);
+    const trIn  = reportWhFilter === 'semua' ? 0 : ledgerForP.filter(e => e.type === 'transfer' && e.toWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
+    const trOut = reportWhFilter === 'semua' ? 0 : ledgerForP.filter(e => e.type === 'transfer' && e.fromWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
+    const isPO = p.stock === 'open_po';
+    const status: 'habis' | 'rendah' | 'normal' | 'open_po' = isPO ? 'open_po' : qty === 0 ? 'habis' : qty < 10 ? 'rendah' : 'normal';
+    return {
+      product: p, qty, costPrice, nilai: qty * costPrice,
+      masuk, keluar, net: masuk + trIn - keluar - trOut, status,
+    };
+  });
+
+  const reportCatCounts = categories
+    .map(c => ({ ...c, count: reportRowsAll.filter(r => r.product.category === c.id).length }))
+    .filter(c => c.count > 0);
+
+  const reportScopeRows = reportCatFilter === 'semua' ? reportRowsAll : reportRowsAll.filter(r => r.product.category === reportCatFilter);
+  const reportDisplayRows = (reportSearch
+    ? reportScopeRows.filter(r => r.product.name.toLowerCase().includes(reportSearch.toLowerCase()))
+    : reportScopeRows
+  ).slice().sort((a, b) => b.nilai - a.nilai);
+
+  const reportTotalNilai   = reportScopeRows.reduce((s, r) => s + r.nilai, 0);
+  const reportTotalUnit    = reportScopeRows.reduce((s, r) => s + r.qty, 0);
+  const reportJenisProduk  = reportScopeRows.filter(r => r.qty > 0 || r.status === 'open_po').length;
+  const reportRendahCount  = reportScopeRows.filter(r => r.status === 'rendah').length;
+  const reportHabisCount   = reportScopeRows.filter(r => r.status === 'habis').length;
+
+  const totalReportPages = Math.max(1, Math.ceil(reportDisplayRows.length / reportPageSize));
+  const safeReportPage   = Math.min(reportPage, totalReportPages);
+  const paginatedReportRows = reportDisplayRows.slice((safeReportPage - 1) * reportPageSize, safeReportPage * reportPageSize);
+  const goReportPage     = (p: number) => setReportPage(Math.max(1, Math.min(p, totalReportPages)));
+
+  const reportLedgerSorted = [...reportLedgerFiltered].sort((a, b) => {
+    const as = a.createdAt?.seconds ?? a.createdAt?._seconds ?? 0;
+    const bs = b.createdAt?.seconds ?? b.createdAt?._seconds ?? 0;
+    return bs - as;
+  });
+  const totalReportTxPages = Math.max(1, Math.ceil(reportLedgerSorted.length / reportTxPageSize));
+  const safeReportTxPage   = Math.min(reportTxPage, totalReportTxPages);
+  const paginatedReportTx  = reportLedgerSorted.slice((safeReportTxPage - 1) * reportTxPageSize, safeReportTxPage * reportTxPageSize);
+  const goReportTxPage     = (p: number) => setReportTxPage(Math.max(1, Math.min(p, totalReportTxPages)));
+
+  const reportPeriodLabel = REPORT_PERIOD_OPTIONS.find(p => p.id === reportPeriod)?.label ?? '';
+  const reportWhLabel = reportWhFilter === 'semua' ? 'Semua Gudang' : (warehouses.find(w => w.id === reportWhFilter)?.name ?? '');
+
+  const exportReportExcel = async () => {
+    setExportingReport(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+
+      const styleTitle = (ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number) => {
+        ws.mergeCells(1, 1, 1, colCount);
+        const t = ws.getCell(1, 1);
+        t.value = title; t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+        t.alignment = { horizontal: 'center', vertical: 'middle' };
+        t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+        ws.getRow(1).height = 28;
+        ws.mergeCells(2, 1, 2, colCount);
+        const s = ws.getCell(2, 1);
+        s.value = subtitle; s.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+        s.alignment = { horizontal: 'center', vertical: 'middle' };
+        s.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+        ws.getRow(2).height = 20;
+      };
+      const styleHeader = (ws: ExcelJS.Worksheet, rowNum: number, hdrs: string[]) => {
+        const row = ws.getRow(rowNum);
+        hdrs.forEach((h, i) => { row.getCell(i + 1).value = h; });
+        row.height = 24;
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
+        ws.views = [{ state: 'frozen', ySplit: rowNum }];
+      };
+      const zebra = (ws: ExcelJS.Worksheet, rowNum: number, idx: number) => {
+        ws.getRow(rowNum).eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
+          cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+        });
+      };
+
+      // ── Sheet 1: Ringkasan ──
+      const wsR = wb.addWorksheet('Ringkasan');
+      wsR.columns = [{ key: 'a', width: 32 }, { key: 'b', width: 20 }];
+      styleTitle(wsR, 'RINGKASAN LAPORAN STOK — CEMILAN TEH RISMA', `${reportWhLabel} · Periode: ${reportPeriodLabel} (${reportFrom} s/d ${reportTo})`, 2);
+      styleHeader(wsR, 3, ['Keterangan', 'Jumlah']);
+      const rRows: [string, number | string][] = [
+        ['Total Nilai Stok (HPP)', reportTotalNilai], ['Total Unit Stok', reportTotalUnit],
+        ['Jenis Produk', reportJenisProduk], ['Stok Rendah (< 10 unit)', reportRendahCount], ['Stok Habis', reportHabisCount],
+        ['Stok Masuk (periode)', reportMasukQty], ['Stok Keluar (periode)', reportKeluarQty],
+        ['Transaksi Transfer (periode)', reportTransferCt], ['Net Perubahan (periode)', reportNetQty],
+      ];
+      rRows.forEach(([label, val], i) => {
+        const rowNum = 4 + i;
+        wsR.getRow(rowNum).getCell(1).value = label;
+        wsR.getRow(rowNum).getCell(2).value = val;
+        if (label === 'Total Nilai Stok (HPP)') wsR.getRow(rowNum).getCell(2).numFmt = '"Rp"#,##0';
+        zebra(wsR, rowNum, i);
+      });
+
+      // ── Sheet 2: Detail Stok per Produk ──
+      const wsD = wb.addWorksheet('Detail Stok per Produk');
+      wsD.columns = [
+        { key: 'produk', width: 30 }, { key: 'kategori', width: 16 }, { key: 'qty', width: 12 },
+        { key: 'hpp', width: 16 }, { key: 'nilai', width: 18 }, { key: 'masuk', width: 12 },
+        { key: 'keluar', width: 12 }, { key: 'net', width: 12 }, { key: 'status', width: 14 },
+      ];
+      styleTitle(wsD, 'DETAIL STOK PER PRODUK — CEMILAN TEH RISMA', `${reportWhLabel} · Periode mutasi: ${reportPeriodLabel} (${reportFrom} s/d ${reportTo})`, 9);
+      styleHeader(wsD, 3, ['Produk', 'Kategori', 'Stok Saat Ini', 'HPP', 'Nilai Stok', 'Masuk', 'Keluar', 'Net', 'Status']);
+      const catLabelFor = (id?: string) => categories.find(c => c.id === id)?.label ?? (id ?? '');
+      const statusLabel = { habis: 'Habis', rendah: 'Rendah', normal: 'Normal', open_po: 'Open PO' };
+      [...reportRowsAll].sort((a, b) => b.nilai - a.nilai).forEach((r, i) => {
+        const rowNum = 4 + i;
+        const row = wsD.getRow(rowNum);
+        row.getCell(1).value = r.product.name;
+        row.getCell(2).value = catLabelFor(r.product.category);
+        row.getCell(3).value = r.qty;
+        row.getCell(4).value = r.costPrice;
+        row.getCell(5).value = r.nilai;
+        row.getCell(6).value = r.masuk;
+        row.getCell(7).value = r.keluar;
+        row.getCell(8).value = r.net;
+        row.getCell(9).value = statusLabel[r.status];
+        row.getCell(4).numFmt = '"Rp"#,##0';
+        row.getCell(5).numFmt = '"Rp"#,##0';
+        zebra(wsD, rowNum, i);
+      });
+
+      // ── Sheet 3: Riwayat Mutasi ──
+      const wsM = wb.addWorksheet('Riwayat Mutasi');
+      wsM.columns = [
+        { key: 'tgl', width: 16 }, { key: 'tipe', width: 12 }, { key: 'produk', width: 28 },
+        { key: 'lokasi', width: 30 }, { key: 'qty', width: 10 }, { key: 'ket', width: 30 },
+      ];
+      styleTitle(wsM, 'RIWAYAT MUTASI STOK — CEMILAN TEH RISMA', `${reportWhLabel} · Periode: ${reportPeriodLabel} (${reportFrom} s/d ${reportTo})`, 6);
+      styleHeader(wsM, 3, ['Tanggal', 'Tipe', 'Produk', 'Lokasi', 'Qty', 'Keterangan']);
+      const tipeLabel = { in: 'Masuk', out: 'Keluar', reject: 'Reject', transfer: 'Transfer' };
+      reportLedgerSorted.forEach((e, i) => {
+        const rowNum = 4 + i;
+        const row = wsM.getRow(rowNum);
+        const seconds = e.createdAt?.seconds ?? e.createdAt?._seconds;
+        row.getCell(1).value = seconds ? new Date(seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+        row.getCell(2).value = tipeLabel[e.type];
+        row.getCell(3).value = e.productName || products.find(p => p.id === e.productId)?.name || e.productId;
+        row.getCell(4).value = e.type === 'transfer'
+          ? `${e.fromWarehouseName || wName(e.fromWarehouseId)} → ${e.toWarehouseName || wName(e.toWarehouseId)}`
+          : (e.warehouseName || wName(e.warehouseId));
+        row.getCell(5).value = e.qty;
+        row.getCell(6).value = e.note ?? '';
+        zebra(wsM, rowNum, i);
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-stok-${reportFrom}-sd-${reportTo}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally { setExportingReport(false); }
+  };
 
   return (
     <div className="flex flex-col" style={{ height: '100%' }}>
@@ -1368,13 +1779,170 @@ export default function StockTab({
           </div>
         )}
 
+        {/* ════ LAPORAN ═════════════════════════════════════════ */}
+        {subTab === 'laporan' && (
+          <div className="p-4 lg:p-6 animate-fade-up space-y-5">
+            <TopbarPortal>
+              <button onClick={exportReportExcel} disabled={exportingReport} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
+                {exportingReport ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+              </button>
+              <button onClick={() => { loadReportLedger(); loadAllWhStocks(); }}
+                className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+                <RefreshCw size={14} className={(reportLedgerLoading || allWhStocksLoading) ? 'animate-spin' : ''} />
+              </button>
+            </TopbarPortal>
+
+            {/* Pemilih periode */}
+            <div className="flex flex-wrap items-center gap-2">
+              {REPORT_PERIOD_OPTIONS.map(p => (
+                <button key={p.id} onClick={() => setReportPeriod(p.id)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                  style={reportPeriod === p.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                  {p.label}
+                </button>
+              ))}
+              {reportPeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input type="date" value={reportCustomFrom} onChange={e => setReportCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                  <input type="date" value={reportCustomTo} onChange={e => setReportCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+                </div>
+              )}
+            </div>
+
+            {/* Filter gudang */}
+            <ScrollChips>
+              <button onClick={() => setReportWhFilter('semua')} className={`tab-chip text-xs py-1.5 ${reportWhFilter === 'semua' ? 'active' : ''}`}>
+                <Warehouse size={11} /> Semua Gudang
+              </button>
+              {warehouses.map(w => (
+                <button key={w.id} onClick={() => setReportWhFilter(w.id)} className={`tab-chip text-xs py-1.5 ${reportWhFilter === w.id ? 'active' : ''}`}>
+                  {w.name}
+                </button>
+              ))}
+            </ScrollChips>
+
+            {/* Ringkasan stok saat ini */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
+                Ringkasan Stok Saat Ini — {reportWhLabel}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {[
+                  { icon: <Wallet size={16} />, label: 'Nilai Stok (HPP)', val: formatRp(reportTotalNilai), color: 'var(--accent)' },
+                  { icon: <Boxes size={16} />, label: 'Total Unit', val: reportTotalUnit, color: '#0284C7' },
+                  { icon: <Package size={16} />, label: 'Jenis Produk', val: reportJenisProduk, color: 'var(--success)' },
+                  { icon: <AlertTriangle size={16} />, label: 'Stok Rendah', val: reportRendahCount, color: '#A84F10' },
+                  { icon: <Ban size={16} />, label: 'Stok Habis', val: reportHabisCount, color: 'var(--danger)' },
+                ].map((c, i) => (
+                  <div key={i} className="card p-4">
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-3" style={{ background: 'var(--accent-bg)', color: c.color }}>
+                      {c.icon}
+                    </div>
+                    <p className="text-xl font-extrabold tabular" style={{ color: c.color }}>{c.val}</p>
+                    <p className="text-[11px] font-medium mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Ringkasan mutasi periode */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
+                Mutasi Periode {reportPeriodLabel} ({reportFrom} s/d {reportTo})
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { icon: <TrendingUp size={16} />, label: 'Stok Masuk', val: `+${reportMasukQty}`, color: 'var(--success)' },
+                  { icon: <TrendingDown size={16} />, label: 'Stok Keluar', val: `–${reportKeluarQty}`, color: 'var(--danger)' },
+                  { icon: <ArrowLeftRight size={16} />, label: 'Transfer', val: reportTransferCt, color: '#0284C7' },
+                  { icon: reportNetQty >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />, label: 'Net Perubahan',
+                    val: `${reportNetQty >= 0 ? '+' : ''}${reportNetQty}`, color: reportNetQty >= 0 ? 'var(--success)' : 'var(--danger)' },
+                ].map((c, i) => (
+                  <div key={i} className="card p-4 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: c.color }}>
+                      {c.icon}
+                    </div>
+                    <div>
+                      <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{c.val}</p>
+                      <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Detail per produk */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <p className="text-sm font-bold flex-1" style={{ color: 'var(--text-primary)' }}>Detail Stok per Produk</p>
+                <div className="relative sm:max-w-xs">
+                  <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input value={reportSearch} onChange={e => { setReportSearch(e.target.value); setReportPage(1); }}
+                    className="input text-sm w-full" style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder="Cari produk…" />
+                </div>
+              </div>
+
+              {reportCatCounts.length > 0 && (
+                <ScrollChips>
+                  <button onClick={() => { setReportCatFilter('semua'); setReportPage(1); }}
+                    className={`tab-chip text-xs py-1.5 ${reportCatFilter === 'semua' ? 'active' : ''}`}>
+                    Semua ({reportRowsAll.length})
+                  </button>
+                  {reportCatCounts.map(c => (
+                    <button key={c.id} onClick={() => { setReportCatFilter(c.id); setReportPage(1); }}
+                      className={`tab-chip text-xs py-1.5 ${reportCatFilter === c.id ? 'active' : ''}`}>
+                      {c.emoji} {c.label} ({c.count})
+                    </button>
+                  ))}
+                </ScrollChips>
+              )}
+
+              {paginatedReportRows.length === 0 ? (
+                <div className="card py-12 text-center">
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada produk yang cocok.</p>
+                </div>
+              ) : (
+                <>
+                  <ReportTable rows={paginatedReportRows} categories={categories} startIndex={(safeReportPage - 1) * reportPageSize} />
+                  <Pagination total={reportDisplayRows.length} safePage={safeReportPage} totalPages={totalReportPages}
+                    pageSize={reportPageSize} onPageSize={n => { setReportPageSize(n); setReportPage(1); }}
+                    onGoPage={goReportPage} unit="produk" />
+                </>
+              )}
+            </div>
+
+            {/* Riwayat mutasi periode */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Riwayat Mutasi — {reportWhLabel}</p>
+                <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />
+              </div>
+              {reportLedgerLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                </div>
+              ) : (
+                <>
+                  <TxList entries={paginatedReportTx} loading={false} emptyLabel="Tidak ada mutasi stok di periode ini"
+                    warehouses={warehouses} products={products} view={historyView}
+                    startIndex={(safeReportTxPage - 1) * reportTxPageSize} />
+                  <Pagination total={reportLedgerSorted.length} safePage={safeReportTxPage} totalPages={totalReportTxPages}
+                    pageSize={reportTxPageSize} onPageSize={n => { setReportTxPageSize(n); setReportTxPage(1); }}
+                    onGoPage={goReportTxPage} unit="mutasi" />
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {showTxModal && (
           <TxModal
             type={showTxModal}
             warehouseOptions={warehouseOptions}
             productOptions={productOptions}
-            wId={txWId} pId={txPId} qty={txQty} note={txNote}
-            onWId={setTxWId} onPId={setTxPId} onQty={setTxQty} onNote={setTxNote}
+            wId={txWId} pId={txPId} qty={txQty} note={txNote} noWarehouse={txNoWarehouse}
+            onWId={setTxWId} onPId={setTxPId} onQty={setTxQty} onNote={setTxNote} onNoWarehouse={setTxNoWarehouse}
             submitting={txSubmitting}
             onClose={() => setShowTxModal(null)}
             onSubmit={() => submitTx(showTxModal)}

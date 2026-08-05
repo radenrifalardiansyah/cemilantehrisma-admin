@@ -598,7 +598,9 @@ export default function PosTab({
         ? customerList.find(c => c.id === selectedCustRef.slice('customer:'.length))
         : undefined;
       const bank = bankOptions.find(b => b.code === transferBank);
-      await fetch('/api/orders', {
+      // Order & potong stok jadi satu transaksi atomik di server (lihat POST /api/orders) — kalau
+      // stok tidak cukup, order ini tidak tersimpan sama sekali, jadi responsnya wajib dicek.
+      const orderRes = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
         body: JSON.stringify({
@@ -614,20 +616,10 @@ export default function PosTab({
           ...(posWarehouseId ? { warehouseId: posWarehouseId, warehouseName: posWarehouseName } : {}),
         }),
       });
-
-      // Potong stok otomatis (best-effort — kegagalan di sini tidak membatalkan transaksi yang sudah diproses)
-      Promise.all(cartItems.map(i =>
-        fetch(`/api/stock/${i.productId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
-          body: JSON.stringify({
-            type: 'out', qty: i.qty, date: dateStr, note: `Penjualan Kasir - ${invNo}`,
-            ...(posWarehouseId ? { warehouseId: posWarehouseId, warehouseName: posWarehouseName } : {}),
-          }),
-        }).catch(() => null)
-      )).then(results => {
-        if (results.some(r => !r || !r.ok)) toast.error('Sebagian stok gagal diperbarui otomatis, cek menu Stok.');
-      });
+      if (!orderRes.ok) {
+        const { error } = await orderRes.json().catch(() => ({ error: undefined })) as { error?: string };
+        throw new Error(error ?? 'Gagal menyimpan transaksi.');
+      }
 
       setLastReceipt({
         invoiceNo: invNo, dateStr, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
@@ -640,7 +632,9 @@ export default function PosTab({
       setInvoiceNo(invNo);
       setWaPhoneDraft(custPhone);
       setPosView('done');
-    } catch { setProcessErr('Gagal memproses transaksi. Coba lagi.'); }
+    } catch (err) {
+      setProcessErr(err instanceof Error ? err.message : 'Gagal memproses transaksi. Coba lagi.');
+    }
     finally { setProcessing(false); }
   };
 

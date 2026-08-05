@@ -7,13 +7,13 @@ import {
   BarChart2, ShoppingCart, Package, Receipt, Tag,
   Users, Contact, Warehouse, Settings, LogOut, Home,
   ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
-  Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark,
+  Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark, Coins,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
-  | 'stock' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'expenses'
+  | 'stock' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
   | 'finance-report' | 'capital' | 'settings';
 
 interface NavTab {
@@ -52,6 +52,7 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
   {
     label: 'Keuangan',
     tabs: [
+      { id: 'income' as TabId, label: 'Pemasukan', mobileLabel: 'Pemasukan', Icon: Coins },
       { id: 'expenses' as TabId, label: 'Pengeluaran', mobileLabel: 'Pengeluaran', Icon: Banknote },
       { id: 'capital' as TabId, label: 'Modal & Prive', mobileLabel: 'Modal', Icon: Landmark },
       { id: 'finance-report' as TabId, label: 'Laporan Keuangan', mobileLabel: 'Laporan', Icon: LineChart },

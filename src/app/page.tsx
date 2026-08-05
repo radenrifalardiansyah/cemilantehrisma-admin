@@ -21,6 +21,7 @@ import SuppliersTab  from '@/components/tabs/SuppliersTab';
 import MaterialsTab  from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
 import ConsignmentTab from '@/components/tabs/ConsignmentTab';
+import IncomeTab      from '@/components/tabs/IncomeTab';
 import ExpensesTab   from '@/components/tabs/ExpensesTab';
 import FinanceReportTab from '@/components/tabs/FinanceReportTab';
 import CapitalTab from '@/components/tabs/CapitalTab';
@@ -953,6 +954,7 @@ export default function AdminPage() {
       {activeTab === 'materials'  && <MaterialsTab  creds={creds} />}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {activeTab === 'consignment' && <ConsignmentTab creds={creds} products={posProducts} />}
+      {activeTab === 'income'     && <IncomeTab     creds={creds} />}
       {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
       {activeTab === 'capital'    && <CapitalTab    creds={creds} />}
       {activeTab === 'finance-report' && (

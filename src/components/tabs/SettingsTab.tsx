@@ -157,62 +157,28 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const activeGroup = FIELD_GROUPS.find(g => g.id === activeGrp)!;
 
   return (
-    <div className="p-4 lg:p-6 space-y-5">
+    <div className="flex flex-col" style={{ height: '100%' }}>
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm"
-        >
-          {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <Check size={13} /> : <Save size={13} />}
-          {saved ? 'Tersimpan' : 'Simpan'}
-        </button>
-      </div>
+      {/* Sub-navigation */}
+      <ScrollChips
+        className="flex-shrink-0 px-4 pt-3.5 pb-3"
+        style={{ borderBottom: '1px solid var(--border-2)' }}
+      >
+        {FIELD_GROUPS.map(g => (
+          <button
+            key={g.id}
+            onClick={() => setActiveGrp(g.id)}
+            className={`tab-chip${activeGrp === g.id ? ' active' : ''}`}
+          >
+            {g.icon}{g.label}
+          </button>
+        ))}
+      </ScrollChips>
 
-      <div className="flex flex-col sm:flex-row gap-4 lg:gap-6">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto thin-scrollbar">
+        <div className="p-4 lg:p-6 space-y-5">
 
-        {/* Sidebar group picker */}
-        <aside className="flex-shrink-0 sm:w-[180px] hidden sm:block">
-          <div className="card p-2 space-y-0.5">
-            {FIELD_GROUPS.map(g => (
-              <button
-                key={g.id}
-                onClick={() => setActiveGrp(g.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors text-left ${
-                  activeGrp === g.id
-                    ? 'text-white'
-                    : ''
-                }`}
-                style={activeGrp === g.id
-                  ? { background: 'var(--accent)', color: '#fff' }
-                  : { color: 'var(--text-secondary)' }}
-              >
-                <span style={{ color: activeGrp === g.id ? '#fff' : 'var(--text-muted)' }}>{g.icon}</span>
-                {g.label}
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        {/* Mobile tab chips */}
-        <div className="sm:hidden">
-          <ScrollChips gap="gap-2">
-            {FIELD_GROUPS.map(g => (
-              <button
-                key={g.id}
-                onClick={() => setActiveGrp(g.id)}
-                className={`tab-chip ${activeGrp === g.id ? 'active' : ''}`}
-              >
-                {g.icon}{g.label}
-              </button>
-            ))}
-          </ScrollChips>
-        </div>
-
-        {/* Form fields */}
-        <div className="flex-1 min-w-0">
           <div className="card p-5">
             <div className="flex items-center gap-2.5 mb-5" style={{ borderBottom: '1px solid var(--border-2)', paddingBottom: '1rem' }}>
               <div className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -346,20 +312,19 @@ export default function SettingsTab({ creds }: { creds: string }) {
               )}
             </div>
             )}
+
+            <div className="flex justify-end pt-4 mt-1" style={{ borderTop: '1px solid var(--border-2)' }}>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="btn-primary w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 text-sm"
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <Check size={13} /> : <Save size={13} />}
+                {saved ? 'Tersimpan' : 'Simpan'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Save bar (mobile floating) */}
-      <div className="fixed bottom-20 right-4 sm:hidden z-40">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="btn-primary flex items-center gap-2 px-5 py-3 text-sm shadow-xl"
-        >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
-          {saved ? 'Tersimpan!' : 'Simpan Pengaturan'}
-        </button>
       </div>
     </div>
   );

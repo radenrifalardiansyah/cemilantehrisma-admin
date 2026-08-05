@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue } from 'firebase-admin/firestore';
+import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -58,49 +58,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const delta = type === 'in' ? qty : -qty;
 
-  // Catat entri stok (audit trail)
-  await db.collection('stock').add({
-    warehouseId,
-    warehouseName: warehouseName ?? '',
-    productId,
-    productName: productName ?? '',
-    type,
-    qty,
-    note: note ?? '',
-    createdAt: FieldValue.serverTimestamp(),
-  });
+  try {
+    await db.runTransaction(async tx => {
+      const { products, shortages } = await readProductsForDeltas(tx, db, new Map([[productId, delta]]));
+      if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
-  // Upsert warehouse_stock (stok per produk per gudang), dan sinkronkan total stockQty +
-  // status ready/habis di dokumen produk (kecuali "Buka PO" diaktifkan manual, yang selalu menang)
-  const wsRef = db.collection('warehouse_stock').doc(`${warehouseId}_${productId}`);
-  const productRef = db.collection('products').doc(productId);
-
-  await db.runTransaction(async tx => {
-    const productSnap = await tx.get(productRef);
-    const product = productSnap.data();
-    const currentQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
-    const newQty = currentQty + delta;
-
-    tx.set(
-      wsRef,
-      {
-        warehouseId,
-        productId,
-        productName,
-        stockQty: FieldValue.increment(delta),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
-
-    if (productSnap.exists) {
-      tx.update(productRef, {
-        stockQty: newQty,
-        stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-        updatedAt: FieldValue.serverTimestamp(),
+      const product = products.get(productId)!;
+      applyStockDelta(tx, db, { productId, product, warehouseId, delta });
+      writeStockLedgerEntry(tx, db, {
+        productId, warehouseId, warehouseName, type, qty, note: note ?? '',
+        extra: { productName: productName ?? '' },
       });
-    }
-  });
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal mencatat transaksi stok.' }, { status: 400 });
+  }
 
   return Response.json({ ok: true });
 }

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue } from 'firebase-admin/firestore';
+import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 
 type Ctx = { params: Promise<{ productId: string }> };
 
@@ -11,49 +11,43 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const snap = await getDb()
     .collection('stock')
     .where('productId', '==', productId)
-    .orderBy('date', 'desc')
+    .orderBy('createdAt', 'desc')
     .get();
   const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   return Response.json({ entries });
 }
 
+// Koreksi stok tanpa gudang — dipakai saat stok keluar bukan berasal dari gudang tertentu
+// (mis. selisih stok fisik). Tidak menyentuh `warehouse_stock`, hanya total global produk.
 export async function POST(req: NextRequest, ctx: Ctx) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { productId } = await ctx.params;
-  const data = await req.json() as Record<string, unknown> & { warehouseId?: string; warehouseName?: string };
-  const db = getDb();
-  const ref = await db.collection('stock').add({
-    productId,
-    ...data,
-    createdAt: FieldValue.serverTimestamp(),
-  });
+  const data = await req.json() as { productName?: string; qty?: number; type?: 'in' | 'out'; note?: string };
 
-  // Update running stock on product document, and derive its ready/habis status from the new total
-  // (unless "Buka PO" is manually enabled on the product, which always wins). Kalau warehouseId
-  // dikirim (mis. gudang kasir dikonfigurasi di Pengaturan), stok gudang itu ikut disesuaikan.
   const qty = typeof data.qty === 'number' ? data.qty : 0;
-  const type = data.type as 'in' | 'out';
+  const type = data.type ?? 'out';
+  if (!qty || qty <= 0) {
+    return Response.json({ error: 'Data tidak valid' }, { status: 400 });
+  }
+
+  const db = getDb();
   const delta = type === 'in' ? qty : -qty;
-  const productRef = db.collection('products').doc(productId);
-  await db.runTransaction(async tx => {
-    const snap = await tx.get(productRef);
-    const product = snap.data();
-    const currentQty = typeof product?.stockQty === 'number' ? product.stockQty as number : 0;
-    const newQty = currentQty + delta;
-    tx.update(productRef, {
-      stockQty: newQty,
-      stock: product?.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-      updatedAt: FieldValue.serverTimestamp(),
+
+  try {
+    await db.runTransaction(async tx => {
+      const { products, shortages } = await readProductsForDeltas(tx, db, new Map([[productId, delta]]));
+      if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
+
+      const product = products.get(productId)!;
+      applyStockDelta(tx, db, { productId, product, delta });
+      writeStockLedgerEntry(tx, db, {
+        productId, type, qty, note: data.note ?? '',
+        extra: { productName: data.productName ?? '' },
+      });
     });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal mencatat koreksi stok.' }, { status: 400 });
+  }
 
-    if (data.warehouseId) {
-      const wsRef = db.collection('warehouse_stock').doc(`${data.warehouseId}_${productId}`);
-      tx.set(wsRef, {
-        warehouseId: data.warehouseId, productId, productName: product?.name ?? '',
-        stockQty: FieldValue.increment(delta), updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-    }
-  });
-
-  return Response.json({ id: ref.id });
+  return Response.json({ ok: true });
 }

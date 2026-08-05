@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Banknote, Plus, Pencil, Trash2, X, Check, Loader2, Search, FileSpreadsheet,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, TrendingDown, CalendarDays, Wallet,
+  Coins, Plus, Pencil, Trash2, X, Check, Loader2, Search, FileSpreadsheet,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, TrendingUp, CalendarDays, Wallet,
+  ShoppingCart, Globe, Store, Lock,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
@@ -19,7 +20,7 @@ import { useConfirm } from '@/components/Confirm';
 const API = '';
 const HEADER_BTN_H = 34;
 
-const EXPENSE_CATEGORIES = ['Sewa', 'Gaji', 'Listrik & Air', 'Transportasi', 'Perlengkapan', 'Bahan Baku', 'Produksi', 'Susut/Rusak', 'Lainnya'];
+const INCOME_CATEGORIES = ['Penjualan Lain', 'Komisi', 'Refund/Retur Diterima', 'Bunga Bank', 'Klaim Asuransi', 'Lainnya'];
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
@@ -55,35 +56,58 @@ function Checkbox({ checked, indeterminate, onChange }: {
   );
 }
 
-interface Expense {
+// `auto` menandai baris yang bukan entri manual — hasil sinkronisasi dari data yang sudah ada
+// di menu Pesanan (kasir/online) & Mitra (rekap konsinyasi), supaya menu ini menampilkan SEMUA
+// uang masuk, bukan cuma pemasukan lain-lain. Baris `auto` read-only (edit/hapus lewat sumbernya).
+type AutoSource = 'kasir' | 'online' | 'konsinyasi';
+
+interface Income {
   id: string; category: string; description: string; amount: number; date: string; note: string;
-  sourceType?: string; createdAt?: { seconds: number };
+  createdAt?: { seconds: number };
+  auto?: AutoSource;
 }
 
-const SOURCE_LOCK_MESSAGE: Record<string, string> = {
-  'material-purchase': 'Entri ini otomatis dari Pembelian Bahan Baku — edit atau hapus dari menu Bahan Baku > Pembelian.',
+interface OrderForIncome {
+  id: string; invoiceNo?: string; customerName?: string; total?: number;
+  source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas';
+  createdAt?: { seconds: number } | null;
+}
+interface RecapForIncome {
+  id: string; locationName?: string; totalRevenue?: number;
+  paymentStatus?: 'lunas' | 'belum_lunas'; createdAt?: { seconds: number } | null;
+}
+
+const AUTO_ICON: Record<AutoSource, typeof ShoppingCart> = { kasir: ShoppingCart, online: Globe, konsinyasi: Store };
+function AutoAvatar({ source, size = 16 }: { source: AutoSource; size?: number }) {
+  const Icon = AUTO_ICON[source];
+  return <Icon size={size} />;
+}
+const AUTO_LOCK_MESSAGE: Record<AutoSource, string> = {
+  kasir: 'Ini penjualan kasir — edit/hapus dari menu Pesanan.',
+  online: 'Ini pesanan online — edit/hapus dari menu Pesanan.',
+  konsinyasi: 'Ini rekap konsinyasi — edit/hapus dari menu Mitra.',
 };
 
-type ExpenseForm = { category: string; categoryCustom: string; description: string; amount: string; date: string; note: string };
-const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', description: '', amount: '', date: todayISO(), note: '' });
+type IncomeForm = { category: string; categoryCustom: string; description: string; amount: string; date: string; note: string };
+const emptyForm = (): IncomeForm => ({ category: 'Penjualan Lain', categoryCustom: '', description: '', amount: '', date: todayISO(), note: '' });
 
-export default function ExpensesTab({ creds }: { creds: string }) {
+export default function IncomeTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
 
-  const [expenses,    setExpenses]    = useState<Expense[]>([]);
+  const [income,      setIncome]      = useState<Income[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
   const [search,      setSearch]      = useState('');
   const [categoryFilter, setCategoryFilter] = useState('semua');
   const [page,        setPage]        = useState(1);
   const [pageSize,    setPageSize]    = useState(10);
-  const [view, setView] = useViewMode('expenses');
+  const [view, setView] = useViewMode('income');
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const [editing,    setEditing]    = useState<{ id: string } & ExpenseForm | null>(null);
+  const [editing,    setEditing]    = useState<{ id: string } & IncomeForm | null>(null);
   const [isNew,      setIsNew]      = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -92,19 +116,54 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
   const load = async () => {
     setLoading(true);
-    const r = await fetch(`${API}/api/expenses`, { headers });
-    if (r.ok) { const { expenses: e } = await r.json() as { expenses: Expense[] }; setExpenses(e); }
+    // Rentang lebar supaya bypass limit 50 default di /api/orders & /api/consignment/recap
+    // (limit itu cuma berlaku kalau from/to kosong) — di sini kita memang mau semua riwayat.
+    const qs = `from=2000-01-01&to=${todayISO()}`;
+    const [iRes, oRes, rRes] = await Promise.all([
+      fetch(`${API}/api/income`, { headers }),
+      fetch(`${API}/api/orders?${qs}`, { headers }),
+      fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
+    ]);
+    const manual: Income[] = iRes.ok ? (await iRes.json() as { income: Income[] }).income : [];
+    const orders: OrderForIncome[] = oRes.ok ? (await oRes.json() as { orders: OrderForIncome[] }).orders : [];
+    const recaps: RecapForIncome[] = rRes.ok ? (await rRes.json() as { recaps: RecapForIncome[] }).recaps : [];
+
+    // Sama persis dengan definisi "uang masuk terhitung" di Laporan Keuangan — pesanan online
+    // yang belum dikonfirmasi ('baru'), belum lunas, atau dibatalkan tidak ikut dihitung.
+    const countedOrders = orders.filter(o =>
+      (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+    const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
+    const dateOf = (c?: { seconds: number } | null) => c?.seconds ? new Date(c.seconds * 1000).toISOString().slice(0, 10) : todayISO();
+
+    const fromOrders: Income[] = countedOrders.map(o => ({
+      id: `order-${o.id}`,
+      category: o.source === 'portal' ? 'Penjualan Online' : 'Penjualan Kasir',
+      description: `${o.source === 'portal' ? 'Online' : 'Kasir'} - ${o.invoiceNo || o.customerName || ''}`,
+      amount: o.total ?? 0, date: dateOf(o.createdAt),
+      note: `Otomatis dari pesanan ${o.source === 'portal' ? 'online' : 'kasir'}${o.invoiceNo ? ` (Invoice ${o.invoiceNo})` : ''}${o.customerName ? ` — ${o.customerName}` : ''}.`,
+      auto: o.source === 'portal' ? 'online' : 'kasir',
+    }));
+    const fromRecaps: Income[] = countedRecaps.map(r => ({
+      id: `recap-${r.id}`,
+      category: 'Pendapatan Konsinyasi',
+      description: `Konsinyasi - ${r.locationName ?? ''}`,
+      amount: r.totalRevenue ?? 0, date: dateOf(r.createdAt),
+      note: `Otomatis dari rekap konsinyasi${r.locationName ? ` di ${r.locationName}` : ''}.`,
+      auto: 'konsinyasi',
+    }));
+
+    setIncome([...manual, ...fromOrders, ...fromRecaps]);
     setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
-  const openEdit = (e: Expense) => {
-    if (e.sourceType && SOURCE_LOCK_MESSAGE[e.sourceType]) { toast.error(SOURCE_LOCK_MESSAGE[e.sourceType]); return; }
-    const known = EXPENSE_CATEGORIES.includes(e.category);
+  const openEdit = (i: Income) => {
+    if (i.auto) { toast.error(AUTO_LOCK_MESSAGE[i.auto]); return; }
+    const known = INCOME_CATEGORIES.includes(i.category);
     setEditing({
-      id: e.id, category: known ? e.category : 'Lainnya', categoryCustom: known ? '' : e.category,
-      description: e.description, amount: String(e.amount), date: e.date, note: e.note,
+      id: i.id, category: known ? i.category : 'Lainnya', categoryCustom: known ? '' : i.category,
+      description: i.description, amount: String(i.amount), date: i.date, note: i.note,
     });
     setIsNew(false); setError('');
   };
@@ -120,80 +179,77 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     setSaving(true); setError('');
     const payload = { category: finalCategory, description: editing.description.trim(), amount: amountNum, date: editing.date, note: editing.note };
     const r = isNew
-      ? await fetch(`${API}/api/expenses`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      ? await fetch(`${API}/api/income`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      : await fetch(`${API}/api/income/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
       await load();
       closeEdit();
-      toast.success(isNew ? 'Pengeluaran berhasil dicatat.' : 'Pengeluaran berhasil diperbarui.');
+      toast.success(isNew ? 'Pemasukan berhasil dicatat.' : 'Pemasukan berhasil diperbarui.');
     } else {
-      toast.error('Gagal menyimpan pengeluaran.');
-      setError('Gagal menyimpan pengeluaran.');
+      toast.error('Gagal menyimpan pemasukan.');
+      setError('Gagal menyimpan pemasukan.');
     }
     setSaving(false);
   };
 
-  const del = async (e: Expense) => {
-    if (e.sourceType && SOURCE_LOCK_MESSAGE[e.sourceType]) { toast.error(SOURCE_LOCK_MESSAGE[e.sourceType]); return; }
-    if (!await confirm({ message: `Hapus pengeluaran "${e.description}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
-    setDeletingId(e.id);
-    const r = await fetch(`${API}/api/expenses/${e.id}`, { method: 'DELETE', headers });
+  const del = async (i: Income) => {
+    if (i.auto) { toast.error(AUTO_LOCK_MESSAGE[i.auto]); return; }
+    if (!await confirm({ message: `Hapus pemasukan "${i.description}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    setDeletingId(i.id);
+    const r = await fetch(`${API}/api/income/${i.id}`, { method: 'DELETE', headers });
     if (r.ok) {
       await load();
-      setSelected(s => { const n = new Set(s); n.delete(e.id); return n; });
-      toast.success('Pengeluaran berhasil dihapus.');
+      setSelected(s => { const n = new Set(s); n.delete(i.id); return n; });
+      toast.success('Pemasukan berhasil dihapus.');
     } else {
-      const d = await r.json().catch(() => ({})) as { error?: string };
-      toast.error(d.error ?? 'Gagal menghapus pengeluaran.');
+      toast.error('Gagal menghapus pemasukan.');
     }
     setDeletingId(null);
   };
 
   const bulkDelete = async () => {
     if (selected.size === 0) return;
-    const lockedCount = expenses.filter(e => selected.has(e.id) && e.sourceType).length;
-    if (!await confirm({
-      message: `Hapus ${selected.size} pengeluaran yang dipilih?${lockedCount > 0 ? ` ${lockedCount} di antaranya otomatis dari sumber lain dan akan dilewati.` : ''} Tindakan ini tidak bisa dibatalkan.`,
-      danger: true,
-    })) return;
+    if (!await confirm({ message: `Hapus ${selected.size} pemasukan yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setBulkDeleting(true);
-    const r = await fetch(`${API}/api/expenses/bulk-delete`, {
+    const r = await fetch(`${API}/api/income/bulk-delete`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [...selected] }),
     });
     if (r.ok) {
-      const d = await r.json() as { deleted: number; skipped: number };
+      const d = await r.json() as { deleted: number };
       await load();
       setSelected(new Set());
-      toast.success(`${d.deleted} pengeluaran berhasil dihapus.${d.skipped > 0 ? ` ${d.skipped} dilewati karena otomatis dari sumber lain.` : ''}`);
+      toast.success(`${d.deleted} pemasukan berhasil dihapus.`);
     } else {
-      toast.error('Gagal menghapus pengeluaran yang dipilih.');
+      toast.error('Gagal menghapus pemasukan yang dipilih.');
     }
     setBulkDeleting(false);
   };
 
-  const toggleSelect = (id: string) =>
+  const toggleSelect = (id: string) => {
+    if (income.find(i => i.id === id)?.auto) return;
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
 
   // ── Ringkasan (hari ini / bulan ini / total) ─────────────────
   const todayKey = todayISO();
   const monthKey = todayKey.slice(0, 7);
-  const totalToday = expenses.filter(e => e.date === todayKey).reduce((s, e) => s + e.amount, 0);
-  const totalMonth = expenses.filter(e => e.date?.startsWith(monthKey)).reduce((s, e) => s + e.amount, 0);
-  const totalAll   = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalToday = income.filter(i => i.date === todayKey).reduce((s, i) => s + i.amount, 0);
+  const totalMonth = income.filter(i => i.date?.startsWith(monthKey)).reduce((s, i) => s + i.amount, 0);
+  const totalAll   = income.reduce((s, i) => s + i.amount, 0);
 
   const categoryOptions = [
     { value: 'semua', label: 'Semua Kategori' },
-    ...[...new Set([...EXPENSE_CATEGORIES, ...expenses.map(e => e.category)])].map(c => ({ value: c, label: c })),
+    ...[...new Set([...INCOME_CATEGORIES, ...income.map(i => i.category)])].map(c => ({ value: c, label: c })),
   ];
 
-  const filtered = expenses
-    .filter(e => {
-      const matchCat = categoryFilter === 'semua' || e.category === categoryFilter;
+  const filtered = income
+    .filter(i => {
+      const matchCat = categoryFilter === 'semua' || i.category === categoryFilter;
       const matchQ = !search
-        || e.description.toLowerCase().includes(search.toLowerCase())
-        || e.category.toLowerCase().includes(search.toLowerCase())
-        || (e.note ?? '').toLowerCase().includes(search.toLowerCase());
+        || i.description.toLowerCase().includes(search.toLowerCase())
+        || i.category.toLowerCase().includes(search.toLowerCase())
+        || (i.note ?? '').toLowerCase().includes(search.toLowerCase());
       return matchCat && matchQ;
     })
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -204,8 +260,8 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const resetPage  = () => setPage(1);
 
   const togglePageAll = () => {
-    const pageIds     = paginated.map(e => e.id);
-    const allSelected = pageIds.every(id => selected.has(id));
+    const pageIds     = paginated.filter(i => !i.auto).map(i => i.id);
+    const allSelected = pageIds.length > 0 && pageIds.every(id => selected.has(id));
     setSelected(s => {
       const n = new Set(s);
       if (allSelected) pageIds.forEach(id => n.delete(id));
@@ -214,14 +270,14 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     });
   };
 
-  const exportExcel = async (rows: Expense[], label: string) => {
-    if (rows.length === 0) { toast.error('Tidak ada pengeluaran untuk diexport.'); return; }
+  const exportExcel = async (rows: Income[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada pemasukan untuk diexport.'); return; }
     setExporting(true);
     try {
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Cemilan Teh Risma Admin';
       wb.created = new Date();
-      const ws = wb.addWorksheet('Pengeluaran');
+      const ws = wb.addWorksheet('Pemasukan');
       ws.columns = [
         { key: 'tgl', width: 16 }, { key: 'kat', width: 18 }, { key: 'ket', width: 32 },
         { key: 'jml', width: 18 }, { key: 'catatan', width: 32 },
@@ -229,7 +285,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
       ws.mergeCells(1, 1, 1, 5);
       const t = ws.getCell(1, 1);
-      t.value = 'DAFTAR PENGELUARAN — CEMILAN TEH RISMA';
+      t.value = 'DAFTAR PEMASUKAN LAIN-LAIN — CEMILAN TEH RISMA';
       t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
       t.alignment = { horizontal: 'center', vertical: 'middle' };
       t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
@@ -237,7 +293,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
       ws.mergeCells(2, 1, 2, 5);
       const s = ws.getCell(2, 1);
-      s.value = `${rows.length} pengeluaran (${label})`;
+      s.value = `${rows.length} pemasukan (${label})`;
       s.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
       s.alignment = { horizontal: 'center', vertical: 'middle' };
       s.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
@@ -253,17 +309,17 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       });
       ws.views = [{ state: 'frozen', ySplit: 3 }];
 
-      rows.forEach((e, i) => {
-        const rowNum = 4 + i;
+      rows.forEach((i, idx) => {
+        const rowNum = 4 + idx;
         const row = ws.getRow(rowNum);
-        row.getCell(1).value = formatDateDisplay(e.date);
-        row.getCell(2).value = e.category;
-        row.getCell(3).value = e.description;
-        row.getCell(4).value = e.amount;
+        row.getCell(1).value = formatDateDisplay(i.date);
+        row.getCell(2).value = i.category;
+        row.getCell(3).value = i.description;
+        row.getCell(4).value = i.amount;
         row.getCell(4).numFmt = '"Rp"#,##0';
-        row.getCell(5).value = e.note ?? '';
+        row.getCell(5).value = i.note ?? '';
         row.eachCell(cell => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
           cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
         });
       });
@@ -273,12 +329,12 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `pengeluaran-${todayISO()}.xlsx`;
+      a.download = `pemasukan-${todayISO()}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Berhasil export ${rows.length} pengeluaran ke Excel.`);
+      toast.success(`Berhasil export ${rows.length} pemasukan ke Excel.`);
     } finally { setExporting(false); }
   };
 
@@ -294,9 +350,9 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       {/* Ringkasan */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
-          { icon: <CalendarDays size={16} />, label: 'Pengeluaran Hari Ini', val: totalToday, color: 'var(--danger)', bg: 'var(--danger-bg)' },
-          { icon: <Wallet       size={16} />, label: 'Pengeluaran Bulan Ini', val: totalMonth, color: 'var(--accent)', bg: 'var(--accent-bg)' },
-          { icon: <TrendingDown size={16} />, label: 'Total Semua Pengeluaran', val: totalAll, color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
+          { icon: <CalendarDays size={16} />, label: 'Pemasukan Hari Ini', val: totalToday, color: 'var(--success)', bg: 'var(--success-bg)' },
+          { icon: <Wallet       size={16} />, label: 'Pemasukan Bulan Ini', val: totalMonth, color: 'var(--accent)', bg: 'var(--accent-bg)' },
+          { icon: <TrendingUp   size={16} />, label: 'Total Semua Pemasukan', val: totalAll, color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
         ].map((c, i) => (
           <div key={i} className="card p-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.bg, color: c.color }}>
@@ -312,7 +368,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
       {/* Header: search + actions in one row */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        {expenses.length > 0 && (
+        {income.length > 0 && (
           <div className="w-full sm:w-[200px] flex-shrink-0">
             <FilterSelect
               value={categoryFilter}
@@ -323,7 +379,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        {expenses.length > 0 && (
+        {income.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
@@ -337,7 +393,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
         )}
         <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
           <div className="flex items-center gap-2 flex-wrap">
-            {expenses.length > 0 && (
+            {income.length > 0 && (
               <Tooltip label="Export Excel">
                 <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                   className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
@@ -345,84 +401,90 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                 </button>
               </Tooltip>
             )}
-            {expenses.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+            {income.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           </div>
           <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Catat Pengeluaran</span><span className="sm:hidden">Tambah</span>
+            <Plus size={13} /> <span className="hidden sm:inline">Catat Pemasukan</span><span className="sm:hidden">Tambah</span>
           </button>
         </div>
       </div>
 
-      {expenses.length === 0 ? (
+      {income.length === 0 ? (
         <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">💸</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pengeluaran tercatat</p>
+          <div className="text-5xl mb-4">💰</div>
+          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pemasukan tercatat</p>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Catat Pengeluaran&quot; untuk mencatat biaya operasional pertama (sewa, gaji, listrik, dll).
+            Penjualan kasir/online & rekap konsinyasi akan otomatis muncul di sini. Klik &quot;Catat Pemasukan&quot;
+            untuk menambah pemasukan di luar penjualan (komisi, refund, bunga bank, dll).
           </p>
         </div>
       ) : (
         <>
-          {paginated.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
-              <Checkbox
-                checked={paginated.every(e => selected.has(e.id))}
-                indeterminate={paginated.some(e => selected.has(e.id)) && !paginated.every(e => selected.has(e.id))}
-                onChange={togglePageAll}
-              />
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-                {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} pengeluaran di halaman ini`}
-              </span>
-            </div>
-          )}
+          {paginated.length > 0 && (() => {
+            const selectableIds = paginated.filter(i => !i.auto).map(i => i.id);
+            return (
+              <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                <Checkbox
+                  checked={selectableIds.length > 0 && selectableIds.every(id => selected.has(id))}
+                  indeterminate={selectableIds.some(id => selected.has(id)) && !selectableIds.every(id => selected.has(id))}
+                  onChange={togglePageAll}
+                />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                  {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} pemasukan di halaman ini`}
+                </span>
+              </div>
+            );
+          })()}
 
           {paginated.length === 0 ? (
             <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada pengeluaran yang cocok.</p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada pemasukan yang cocok.</p>
             </div>
           ) : view === 'table' ? (
             <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-              {paginated.map((e, idx) => {
-                const isDeleting = deletingId === e.id;
-                const isSelected = selected.has(e.id);
+              {paginated.map((i, idx) => {
+                const isDeleting = deletingId === i.id;
+                const isSelected = selected.has(i.id);
                 return (
-                  <div key={e.id} style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, transition: 'background 0.1s' }}>
+                  <div key={i.id} style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, transition: 'background 0.1s' }}>
                     <div className="flex items-center gap-2 px-4 py-3.5">
-                      <Checkbox checked={isSelected} onChange={() => toggleSelect(e.id)} />
-                      <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                        <Banknote size={16} />
+                      {i.auto
+                        ? <Lock size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, width: 18 }} />
+                        : <Checkbox checked={isSelected} onChange={() => toggleSelect(i.id)} />}
+                      <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                        {i.auto ? <AutoAvatar source={i.auto} /> : <Coins size={16} />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{e.description}</p>
-                          <span className="badge badge-gray text-[10px]">{e.category}</span>
-                          {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{i.description}</p>
+                          <span className="badge badge-gray text-[10px]">{i.category}</span>
+                          {i.auto && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                         </div>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date)}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date)}</p>
                       </div>
-                      <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--danger)' }}>−{formatRp(e.amount)}</span>
+                      <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>+{formatRp(i.amount)}</span>
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        {!e.sourceType && (
+                        {!i.auto && (
                           <>
-                            <button onClick={() => openEdit(e)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <button onClick={() => openEdit(i)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                               <Pencil size={13} />
                             </button>
-                            <button onClick={() => del(e)} disabled={isDeleting} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            <button onClick={() => del(i)} disabled={isDeleting} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
                               {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                             </button>
                           </>
                         )}
-                        {e.note && (
-                          <button onClick={() => setExpandedId(expandedId === e.id ? null : e.id)} className="btn-ghost p-2">
-                            {expandedId === e.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        {i.note && (
+                          <button onClick={() => setExpandedId(expandedId === i.id ? null : i.id)} className="btn-ghost p-2">
+                            {expandedId === i.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                           </button>
                         )}
                       </div>
                     </div>
-                    {expandedId === e.id && e.note && (
+                    {expandedId === i.id && i.note && (
                       <div className="px-4 pb-4 pt-1" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
                         <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Catatan</p>
-                        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{e.note}</p>
+                        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{i.note}</p>
                       </div>
                     )}
                   </div>
@@ -431,48 +493,50 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {paginated.map(e => {
-                const isDeleting = deletingId === e.id;
-                const isSelected = selected.has(e.id);
+              {paginated.map(i => {
+                const isDeleting = deletingId === i.id;
+                const isSelected = selected.has(i.id);
                 return (
-                  <div key={e.id} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                  <div key={i.id} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                     <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
-                      <Checkbox checked={isSelected} onChange={() => toggleSelect(e.id)} />
+                      {i.auto
+                        ? <Lock size={13} style={{ color: 'var(--text-muted)', display: 'block', margin: 2.5 }} />
+                        : <Checkbox checked={isSelected} onChange={() => toggleSelect(i.id)} />}
                     </div>
                     <div className="pt-8 pb-3 px-4 flex flex-col items-center text-center gap-1">
-                      <div className="w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center mb-1" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                        <Banknote size={20} />
+                      <div className="w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center mb-1" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                        {i.auto ? <AutoAvatar source={i.auto} size={20} /> : <Coins size={20} />}
                       </div>
-                      <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{e.description}</p>
+                      <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{i.description}</p>
                       <div className="flex items-center gap-1">
-                        <span className="badge badge-gray text-[10px]">{e.category}</span>
-                        {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
+                        <span className="badge badge-gray text-[10px]">{i.category}</span>
+                        {i.auto && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                       </div>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date)}</p>
-                      <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--danger)' }}>−{formatRp(e.amount)}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date)}</p>
+                      <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--success)' }}>+{formatRp(i.amount)}</p>
                     </div>
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                      {e.note ? (
-                        <button onClick={() => setExpandedId(expandedId === e.id ? null : e.id)} className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
-                          Catatan {expandedId === e.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      {i.note ? (
+                        <button onClick={() => setExpandedId(expandedId === i.id ? null : i.id)} className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
+                          Catatan {expandedId === i.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                         </button>
                       ) : <span />}
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        {!e.sourceType && (
+                        {!i.auto && (
                           <>
-                            <button onClick={() => openEdit(e)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                            <button onClick={() => openEdit(i)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                               <Pencil size={12} />
                             </button>
-                            <button onClick={() => del(e)} disabled={isDeleting} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            <button onClick={() => del(i)} disabled={isDeleting} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
                               {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                             </button>
                           </>
                         )}
                       </div>
                     </div>
-                    {expandedId === e.id && e.note && (
+                    {expandedId === i.id && i.note && (
                       <div className="px-4 pb-4 pt-1" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
-                        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{e.note}</p>
+                        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{i.note}</p>
                       </div>
                     )}
                   </div>
@@ -485,7 +549,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {filtered.length} pengeluaran · halaman {safePage} dari {totalPages}
+                  {filtered.length} pemasukan · halaman {safePage} dari {totalPages}
                 </p>
                 <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); resetPage(); }} />
               </div>
@@ -527,7 +591,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
             <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
             <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportExcel(expenses.filter(e => selected.has(e.id)), 'terpilih')} disabled={exporting}
+            <button onClick={() => exportExcel(income.filter(i => selected.has(i.id)), 'terpilih')} disabled={exporting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
@@ -554,10 +618,10 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             <span className="modal-handle" />
             <div className="modal-header">
               <div className="modal-header-left">
-                <div className="modal-icon"><Banknote size={17} /></div>
+                <div className="modal-icon"><Coins size={17} /></div>
                 <div>
-                  <p className="modal-title">{isNew ? 'Catat Pengeluaran' : 'Edit Pengeluaran'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Simpan biaya operasional baru' : `Edit: ${editing.description}`}</p>
+                  <p className="modal-title">{isNew ? 'Catat Pemasukan' : 'Edit Pemasukan'}</p>
+                  <p className="modal-subtitle">{isNew ? 'Simpan pemasukan lain-lain baru' : `Edit: ${editing.description}`}</p>
                 </div>
               </div>
               <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
@@ -568,7 +632,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   <div style={{ flex: 1 }}>
                     <label className="field-label">Kategori</label>
                     <SearchSelect value={editing.category} onChange={v => setEditing({ ...editing, category: v })}
-                      options={EXPENSE_CATEGORIES.map(c => ({ value: c, label: c }))}
+                      options={INCOME_CATEGORIES.map(c => ({ value: c, label: c }))}
                       searchPlaceholder="Cari kategori…" />
                   </div>
                   <div style={{ flex: 1 }}>
@@ -581,14 +645,14 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   <div>
                     <label className="field-label">Sebutkan Kategori</label>
                     <input value={editing.categoryCustom} onChange={e => setEditing({ ...editing, categoryCustom: e.target.value })}
-                      className="input" placeholder="cth: Kemasan, Ongkir, dll" />
+                      className="input" placeholder="cth: Jual Barang Bekas, Hadiah, dll" />
                   </div>
                 )}
 
                 <div>
                   <label className="field-label">Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <input value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })}
-                    className="input" placeholder="cth: Sewa toko bulan Agustus" autoFocus />
+                    className="input" placeholder="cth: Komisi jadi reseller produk lain" autoFocus />
                 </div>
 
                 <div>
@@ -616,7 +680,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
               </button>
               <button onClick={save} disabled={saving} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Pengeluaran'}
+                {saving ? 'Menyimpan…' : 'Simpan Pemasukan'}
               </button>
             </div>
           </div>
