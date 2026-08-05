@@ -353,12 +353,16 @@ const REPORT_STATUS_STYLE = {
   open_po: { label: 'Open PO', color: '#A84F10', bg: '#FDF0E6' },
 } as const;
 
-const TX_TYPE_BADGE: Record<TxEntry['type'], { label: string; Icon: React.ElementType; color: string; bg: string }> = {
+const TX_TYPE_BADGE: Record<string, { label: string; Icon: React.ElementType; color: string; bg: string }> = {
   in:       { label: 'Masuk',    Icon: TrendingUp,     color: 'var(--success)', bg: 'var(--success-bg)' },
   out:      { label: 'Keluar',   Icon: TrendingDown,   color: 'var(--danger)',  bg: 'var(--danger-bg)'  },
   reject:   { label: 'Reject',   Icon: Ban,            color: 'var(--danger)',  bg: 'var(--danger-bg)'  },
   transfer: { label: 'Transfer', Icon: ArrowLeftRight, color: '#0284C7',        bg: '#EFF6FF'            },
 };
+const TX_TYPE_BADGE_FALLBACK = { label: 'Lainnya', Icon: ArrowLeftRight, color: 'var(--text-muted)', bg: 'var(--surface-2)' };
+function getTxBadge(type: string) {
+  return TX_TYPE_BADGE[type] ?? TX_TYPE_BADGE_FALLBACK;
+}
 
 // Klasifikasi debit/kredit satu entri ledger untuk kartu stok — transfer hanya berpengaruh
 // (debit di tujuan / kredit di asal) kalau lagi melihat gudang tertentu; di scope "semua gudang"
@@ -432,7 +436,7 @@ function StockCardPanel({ row, whFilter, warehouses, onPrint, printing }: {
               </tr>
             )}
             {movements.map(({ entry, debit, kredit, saldo }) => {
-              const badge = TX_TYPE_BADGE[entry.type];
+              const badge = getTxBadge(entry.type);
               return (
                 <tr key={entry.id} style={{ borderBottom: '1px solid var(--border-2)' }}>
                   <td className="px-3 py-2 whitespace-nowrap tabular" style={{ color: 'var(--text-secondary)' }}>{formatDate(entry)}</td>
@@ -909,7 +913,7 @@ export default function StockReportTab({
     try {
       const movements = buildStockCardMovements(row.ledger, row.stokAwal, reportWhFilter).map(({ entry, debit, kredit, saldo }) => ({
         date: formatDate(entry),
-        tipe: TX_TYPE_BADGE[entry.type].label,
+        tipe: getTxBadge(entry.type).label,
         lokasi: movementLocation(entry, warehouses),
         note: entry.note,
         debit, kredit, saldo,
