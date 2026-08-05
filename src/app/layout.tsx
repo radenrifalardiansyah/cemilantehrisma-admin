@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "CTR Admin",
+    title: "Admin Teh Risma",
   },
   icons: {
     icon: "/icon-192.png",

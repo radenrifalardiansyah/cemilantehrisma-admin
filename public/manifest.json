@@ -1,6 +1,6 @@
 {
-  "name": "Cemilan Teh Risma - Admin",
-  "short_name": "CTR Admin",
+  "name": "Admin Teh Risma",
+  "short_name": "Admin Teh Risma",
   "description": "Dashboard Admin Cemilan Teh Risma — kelola produk, pesanan, stok, dan analitik toko.",
   "start_url": "/",
   "scope": "/",
