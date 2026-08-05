@@ -657,17 +657,21 @@ export default function CategoriesTab({ creds }: { creds: string }) {
 
                       {/* Actions */}
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => deleteCat(c.id, c.name)}
-                          disabled={isDeleting || count > 0}
-                          className="btn-ghost p-2 disabled:opacity-30"
-                          title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
-                          style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={13} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button
+                            onClick={() => deleteCat(c.id, c.name)}
+                            disabled={isDeleting || count > 0}
+                            className="btn-ghost p-2 disabled:opacity-30"
+                            title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
+                            style={{ color: 'var(--danger)' }}>
+                            {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
                   </div>
@@ -710,17 +714,21 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.description}</p>
                       )}
                       <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <button onClick={() => openEditCat(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          onClick={() => deleteCat(c.id, c.name)}
-                          disabled={isDeleting || count > 0}
-                          className="btn-ghost p-1.5 disabled:opacity-30"
-                          title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
-                          style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEditCat(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={12} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button
+                            onClick={() => deleteCat(c.id, c.name)}
+                            disabled={isDeleting || count > 0}
+                            className="btn-ghost p-1.5 disabled:opacity-30"
+                            title={count > 0 ? `Tidak bisa dihapus — ${count} produk menggunakannya` : 'Hapus kategori'}
+                            style={{ color: 'var(--danger)' }}>
+                            {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
                   </div>
@@ -740,9 +748,11 @@ export default function CategoriesTab({ creds }: { creds: string }) {
               </div>
               {catTotalPages > 1 && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronLeft size={14} />
-                  </button>
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
                   {Array.from({ length: catTotalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === catTotalPages || Math.abs(n - catSafePage) <= 1)
                     .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -761,9 +771,11 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                           </button>
                     )
                   }
-                  <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronRight size={14} />
-                  </button>
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -815,7 +827,9 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                   <p className="modal-subtitle">{isNewCat ? 'Buat kategori produk baru' : `Edit: ${editingCat.name}`}</p>
                 </div>
               </div>
-              <button onClick={closeEditCat} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={closeEditCat} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
 
             <div className="modal-body">
@@ -879,10 +893,12 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                   {editingCat.bannerUrl ? (
                     <div className="relative w-full rounded-xl overflow-hidden group" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
                       <Image src={editingCat.bannerUrl} alt="" fill className="object-cover" sizes="480px" unoptimized />
-                      <button onClick={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X size={13} />
-                      </button>
+                      <Tooltip label="Hapus Banner">
+                        <button onClick={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
+                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X size={13} />
+                        </button>
+                      </Tooltip>
                     </div>
                   ) : (
                     <button onClick={() => bannerFileRef.current?.click()} disabled={uploadingBanner}

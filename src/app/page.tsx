@@ -11,12 +11,14 @@ import {
 import AppShell, { TabId } from '@/components/AppShell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import TopbarPortal from '@/components/TopbarPortal';
+import Tooltip from '@/components/Tooltip';
 import ProductsTab   from '@/components/tabs/ProductsTab';
 import CategoriesTab from '@/components/tabs/CategoriesTab';
 import OrdersTab    from '@/components/tabs/OrdersTab';
 import ResellersTab from '@/components/tabs/ResellersTab';
 import CustomersTab from '@/components/tabs/CustomersTab';
 import StockTab     from '@/components/tabs/StockTab';
+import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
 import MaterialsTab  from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
@@ -453,90 +455,118 @@ export default function AdminPage() {
   );
 
   if (!authed) return (
-    <div className="min-h-screen flex" style={{ background: 'var(--ground)' }}>
-      {/* Left panel — brand */}
-      <div className="hidden lg:flex flex-col justify-between flex-1 p-12"
-        style={{ background: 'var(--sidebar)' }}>
-        <div className="flex items-center gap-3">
-          <Image src="/icon-192.png" alt="logo" width={40} height={40} className="rounded-xl" />
-          <span className="text-white font-bold text-[15px]">Cemilan Teh Risma</span>
-        </div>
-        <div>
-          <p className="text-4xl font-extrabold text-white leading-tight mb-3">
-            Kendalikan<br />bisnis snack<br />Anda.
-          </p>
-          <p className="text-sm" style={{ color: 'var(--sidebar-text)' }}>
-            Dashboard admin untuk mengelola produk,<br />pesanan, stok, dan analitik toko.
-          </p>
-        </div>
-        <p className="text-xs" style={{ color: 'var(--sidebar-muted)' }}>
-          © 2025 Cemilan Teh Risma
-        </p>
-      </div>
+    <div className="min-h-screen flex items-center justify-center p-4 lg:p-8 relative overflow-hidden" style={{ background: 'var(--ground)' }}>
 
-      {/* Right panel — form */}
-      <div className="flex flex-col items-center justify-center flex-1 px-6">
-        <div className="w-full max-w-sm">
-          <div className="flex flex-col items-center mb-8 lg:hidden">
-            <Image src="/icon-192.png" alt="logo" width={56} height={56} className="rounded-2xl shadow mb-3" />
+      {/* Ambient background blobs */}
+      <div className="login-blob absolute rounded-full pointer-events-none"
+        style={{ width: 480, height: 480, top: -160, left: -160, background: 'radial-gradient(circle, var(--accent-light), transparent 70%)', filter: 'blur(10px)', opacity: 0.7 }} />
+      <div className="login-blob absolute rounded-full pointer-events-none"
+        style={{ width: 420, height: 420, bottom: -140, right: -140, background: 'radial-gradient(circle, var(--accent-bg), transparent 70%)', filter: 'blur(10px)', opacity: 0.8, animationDelay: '-6s' }} />
+
+      {/* Card */}
+      <div className="login-card relative w-full grid lg:grid-cols-2 rounded-[28px] overflow-hidden"
+        style={{ maxWidth: 920, background: 'var(--surface)', boxShadow: '0 24px 70px -20px rgba(30,16,8,0.35), 0 4px 18px rgba(30,16,8,0.08)' }}>
+
+        {/* Left panel — brand & motion */}
+        <div className="hidden lg:flex flex-col justify-between p-12 relative overflow-hidden"
+          style={{ background: 'linear-gradient(150deg, var(--sidebar) 0%, #2A1509 55%, var(--accent-dark) 130%)' }}>
+
+          {/* decorative glow orbs */}
+          <div className="login-blob login-glow absolute rounded-full pointer-events-none"
+            style={{ width: 260, height: 260, top: -70, right: -70, background: 'radial-gradient(circle, rgba(212,105,30,0.55), transparent 70%)', filter: 'blur(4px)' }} />
+          <div className="login-blob absolute rounded-full pointer-events-none"
+            style={{ width: 220, height: 220, bottom: -60, left: -60, background: 'radial-gradient(circle, rgba(212,105,30,0.35), transparent 70%)', filter: 'blur(4px)', animationDelay: '-4s' }} />
+
+          {/* floating snack icons */}
+          <span className="login-snack absolute text-3xl" style={{ top: '18%', right: '18%', ['--r' as string]: '-8deg', animationDelay: '0s', opacity: 0.9 }}>🍪</span>
+          <span className="login-snack absolute text-2xl" style={{ top: '52%', right: '8%', ['--r' as string]: '10deg', animationDelay: '-1.5s', opacity: 0.85 }}>🍿</span>
+          <span className="login-snack absolute text-2xl" style={{ top: '68%', right: '32%', ['--r' as string]: '6deg', animationDelay: '-3s', opacity: 0.8 }}>🧁</span>
+          <span className="login-snack absolute text-xl" style={{ top: '30%', right: '38%', ['--r' as string]: '-4deg', animationDelay: '-4.5s', opacity: 0.7 }}>🍩</span>
+
+          <div className="flex items-center gap-3 relative z-10">
+            <Image src="/icon-192.png" alt="logo" width={40} height={40} className="rounded-xl" />
+            <span className="text-white font-bold text-[15px]">Cemilan Teh Risma</span>
           </div>
-          <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--text-primary)' }}>Masuk</h1>
-          <p className="text-sm mb-8" style={{ color: 'var(--text-muted)' }}>Dashboard Admin Cemilan Teh Risma</p>
 
-          <form onSubmit={login} className="space-y-4" noValidate>
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Username atau Email</label>
-              <input type="text" value={username}
-                onChange={e => { setUsername(e.target.value); setFieldErrors(f => ({ ...f, username: undefined })); setLoginErr(''); }}
-                className={`input ${fieldErrors.username ? 'input-error' : ''}`}
-                placeholder="Masukkan username atau email" autoComplete="username" />
-              {fieldErrors.username?.trim() && (
-                <p className="text-xs font-medium mt-1.5" style={{ color: 'var(--danger)' }}>{fieldErrors.username}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Password</label>
-              <div className="relative">
-                <input type={showPassword ? 'text' : 'password'} value={password}
-                  onChange={e => { setPassword(e.target.value); setFieldErrors(f => ({ ...f, password: undefined })); setLoginErr(''); }}
-                  className={`input ${fieldErrors.password ? 'input-error' : ''}`}
-                  style={{ paddingRight: 40 }}
-                  placeholder="Masukkan password" autoComplete="current-password" />
-                <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              {fieldErrors.password?.trim() && (
-                <p className="text-xs font-medium mt-1.5" style={{ color: 'var(--danger)' }}>{fieldErrors.password}</p>
-              )}
-            </div>
-            {loginErr && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium"
-                style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                {loginErr}
-              </div>
-            )}
-            <button type="submit" className="btn-primary w-full justify-center py-3 text-sm">
-              Masuk ke Dashboard
-            </button>
-          </form>
+          <div className="relative z-10">
+            <p className="text-4xl font-extrabold text-white leading-tight mb-3">
+              Kendalikan<br />bisnis snack<br />Anda.
+            </p>
+            <p className="text-sm" style={{ color: 'var(--sidebar-text)' }}>
+              Dashboard admin untuk mengelola produk,<br />pesanan, stok, dan analitik toko.
+            </p>
+          </div>
 
-          {canInstall && !installed && (
-            <button
-              type="button"
-              onClick={promptInstall}
-              className="btn-ghost w-full justify-center py-3 text-sm mt-3 flex items-center gap-2"
-              style={{ border: '1px solid var(--border-2)' }}
-            >
-              <Download size={15} />
-              Install Aplikasi Admin
-            </button>
-          )}
-
-          <p className="text-center text-xs mt-8" style={{ color: 'var(--text-muted)' }}>
-            Dikembangkan oleh PT. Eleven Digital Indonesia
+          <p className="text-xs relative z-10" style={{ color: 'var(--sidebar-muted)' }}>
+            © 2025 Cemilan Teh Risma
           </p>
+        </div>
+
+        {/* Right panel — form */}
+        <div className="flex flex-col items-center justify-center px-6 py-10 lg:p-12">
+          <div className="w-full max-w-sm">
+            <div className="flex flex-col items-center mb-8 lg:hidden login-field" style={{ animationDelay: '0.02s' }}>
+              <Image src="/icon-192.png" alt="logo" width={56} height={56} className="rounded-2xl shadow mb-3" />
+            </div>
+            <h1 className="text-2xl font-extrabold mb-1 login-field" style={{ color: 'var(--text-primary)', animationDelay: '0.04s' }}>Masuk</h1>
+            <p className="text-sm mb-8 login-field" style={{ color: 'var(--text-muted)', animationDelay: '0.08s' }}>Dashboard Admin Cemilan Teh Risma</p>
+
+            <form onSubmit={login} className="space-y-4" noValidate>
+              <div className="login-field" style={{ animationDelay: '0.12s' }}>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Username atau Email</label>
+                <input type="text" value={username}
+                  onChange={e => { setUsername(e.target.value); setFieldErrors(f => ({ ...f, username: undefined })); setLoginErr(''); }}
+                  className={`input ${fieldErrors.username ? 'input-error' : ''}`}
+                  placeholder="Masukkan username atau email" autoComplete="username" />
+                {fieldErrors.username?.trim() && (
+                  <p className="text-xs font-medium mt-1.5" style={{ color: 'var(--danger)' }}>{fieldErrors.username}</p>
+                )}
+              </div>
+              <div className="login-field" style={{ animationDelay: '0.16s' }}>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Password</label>
+                <div className="relative">
+                  <input type={showPassword ? 'text' : 'password'} value={password}
+                    onChange={e => { setPassword(e.target.value); setFieldErrors(f => ({ ...f, password: undefined })); setLoginErr(''); }}
+                    className={`input ${fieldErrors.password ? 'input-error' : ''}`}
+                    style={{ paddingRight: 40 }}
+                    placeholder="Masukkan password" autoComplete="current-password" />
+                  <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {fieldErrors.password?.trim() && (
+                  <p className="text-xs font-medium mt-1.5" style={{ color: 'var(--danger)' }}>{fieldErrors.password}</p>
+                )}
+              </div>
+              {loginErr && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium animate-scale-in"
+                  style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {loginErr}
+                </div>
+              )}
+              <button type="submit" className="login-field login-btn-shimmer btn-primary w-full justify-center py-3 text-sm relative overflow-hidden"
+                style={{ animationDelay: '0.2s' }}>
+                Masuk ke Dashboard
+              </button>
+            </form>
+
+            {canInstall && !installed && (
+              <button
+                type="button"
+                onClick={promptInstall}
+                className="login-field btn-ghost w-full justify-center py-3 text-sm mt-3 flex items-center gap-2"
+                style={{ border: '1px solid var(--border-2)', animationDelay: '0.24s' }}
+              >
+                <Download size={15} />
+                Install Aplikasi Admin
+              </button>
+            )}
+
+            <p className="text-center text-xs mt-8 login-field" style={{ color: 'var(--text-muted)', animationDelay: '0.28s' }}>
+              Dikembangkan oleh PT. Eleven Digital Indonesia
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -547,9 +577,11 @@ export default function AdminPage() {
     <div className="p-4 lg:p-6 space-y-5">
 
       <TopbarPortal>
-        <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <Tooltip label="Refresh">
+          <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </Tooltip>
       </TopbarPortal>
 
       {/* Loading */}
@@ -950,6 +982,7 @@ export default function AdminPage() {
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
       {activeTab === 'customers'  && <CustomersTab creds={creds} />}
       {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
+      {activeTab === 'stock-report' && <StockReportTab creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
       {activeTab === 'materials'  && <MaterialsTab  creds={creds} />}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}

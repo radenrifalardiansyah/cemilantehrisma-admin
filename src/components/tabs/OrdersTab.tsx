@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronDown, ChevronUp, Receipt, TrendingUp, ShoppingBag, FileSpreadsheet, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
@@ -698,7 +699,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
         <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap flex-shrink-0">
           <Tooltip label="Unduh Template">
             <button onClick={downloadOrderTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-              <FileSpreadsheet size={14} />
+              <ExcelIcon size={14} />
             </button>
           </Tooltip>
           <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
@@ -711,7 +712,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
           {orders.length > 0 && (
             <Tooltip label="Export Excel">
               <button onClick={() => exportExcel(orders)} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -720,9 +721,11 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
       </div>
 
       <TopbarPortal>
-        <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <Tooltip label="Refresh">
+          <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </Tooltip>
       </TopbarPortal>
 
       {/* Summary cards */}
@@ -807,10 +810,12 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
 
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {o.source === 'portal' && o.status === 'baru' && (
-                    <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
-                      className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Tandai Selesai">
-                      {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                    </button>
+                    <Tooltip label="Tandai Selesai">
+                      <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
+                        className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Tandai Selesai">
+                        {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                      </button>
+                    </Tooltip>
                   )}
                   {o.paymentStatus === 'belum_lunas' && (
                     <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
@@ -819,25 +824,35 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                     </button>
                   )}
                   {o.status !== 'dibatalkan' && (
-                    <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
-                      <Pencil size={13} />
-                    </button>
+                    <Tooltip label="Batalkan Pesanan">
+                      <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
+                        className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
+                        {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                      </button>
+                    </Tooltip>
                   )}
+                  <Tooltip label="Cetak Ulang Struk">
+                    <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
+                      <Printer size={13} />
+                    </button>
+                  </Tooltip>
                   {o.status !== 'dibatalkan' && (
-                    <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
-                      className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
-                      {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
-                    </button>
+                    <Tooltip label="Edit">
+                      <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
+                        <Pencil size={13} />
+                      </button>
+                    </Tooltip>
                   )}
-                  <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
-                    <Printer size={13} />
-                  </button>
-                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
-                    {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                  </button>
-                  <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
-                    <Trash2 size={13} />
-                  </button>
+                  <Tooltip label="Hapus">
+                    <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
+                      <Trash2 size={13} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Lihat Detail">
+                    <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
+                      <ChevronRight size={13} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
 
@@ -875,22 +890,30 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {o.status !== 'dibatalkan' && (
-                      <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
-                        <Pencil size={13} />
-                      </button>
+                      <Tooltip label="Batalkan Pesanan">
+                        <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
+                          className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
+                          {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                        </button>
+                      </Tooltip>
                     )}
+                    <Tooltip label="Cetak Ulang Struk">
+                      <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
+                        <Printer size={13} />
+                      </button>
+                    </Tooltip>
                     {o.status !== 'dibatalkan' && (
-                      <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
-                        className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
-                        {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
-                      </button>
+                      <Tooltip label="Edit">
+                        <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
+                          <Pencil size={13} />
+                        </button>
+                      </Tooltip>
                     )}
-                    <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
-                      <Printer size={13} />
-                    </button>
-                    <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
-                      <Trash2 size={13} />
-                    </button>
+                    <Tooltip label="Hapus">
+                      <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
+                        <Trash2 size={13} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
 
@@ -901,10 +924,12 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                   </div>
                   <div className="flex items-center gap-1">
                     {o.source === 'portal' && o.status === 'baru' && (
-                      <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
-                        className="btn-ghost p-1.5" style={{ color: 'var(--success)' }} title="Tandai Selesai">
-                        {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                      </button>
+                      <Tooltip label="Tandai Selesai">
+                        <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
+                          className="btn-ghost p-1.5" style={{ color: 'var(--success)' }} title="Tandai Selesai">
+                          {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                        </button>
+                      </Tooltip>
                     )}
                     {o.paymentStatus === 'belum_lunas' && (
                       <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
@@ -914,7 +939,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                     )}
                     <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)}
                       className="btn-ghost px-2.5 py-1.5 text-xs font-semibold flex items-center gap-1">
-                      Detail {expandedId === o.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      Detail <ChevronRight size={13} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                     </button>
                   </div>
                 </div>
@@ -939,7 +964,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
             <button onClick={() => exportExcel(orders.filter(o => selected.has(o.id)))} disabled={exporting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
@@ -968,7 +993,9 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                   <p className="modal-subtitle">{editingOrder.invoiceNo} · {formatDate(editingOrder)}</p>
                 </div>
               </div>
-              <button onClick={() => setEditingOrder(null)} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={() => setEditingOrder(null)} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1001,12 +1028,18 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{it.weight} · {formatRp(it.price)}</p>
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <button type="button" onClick={() => setEditItemQty(i, it.qty - 1)} className="btn-ghost p-1.5"><Minus size={12} /></button>
+                            <Tooltip label="Kurangi Jumlah">
+                              <button type="button" onClick={() => setEditItemQty(i, it.qty - 1)} className="btn-ghost p-1.5"><Minus size={12} /></button>
+                            </Tooltip>
                             <span className="text-sm font-bold tabular" style={{ width: 22, textAlign: 'center' }}>{it.qty}</span>
-                            <button type="button" onClick={() => setEditItemQty(i, it.qty + 1)} className="btn-ghost p-1.5"><Plus size={12} /></button>
+                            <Tooltip label="Tambah Jumlah">
+                              <button type="button" onClick={() => setEditItemQty(i, it.qty + 1)} className="btn-ghost p-1.5"><Plus size={12} /></button>
+                            </Tooltip>
                           </div>
                           <p className="text-sm font-bold tabular flex-shrink-0" style={{ width: 80, textAlign: 'right', color: 'var(--text-primary)' }}>{formatRp(it.price * it.qty)}</p>
-                          <button type="button" onClick={() => removeEditItem(i)} className="btn-ghost p-1.5 flex-shrink-0" style={{ color: 'var(--danger)' }}><Trash2 size={12} /></button>
+                          <Tooltip label="Hapus Item">
+                            <button type="button" onClick={() => removeEditItem(i)} className="btn-ghost p-1.5 flex-shrink-0" style={{ color: 'var(--danger)' }}><Trash2 size={12} /></button>
+                          </Tooltip>
                         </div>
                       ))}
                       <SearchSelect value={addProductId} onChange={addEditItem}
@@ -1259,7 +1292,7 @@ function OrderDetail({ o }: { o: Order }) {
         <a href={o.pdfUrl} target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-xs font-medium"
           style={{ color: 'var(--accent)' }}>
-          <Receipt size={12} /> Lihat Invoice PDF →
+          <PdfIcon size={12} /> Lihat Invoice PDF →
         </a>
       )}
     </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, Search,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Users,
+  ChevronLeft, ChevronRight, Users,
   UserCheck, UserX, Clock, UserSearch, Landmark, Wallet, FileSpreadsheet, Upload,
   User, Building2,
 } from 'lucide-react';
@@ -800,24 +800,34 @@ export default function ResellersTab({ creds }: { creds: string }) {
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {r.status === 'pending' && (
                           <>
-                            <button onClick={() => updateStatus(r.id, 'approved')} className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Setujui">
-                              <Check size={13} />
-                            </button>
-                            <button onClick={() => updateStatus(r.id, 'rejected')} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Tolak">
-                              <X size={13} />
-                            </button>
+                            <Tooltip label="Setujui">
+                              <button onClick={() => updateStatus(r.id, 'approved')} className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Setujui">
+                                <Check size={13} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Tolak">
+                              <button onClick={() => updateStatus(r.id, 'rejected')} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Tolak">
+                                <X size={13} />
+                              </button>
+                            </Tooltip>
                           </>
                         )}
-                        <button onClick={() => openEdit(r)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={13} />
-                        </button>
-                        <button onClick={() => del(r.id, r.name)} disabled={isDeleting}
-                          className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
-                        <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} className="btn-ghost p-2">
-                          {expandedId === r.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEdit(r)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={13} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button onClick={() => del(r.id, r.name)} disabled={isDeleting}
+                            className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                          </button>
+                        </Tooltip>
+                        <Tooltip label={expandedId === r.id ? 'Sembunyikan detail' : 'Lihat detail'}>
+                          <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} className="btn-ghost p-2">
+                            <ChevronRight size={13} style={{ transform: expandedId === r.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
 
@@ -860,26 +870,34 @@ export default function ResellersTab({ creds }: { creds: string }) {
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                       <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
                         className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
-                        Detail {expandedId === r.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        Detail <ChevronRight size={12} style={{ transform: expandedId === r.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                       </button>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {r.status === 'pending' && (
                           <>
-                            <button onClick={() => updateStatus(r.id, 'approved')} className="btn-ghost p-1.5" style={{ color: 'var(--success)' }} title="Setujui">
-                              <Check size={12} />
-                            </button>
-                            <button onClick={() => updateStatus(r.id, 'rejected')} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Tolak">
-                              <X size={12} />
-                            </button>
+                            <Tooltip label="Setujui">
+                              <button onClick={() => updateStatus(r.id, 'approved')} className="btn-ghost p-1.5" style={{ color: 'var(--success)' }} title="Setujui">
+                                <Check size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Tolak">
+                              <button onClick={() => updateStatus(r.id, 'rejected')} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Tolak">
+                                <X size={12} />
+                              </button>
+                            </Tooltip>
                           </>
                         )}
-                        <button onClick={() => openEdit(r)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => del(r.id, r.name)} disabled={isDeleting}
-                          className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEdit(r)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={12} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button onClick={() => del(r.id, r.name)} disabled={isDeleting}
+                            className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
 
@@ -901,9 +919,11 @@ export default function ResellersTab({ creds }: { creds: string }) {
               </div>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronLeft size={14} />
-                  </button>
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
                     .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -922,9 +942,11 @@ export default function ResellersTab({ creds }: { creds: string }) {
                           </button>
                     )
                   }
-                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronRight size={14} />
-                  </button>
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -989,7 +1011,9 @@ export default function ResellersTab({ creds }: { creds: string }) {
                   <p className="modal-subtitle">{isNew ? 'Jadikan pelanggan sebagai reseller' : `Edit: ${editing.customerLabel}`}</p>
                 </div>
               </div>
-              <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
 
             <div className="modal-body">

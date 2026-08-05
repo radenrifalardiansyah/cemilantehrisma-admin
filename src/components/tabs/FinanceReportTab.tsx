@@ -8,6 +8,7 @@ import {
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
+import Tooltip from '@/components/Tooltip';
 
 const API = '';
 
@@ -362,12 +363,16 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
-        <button onClick={exportExcel} disabled={exporting || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
-          {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-        </button>
-        <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <Tooltip label="Export Excel">
+          <button onClick={exportExcel} disabled={exporting || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+          </button>
+        </Tooltip>
+        <Tooltip label="Refresh">
+          <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </Tooltip>
       </TopbarPortal>
 
       {/* Pemilih periode */}

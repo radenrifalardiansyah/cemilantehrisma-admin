@@ -4,11 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
-  Package, ChevronDown, ChevronUp, Search, QrCode,
-  ChevronLeft, ChevronRight, ImageIcon, FileSpreadsheet, Upload,
+  Package, Search, QrCode,
+  ChevronLeft, ChevronRight, ImageIcon, Upload,
   Eye, EyeOff,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { ExcelIcon } from '@/components/FileTypeIcons';
 import ImageLightbox from '@/components/ImageLightbox';
 import ImageCarousel from '@/components/ImageCarousel';
 import { useViewMode } from '@/lib/useViewMode';
@@ -771,7 +772,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
             )}
             <Tooltip label="Unduh Template">
               <button onClick={downloadProductTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                <FileSpreadsheet size={14} />
+                <ExcelIcon size={14} />
               </button>
             </Tooltip>
             <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
@@ -785,7 +786,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
               <Tooltip label="Export Excel">
                 <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                   className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                 </button>
               </Tooltip>
             )}
@@ -905,20 +906,26 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           </div>
 
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
-                              {expandedId === p.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                            </button>
                             <Tooltip label="QR Code">
                               <button onClick={() => setQrProduct(p)} className="btn-ghost p-2" style={{ color: 'var(--text-secondary)' }}>
                                 <QrCode size={13} />
                               </button>
                             </Tooltip>
-                            <button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => del(p.id, p.name)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
-                              <Trash2 size={13} />
-                            </button>
+                            <Tooltip label="Edit">
+                              <button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={13} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Hapus">
+                              <button onClick={() => del(p.id, p.name)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                                <Trash2 size={13} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Lihat detail">
+                              <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
+                                <ChevronRight size={13} style={{ transform: expandedId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                              </button>
+                            </Tooltip>
                           </div>
                         </div>
 
@@ -989,7 +996,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                           <div className="flex items-center justify-between gap-2 mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                             <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                               className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
-                              Detail {expandedId === p.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                              Detail <ChevronRight size={12} style={{ transform: expandedId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                             </button>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <Tooltip label="QR Code">
@@ -997,12 +1004,16 @@ export default function ProductsTab({ creds }: { creds: string }) {
                                   <QrCode size={12} />
                                 </button>
                               </Tooltip>
-                              <button onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                                <Pencil size={12} />
-                              </button>
-                              <button onClick={() => del(p.id, p.name)} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
-                                <Trash2 size={12} />
-                              </button>
+                              <Tooltip label="Edit">
+                                <button onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                                  <Pencil size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Hapus">
+                                <button onClick={() => del(p.id, p.name)} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                                  <Trash2 size={12} />
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                         </div>
@@ -1025,9 +1036,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   </div>
                   {totalPages > 1 && (
                     <div className="flex items-center gap-1">
-                      <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                        <ChevronLeft size={14} />
-                      </button>
+                      <Tooltip label="Halaman sebelumnya">
+                        <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                          <ChevronLeft size={14} />
+                        </button>
+                      </Tooltip>
                       {Array.from({ length: totalPages }, (_, i) => i + 1)
                         .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
                         .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -1046,9 +1059,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                               </button>
                         )
                       }
-                      <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                        <ChevronRight size={14} />
-                      </button>
+                      <Tooltip label="Halaman berikutnya">
+                        <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                          <ChevronRight size={14} />
+                        </button>
+                      </Tooltip>
                     </div>
                   )}
                 </div>
@@ -1066,7 +1081,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
             <button onClick={() => exportExcel(products.filter(p => selected.has(p.id)), 'terpilih')} disabled={exporting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
             <button onClick={() => bulkSetPublished(true)} disabled={bulkPublishing}
@@ -1114,7 +1129,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   <p className="modal-subtitle">{isNew ? 'Isi detail produk baru' : editing.name || 'Produk'}</p>
                 </div>
               </div>
-              <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
 
             <div className="modal-body">
@@ -1127,10 +1142,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     {editing.imageUrls.map((u, i) => (
                       <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group" style={{ background: 'var(--surface-2)' }}>
                         <Image src={u} alt="" fill className="object-contain" sizes="80px" unoptimized />
-                        <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
-                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X size={11} />
-                        </button>
+                        <Tooltip label="Hapus foto">
+                          <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <X size={11} />
+                          </button>
+                        </Tooltip>
                       </div>
                     ))}
                     <button onClick={() => fileRef.current?.click()} disabled={uploading}
@@ -1279,9 +1296,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                       <div key={i} style={{ display: 'flex', gap: 8 }}>
                         <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1" style={{ fontSize: 13 }} />
                         {editing.details.length > 1 && (
-                          <button onClick={() => removeDetail(i)} className="btn-ghost" style={{ padding: '8px', color: 'var(--danger)', flexShrink: 0 }}>
-                            <X size={13} />
-                          </button>
+                          <Tooltip label="Hapus baris">
+                            <button onClick={() => removeDetail(i)} className="btn-ghost" style={{ padding: '8px', color: 'var(--danger)', flexShrink: 0 }}>
+                              <X size={13} />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
                     ))}

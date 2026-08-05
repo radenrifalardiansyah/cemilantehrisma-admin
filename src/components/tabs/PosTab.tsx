@@ -15,6 +15,7 @@ import ImageCarousel from '@/components/ImageCarousel';
 import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
+import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { recognizeTransferAmount } from '@/lib/receipt-ocr';
 import {
@@ -199,16 +200,20 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
           </span>
           {qty > 0 ? (
             <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-              <button onClick={e => { e.stopPropagation(); onMinus(); }}
-                className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
-                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
-                <Minus size={10} strokeWidth={2.5} />
-              </button>
+              <Tooltip label="Kurangi jumlah">
+                <button onClick={e => { e.stopPropagation(); onMinus(); }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+                  <Minus size={10} strokeWidth={2.5} />
+                </button>
+              </Tooltip>
               <span className="text-[13px] font-black w-4 text-center tabular" style={{ color: 'var(--text-primary)' }}>{qty}</span>
-              <button onClick={e => { e.stopPropagation(); onAdd(); }}
-                className="w-6 h-6 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
-                <Plus size={10} strokeWidth={2.5} />
-              </button>
+              <Tooltip label="Tambah jumlah">
+                <button onClick={e => { e.stopPropagation(); onAdd(); }}
+                  className="w-6 h-6 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
+                  <Plus size={10} strokeWidth={2.5} />
+                </button>
+              </Tooltip>
             </div>
           ) : null}
         </div>
@@ -793,16 +798,20 @@ export default function PosTab({
                         <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatCurrency(p.price)} / pcs</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button onClick={() => removeFromCart(item.productId)}
-                          className="w-7 h-7 rounded-full flex items-center justify-center"
-                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-                          <Minus size={11} strokeWidth={2.5} />
-                        </button>
+                        <Tooltip label="Kurangi jumlah">
+                          <button onClick={() => removeFromCart(item.productId)}
+                            className="w-7 h-7 rounded-full flex items-center justify-center"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                            <Minus size={11} strokeWidth={2.5} />
+                          </button>
+                        </Tooltip>
                         <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
-                        <button onClick={() => addToCart(item.productId)}
-                          className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
-                          <Plus size={11} strokeWidth={2.5} />
-                        </button>
+                        <Tooltip label="Tambah jumlah">
+                          <button onClick={() => addToCart(item.productId)}
+                            className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
+                            <Plus size={11} strokeWidth={2.5} />
+                          </button>
+                        </Tooltip>
                       </div>
                       <span className="text-sm font-bold tabular w-16 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>
                         {formatCurrency(p.price * item.qty)}
@@ -944,10 +953,12 @@ export default function PosTab({
                           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleTransferProofSelect(f); }} />
                         Ganti
                       </label>
-                      <button type="button" onClick={() => { setTransferProofUrl(''); setOcrStatus('idle'); }}
-                        className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
-                        <X size={13} />
-                      </button>
+                      <Tooltip label="Hapus bukti transfer">
+                        <button type="button" onClick={() => { setTransferProofUrl(''); setOcrStatus('idle'); }}
+                          className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                          <X size={13} />
+                        </button>
+                      </Tooltip>
                     </div>
                   )}
                   {ocrStatus === 'reading' && (
@@ -1073,9 +1084,11 @@ export default function PosTab({
         <div className="flex gap-2">
           <input type="tel" value={waPhoneDraft} onChange={e => setWaPhoneDraft(e.target.value)}
             className="input flex-1" placeholder="Nomor WhatsApp (08xxx)" />
-          <button onClick={sendWhatsApp} disabled={!waPhoneDraft.trim()} className="btn-primary px-4 disabled:opacity-40">
-            <Send size={14} />
-          </button>
+          <Tooltip label="Kirim WhatsApp">
+            <button onClick={sendWhatsApp} disabled={!waPhoneDraft.trim()} className="btn-primary px-4 disabled:opacity-40">
+              <Send size={14} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -1117,10 +1130,12 @@ export default function PosTab({
   );
 
   const refreshBar = (
-    <button onClick={handleRefresh} disabled={refreshing} title="Muat ulang data"
-      className="btn-ghost h-9 w-9 p-0 flex items-center justify-center disabled:opacity-60" style={{ color: 'var(--text-secondary)' }}>
-      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-    </button>
+    <Tooltip label="Muat ulang data">
+      <button onClick={handleRefresh} disabled={refreshing} title="Muat ulang data"
+        className="btn-ghost h-9 w-9 p-0 flex items-center justify-center disabled:opacity-60" style={{ color: 'var(--text-secondary)' }}>
+        <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+      </button>
+    </Tooltip>
   );
 
   const heldModalContent = heldModalOpen && (
@@ -1136,7 +1151,7 @@ export default function PosTab({
               <p className="modal-subtitle">{heldTransactions.length} transaksi menunggu dilanjutkan</p>
             </div>
           </div>
-          <button onClick={() => setHeldModalOpen(false)} className="modal-close"><X size={14} /></button>
+          <Tooltip label="Tutup"><button onClick={() => setHeldModalOpen(false)} className="modal-close"><X size={14} /></button></Tooltip>
         </div>
         <div className="modal-body">
           {heldTransactions.length === 0 ? (
@@ -1154,10 +1169,12 @@ export default function PosTab({
                       Ditahan {new Date(h.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
-                  <button onClick={() => deleteHeldTransaction(h.id)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
-                    <Trash2 size={14} />
-                  </button>
+                  <Tooltip label="Hapus transaksi tertahan">
+                    <button onClick={() => deleteHeldTransaction(h.id)}
+                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </Tooltip>
                   <button onClick={() => resumeHeldTransaction(h)} className="btn-primary px-3 py-2 text-xs flex-shrink-0 whitespace-nowrap">
                     Lanjutkan
                   </button>
@@ -1186,11 +1203,13 @@ export default function PosTab({
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <button onClick={fetchSalesReport} disabled={reportLoading} className="btn-ghost h-8 w-8 p-0 flex items-center justify-center" title="Refresh">
-              <Loader2 size={14} className={reportLoading ? 'animate-spin' : 'hidden'} />
-              {!reportLoading && <TrendingUp size={14} />}
-            </button>
-            <button onClick={() => setReportOpen(false)} className="modal-close"><X size={14} /></button>
+            <Tooltip label="Refresh laporan">
+              <button onClick={fetchSalesReport} disabled={reportLoading} className="btn-ghost h-8 w-8 p-0 flex items-center justify-center" title="Refresh">
+                <Loader2 size={14} className={reportLoading ? 'animate-spin' : 'hidden'} />
+                {!reportLoading && <TrendingUp size={14} />}
+              </button>
+            </Tooltip>
+            <Tooltip label="Tutup"><button onClick={() => setReportOpen(false)} className="modal-close"><X size={14} /></button></Tooltip>
           </div>
         </div>
         <div className="modal-body">
@@ -1273,7 +1292,7 @@ export default function PosTab({
               </p>
             </div>
           </div>
-          <button onClick={() => setShiftModal(null)} className="modal-close"><X size={14} /></button>
+          <Tooltip label="Tutup"><button onClick={() => setShiftModal(null)} className="modal-close"><X size={14} /></button></Tooltip>
         </div>
         <div className="modal-body">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1350,9 +1369,11 @@ export default function PosTab({
   // ─── Header mobile (langkah "cart") ────────────────────────────────────────
   const mobileCartHeader = (
     <div className="px-4 pt-4 pb-3 flex items-center gap-3 flex-shrink-0">
-      <button onClick={() => { setPosView('products'); setProcessErr(''); }} className="btn-ghost p-2.5">
-        <ChevronLeft size={16} />
-      </button>
+      <Tooltip label="Kembali">
+        <button onClick={() => { setPosView('products'); setProcessErr(''); }} className="btn-ghost p-2.5">
+          <ChevronLeft size={16} />
+        </button>
+      </Tooltip>
       <div className="flex-1">
         <p className="text-[15px] font-extrabold" style={{ color: 'var(--text-primary)' }}>Detail &amp; Checkout</p>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{`${cartItems.length} jenis · ${cartCount} pcs`}</p>

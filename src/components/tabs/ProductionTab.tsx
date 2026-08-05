@@ -513,9 +513,11 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     <>
     <div className="p-4 lg:p-6 animate-fade-up space-y-5">
       <TopbarPortal>
-        <button onClick={() => { loadMaterials(); loadBatches(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
-          <RefreshCw size={14} className={materialsLoading || batchesLoading ? 'animate-spin' : ''} />
-        </button>
+        <Tooltip label="Refresh">
+          <button onClick={() => { loadMaterials(); loadBatches(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+            <RefreshCw size={14} className={materialsLoading || batchesLoading ? 'animate-spin' : ''} />
+          </button>
+        </Tooltip>
       </TopbarPortal>
 
       {/* Header: search + actions */}
@@ -607,12 +609,16 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</span>
                           {editable && (
                             <>
-                              <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
-                                <Pencil size={12} />
-                              </button>
-                              <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
-                                {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                              </button>
+                              <Tooltip label="Edit">
+                                <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Hapus">
+                                <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
+                                  {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </Tooltip>
                             </>
                           )}
                         </div>
@@ -678,12 +684,16 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                     </div>
                     {editable && (
                       <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
-                          {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={12} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                            {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                          </button>
+                        </Tooltip>
                       </div>
                     )}
                   </div>
@@ -702,9 +712,11 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
               </div>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronLeft size={14} />
-                  </button>
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
                     .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -721,9 +733,11 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           </button>
                     )
                   }
-                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronRight size={14} />
-                  </button>
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -770,7 +784,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                   </p>
                 </div>
               </div>
-              <button onClick={closeForm} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={closeForm} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -801,10 +817,12 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           options={productOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                         <input type="number" min="0" value={row.qty} onChange={e => updateOutputRow(i, { qty: e.target.value })}
                           placeholder="Jumlah (pcs)" className="input" />
-                        <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
-                          className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                          <X size={14} />
-                        </button>
+                        <Tooltip label="Hapus baris">
+                          <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
+                            className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                            <X size={14} />
+                          </button>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>
@@ -827,10 +845,12 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                               options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
                             <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })}
                               placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" />
-                            <button onClick={() => removeRow(i)} disabled={rows.length === 1}
-                              className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                              <X size={14} />
-                            </button>
+                            <Tooltip label="Hapus baris">
+                              <button onClick={() => removeRow(i)} disabled={rows.length === 1}
+                                className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                                <X size={14} />
+                              </button>
+                            </Tooltip>
                           </div>
                           {material && (
                             <p className="text-xs tabular mt-1" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>

@@ -133,9 +133,11 @@ function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPag
       </div>
       {totalPages > 1 && (
         <div className="flex items-center gap-1">
-          <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-            <ChevronLeft size={14} />
-          </button>
+          <Tooltip label="Halaman sebelumnya">
+            <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+              <ChevronLeft size={14} />
+            </button>
+          </Tooltip>
           {Array.from({ length: totalPages }, (_, i) => i + 1)
             .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
             .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -152,9 +154,11 @@ function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPag
                   </button>
             )
           }
-          <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-            <ChevronRight size={14} />
-          </button>
+          <Tooltip label="Halaman berikutnya">
+            <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+              <ChevronRight size={14} />
+            </button>
+          </Tooltip>
         </div>
       )}
     </div>
@@ -1202,9 +1206,11 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>
-        <button onClick={() => { loadLocations(); loadShipments(); loadRecaps(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
-          <RefreshCw size={14} className={locationsLoading || shipmentsLoading || recapsLoading ? 'animate-spin' : ''} />
-        </button>
+        <Tooltip label="Refresh">
+          <button onClick={() => { loadLocations(); loadShipments(); loadRecaps(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+            <RefreshCw size={14} className={locationsLoading || shipmentsLoading || recapsLoading ? 'animate-spin' : ''} />
+          </button>
+        </Tooltip>
       </TopbarPortal>
 
       <div className="flex-shrink-0 px-4 lg:px-6 pt-4">
@@ -1331,15 +1337,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatRp(totalValue)}</p>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
-                              <History size={12} />
-                            </button>
-                            <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                              <Pencil size={12} />
-                            </button>
-                            <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                              {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                            </button>
+                            <Tooltip label="Riwayat">
+                              <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
+                                <History size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Edit">
+                              <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                <Pencil size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Hapus">
+                              <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </Tooltip>
                           </div>
                         </div>
                       );
@@ -1361,15 +1373,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               <Store size={20} style={{ color: 'var(--accent)' }} />
                             </div>
                             <div className="flex items-center gap-1">
-                              <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
-                                <History size={12} />
-                              </button>
-                              <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                <Pencil size={12} />
-                              </button>
-                              <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                              </button>
+                              <Tooltip label="Riwayat">
+                                <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
+                                  <History size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Edit">
+                                <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Hapus">
+                                <button onClick={() => deleteLocation(l)} disabled={deletingLId === l.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                  {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                           <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
@@ -1500,15 +1518,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               )}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
-                                {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                              </button>
-                              <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                <Pencil size={12} />
-                              </button>
-                              <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                              </button>
+                              <Tooltip label="Cetak Nota PDF">
+                                <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
+                                  {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Edit">
+                                <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Hapus">
+                                <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                  {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                         );
@@ -1530,15 +1554,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               </div>
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
                               <div className="flex items-center gap-1 flex-shrink-0">
-                                <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
-                                  {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                                </button>
-                                <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                  <Pencil size={12} />
-                                </button>
-                                <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                  {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                </button>
+                                <Tooltip label="Cetak Nota PDF">
+                                  <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
+                                    {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Edit">
+                                  <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                    <Pencil size={12} />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Hapus">
+                                  <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                    {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                  </button>
+                                </Tooltip>
                               </div>
                             </div>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
@@ -1667,15 +1697,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               )}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
-                                {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                              </button>
-                              <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                <Pencil size={12} />
-                              </button>
-                              <button onClick={() => deleteRecap(r)} disabled={deletingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                              </button>
+                              <Tooltip label="Cetak Rekap PDF">
+                                <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
+                                  {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Edit">
+                                <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Hapus">
+                                <button onClick={() => deleteRecap(r)} disabled={deletingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                  {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                         );
@@ -1698,15 +1734,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                                 {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                               </div>
                               <div className="flex items-center gap-1 flex-shrink-0">
-                                <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
-                                  {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                                </button>
-                                <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                  <Pencil size={12} />
-                                </button>
-                                <button onClick={() => deleteRecap(r)} disabled={deletingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                  {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                </button>
+                                <Tooltip label="Cetak Rekap PDF">
+                                  <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
+                                    {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Edit">
+                                  <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
+                                    <Pencil size={12} />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Hapus">
+                                  <button onClick={() => deleteRecap(r)} disabled={deletingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+                                    {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                  </button>
+                                </Tooltip>
                               </div>
                             </div>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -1753,7 +1795,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   <p className="modal-subtitle">{editingL ? 'Perbarui informasi lokasi' : 'Isi detail lapak/UMKM mitra'}</p>
                 </div>
               </div>
-              <button onClick={() => setShowLForm(false)} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={() => setShowLForm(false)} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1810,7 +1854,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   <p className="modal-subtitle">Stok gudang & stok toko berkurang, stok titip di lokasi bertambah</p>
                 </div>
               </div>
-              <button onClick={() => setShowSendForm(false)} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={() => setShowSendForm(false)} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1849,10 +1895,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               placeholder="Qty (pcs)" className="input" />
                             <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
                               placeholder="Harga titip" />
-                            <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
-                              className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                              <X size={14} />
-                            </button>
+                            <Tooltip label="Hapus baris">
+                              <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
+                                className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                                <X size={14} />
+                              </button>
+                            </Tooltip>
                           </div>
                           {qty > 0 && harga > 0 && (
                             <p className="text-xs tabular mt-1" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
@@ -1903,7 +1951,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   <p className="modal-subtitle">Catat qty terjual & retur — sisanya tetap tertahan di lokasi</p>
                 </div>
               </div>
-              <button onClick={() => setShowRecapForm(false)} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={() => setShowRecapForm(false)} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -2048,7 +2098,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   </p>
                 </div>
               </div>
-              <button onClick={closeLocationHistory} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={closeLocationHistory} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               {historyLoading ? (

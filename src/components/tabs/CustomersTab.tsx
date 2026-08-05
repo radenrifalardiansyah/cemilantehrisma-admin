@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, Search,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Contact,
+  ChevronLeft, ChevronRight, Contact,
   FileSpreadsheet, Upload, User, Building2,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -637,16 +637,22 @@ export default function CustomersTab({ creds }: { creds: string }) {
                       </div>
 
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={() => openEdit(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={13} />
-                        </button>
-                        <button onClick={() => del(c.id, c.name)} disabled={isDeleting}
-                          className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
-                        <button onClick={() => setExpandedId(expandedId === c.id ? null : c.id)} className="btn-ghost p-2">
-                          {expandedId === c.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEdit(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={13} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button onClick={() => del(c.id, c.name)} disabled={isDeleting}
+                            className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Lihat detail">
+                          <button onClick={() => setExpandedId(expandedId === c.id ? null : c.id)} className="btn-ghost p-2">
+                            <ChevronRight size={13} style={{ transform: expandedId === c.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
 
@@ -692,16 +698,20 @@ export default function CustomersTab({ creds }: { creds: string }) {
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                       <button onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
                         className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
-                        Detail {expandedId === c.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        Detail <ChevronRight size={12} style={{ transform: expandedId === c.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                       </button>
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={() => openEdit(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => del(c.id, c.name)} disabled={isDeleting}
-                          className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                          {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
+                        <Tooltip label="Edit">
+                          <button onClick={() => openEdit(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={12} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Hapus">
+                          <button onClick={() => del(c.id, c.name)} disabled={isDeleting}
+                            className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
 
@@ -723,9 +733,11 @@ export default function CustomersTab({ creds }: { creds: string }) {
               </div>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronLeft size={14} />
-                  </button>
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
                     .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -744,9 +756,11 @@ export default function CustomersTab({ creds }: { creds: string }) {
                           </button>
                     )
                   }
-                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronRight size={14} />
-                  </button>
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -798,7 +812,9 @@ export default function CustomersTab({ creds }: { creds: string }) {
                   <p className="modal-subtitle">{isNew ? 'Simpan data pelanggan baru' : `Edit: ${editing.name}`}</p>
                 </div>
               </div>
-              <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup" side="bottom">
+                <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
 
             <div className="modal-body">

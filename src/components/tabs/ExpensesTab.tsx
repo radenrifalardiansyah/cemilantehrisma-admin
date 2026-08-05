@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Banknote, Plus, Pencil, Trash2, X, Check, Loader2, Search, FileSpreadsheet,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, TrendingDown, CalendarDays, Wallet,
+  ChevronLeft, ChevronRight, TrendingDown, CalendarDays, Wallet,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
@@ -404,18 +404,24 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {!e.sourceType && (
                           <>
-                            <button onClick={() => openEdit(e)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => del(e)} disabled={isDeleting} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                              {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                            </button>
+                            <Tooltip label="Edit">
+                              <button onClick={() => openEdit(e)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={13} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Hapus">
+                              <button onClick={() => del(e)} disabled={isDeleting} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                                {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                              </button>
+                            </Tooltip>
                           </>
                         )}
                         {e.note && (
-                          <button onClick={() => setExpandedId(expandedId === e.id ? null : e.id)} className="btn-ghost p-2">
-                            {expandedId === e.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                          </button>
+                          <Tooltip label="Lihat catatan">
+                            <button onClick={() => setExpandedId(expandedId === e.id ? null : e.id)} className="btn-ghost p-2">
+                              <ChevronRight size={13} style={{ transform: expandedId === e.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
                     </div>
@@ -454,18 +460,22 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                       {e.note ? (
                         <button onClick={() => setExpandedId(expandedId === e.id ? null : e.id)} className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
-                          Catatan {expandedId === e.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          Catatan <ChevronRight size={12} style={{ transform: expandedId === e.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                         </button>
                       ) : <span />}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {!e.sourceType && (
                           <>
-                            <button onClick={() => openEdit(e)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                              <Pencil size={12} />
-                            </button>
-                            <button onClick={() => del(e)} disabled={isDeleting} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                              {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                            </button>
+                            <Tooltip label="Edit">
+                              <button onClick={() => openEdit(e)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Hapus">
+                              <button onClick={() => del(e)} disabled={isDeleting} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                                {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </Tooltip>
                           </>
                         )}
                       </div>
@@ -491,9 +501,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
               </div>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronLeft size={14} />
-                  </button>
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
                     .reduce<(number | '…')[]>((acc, n, i, arr) => {
@@ -510,9 +522,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                           </button>
                     )
                   }
-                  <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-                    <ChevronRight size={14} />
-                  </button>
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>
@@ -560,7 +574,9 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   <p className="modal-subtitle">{isNew ? 'Simpan biaya operasional baru' : `Edit: ${editing.description}`}</p>
                 </div>
               </div>
-              <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              <Tooltip label="Tutup">
+                <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
+              </Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

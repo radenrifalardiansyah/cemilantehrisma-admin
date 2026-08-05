@@ -7,13 +7,14 @@ import {
   BarChart2, ShoppingCart, Package, Receipt, Tag,
   Users, Contact, Warehouse, Settings, LogOut, Home,
   ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
-  Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark, Coins,
+  Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark, Coins, FileBarChart,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
+import Tooltip from '@/components/Tooltip';
 
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
-  | 'stock' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
+  | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
   | 'finance-report' | 'capital' | 'settings';
 
 interface NavTab {
@@ -61,7 +62,12 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
   {
     label: 'Operasional',
     tabs: [
-      { id: 'stock'      as TabId, label: 'Gudang',       mobileLabel: 'Gudang',   Icon: Warehouse },
+      {
+        id: 'stock' as TabId, label: 'Gudang', mobileLabel: 'Gudang', Icon: Warehouse,
+        children: [
+          { id: 'stock-report' as TabId, label: 'Laporan Stok', mobileLabel: 'Laporan Stok', Icon: FileBarChart },
+        ],
+      },
       {
         id: 'materials' as TabId, label: 'Bahan Baku', mobileLabel: 'Bahan Baku', Icon: Boxes,
         children: [
@@ -254,11 +260,9 @@ export default function AppShell({
                   const hasChildren  = !!tab.children?.length;
                   const childActive  = tab.children?.some(c => c.id === activeTab) ?? false;
                   const isExpanded   = !collapsed && (expandedIds.has(tab.id) || childActive);
-                  return (
-                    <div key={tab.id}>
+                  const navButton = (
                       <button
                         onClick={() => setActiveTab(tab.id)}
-                        title={collapsed ? tab.label : undefined}
                         className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
                         style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
                       >
@@ -300,6 +304,12 @@ export default function AppShell({
                           </span>
                         )}
                       </button>
+                  );
+                  return (
+                    <div key={tab.id}>
+                      {collapsed
+                        ? <Tooltip label={tab.label}>{navButton}</Tooltip>
+                        : navButton}
 
                       {isExpanded && (
                         <div className="mt-0.5 space-y-0.5" style={{ paddingLeft: 29 }}>
@@ -341,18 +351,24 @@ export default function AppShell({
           style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
         >
           {/* Collapse toggle */}
-          <button
-            onClick={toggleCollapse}
-            title={collapsed ? 'Perlebar menu' : 'Perkecil menu'}
-            className="sidebar-nav-item w-full mb-2"
-            style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.6 }}
-          >
-            {collapsed
-              ? <PanelLeftOpen  size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
-              : <PanelLeftClose size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
-            }
-            {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: '#8A6248' }}>Perkecil</span>}
-          </button>
+          {(() => {
+            const collapseButton = (
+              <button
+                onClick={toggleCollapse}
+                className="sidebar-nav-item w-full mb-2"
+                style={{ justifyContent: collapsed ? 'center' : 'flex-start', opacity: 0.6 }}
+              >
+                {collapsed
+                  ? <PanelLeftOpen  size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
+                  : <PanelLeftClose size={14} style={{ color: '#8A6248', flexShrink: 0 }} />
+                }
+                {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: '#8A6248' }}>Perkecil</span>}
+              </button>
+            );
+            return collapsed
+              ? <Tooltip label="Perlebar menu" side="top">{collapseButton}</Tooltip>
+              : collapseButton;
+          })()}
 
           {/* User card — expanded */}
           {!collapsed && (
@@ -377,34 +393,36 @@ export default function AppShell({
                 </p>
                 <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>Administrator</p>
               </div>
-              <button
-                onClick={handleLogout}
-                title="Keluar"
-                style={{
-                  width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-                  background: 'rgba(255,144,144,0.08)', border: '1px solid rgba(255,144,144,0.15)',
-                  color: '#FF9090', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,144,144,0.20)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,144,144,0.08)')}
-              >
-                <LogOut size={13} />
-              </button>
+              <Tooltip label="Keluar" side="top">
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+                    background: 'rgba(255,144,144,0.08)', border: '1px solid rgba(255,144,144,0.15)',
+                    color: '#FF9090', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,144,144,0.20)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,144,144,0.08)')}
+                >
+                  <LogOut size={13} />
+                </button>
+              </Tooltip>
             </div>
           )}
 
           {/* User card — collapsed: logout icon */}
           {collapsed && (
-            <button
-              onClick={handleLogout}
-              title="Keluar"
-              className="sidebar-nav-item w-full mt-0.5"
-              style={{ justifyContent: 'center' }}
-            >
-              <LogOut size={15} style={{ color: '#FF9090', flexShrink: 0 }} />
-            </button>
+            <Tooltip label="Keluar" side="top">
+              <button
+                onClick={handleLogout}
+                className="sidebar-nav-item w-full mt-0.5"
+                style={{ justifyContent: 'center' }}
+              >
+                <LogOut size={15} style={{ color: '#FF9090', flexShrink: 0 }} />
+              </button>
+            </Tooltip>
           )}
         </div>
       </aside>

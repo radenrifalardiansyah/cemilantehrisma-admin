@@ -5,6 +5,7 @@ import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, 
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import { useToast } from '@/components/Toast';
+import Tooltip from '@/components/Tooltip';
 
 const API = '';
 
@@ -225,11 +226,13 @@ export default function SettingsTab({ creds }: { creds: string }) {
                       <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={settings.logo} alt="Logo toko" className="w-full h-full object-contain" />
-                        <button type="button" onClick={() => set('logo', '')}
-                          className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
-                          style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
-                          <X size={11} />
-                        </button>
+                        <Tooltip label="Hapus Logo">
+                          <button type="button" onClick={() => set('logo', '')}
+                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
+                            <X size={11} />
+                          </button>
+                        </Tooltip>
                       </div>
                     ) : (
                       <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
