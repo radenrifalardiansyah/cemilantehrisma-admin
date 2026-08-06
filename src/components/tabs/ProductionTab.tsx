@@ -503,8 +503,9 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
 
   const togglePageAll = () => {
-    const pageIds     = paginatedBatches.map(b => b.id);
-    const allSelected = pageIds.every(id => selected.has(id));
+    // Batch yang stoknya sudah habis tidak bisa diedit/dihapus, jadi tidak ikut dipilih massal.
+    const pageIds     = paginatedBatches.filter(b => !b.closed).map(b => b.id);
+    const allSelected = pageIds.length > 0 && pageIds.every(id => selected.has(id));
     setSelected(s => {
       const n = new Set(s);
       if (allSelected) pageIds.forEach(id => n.delete(id));
@@ -586,18 +587,21 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
         </div>
       ) : (
         <>
-          {paginatedBatches.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
-              <Checkbox
-                checked={paginatedBatches.every(b => selected.has(b.id))}
-                indeterminate={paginatedBatches.some(b => selected.has(b.id)) && !paginatedBatches.every(b => selected.has(b.id))}
-                onChange={togglePageAll}
-              />
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-                {selected.size > 0 ? `${selected.size} dipilih` : `${paginatedBatches.length} batch di halaman ini`}
-              </span>
-            </div>
-          )}
+          {paginatedBatches.length > 0 && (() => {
+            const selectableIds = paginatedBatches.filter(b => !b.closed).map(b => b.id);
+            return (
+              <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                <Checkbox
+                  checked={selectableIds.length > 0 && selectableIds.every(id => selected.has(id))}
+                  indeterminate={selectableIds.some(id => selected.has(id)) && !selectableIds.every(id => selected.has(id))}
+                  onChange={togglePageAll}
+                />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                  {selected.size > 0 ? `${selected.size} dipilih` : `${paginatedBatches.length} batch di halaman ini`}
+                </span>
+              </div>
+            );
+          })()}
 
           {paginatedBatches.length === 0 ? (
             <div className="card py-12 text-center">
@@ -607,12 +611,15 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
               {paginatedBatches.map((b, i) => {
                 const isSelected = selected.has(b.id);
-                const editable   = isEditableBatch(b);
+                // Batch yang stoknya sudah habis dikunci: tidak bisa dipilih/diedit/dihapus lagi.
+                const manageable = isEditableBatch(b) && !b.closed;
                 const rowNumber  = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + i + 1;
                 return (
                   <div key={b.id}>
                     <div className="px-4 py-3 flex items-center gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
-                      <Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} />
+                      {b.closed
+                        ? <span className="flex-shrink-0 w-[18px] h-[18px]" />
+                        : <Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} />}
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNumber}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
@@ -622,7 +629,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</span>
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              {editable && (
+                              {manageable && (
                                 <>
                                   <Tooltip label="Edit">
                                     <button onClick={() => openEdit(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }} title="Edit">
@@ -655,8 +662,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                         <p className="text-xs mt-1 tabular" style={{ color: 'var(--text-muted)' }}>
                           Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
                         </p>
-                        {!editable && (
-                          <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
+                        {!manageable && (
+                          <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>
+                            {b.closed ? 'Stok sudah habis — tidak bisa diedit/dihapus.' : 'Data lama — tidak bisa diedit/dihapus.'}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -669,12 +678,14 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {paginatedBatches.map(b => {
                 const isSelected = selected.has(b.id);
-                const editable   = isEditableBatch(b);
+                const manageable = isEditableBatch(b) && !b.closed;
                 return (
                   <div key={b.id} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                    <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
-                      <Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} />
-                    </div>
+                    {!b.closed && (
+                      <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                        <Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} />
+                      </div>
+                    )}
                     <div className="pt-8 pb-3 px-4 flex flex-col items-center text-center gap-1">
                       <div className="w-12 h-12 rounded-2xl flex-shrink-0 flex items-center justify-center mb-1" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                         <Factory size={20} />
@@ -692,8 +703,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
                         Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
                       </p>
-                      {!editable && (
-                        <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
+                      {!manageable && (
+                        <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>
+                          {b.closed ? 'Stok sudah habis — tidak bisa diedit/dihapus.' : 'Data lama — tidak bisa diedit/dihapus.'}
+                        </p>
                       )}
                     </div>
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
@@ -701,7 +714,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                         className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
                         Detail <ChevronRight size={12} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                       </button>
-                      {editable && (
+                      {manageable && (
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <Tooltip label="Edit">
                             <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
@@ -949,6 +962,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
 }
 
 function ProductionDetail({ b }: { b: ProductionBatch }) {
+  const outputs = b.outputs && b.outputs.length > 0 ? b.outputs : null;
+  const detailRow: React.CSSProperties = { color: 'var(--text-secondary)' };
   return (
     <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
       {b.note && (
@@ -959,15 +974,40 @@ function ProductionDetail({ b }: { b: ProductionBatch }) {
       )}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Produk Hasil</p>
-        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-          {batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join(', ')}
-        </p>
+        <div className="space-y-0.5">
+          {outputs
+            ? outputs.map((o, i) => (
+                <p key={i} className="text-xs font-medium tabular" style={detailRow}>
+                  {o.productName}: {o.yieldQty} pcs · HPP {formatRp(o.costPerPcs)}/pcs
+                </p>
+              ))
+            : batchOutputs(b).map((o, i) => (
+                <p key={i} className="text-xs font-medium" style={detailRow}>{o.productName}: {o.yieldQty} pcs</p>
+              ))}
+        </div>
       </div>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Bahan Baku Dipakai</p>
-        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-          {b.materialsUsed.map(m => `${m.materialName} (${m.qty} ${m.unit})`).join(', ')}
-        </p>
+        <div className="space-y-0.5">
+          {b.materialsUsed.map((m, i) => (
+            <p key={i} className="text-xs font-medium tabular" style={detailRow}>
+              {m.materialName} ({m.qty} {m.unit}) · {formatRp(m.costPerUnit)}/{m.unit} = {formatRp(m.cost)}
+            </p>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Rincian Biaya</p>
+        <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Biaya Bahan</p>
+          <p className="text-xs font-semibold tabular text-right" style={detailRow}>{formatRp(b.materialCost)}</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Biaya Lain</p>
+          <p className="text-xs font-semibold tabular text-right" style={detailRow}>{formatRp(b.otherCost)}</p>
+          <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Total Biaya</p>
+          <p className="text-xs font-bold tabular text-right" style={{ color: 'var(--text-primary)' }}>{formatRp(b.totalCost)}</p>
+          <p className="text-xs font-bold" style={{ color: 'var(--accent)' }}>HPP / pcs</p>
+          <p className="text-xs font-bold tabular text-right" style={{ color: 'var(--accent)' }}>{formatRp(b.costPerPcs)}</p>
+        </div>
       </div>
       {b.warehouseName && (
         <div>
