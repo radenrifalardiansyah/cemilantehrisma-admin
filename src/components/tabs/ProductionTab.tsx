@@ -68,6 +68,18 @@ interface ProductionBatch {
   productName?: string; yieldQty?: number;
   // Gudang tujuan stok hasil produksi — batch lama (sebelum fitur ini) tidak punya field ini
   warehouseId?: string; warehouseName?: string;
+  // Dihitung backend (asumsi FIFO atas stok gudang saat ini) — true kalau stok hasil produksi
+  // batch ini sudah habis (terjual/keluar semua)
+  closed?: boolean;
+  // true kalau sudah terjual sebagian tapi belum habis — sisa stoknya tidak lagi murni bisa
+  // dianggap milik batch ini saja (tercampur dengan batch produksi lain di produk+gudang yang sama)
+  mixed?: boolean;
+}
+
+function productionStatusBadge(b: ProductionBatch) {
+  if (b.closed) return { label: 'Stok Habis', cls: 'badge-gray' };
+  if (b.mixed)  return { label: 'Tercampur Produksi Lain', cls: 'badge-amber' };
+  return { label: 'Stok Tersedia', cls: 'badge-green' };
 }
 
 // Normalisasi batch lama & baru jadi satu bentuk "outputs" supaya tampilan riwayat konsisten
@@ -237,6 +249,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const [page,     setPage]     = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [view, setView] = useViewMode('production');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -258,8 +271,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     }
     setSelected(new Set());
     await Promise.all([loadMaterials(), loadBatches()]);
-    if (okCount > 0) toast.success(`${okCount} batch produksi berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena produknya sudah diproduksi lagi.` : ''}`);
-    else toast.error('Semua batch yang dipilih tidak bisa dihapus (produknya sudah diproduksi lagi setelahnya).');
+    if (okCount > 0) toast.success(`${okCount} batch produksi berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena produknya sudah diproduksi lagi atau stoknya sudah terjual/keluar.` : ''}`);
+    else toast.error('Semua batch yang dipilih tidak bisa dihapus (produknya sudah diproduksi lagi atau stoknya sudah terjual/keluar).');
     setBulkDeleting(false);
   };
 
@@ -595,54 +608,57 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
               {paginatedBatches.map((b, i) => {
                 const isSelected = selected.has(b.id);
                 const editable   = isEditableBatch(b);
-                const rowNumber  = (safePage - 1) * pageSize + i + 1;
+                const rowNumber  = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + i + 1;
                 return (
-                  <div key={b.id} className="px-4 py-3 flex items-start gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
-                    <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} /></div>
-                    <span className="text-xs font-semibold tabular pt-0.5" style={{ color: 'var(--text-muted)', minWidth: 20 }}>{rowNumber}.</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {batchOutputs(b).map(o => o.productName).join(' & ')}
-                        </p>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</span>
-                          {editable && (
-                            <>
-                              <Tooltip label="Edit">
-                                <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
-                                  <Pencil size={12} />
-                                </button>
-                              </Tooltip>
-                              <Tooltip label="Hapus">
-                                <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
-                                  {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                </button>
-                              </Tooltip>
-                            </>
+                  <div key={b.id}>
+                    <div className="px-4 py-3 flex items-center gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                      <Checkbox checked={isSelected} onChange={() => toggleSelect(b.id)} />
+                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNumber}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                            {batchOutputs(b).map(o => o.productName).join(' & ')}
+                          </p>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</span>
+                            {editable && (
+                              <>
+                                <Tooltip label="Edit">
+                                  <button onClick={() => openEdit(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }} title="Edit">
+                                    <Pencil size={13} />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip label="Hapus">
+                                  <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus">
+                                    {deletingId === b.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                  </button>
+                                </Tooltip>
+                              </>
+                            )}
+                            <Tooltip label="Lihat detail">
+                              <button onClick={() => setExpandedId(expandedId === b.id ? null : b.id)} className="btn-ghost p-2">
+                                <ChevronRight size={13} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(b.date)}</p>
+                          {b.warehouseId && (
+                            <span className={`badge ${productionStatusBadge(b).cls}`} style={{ fontSize: 10 }}>
+                              {productionStatusBadge(b).label}
+                            </span>
                           )}
                         </div>
+                        <p className="text-xs mt-1 tabular" style={{ color: 'var(--text-muted)' }}>
+                          Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
+                        </p>
+                        {!editable && (
+                          <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
+                        )}
                       </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(b.date)}</p>
-                      <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                        {batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join(', ')}
-                      </p>
-                      <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                        {b.materialsUsed.map(m => `${m.materialName} (${m.qty} ${m.unit})`).join(', ')}
-                      </p>
-                      <p className="text-xs mt-1 tabular" style={{ color: 'var(--text-muted)' }}>
-                        Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
-                      </p>
-                      {b.warehouseName && (
-                        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Masuk gudang: {b.warehouseName}</p>
-                      )}
-                      {b.note && (
-                        <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-secondary)' }}>Catatan: {b.note}</p>
-                      )}
-                      {!editable && (
-                        <p className="text-[11px] mt-1 italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
-                      )}
                     </div>
+                    {expandedId === b.id && <ProductionDetail b={b} />}
                   </div>
                 );
               })}
@@ -665,37 +681,40 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                         {batchOutputs(b).map(o => o.productName).join(' & ')}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(b.date)}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join(', ')}
-                      </p>
+                      {b.warehouseId && (
+                        <span className={`badge ${productionStatusBadge(b).cls}`} style={{ fontSize: 10 }}>
+                          {productionStatusBadge(b).label}
+                        </span>
+                      )}
                       <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</p>
                       <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
                         Total biaya {formatRp(b.totalCost)} · HPP {formatRp(b.costPerPcs)}/pcs
                       </p>
-                      {b.warehouseName && (
-                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Masuk gudang: {b.warehouseName}</p>
-                      )}
-                      {b.note && (
-                        <p className="text-[11px] italic" style={{ color: 'var(--text-secondary)' }}>Catatan: {b.note}</p>
-                      )}
                       {!editable && (
                         <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>Data lama — tidak bisa diedit/dihapus.</p>
                       )}
                     </div>
-                    {editable && (
-                      <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <Tooltip label="Edit">
-                          <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                            <Pencil size={12} />
-                          </button>
-                        </Tooltip>
-                        <Tooltip label="Hapus">
-                          <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
-                            {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          </button>
-                        </Tooltip>
-                      </div>
-                    )}
+                    <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                      <button onClick={() => setExpandedId(expandedId === b.id ? null : b.id)}
+                        className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
+                        Detail <ChevronRight size={12} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                      </button>
+                      {editable && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Tooltip label="Edit">
+                            <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                              <Pencil size={12} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Hapus">
+                            <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                              {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                            </button>
+                          </Tooltip>
+                        </div>
+                      )}
+                    </div>
+                    {expandedId === b.id && <ProductionDetail b={b} />}
                   </div>
                 );
               })}
@@ -924,5 +943,36 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
         </div>
     )}
     </>
+  );
+}
+
+function ProductionDetail({ b }: { b: ProductionBatch }) {
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      {b.note && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Catatan</p>
+          <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{b.note}</p>
+        </div>
+      )}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Produk Hasil</p>
+        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+          {batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join(', ')}
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Bahan Baku Dipakai</p>
+        <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+          {b.materialsUsed.map(m => `${m.materialName} (${m.qty} ${m.unit})`).join(', ')}
+        </p>
+      </div>
+      {b.warehouseName && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Masuk Gudang</p>
+          <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{b.warehouseName}</p>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,18 +1,78 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
+interface BatchWithMeta { id: string; warehouseId?: string; outputs?: { productId: string; yieldQty: number }[]; createdAt?: Timestamp }
 
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
-  const snap = await getDb().collection('productionBatches').orderBy('createdAt', 'desc').limit(limit).get();
-  const batches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return Response.json({ batches });
+  const db = getDb();
+  const snap = await db.collection('productionBatches').orderBy('createdAt', 'desc').limit(limit).get();
+  const batches = snap.docs.map(d => ({ id: d.id, ...d.data() })) as BatchWithMeta[];
+
+  // "Closed" = stok hasil produksi batch ini di gudang tujuannya dianggap sudah habis. Tidak ada lot
+  // tracking per-batch di penulisan stok, jadi dihitung ulang di sini dengan asumsi FIFO: stok yang
+  // TERSISA saat ini dianggap berasal dari batch yang PALING BARU dulu (barang lama terjual duluan) —
+  // alokasikan stok gudang saat ini ke batch dari yang terbaru ke yang terlama sampai habis; batch yang
+  // tidak lagi kebagian jatah dianggap closed. Ini best-effort (asumsi FIFO), bukan pencatatan per-lot
+  // yang sesungguhnya, tapi cukup akurat untuk kebutuhan tampilan status di riwayat produksi.
+  const wsKeys = new Set<string>();
+  batches.forEach(b => {
+    if (!b.warehouseId) return;
+    (b.outputs ?? []).forEach(o => wsKeys.add(`${b.warehouseId}_${o.productId}`));
+  });
+  const wsKeyList = [...wsKeys];
+  const wsSnaps = await Promise.all(wsKeyList.map(k => db.collection('warehouse_stock').doc(k).get()));
+  const wsStock = new Map<string, number>();
+  wsKeyList.forEach((k, i) => wsStock.set(k, Number(wsSnaps[i].data()?.stockQty) || 0));
+
+  // Kelompokkan tiap output (per productId+warehouseId) jadi "lot", urut dari yang terbaru, lalu
+  // alokasikan stok yang tersisa ke lot-lot itu mulai dari yang terbaru sampai stoknya habis dibagi.
+  const lotsByKey = new Map<string, { batchId: string; yieldQty: number; createdAt: number }[]>();
+  batches.forEach(b => {
+    if (!b.warehouseId) return;
+    (b.outputs ?? []).forEach(o => {
+      const key = `${b.warehouseId}_${o.productId}`;
+      const list = lotsByKey.get(key) ?? [];
+      list.push({ batchId: b.id, yieldQty: o.yieldQty, createdAt: b.createdAt?.toMillis() ?? 0 });
+      lotsByKey.set(key, list);
+    });
+  });
+  const remainingByLot = new Map<string, number>(); // key: `${batchId}|${warehouseId}_${productId}`
+  lotsByKey.forEach((lots, key) => {
+    let pool = wsStock.get(key) ?? 0;
+    [...lots].sort((a, b) => b.createdAt - a.createdAt).forEach(lot => {
+      const take = Math.min(lot.yieldQty, pool);
+      pool -= take;
+      remainingByLot.set(`${lot.batchId}|${key}`, take);
+    });
+  });
+
+  // Per output: "closed" (remaining 0 — habis), "mixed" (0 < remaining < yieldQty — sudah terjual
+  // sebagian tapi belum habis, jadi tercampur/tidak murni lagi dari batch ini saja), atau "open"
+  // (remaining == yieldQty — belum tersentuh sama sekali). Level batch: ada satu output "mixed" saja
+  // sudah cukup bikin status batch jadi "mixed"; baru dianggap "closed" kalau SEMUA output closed.
+  const batchesWithStatus = batches.map(b => {
+    const outputs = b.outputs ?? [];
+    if (!b.warehouseId || outputs.length === 0) return { ...b, closed: false, mixed: false };
+
+    const outputStates = outputs.map(o => {
+      const remaining = remainingByLot.get(`${b.id}|${b.warehouseId}_${o.productId}`) ?? 0;
+      if (remaining <= 0) return 'closed';
+      if (remaining < o.yieldQty) return 'mixed';
+      return 'open';
+    });
+    const mixed  = outputStates.includes('mixed');
+    const closed = !mixed && outputStates.every(s => s === 'closed');
+    return { ...b, closed, mixed };
+  });
+
+  return Response.json({ batches: batchesWithStatus });
 }
 
 export async function POST(req: NextRequest) {

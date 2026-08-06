@@ -29,6 +29,25 @@ async function findLaterProductionProductIds(db: FirebaseFirestore.Firestore, cr
   return ids;
 }
 
+// Deteksi produk yang stoknya sudah "keluar" (terjual/kasir, pesanan online, transfer, konsinyasi, dsb)
+// sejak batch ini dibuat — kalau iya, revert stok/HPP produk (weighted-average) di atas tidak lagi
+// akurat karena unit yang mau direvert sudah tidak fungibel lagi dengan sisa stok saat ini (lihat
+// komentar di atas). `stock` adalah ledger append-only yang dipakai SEMUA penulis stok, query tanpa
+// filter tambahan (selain createdAt) biar tidak butuh composite index — sama seperti pola di atas.
+async function findConsumedSinceProductIds(db: FirebaseFirestore.Firestore, createdAt: FirebaseFirestore.Timestamp) {
+  const snap = await db.collection('stock').where('createdAt', '>', createdAt).select('type', 'productId').get();
+  const ids = new Set<string>();
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (data.type === 'out' && typeof data.productId === 'string') ids.add(data.productId);
+  });
+  return ids;
+}
+
+function outputSignature(outputs: { productId: string; yieldQty: number }[]) {
+  return outputs.map(o => `${o.productId}:${o.yieldQty}`).sort().join('|');
+}
+
 function reverseProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
   const newQty = curQty - yieldQty;
   const newCost = newQty > 0 ? (curCost * curQty - yieldQty * costPerPcs) / newQty : 0;
@@ -71,19 +90,34 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const oldMaterialsUsed = (batch.materialsUsed as StoredMaterialUsed[] | undefined) ?? [];
       const oldExpenseId = batch.expenseId as string | null | undefined;
 
+      const oldWarehouseId = batch.warehouseId as string | undefined;
       const productIds = [...new Set([...oldOutputs.map(o => o.productId), ...newOutputs.map(o => o.productId)])];
-      const laterTouched = await findLaterProductionProductIds(db, batch.createdAt);
-      const blocked = productIds.filter(pid => laterTouched.has(pid));
-      if (blocked.length > 0) {
-        const names = [...oldOutputs, ...newOutputs].filter(o => blocked.includes(o.productId)).map(o => o.productName);
+
+      // Perubahan jumlah produk hasil / gudang tujuan mengubah stok — kalau sebagian stok batch ini
+      // sudah keluar (terjual dsb) sejak dibuat, revert-nya tidak lagi akurat, jadi diblokir. Perubahan
+      // lain (tanggal, catatan, biaya lain, bahan baku) aman kapan pun — revert bahan baku selalu tepat
+      // secara kuantitas & tidak menyentuh stok produk, jadi tidak perlu dicek di sini.
+      const outputsChanged   = outputSignature(oldOutputs) !== outputSignature(newOutputs);
+      const warehouseChanged = (oldWarehouseId ?? '') !== newWarehouseId;
+      const [laterTouched, consumedSince] = await Promise.all([
+        findLaterProductionProductIds(db, batch.createdAt),
+        (outputsChanged || warehouseChanged) ? findConsumedSinceProductIds(db, batch.createdAt) : Promise.resolve(new Set<string>()),
+      ]);
+      const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
+      if (blockedByLaterProduction.length > 0) {
+        const names = [...oldOutputs, ...newOutputs].filter(o => blockedByLaterProduction.includes(o.productId)).map(o => o.productName);
         throw new Error(`Tidak bisa diedit — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.`);
+      }
+      const blockedByConsumption = productIds.filter(pid => consumedSince.has(pid));
+      if (blockedByConsumption.length > 0) {
+        const names = [...oldOutputs, ...newOutputs].filter(o => blockedByConsumption.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa mengubah jumlah produk atau gudang tujuan — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}. Tanggal, catatan, dan biaya lain tetap bisa diedit tanpa mengubah jumlah/gudang.`);
       }
 
       const materialIds = [...new Set([...oldMaterialsUsed.map(m => m.materialId), ...newMaterialsUsed.map(m => m.materialId)])];
       const materialRefs = materialIds.map(mid => db.collection('rawMaterials').doc(mid));
       const productRefs = productIds.map(pid => db.collection('products').doc(pid));
       const oldExpenseSnap = oldExpenseId ? await tx.get(db.collection('expenses').doc(oldExpenseId)) : null;
-      const oldWarehouseId = batch.warehouseId as string | undefined;
       const oldWsRefs = oldWarehouseId
         ? oldOutputs.map(o => db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`))
         : [];
@@ -246,11 +280,19 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const expenseId = batch.expenseId as string | null | undefined;
 
       const productIds = outputs.map(o => o.productId);
-      const laterTouched = await findLaterProductionProductIds(db, batch.createdAt);
-      const blocked = productIds.filter(pid => laterTouched.has(pid));
-      if (blocked.length > 0) {
-        const names = outputs.filter(o => blocked.includes(o.productId)).map(o => o.productName);
+      const [laterTouched, consumedSince] = await Promise.all([
+        findLaterProductionProductIds(db, batch.createdAt),
+        findConsumedSinceProductIds(db, batch.createdAt),
+      ]);
+      const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
+      if (blockedByLaterProduction.length > 0) {
+        const names = outputs.filter(o => blockedByLaterProduction.includes(o.productId)).map(o => o.productName);
         throw new Error(`Tidak bisa dihapus — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.`);
+      }
+      const blockedByConsumption = productIds.filter(pid => consumedSince.has(pid));
+      if (blockedByConsumption.length > 0) {
+        const names = outputs.filter(o => blockedByConsumption.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa dihapus — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}.`);
       }
 
       const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
