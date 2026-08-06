@@ -25,8 +25,35 @@ const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
 function todayISO() {
-  const d = new Date();
+  return toISO(new Date());
+}
+
+function toISO(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ─── Periode — sama seperti pemilih periode di Laporan Keuangan ───────────────
+type PeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'custom';
+const PERIOD_OPTIONS: { id: PeriodKey; label: string }[] = [
+  { id: 'today', label: 'Hari Ini' },
+  { id: '7d',    label: '7 Hari' },
+  { id: '30d',   label: '30 Hari' },
+  { id: 'month', label: 'Bulan Ini' },
+  { id: 'year',  label: 'Tahun Ini' },
+  { id: 'custom', label: 'Custom' },
+];
+
+function periodRange(period: PeriodKey, customFrom: string, customTo: string): { from: string; to: string } {
+  const now = new Date();
+  const today = toISO(now);
+  switch (period) {
+    case 'today': return { from: today, to: today };
+    case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: toISO(d), to: today }; }
+    case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: toISO(d), to: today }; }
+    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: toISO(d), to: today }; }
+    case 'year': { const d = new Date(now.getFullYear(), 0, 1); return { from: toISO(d), to: today }; }
+    case 'custom': return { from: customFrom || today, to: customTo || today };
+  }
 }
 
 function formatDateDisplay(iso: string) {
@@ -83,6 +110,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  const [period,     setPeriod]     = useState<PeriodKey>('month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo,   setCustomTo]   = useState('');
+  const { from, to } = periodRange(period, customFrom, customTo);
+
   const [editing,    setEditing]    = useState<{ id: string } & ExpenseForm | null>(null);
   const [isNew,      setIsNew]      = useState(false);
   const [saving,     setSaving]     = useState(false);
@@ -92,11 +124,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
   const load = async () => {
     setLoading(true);
-    const r = await fetch(`${API}/api/expenses`, { headers });
+    const r = await fetch(`${API}/api/expenses?from=${from}&to=${to}`, { headers });
     if (r.ok) { const { expenses: e } = await r.json() as { expenses: Expense[] }; setExpenses(e); }
     setLoading(false);
   };
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (e: Expense) => {
@@ -175,12 +207,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  // ── Ringkasan (hari ini / bulan ini / total) ─────────────────
-  const todayKey = todayISO();
-  const monthKey = todayKey.slice(0, 7);
-  const totalToday = expenses.filter(e => e.date === todayKey).reduce((s, e) => s + e.amount, 0);
-  const totalMonth = expenses.filter(e => e.date?.startsWith(monthKey)).reduce((s, e) => s + e.amount, 0);
-  const totalAll   = expenses.reduce((s, e) => s + e.amount, 0);
+  // ── Ringkasan (sesuai periode terpilih) ───────────────────────
+  const periodLabel = PERIOD_OPTIONS.find(p => p.id === period)?.label ?? '';
+  const totalPeriode = expenses.reduce((s, e) => s + e.amount, 0);
+  const daysInRange  = Math.max(1, Math.round((new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000) + 1);
+  const avgPerDay    = totalPeriode / daysInRange;
 
   const categoryOptions = [
     { value: 'semua', label: 'Semua Kategori' },
@@ -294,20 +325,38 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       {/* Ringkasan */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
-          { icon: <CalendarDays size={16} />, label: 'Pengeluaran Hari Ini', val: totalToday, color: 'var(--danger)', bg: 'var(--danger-bg)' },
-          { icon: <Wallet       size={16} />, label: 'Pengeluaran Bulan Ini', val: totalMonth, color: 'var(--accent)', bg: 'var(--accent-bg)' },
-          { icon: <TrendingDown size={16} />, label: 'Total Semua Pengeluaran', val: totalAll, color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
+          { icon: <TrendingDown size={16} />, label: `Pengeluaran ${periodLabel}`, val: formatRp(totalPeriode), color: 'var(--danger)', bg: 'var(--danger-bg)' },
+          { icon: <CalendarDays size={16} />, label: 'Rata-rata / Hari', val: formatRp(avgPerDay), color: 'var(--accent)', bg: 'var(--accent-bg)' },
+          { icon: <Wallet       size={16} />, label: 'Jumlah Transaksi', val: String(expenses.length), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
         ].map((c, i) => (
           <div key={i} className="card p-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.bg, color: c.color }}>
               {c.icon}
             </div>
             <div>
-              <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{formatRp(c.val)}</p>
+              <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{c.val}</p>
               <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Pemilih periode */}
+      <div className="flex flex-wrap items-center gap-2">
+        {PERIOD_OPTIONS.map(p => (
+          <button key={p.id} onClick={() => { setPeriod(p.id); resetPage(); }}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+            style={period === p.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+            {p.label}
+          </button>
+        ))}
+        {period === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); resetPage(); }} className="input" style={{ height: 36 }} />
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); resetPage(); }} className="input" style={{ height: 36 }} />
+          </div>
+        )}
       </div>
 
       {/* Header: search + actions in one row */}
