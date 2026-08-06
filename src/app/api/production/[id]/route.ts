@@ -195,31 +195,35 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // (batch lama sebelum fitur ini tidak punya warehouseId — tidak ada yang perlu dikembalikan).
       // Di-floor ke 0 sama seperti reverseProductState di atas — kalau tidak, stok gudang bisa minus
       // sementara stok produk sudah di-floor duluan, dan dua-duanya jadi tidak sinkron lagi.
-      if (oldWarehouseId) {
-        oldOutputs.forEach((o, i) => {
-          const wsRef = db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`);
-          const curWsQty = typeof oldWsSnaps[i].data()?.stockQty === 'number' ? oldWsSnaps[i].data()!.stockQty as number : 0;
-          tx.set(wsRef, { warehouseId: oldWarehouseId, productId: o.productId, productName: o.productName,
-            stockQty: Math.max(0, curWsQty - o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      // Hanya dijalankan kalau produk hasil/jumlah atau gudang tujuan benar-benar berubah — edit lain
+      // (tanggal, catatan, biaya lain) tidak perlu menambah baris riwayat Stok Masuk/Keluar.
+      if (outputsChanged || warehouseChanged) {
+        if (oldWarehouseId) {
+          oldOutputs.forEach((o, i) => {
+            const wsRef = db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`);
+            const curWsQty = typeof oldWsSnaps[i].data()?.stockQty === 'number' ? oldWsSnaps[i].data()!.stockQty as number : 0;
+            tx.set(wsRef, { warehouseId: oldWarehouseId, productId: o.productId, productName: o.productName,
+              stockQty: Math.max(0, curWsQty - o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            tx.set(db.collection('stock').doc(), {
+              warehouseId: oldWarehouseId, warehouseName: batch.warehouseName ?? '',
+              productId: o.productId, productName: o.productName,
+              type: 'out', qty: o.yieldQty, note: 'Koreksi edit produksi (batch lama)',
+              createdAt: FieldValue.serverTimestamp(),
+            });
+          });
+        }
+        newOutputs.forEach(o => {
+          const wsRef = db.collection('warehouse_stock').doc(`${newWarehouseId}_${o.productId}`);
+          tx.set(wsRef, { warehouseId: newWarehouseId, productId: o.productId, productName: o.productName,
+            stockQty: FieldValue.increment(o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
           tx.set(db.collection('stock').doc(), {
-            warehouseId: oldWarehouseId, warehouseName: batch.warehouseName ?? '',
+            warehouseId: newWarehouseId, warehouseName: newWarehouseName,
             productId: o.productId, productName: o.productName,
-            type: 'out', qty: o.yieldQty, note: 'Koreksi edit produksi (batch lama)',
+            type: 'in', qty: o.yieldQty, note: 'Koreksi edit produksi (batch baru)',
             createdAt: FieldValue.serverTimestamp(),
           });
         });
       }
-      newOutputs.forEach(o => {
-        const wsRef = db.collection('warehouse_stock').doc(`${newWarehouseId}_${o.productId}`);
-        tx.set(wsRef, { warehouseId: newWarehouseId, productId: o.productId, productName: o.productName,
-          stockQty: FieldValue.increment(o.yieldQty), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-        tx.set(db.collection('stock').doc(), {
-          warehouseId: newWarehouseId, warehouseName: newWarehouseName,
-          productId: o.productId, productName: o.productName,
-          type: 'in', qty: o.yieldQty, note: 'Koreksi edit produksi (batch baru)',
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      });
 
       // Sinkronkan Pengeluaran otomatis biaya lain dengan nilai terbaru.
       const oldExpenseExists = !!oldExpenseSnap?.exists;
