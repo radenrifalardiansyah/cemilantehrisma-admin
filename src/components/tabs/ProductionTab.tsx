@@ -621,25 +621,27 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           </p>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>+{batchTotalYield(b)} pcs</span>
-                            {editable && (
-                              <>
-                                <Tooltip label="Edit">
-                                  <button onClick={() => openEdit(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }} title="Edit">
-                                    <Pencil size={13} />
-                                  </button>
-                                </Tooltip>
-                                <Tooltip label="Hapus">
-                                  <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus">
-                                    {deletingId === b.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                                  </button>
-                                </Tooltip>
-                              </>
-                            )}
-                            <Tooltip label="Lihat detail">
-                              <button onClick={() => setExpandedId(expandedId === b.id ? null : b.id)} className="btn-ghost p-2">
-                                <ChevronRight size={13} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
-                              </button>
-                            </Tooltip>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {editable && (
+                                <>
+                                  <Tooltip label="Edit">
+                                    <button onClick={() => openEdit(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }} title="Edit">
+                                      <Pencil size={13} />
+                                    </button>
+                                  </Tooltip>
+                                  <Tooltip label="Hapus">
+                                    <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus">
+                                      {deletingId === b.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                    </button>
+                                  </Tooltip>
+                                </>
+                              )}
+                              <Tooltip label="Lihat detail">
+                                <button onClick={() => setExpandedId(expandedId === b.id ? null : b.id)} className="btn-ghost p-2">
+                                  <ChevronRight size={13} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                                </button>
+                              </Tooltip>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
