@@ -385,6 +385,17 @@ export default function AdminPage() {
     setLoading(false);
   }, [creds, webRange]);
 
+  // ── POS stock refresh — lightweight, products-only (no analytics/resellers/
+  // customers) so opening the Kasir tab or starting a new sale doesn't drag in
+  // the full dashboard fetch (which duplicates products/categories reads inside
+  // web-stats and was a meaningful chunk of daily Firestore reads on busy days) ──
+  const refreshPosStock = useCallback(async () => {
+    try {
+      const res = await fetch('/api/products', { headers: { 'x-admin-auth': creds } });
+      if (res.ok) setPosProducts((await res.json() as { products: PosProduct[] }).products);
+    } catch {}
+  }, [creds]);
+
   // ── Web stats range toggle — refetch only the analytics section ──
   const changeWebRange = useCallback(async (range: 7 | 30) => {
     setWebRange(range);
@@ -972,6 +983,7 @@ export default function AdminPage() {
         onCartChange={setPosCartCount}
         onGoToOrders={() => setActiveTab('orders')}
         onRefresh={() => fetchDash()}
+        onRefreshStock={refreshPosStock}
       />
       {activeTab === 'products'   && <ProductsTab   creds={creds} />}
       {activeTab === 'categories' && <CategoriesTab creds={creds} />}

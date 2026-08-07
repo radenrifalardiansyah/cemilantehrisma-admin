@@ -236,11 +236,12 @@ interface PosTabProps {
   onCartChange: (count: number) => void;
   onGoToOrders: () => void;
   onRefresh: () => Promise<void> | void;
+  onRefreshStock: () => Promise<void> | void;
 }
 
 export default function PosTab({
   creds, posProducts, posCategories, resellerList, customerList, bankOptions,
-  isActive, username, onCartChange, onGoToOrders, onRefresh,
+  isActive, username, onCartChange, onGoToOrders, onRefresh, onRefreshStock,
 }: PosTabProps) {
   const [posView,      setPosView]      = useState<PosView>('products');
   const [activeCat,    setActiveCat]    = useState<string>('semua');
@@ -313,7 +314,7 @@ export default function PosTab({
   // secara otomatis di latar belakang, tanpa menahan kasir menunggu.
   const handleNewTransaction = () => {
     resetPOS();
-    Promise.resolve(onRefresh()).catch(() => toast.error('Gagal memuat ulang data.'));
+    Promise.resolve(onRefreshStock()).catch(() => toast.error('Gagal memuat ulang data.'));
   };
 
   // ── Cart computations ────────────────────────────────────
@@ -572,7 +573,7 @@ export default function PosTab({
 
   // ── Refresh stok otomatis setiap kali tab Kasir dibuka ──
   useEffect(() => {
-    if (isActive) Promise.resolve(onRefresh()).catch(() => {});
+    if (isActive) Promise.resolve(onRefreshStock()).catch(() => {});
   }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Proses transaksi ──────────────────────────────────────

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 
@@ -17,22 +18,39 @@ function addTo(agg: Record<string, number>, source: unknown) {
   }
 }
 
+// Raw Firestore reads (30 daily analytics docs + full products/categories scans)
+// cached for 60s — this route is hit on every dashboard load, manual refresh, and
+// range toggle, and doesn't need second-fresh data for a 7/30-day trend view.
+const getRawWebStats = unstable_cache(
+  async (numDays: number) => {
+    const db = getDb();
+    const days = Array.from({ length: numDays }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      return d.toISOString().slice(0, 10);
+    });
+
+    const [snapshots, prodSnap, catSnap] = await Promise.all([
+      Promise.all(days.map(day => db.collection('analytics').doc(day).get())),
+      db.collection('products').get(),
+      db.collection('categories').get(),
+    ]);
+
+    return {
+      days,
+      analyticsData: snapshots.map(s => s.exists ? s.data()! : null),
+      products: prodSnap.docs.map(d => ({ id: d.id, data: d.data() })),
+      categories: catSnap.docs.map(d => ({ id: d.id, data: d.data() })),
+    };
+  },
+  ['admin-web-stats'],
+  { revalidate: 60 }
+);
+
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
 
   const numDays = req.nextUrl.searchParams.get('days') === '7' ? 7 : 30;
-  const db = getDb();
-
-  const days = Array.from({ length: numDays }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - i);
-    return d.toISOString().slice(0, 10);
-  });
-
-  const [snapshots, prodSnap, catSnap] = await Promise.all([
-    Promise.all(days.map(day => db.collection('analytics').doc(day).get())),
-    db.collection('products').get(),
-    db.collection('categories').get(),
-  ]);
+  const { days, analyticsData, products, categories } = await getRawWebStats(numDays);
 
   let pageViews = 0, mobile = 0, desktop = 0;
   const visitorSet = new Set<string>();
@@ -43,10 +61,9 @@ export async function GET(req: NextRequest) {
   const clickAddCartAgg: Record<string, number> = {};
   const daily: { date: string; views: number; visitors: number }[] = [];
 
-  for (let i = 0; i < snapshots.length; i++) {
-    const snap = snapshots[i];
-    if (!snap.exists) { daily.push({ date: days[i], views: 0, visitors: 0 }); continue; }
-    const data = snap.data()!;
+  for (let i = 0; i < analyticsData.length; i++) {
+    const data = analyticsData[i];
+    if (!data) { daily.push({ date: days[i], views: 0, visitors: 0 }); continue; }
     const dayViews = Number(data.views ?? 0);
     pageViews += dayViews;
     mobile  += Number(data.mobile  ?? 0);
@@ -74,20 +91,20 @@ export async function GET(req: NextRequest) {
     .filter(m => m.count > 0)
     .sort((a, b) => b.count - a.count);
 
-  const topCategories = catSnap.docs
-    .map(d => {
-      const c = d.data() as { name: string; emoji?: string };
-      return { id: d.id, name: c.name, emoji: c.emoji ?? '🏷️', count: clickCategoryAgg[sanitizeKey(d.id)] ?? 0 };
+  const topCategories = categories
+    .map(({ id, data }) => {
+      const c = data as { name: string; emoji?: string };
+      return { id, name: c.name, emoji: c.emoji ?? '🏷️', count: clickCategoryAgg[sanitizeKey(id)] ?? 0 };
     })
     .filter(c => c.count > 0)
     .sort((a, b) => b.count - a.count);
 
-  const topProducts = prodSnap.docs
-    .map(d => {
-      const p = d.data() as { name: string; emoji?: string; bgColor?: string };
-      const key = sanitizeKey(d.id);
+  const topProducts = products
+    .map(({ id, data }) => {
+      const p = data as { name: string; emoji?: string; bgColor?: string };
+      const key = sanitizeKey(id);
       return {
-        id: d.id, name: p.name, emoji: p.emoji ?? '📦', bgColor: p.bgColor ?? '#F5F0E9',
+        id, name: p.name, emoji: p.emoji ?? '📦', bgColor: p.bgColor ?? '#F5F0E9',
         clicks: clickProductAgg[key] ?? 0, addToCart: clickAddCartAgg[key] ?? 0,
       };
     })
