@@ -69,6 +69,7 @@ const HELD_STORAGE_KEY = 'pos_held_transactions';
 // Data order mentah dari /api/orders — dipakai untuk hitung Laporan Penjualan hari ini
 interface PosOrderRecord {
   total: number;
+  source?: 'kasir' | 'portal'; status?: string;
   paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
   items?: { name: string; qty: number; price: number; subtotal: number }[];
@@ -527,7 +528,8 @@ export default function PosTab({
       const todayKey = new Date().toDateString();
       const todaysOrders = orders.filter(o =>
         o.createdAt?.seconds && new Date(o.createdAt.seconds * 1000).toDateString() === todayKey
-        && o.paymentStatus !== 'belum_lunas'
+        && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan'
+        && (o.source !== 'portal' || o.status !== 'baru')
       );
       const omzet = todaysOrders.reduce((s, o) => s + (o.total ?? 0), 0);
       const count = todaysOrders.length;

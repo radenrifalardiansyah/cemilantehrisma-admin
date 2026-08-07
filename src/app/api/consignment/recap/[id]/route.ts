@@ -189,12 +189,19 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         ws.stockQty -= it.qtyRetur;
       });
 
-      // 2) Validasi & terapkan rekap baru
-      const shortages: string[] = [];
+      // 2) Validasi & terapkan rekap baru — qty diminta digabung dulu per produk (per lokasi_produk)
+      // supaya baris ganda untuk produk yang sama tidak lolos validasi ganda dari angka stok awal
+      // yang sama, yang baru jadi minus saat masing-masing baris diterapkan berurutan.
+      const requestedByKey = new Map<string, number>();
       newItems.forEach(it => {
-        const s = stockState.get(`${data.locationId}_${it.productId}`)!;
-        const requested = it.qtySold + it.qtyRetur + it.qtyReject;
-        if (s.stockQty < requested) shortages.push(`${it.productName} (stok di lokasi ${s.stockQty}, diminta ${requested})`);
+        const key = `${data.locationId}_${it.productId}`;
+        requestedByKey.set(key, (requestedByKey.get(key) ?? 0) + it.qtySold + it.qtyRetur + it.qtyReject);
+      });
+
+      const shortages: string[] = [];
+      requestedByKey.forEach((requested, key) => {
+        const s = stockState.get(key)!;
+        if (s.stockQty < requested) shortages.push(`${stockMeta.get(key)!.productName} (stok di lokasi ${s.stockQty}, diminta ${requested})`);
       });
       if (shortages.length > 0) throw new Error(`Qty melebihi stok di lokasi: ${shortages.join(', ')}`);
 
@@ -220,8 +227,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       productIds.forEach(pid => {
         const p = productState.get(pid)!;
         if (!p.exists) return;
+        // Math.max(0, ...) — jaring pengaman terakhir, seharusnya tidak pernah terpakai kalau validasi
+        // di atas benar, tapi mencegah stok minus tersimpan kalau ada celah lain yang belum ketahuan.
         tx.update(db.collection('products').doc(pid), {
-          stockQty: p.stockQty,
+          stockQty: Math.max(0, p.stockQty),
           stock: p.openPO ? 'open_po' : p.stockQty > 0 ? 'ready' : 'habis',
           updatedAt: FieldValue.serverTimestamp(),
         });

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store, Coins,
   ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark, FileSpreadsheet,
+  Info, Package, Receipt, ChevronDown, ChevronUp, AlertTriangle, Calculator,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -50,14 +51,21 @@ interface OrderRecord {
   invoiceNo: string; customerName: string; total: number;
   source?: 'kasir' | 'portal'; status: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
+  items?: { productId?: string; qty: number; costPrice?: number; name?: string }[];
 }
 
 interface RecapRecord {
   locationName: string; totalRevenue: number; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
+  items?: { productId?: string; qtySold: number; costPrice?: number; productName?: string }[];
 }
 interface IncomeRecord { category: string; description: string; amount: number; date: string }
-interface ExpenseRecord { category: string; description: string; amount: number; date: string }
+interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string }
+
+// Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi (punya `sourceType`) tidak
+// dihitung lagi sebagai Beban Operasional di Laba Rugi — biayanya sudah masuk HPP saat barangnya
+// terjual. Kalau dihitung dua-duanya, laba jadi kelihatan lebih kecil dari yang sebenarnya.
+const isCogsSourcedExpense = (e: ExpenseRecord) => e.sourceType === 'material-purchase' || e.sourceType === 'production';
 interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string }
 
 interface JournalEntry { seconds: number; description: string; debit: number; kredit: number; invoiceNo?: string }
@@ -66,6 +74,56 @@ const EXPENSE_CATEGORY_COLORS: Record<string, string> = {
   'Bahan Baku': '#B45309', 'Produksi': '#A84F10', 'Sewa': '#7C3AED', 'Gaji': '#0284C7',
   'Listrik & Air': '#0891B2', 'Transportasi': '#DB2777', 'Perlengkapan': '#65A30D',
 };
+
+// ─── Panduan istilah ───────────────────────────────────────────────────────────
+const GLOSSARY_LABA_RUGI: { term: string; desc: string }[] = [
+  { term: 'Omzet (Total Pendapatan)', desc: 'Total nilai penjualan kasir, online, konsinyasi, dan pendapatan lain, sebelum dikurangi biaya apa pun.' },
+  { term: 'HPP (Harga Pokok Penjualan / COGS)', desc: 'Total modal (biaya bahan baku + produksi) dari barang yang benar-benar terjual di periode ini — dihitung per item saat transaksi terjadi, bukan saat bahan baku dibeli.' },
+  { term: 'Laba Kotor', desc: 'Omzet dikurangi HPP. Menunjukkan untung dari selisih harga jual vs modal barang, sebelum biaya operasional usaha.' },
+  { term: 'Beban Operasional', desc: 'Biaya menjalankan usaha di luar HPP: sewa, gaji, listrik & air, transportasi, perlengkapan, dan lainnya. Beban Bahan Baku/Produksi tidak dihitung di sini lagi karena sudah masuk HPP saat barangnya laku (supaya tidak dihitung dua kali).' },
+  { term: 'Laba / Rugi Bersih', desc: 'Laba Kotor dikurangi Beban Operasional. Ini angka untung/rugi usaha yang sebenarnya di periode ini.' },
+  { term: 'Modal & Prive', desc: 'Uang masuk (Modal) atau keluar (Prive) dari pemilik usaha secara pribadi — tidak dihitung sebagai hasil operasional usaha, jadi tidak masuk Laba Rugi.' },
+  { term: 'Ringkasan Kas (versi sebelumnya)', desc: 'Total Pendapatan dikurangi Total Beban kas (termasuk beli bahan baku & produksi langsung dihitung sebagai beban saat itu juga). Cara hitung lama ini tetap ditampilkan di bawah untuk perbandingan, tapi angkanya bisa beda dari Laba Bersih di atas karena tidak menunggu barangnya laku dulu.' },
+];
+const GLOSSARY_JURNAL: { term: string; desc: string }[] = [
+  { term: 'Jurnal Kas', desc: 'Catatan pergerakan uang kas secara berurutan — ini pergerakan KAS RIIL, beda dari Laba Rugi. Uang keluar beli stok tetap tercatat di sini sebagai Kredit meski barangnya belum tentu laku (belum jadi HPP).' },
+  { term: 'Debit', desc: 'Uang yang masuk ke kas (penjualan, pendapatan lain, modal masuk).' },
+  { term: 'Kredit', desc: 'Uang yang keluar dari kas (semua pengeluaran, termasuk beli bahan baku, dan prive pemilik).' },
+  { term: 'Saldo', desc: 'Sisa uang kas berjalan setelah tiap transaksi (Saldo Awal + Debit − Kredit secara kumulatif).' },
+  { term: 'Saldo Awal', desc: 'Uang kas nyata yang sudah ada sebelum periode laporan ini dimulai — diisi manual, tidak otomatis dari sistem.' },
+];
+
+function GlossaryPanel({ open, onToggle, items }: { open: boolean; onToggle: () => void; items: { term: string; desc: string }[] }) {
+  return (
+    <div className="card overflow-hidden">
+      <button type="button" onClick={onToggle}
+        className="w-full flex items-center gap-2 px-4 py-3 text-xs font-bold"
+        style={{ color: 'var(--accent)' }}>
+        <Info size={14} />
+        <span className="flex-1 text-left">Panduan Istilah — Apa Artinya?</span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+          {items.map(g => (
+            <p key={g.term} className="text-xs leading-relaxed pt-2.5" style={{ color: 'var(--text-secondary)' }}>
+              <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{g.term}: </span>
+              {g.desc}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoTip({ label }: { label: string }) {
+  return (
+    <Tooltip label={label}>
+      <Info size={12} style={{ color: 'var(--text-muted)', cursor: 'help' }} />
+    </Tooltip>
+  );
+}
 
 // ─── Chart tren (mandiri, tidak menyentuh RevenueChart di page.tsx) ───────────
 function TrendChart({ data }: { data: { date: string; income: number; expense: number }[] }) {
@@ -147,6 +205,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [customFrom, setCustomFrom] = useState('');
   const [customTo,   setCustomTo]   = useState('');
   const [subView,    setSubView]    = useState<'laba-rugi' | 'jurnal'>('laba-rugi');
+  const [showGlossary, setShowGlossary] = useState(false);
 
   const [loading,  setLoading]  = useState(true);
   const [orders,   setOrders]   = useState<OrderRecord[]>([]);
@@ -185,6 +244,28 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   };
   useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Harga Modal (costPrice) TERKINI per produk — dipakai sebagai fallback HPP kalau snapshot di item
+  // transaksi 0/kosong (mis. transaksinya terjadi sebelum Harga Modal produknya diisi). Tombol "Hitung
+  // Ulang HPP" cuma ambil ulang ini, tidak menimpa data transaksi — aman diulang kapan saja.
+  const [productCostMap, setProductCostMap] = useState<Map<string, number>>(new Map());
+  const [recalculating, setRecalculating] = useState(false);
+  const loadProductCosts = async () => {
+    setRecalculating(true);
+    try {
+      const res = await fetch(`${API}/api/products`, { headers });
+      if (res.ok) {
+        const { products: prods } = await res.json() as { products: { id: string; costPrice?: number }[] };
+        setProductCostMap(new Map(prods.map(p => [p.id, Number(p.costPrice) || 0])));
+      }
+    } finally { setRecalculating(false); }
+  };
+  useEffect(() => { loadProductCosts(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const effectiveCostPrice = (stored: number | undefined, productId: string | undefined) => {
+    if (stored) return stored;
+    return productId ? (productCostMap.get(productId) ?? 0) : 0;
+  };
+
   // ── Hitung Pendapatan / Beban ────────────────────────────────
   // Order/rekap "Belum Lunas" tidak ikut dihitung sebagai uang masuk sampai ditandai Lunas
   // (lihat menu Pesanan / riwayat Pembelian Bahan Baku & Rekap Konsinyasi). Field yang hilang
@@ -200,7 +281,44 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const expenseByCategory = new Map<string, number>();
   expenses.forEach(e => expenseByCategory.set(e.category, (expenseByCategory.get(e.category) ?? 0) + e.amount));
   const totalBeban = expenses.reduce((s, e) => s + e.amount, 0);
-  const labaBersih = totalPendapatan - totalBeban;
+
+  // HPP (Harga Pokok Penjualan) — dihitung dari qty × costPrice tiap item yang benar-benar terjual di
+  // periode ini (kasir/online/konsinyasi). Pakai costPrice snapshot kalau ada isinya; kalau 0/kosong
+  // (mis. transaksi terjadi sebelum Harga Modal produknya diisi), fallback ke Harga Modal produk
+  // TERKINI (effectiveCostPrice) — ini yang bikin tombol "Hitung Ulang HPP" berguna tanpa transaksi ulang.
+  const hppPenjualan = countedOrders.reduce((s, o) =>
+    s + (o.items ?? []).reduce((s2, it) => s2 + it.qty * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
+  const hppKonsinyasi = countedRecaps.reduce((s, r) =>
+    s + (r.items ?? []).reduce((s2, it) => s2 + it.qtySold * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
+  const hpp = hppPenjualan + hppKonsinyasi;
+  const labaKotor = totalPendapatan - hpp;
+
+  const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e));
+  const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + e.amount, 0);
+  const labaBersih = labaKotor - totalBebanOperasional;
+
+  // Versi lama (sebelum HPP akrual ada): Total Pendapatan − Total Beban kas (termasuk Bahan Baku/
+  // Produksi langsung sebagai beban). Tetap ditampilkan terpisah di bawah supaya tidak hilang, tapi
+  // beda dari Laba Bersih akrual di atas — lihat panel "Panduan Istilah" untuk penjelasan bedanya.
+  const labaBersihKasLama = totalPendapatan - totalBeban;
+
+  // Transaksi lama (sebelum snapshot HPP ada) tidak punya field costPrice sama sekali di itemnya —
+  // beda dari costPrice eksplisit 0 — kalau ketemu, Laba Kotor pada periode ini bisa understate HPP.
+  const hasMissingCostData =
+    countedOrders.some(o => o.items?.some(it => it.qty > 0 && it.costPrice === undefined)) ||
+    countedRecaps.some(r => r.items?.some(it => it.qtySold > 0 && it.costPrice === undefined));
+
+  // Produk yang costPrice-nya masih 0 walau sudah dicoba fallback ke Harga Modal produk terkini —
+  // berarti "Harga Modal / HPP" produk itu memang belum pernah diisi sama sekali di menu Produk.
+  // Daftar ini dikasih ke user supaya tahu produk mana yang perlu diisi HPP-nya, lalu klik
+  // "Hitung Ulang HPP" untuk langsung kepakai tanpa perlu transaksi ulang.
+  const zeroCostProducts = new Set<string>();
+  countedOrders.forEach(o => (o.items ?? []).forEach(it => {
+    if (it.qty > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
+  }));
+  countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
+    if (it.qtySold > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.productName || '(tanpa nama)');
+  }));
 
   // Modal & Prive TIDAK ikut Laba Rugi operasional — cuma info terpisah + masuk Jurnal Kas.
   const totalModalMasuk = capital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0);
@@ -316,9 +434,12 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const lrRows: [string, number][] = [
         ['Penjualan Kasir', kasirRevenue], ['Penjualan Online', onlineRevenue], ['Pendapatan Konsinyasi', consignmentRevenue],
         ['Pendapatan Lain-lain', totalPendapatanLain],
-        ['Total Pendapatan', totalPendapatan],
-        ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}`, v] as [string, number]),
-        ['Total Beban', totalBeban],
+        ['Total Pendapatan (Omzet)', totalPendapatan],
+        ['HPP (Harga Pokok Penjualan)', hpp],
+        ['Laba Kotor', labaKotor],
+        ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}${expenses.some(e => e.category === c && isCogsSourcedExpense(e)) ? ' (masuk HPP)' : ''}`, v] as [string, number]),
+        ['Total Beban (Kas)', totalBeban],
+        ['Beban Operasional (di luar HPP)', totalBebanOperasional],
         [labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih', labaBersih],
         ['Modal Masuk (di luar Laba Rugi)', totalModalMasuk], ['Prive (di luar Laba Rugi)', totalPrive],
       ];
@@ -363,6 +484,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
+        <Tooltip label="Hitung ulang HPP pakai Harga Modal produk terkini (tanpa transaksi ulang)">
+          <button onClick={loadProductCosts} disabled={recalculating} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Hitung Ulang HPP">
+            <Calculator size={14} className={recalculating ? 'animate-pulse' : ''} />
+          </button>
+        </Tooltip>
         <Tooltip label="Export Excel">
           <button onClick={exportExcel} disabled={exporting || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
             {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
@@ -413,33 +539,119 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         </div>
       ) : subView === 'laba-rugi' ? (
         <div className="space-y-5">
-          {/* Ringkasan */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <GlossaryPanel open={showGlossary} onToggle={() => setShowGlossary(v => !v)} items={GLOSSARY_LABA_RUGI} />
+
+          {hasMissingCostData && (
+            <div className="card p-3 flex items-center gap-2.5" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
+              <AlertTriangle size={15} style={{ color: '#B45309', flexShrink: 0 }} />
+              <p className="text-xs font-medium" style={{ color: '#92400E' }}>
+                Sebagian transaksi lama di periode ini belum punya data HPP tersimpan (dari sebelum fitur ini aktif), sehingga HPP dihitung 0 untuk transaksi tsb — Laba Kotor &amp; Laba Bersih bisa sedikit lebih tinggi dari sebenarnya.
+              </p>
+            </div>
+          )}
+
+          {zeroCostProducts.size > 0 && (
+            <div className="card p-3 flex items-start gap-2.5" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
+              <AlertTriangle size={15} style={{ color: '#B45309', flexShrink: 0, marginTop: 2 }} />
+              <p className="text-xs font-medium" style={{ color: '#92400E' }}>
+                <span className="font-bold">Harga Modal (HPP) belum diisi untuk {zeroCostProducts.size} produk yang terjual di periode ini</span> — HPP produk ini dihitung Rp0, jadi Laba Kotor &amp; Laba Bersih pasti lebih tinggi dari sebenarnya.
+                {' '}Isi di menu <span className="font-bold">Produk → edit produk → &quot;Harga Modal / HPP&quot;</span>, lalu klik tombol <span className="font-bold">&quot;Hitung Ulang HPP&quot;</span> di pojok kanan atas supaya langsung kepakai tanpa transaksi ulang. Produk: {[...zeroCostProducts].join(', ')}.
+              </p>
+            </div>
+          )}
+
+          {/* Ringkasan akrual */}
+          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Ringkasan Akrual — Laba Rugi Sebenarnya</p>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--success-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
                 <TrendingUp size={16} />
               </div>
-              <div>
-                <p className="text-lg font-extrabold tabular leading-none" style={{ color: 'var(--success)' }}>{formatRp(totalPendapatan)}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Total Pendapatan</p>
+              <div className="min-w-0">
+                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--success)' }}>{formatRp(totalPendapatan)}</p>
+                <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                  Omzet <InfoTip label={GLOSSARY_LABA_RUGI[0].desc} />
+                </p>
+              </div>
+            </div>
+            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--surface-2)' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(180,83,9,0.15)', color: '#B45309' }}>
+                <Package size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: '#B45309' }}>{formatRp(hpp)}</p>
+                <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                  HPP <InfoTip label={GLOSSARY_LABA_RUGI[1].desc} />
+                </p>
+              </div>
+            </div>
+            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--accent-bg)' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(212,105,30,0.15)', color: 'var(--accent)' }}>
+                <PieChart size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--accent)' }}>{formatRp(labaKotor)}</p>
+                <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                  Laba Kotor <InfoTip label={GLOSSARY_LABA_RUGI[2].desc} />
+                </p>
               </div>
             </div>
             <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--danger-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--danger)' }}>
-                <TrendingDown size={16} />
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--danger)' }}>
+                <Receipt size={16} />
               </div>
-              <div>
-                <p className="text-lg font-extrabold tabular leading-none" style={{ color: 'var(--danger)' }}>{formatRp(totalBeban)}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Total Beban</p>
+              <div className="min-w-0">
+                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--danger)' }}>{formatRp(totalBebanOperasional)}</p>
+                <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                  Beban Operasional <InfoTip label={GLOSSARY_LABA_RUGI[3].desc} />
+                </p>
               </div>
             </div>
             <div className="card p-4 flex items-center gap-3" style={{ background: labaBersih >= 0 ? 'var(--accent-bg)' : 'var(--danger-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: labaBersih >= 0 ? 'rgba(212,105,30,0.15)' : 'rgba(220,38,38,0.15)', color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: labaBersih >= 0 ? 'rgba(212,105,30,0.15)' : 'rgba(220,38,38,0.15)', color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                 <Wallet size={16} />
               </div>
-              <div>
-                <p className="text-lg font-extrabold tabular leading-none" style={{ color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{formatRp(labaBersih)}</p>
-                <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih'}</p>
+              <div className="min-w-0">
+                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{formatRp(labaBersih)}</p>
+                <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                  {labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih'} <InfoTip label={GLOSSARY_LABA_RUGI[4].desc} />
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Ringkasan kas — versi sebelumnya, dipisah supaya tidak ketuker dengan ringkasan akrual di atas */}
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+              Ringkasan Kas (Tampilan Sebelumnya) <InfoTip label={GLOSSARY_LABA_RUGI[6].desc} />
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--surface-2)' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
+                  <TrendingUp size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--success)' }}>{formatRp(totalPendapatan)}</p>
+                  <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Total Pendapatan</p>
+                </div>
+              </div>
+              <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--surface-2)' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--danger)' }}>
+                  <TrendingDown size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--danger)' }}>{formatRp(totalBeban)}</p>
+                  <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Total Beban (Kas)</p>
+                </div>
+              </div>
+              <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--surface-2)' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: labaBersihKasLama >= 0 ? 'rgba(212,105,30,0.15)' : 'rgba(220,38,38,0.15)', color: labaBersihKasLama >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                  <Wallet size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: labaBersihKasLama >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{formatRp(labaBersihKasLama)}</p>
+                  <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{labaBersihKasLama >= 0 ? 'Laba Bersih (Kas)' : 'Rugi Bersih (Kas)'}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -499,29 +711,42 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             <div className="card overflow-hidden">
               <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
                 <ArrowDownCircle size={15} style={{ color: 'var(--danger)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rincian Beban</p>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rincian Beban (Kas)</p>
               </div>
               {expenseByCategory.size === 0 ? (
                 <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada pengeluaran di periode ini.</p>
               ) : (
-                <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                  {[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
-                    <div key={cat} className="px-5 py-3 flex items-center gap-3">
-                      <span style={{ width: 8, height: 8, borderRadius: 4, background: EXPENSE_CATEGORY_COLORS[cat] ?? '#9CA3AF', flexShrink: 0 }} />
-                      <span className="flex-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{cat}</span>
-                      <span className="text-sm font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(val)}</span>
-                      <span className="text-xs tabular w-10 text-right" style={{ color: 'var(--text-muted)' }}>
-                        {totalBeban > 0 ? Math.round((val / totalBeban) * 100) : 0}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                    {[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([cat, val]) => {
+                      const foldedIntoHpp = expenses.some(e => e.category === cat && isCogsSourcedExpense(e));
+                      return (
+                        <div key={cat} className="px-5 py-3 flex items-center gap-3">
+                          <span style={{ width: 8, height: 8, borderRadius: 4, background: EXPENSE_CATEGORY_COLORS[cat] ?? '#9CA3AF', flexShrink: 0 }} />
+                          <span className="flex-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            {cat}
+                            {foldedIntoHpp && <span className="text-[10px] font-medium ml-1.5" style={{ color: 'var(--text-muted)' }}>(→ masuk HPP saat terjual)</span>}
+                          </span>
+                          <span className="text-sm font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(val)}</span>
+                          <span className="text-xs tabular w-10 text-right" style={{ color: 'var(--text-muted)' }}>
+                            {totalBeban > 0 ? Math.round((val / totalBeban) * 100) : 0}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] px-5 py-3" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border-2)' }}>
+                    Total kas keluar periode ini: <span className="font-bold">{formatRp(totalBeban)}</span>. Baris bertanda &quot;→ masuk HPP&quot; sudah dihitung sebagai HPP saat barangnya laku, jadi tidak dijumlah lagi di Beban Operasional supaya tidak dobel.
+                  </p>
+                </>
               )}
             </div>
           </div>
         </div>
       ) : (
         <div className="space-y-4">
+          <GlossaryPanel open={showGlossary} onToggle={() => setShowGlossary(v => !v)} items={GLOSSARY_JURNAL} />
+
           <div className="card p-4 flex items-center gap-3 flex-wrap">
             <label className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Saldo Awal (opsional)</label>
             <NumberInput value={saldoAwalRaw}

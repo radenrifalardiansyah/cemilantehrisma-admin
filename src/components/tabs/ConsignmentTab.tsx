@@ -165,6 +165,34 @@ function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPag
   );
 }
 
+interface LocationStats { totalKirim: number; totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number }
+const EMPTY_LOCATION_STATS: LocationStats = { totalKirim: 0, totalSold: 0, totalRetur: 0, totalReject: 0, totalRevenue: 0 };
+
+// Ringkasan stok saat ini / dikirim / pendapatan / jual-retur-reject per lokasi (dipakai di table & card, sama seperti di modal Riwayat)
+function LocationStatTiles({ stockQty, stockValue, stats }: { stockQty: number; stockValue: number; stats: LocationStats }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
+        <p className="text-xs font-bold tabular" style={{ color: 'var(--accent)' }}>{stockQty} pcs</p>
+        <p className="text-[10px] tabular" style={{ color: 'var(--text-muted)' }}>{formatRp(stockValue)}</p>
+      </div>
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Dikirim</p>
+        <p className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(stats.totalKirim)}</p>
+      </div>
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--success-bg)' }}>
+        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Pendapatan</p>
+        <p className="text-xs font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(stats.totalRevenue)}</p>
+      </div>
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Jual/Retur/Reject</p>
+        <p className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{stats.totalSold}/{stats.totalRetur}/{stats.totalReject}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function ConsignmentTab({ creds, products }: { creds: string; products: PosProduct[] }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -223,6 +251,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [locations,        setLocations]        = useState<ConsignmentLocation[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [locationStock,    setLocationStock]    = useState<Record<string, ConsignmentStockItem[]>>({});
+  const [locationStats,    setLocationStats]    = useState<Record<string, LocationStats>>({});
   const [showLForm,   setShowLForm]   = useState(false);
   const [editingL,    setEditingL]    = useState<ConsignmentLocation | null>(null);
   const [lForm,       setLForm]       = useState<LocationForm>(EMPTY_LOCATION);
@@ -245,12 +274,33 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     if (r.ok) {
       const { locations: ls } = await r.json() as { locations: ConsignmentLocation[] };
       setLocations(ls);
-      const entries = await Promise.all(ls.map(async l => {
-        const sr = await fetch(`${API}/api/consignment/locations/${l.id}/stock`, { headers });
-        const stock = sr.ok ? (await sr.json() as { stock: ConsignmentStockItem[] }).stock : [];
-        return [l.id, stock] as const;
-      }));
-      setLocationStock(Object.fromEntries(entries));
+      const [stockEntries, sr, rr] = await Promise.all([
+        Promise.all(ls.map(async l => {
+          const stockRes = await fetch(`${API}/api/consignment/locations/${l.id}/stock`, { headers });
+          const stock = stockRes.ok ? (await stockRes.json() as { stock: ConsignmentStockItem[] }).stock : [];
+          return [l.id, stock] as const;
+        })),
+        fetch(`${API}/api/consignment/send?limit=500`, { headers }),
+        fetch(`${API}/api/consignment/recap?limit=500`, { headers }),
+      ]);
+      setLocationStock(Object.fromEntries(stockEntries));
+
+      const sendData  = sr.ok ? (await sr.json() as { shipments: Shipment[] }).shipments : [];
+      const recapData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
+      const stats: Record<string, LocationStats> = {};
+      for (const l of ls) stats[l.id] = { ...EMPTY_LOCATION_STATS };
+      for (const s of sendData) {
+        if (!s.locationId || !stats[s.locationId]) continue;
+        stats[s.locationId].totalKirim += s.items.reduce((ss, it) => ss + it.subtotal, 0);
+      }
+      for (const rec of recapData) {
+        if (!rec.locationId || !stats[rec.locationId]) continue;
+        stats[rec.locationId].totalSold    += rec.totalSold;
+        stats[rec.locationId].totalRetur   += rec.totalRetur;
+        stats[rec.locationId].totalReject  += rec.totalReject || 0;
+        stats[rec.locationId].totalRevenue += rec.totalRevenue;
+      }
+      setLocationStats(stats);
     }
     setLocationsLoading(false);
   };
@@ -290,6 +340,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       value: stock.reduce((s, it) => s + it.stockQty * it.hargaTitip, 0),
     };
   };
+
+  const locationStatsFor = (id: string): LocationStats => locationStats[id] ?? EMPTY_LOCATION_STATS;
 
   const bulkDeleteLocations = async () => {
     if (selectedLocations.size === 0) return;
@@ -1331,10 +1383,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                                 </span>
                               )}
                             </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>{totalQty} pcs</p>
-                            <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatRp(totalValue)}</p>
+                            <div className="mt-2 max-w-lg">
+                              <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
+                            </div>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <Tooltip label="Riwayat">
@@ -1412,11 +1463,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{l.note}</p>
                             </div>
                           )}
-                          <div className="flex items-center justify-between mt-4 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Stok titip saat ini</span>
-                            <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
-                              {totalQty} pcs · {formatRp(totalValue)}
-                            </span>
+                          <div className="mt-3 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                            <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                           </div>
                         </div>
                       );

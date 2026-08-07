@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
+import { Query, DocumentData } from 'firebase-admin/firestore';
+import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
@@ -10,8 +11,8 @@ export async function GET(req: NextRequest) {
   const to   = searchParams.get('to');
 
   let query: Query<DocumentData> = getDb().collection('stock').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', Timestamp.fromDate(new Date(`${from}T00:00:00`)));
-  if (to)   query = query.where('createdAt', '<=', Timestamp.fromDate(new Date(`${to}T23:59:59.999`)));
+  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
   if (!from && !to) query = query.limit(200);
 
   const snap = await query.get();

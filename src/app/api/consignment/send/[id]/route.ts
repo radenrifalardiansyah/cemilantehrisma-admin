@@ -149,34 +149,42 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (oldShipment.warehouseId) bumpWs(oldShipment.warehouseId, it.productId, it.qty);
       }
 
-      // 2) Validasi & terapkan kiriman baru
+      // 2) Validasi & terapkan kiriman baru — qty digabung dulu per produk supaya baris ganda untuk
+      // produk yang sama di form yang sama ikut terhitung (sebelumnya divalidasi terpisah dari angka
+      // stok awal yang sama, jadi bisa lolos validasi tapi jadi minus saat diterapkan berturut-turut).
+      const newQtyByProduct = new Map<string, number>();
+      newItems.forEach(it => newQtyByProduct.set(it.productId, (newQtyByProduct.get(it.productId) ?? 0) + it.qty));
+
       const shortages: string[] = [];
-      newItems.forEach(it => {
-        const p = productState.get(it.productId);
-        if (!p || !p.exists) { shortages.push(`${it.productName} (produk tidak ditemukan)`); return; }
-        if (p.stockQty < it.qty) shortages.push(`${it.productName} (stok toko ${p.stockQty}, butuh ${it.qty})`);
+      newQtyByProduct.forEach((qty, pid) => {
+        const p = productState.get(pid);
+        const name = productNameByPid.get(pid) ?? pid;
+        if (!p || !p.exists) { shortages.push(`${name} (produk tidak ditemukan)`); return; }
+        if (p.stockQty < qty) shortages.push(`${name} (stok toko ${p.stockQty}, butuh ${qty})`);
       });
       if (shortages.length > 0) throw new Error(`Stok produk tidak cukup untuk dikirim: ${shortages.join(', ')}`);
 
-      newItems.forEach(it => {
-        const p = productState.get(it.productId)!;
-        p.stockQty -= it.qty;
+      newQtyByProduct.forEach((qty, pid) => {
+        productState.get(pid)!.stockQty -= qty;
+        bumpWs(data.warehouseId, pid, -qty);
+      });
 
+      newItems.forEach(it => {
         const key = `${data.locationId}_${it.productId}`;
         const s = stockState.get(key)!;
         const newQty = s.stockQty + it.qty;
         s.hargaTitip = newQty > 0 ? (s.stockQty * s.hargaTitip + it.qty * it.hargaTitip) / newQty : 0;
         s.stockQty = newQty;
-
-        bumpWs(data.warehouseId, it.productId, -it.qty);
       });
 
       // 3) Tulis ulang state produk, stok titip & stok gudang
       productIds.forEach(pid => {
         const p = productState.get(pid)!;
         if (!p.exists) return;
+        // Math.max(0, ...) — jaring pengaman terakhir, seharusnya tidak pernah terpakai kalau validasi
+        // di atas benar, tapi mencegah stok minus tersimpan kalau ada celah lain yang belum ketahuan.
         tx.update(db.collection('products').doc(pid), {
-          stockQty: p.stockQty,
+          stockQty: Math.max(0, p.stockQty),
           stock: p.openPO ? 'open_po' : p.stockQty > 0 ? 'ready' : 'habis',
           updatedAt: FieldValue.serverTimestamp(),
         });

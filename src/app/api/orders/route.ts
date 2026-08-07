@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
+import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
@@ -12,8 +13,8 @@ export async function GET(req: NextRequest) {
   const db = getDb();
 
   let query: Query<DocumentData> = db.collection('orders').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', Timestamp.fromDate(new Date(`${from}T00:00:00`)));
-  if (to)   query = query.where('createdAt', '<=', Timestamp.fromDate(new Date(`${to}T23:59:59.999`)));
+  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
   if (!from && !to) {
     const limit = parseInt(searchParams.get('limit') ?? '50');
     query = query.limit(limit);
@@ -56,10 +57,19 @@ export async function POST(req: NextRequest) {
       const { products, shortages } = await readProductsForDeltas(tx, db, deltas);
       if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
+      // Snapshot HPP (costPrice) tiap item saat transaksi terjadi — costPrice produk adalah
+      // rata-rata bergerak yang berubah tiap ada produksi baru, jadi HPP historis tidak bisa
+      // direkonstruksi ulang secara akurat kalau tidak disimpan di sini (dipakai Laporan Keuangan).
+      const itemsWithCost = (data.items ?? []).map(item => ({
+        ...item,
+        costPrice: item.productId ? Number(products.get(item.productId)?.data.costPrice) || 0 : 0,
+      }));
+
       const ref = db.collection('orders').doc();
       orderId = ref.id;
       tx.set(ref, {
         ...rest,
+        items: itemsWithCost,
         status: 'done',
         source: 'kasir',
         stockCut: true,

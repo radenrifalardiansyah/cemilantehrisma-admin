@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
+import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -13,8 +14,8 @@ export async function GET(req: NextRequest) {
   const db = getDb();
 
   let query: Query<DocumentData> = db.collection('consignmentRecaps').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', Timestamp.fromDate(new Date(`${from}T00:00:00`)));
-  if (to)   query = query.where('createdAt', '<=', Timestamp.fromDate(new Date(`${to}T23:59:59.999`)));
+  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
   if (!from && !to) {
     const limit = parseInt(searchParams.get('limit') ?? '50');
     query = query.limit(limit);
@@ -64,6 +65,12 @@ export async function POST(req: NextRequest) {
       });
       if (shortages.length > 0) throw new Error(`Qty melebihi stok di lokasi: ${shortages.join(', ')}`);
 
+      // Snapshot HPP (costPrice) tiap produk saat rekap terjadi — dipakai Laporan Keuangan untuk
+      // menghitung HPP barang konsinyasi yang benar-benar terjual (costPrice produk adalah rata-rata
+      // bergerak, jadi HPP historis tidak bisa direkonstruksi ulang kalau tidak disimpan di sini).
+      const allProductRefs = items.map(it => db.collection('products').doc(it.productId));
+      const allProductSnaps = await Promise.all(allProductRefs.map(r => tx.get(r)));
+
       // Retur (kondisi baik) dikreditkan ke gudang tujuan — sinkron dengan endpoint stok masuk gudang.
       const returItems = items.filter(it => it.qtyRetur > 0);
       const productRefs = returItems.map(it => db.collection('products').doc(it.productId));
@@ -71,7 +78,8 @@ export async function POST(req: NextRequest) {
 
       const recapItems = items.map((it, i) => {
         const hargaTitip = Number(stockSnaps[i].data()!.hargaTitip) || 0;
-        return { ...it, hargaTitip, revenue: it.qtySold * hargaTitip };
+        const costPrice = Number(allProductSnaps[i].data()?.costPrice) || 0;
+        return { ...it, hargaTitip, revenue: it.qtySold * hargaTitip, costPrice, cogs: it.qtySold * costPrice };
       });
       const totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
       const totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);

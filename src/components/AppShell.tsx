@@ -62,12 +62,7 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
   {
     label: 'Operasional',
     tabs: [
-      {
-        id: 'stock' as TabId, label: 'Gudang', mobileLabel: 'Gudang', Icon: Warehouse,
-        children: [
-          { id: 'stock-report' as TabId, label: 'Laporan Stok', mobileLabel: 'Laporan Stok', Icon: FileBarChart },
-        ],
-      },
+      { id: 'stock' as TabId, label: 'Gudang', mobileLabel: 'Gudang', Icon: Warehouse },
       {
         id: 'materials' as TabId, label: 'Bahan Baku', mobileLabel: 'Bahan Baku', Icon: Boxes,
         children: [
@@ -75,6 +70,7 @@ const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
           { id: 'production' as TabId, label: 'Produksi',  mobileLabel: 'Produksi', Icon: Factory },
         ],
       },
+      { id: 'stock-report' as TabId, label: 'Laporan Stok', mobileLabel: 'Laporan Stok', Icon: FileBarChart },
     ],
   },
   {
