@@ -977,9 +977,10 @@ function ProductionDetail({ b }: { b: ProductionBatch }) {
         <div className="space-y-0.5">
           {outputs
             ? outputs.map((o, i) => (
-                <p key={i} className="text-xs font-medium tabular" style={detailRow}>
-                  {o.productName}: {o.yieldQty} pcs · HPP {formatRp(o.costPerPcs)}/pcs
-                </p>
+                <div key={i} className="flex items-baseline justify-between gap-3">
+                  <p className="text-xs font-medium" style={detailRow}>{o.productName}: {o.yieldQty} pcs</p>
+                  <p className="text-xs font-medium tabular text-right flex-shrink-0" style={detailRow}>HPP {formatRp(o.costPerPcs)}/pcs</p>
+                </div>
               ))
             : batchOutputs(b).map((o, i) => (
                 <p key={i} className="text-xs font-medium" style={detailRow}>{o.productName}: {o.yieldQty} pcs</p>
@@ -990,9 +991,10 @@ function ProductionDetail({ b }: { b: ProductionBatch }) {
         <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Bahan Baku Dipakai</p>
         <div className="space-y-0.5">
           {b.materialsUsed.map((m, i) => (
-            <p key={i} className="text-xs font-medium tabular" style={detailRow}>
-              {m.materialName} ({m.qty} {m.unit}) · {formatRp(m.costPerUnit)}/{m.unit} = {formatRp(m.cost)}
-            </p>
+            <div key={i} className="flex items-baseline justify-between gap-3">
+              <p className="text-xs font-medium" style={detailRow}>{m.materialName} ({m.qty} {m.unit}) · {formatRp(m.costPerUnit)}/{m.unit}</p>
+              <p className="text-xs font-medium tabular text-right flex-shrink-0" style={detailRow}>{formatRp(m.cost)}</p>
+            </div>
           ))}
         </div>
       </div>
