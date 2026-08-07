@@ -747,23 +747,23 @@ export default function ProductsTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        {products.length > 0 && (
-          <div className="relative flex-1 min-w-0">
-            <Search size={14} style={{
-              position: 'absolute', left: 14, top: '50%',
-              transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
-            }} />
-            <input
-              value={search}
-              onChange={e => { setSearch(e.target.value); resetPage(); }}
-              className="input text-sm w-full"
-              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-              placeholder="Cari produk…"
-            />
-          </div>
-        )}
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-row items-center gap-2 sm:gap-3 sm:flex-1">
+          {products.length > 0 && (
+            <div className="relative flex-1 min-w-0">
+              <Search size={14} style={{
+                position: 'absolute', left: 14, top: '50%',
+                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+              }} />
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); resetPage(); }}
+                className="input text-sm w-full"
+                style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                placeholder="Cari produk…"
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
             {products.length === 0 && (
               <button onClick={seed} disabled={seeding} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
                 {seeding ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />}
@@ -791,10 +791,10 @@ export default function ProductsTab({ creds }: { creds: string }) {
               </Tooltip>
             )}
             {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+            <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+              <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span>
+            </button>
           </div>
-          <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span><span className="sm:hidden">Tambah</span>
-          </button>
         </div>
       </div>
 

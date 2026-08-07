@@ -683,7 +683,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
     <div className="p-4 lg:p-6 space-y-5">
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex flex-row items-center gap-2 sm:gap-3">
         {orders.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -696,7 +696,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
             />
           </div>
         )}
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap flex-shrink-0">
+        <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           <Tooltip label="Unduh Template">
             <button onClick={downloadOrderTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
               <ExcelIcon size={14} />

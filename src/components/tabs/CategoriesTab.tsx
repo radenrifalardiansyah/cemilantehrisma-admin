@@ -530,7 +530,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
     <div className="p-4 lg:p-6 space-y-4">
 
       {/* Header: search + actions in one row */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex flex-row items-center gap-2 sm:gap-3">
         {categories.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{
@@ -546,38 +546,36 @@ export default function CategoriesTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-          <div className="flex items-center gap-2 flex-wrap">
-            {categories.length === 0 && (
-              <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
-                {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
-                <span className="hidden sm:inline">{seedingCats ? 'Menambahkan…' : 'Kategori Default'}</span>
-              </button>
-            )}
-            <Tooltip label="Unduh Template">
-              <button onClick={downloadCategoryTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                <FileSpreadsheet size={14} />
+        <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+          {categories.length === 0 && (
+            <button onClick={seedCategories} disabled={seedingCats} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}>
+              {seedingCats ? <Loader2 size={13} className="animate-spin" /> : <Tag size={13} />}
+              <span className="hidden sm:inline">{seedingCats ? 'Menambahkan…' : 'Kategori Default'}</span>
+            </button>
+          )}
+          <Tooltip label="Unduh Template">
+            <button onClick={downloadCategoryTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              <FileSpreadsheet size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+            <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            </button>
+          </Tooltip>
+          <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) importCategoriesFromExcel(f); e.target.value = ''; }} />
+          {categories.length > 0 && (
+            <Tooltip label="Export Excel">
+              <button onClick={() => exportExcel(filteredCats, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
               </button>
             </Tooltip>
-            <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
-              <button onClick={() => importFileRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              </button>
-            </Tooltip>
-            <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) importCategoriesFromExcel(f); e.target.value = ''; }} />
-            {categories.length > 0 && (
-              <Tooltip label="Export Excel">
-                <button onClick={() => exportExcel(filteredCats, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
-                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                </button>
-              </Tooltip>
-            )}
-            {categories.length > 0 && <ViewToggle mode={catView} onChange={setCatView} height={HEADER_BTN_H} />}
-          </div>
+          )}
+          {categories.length > 0 && <ViewToggle mode={catView} onChange={setCatView} height={HEADER_BTN_H} />}
           <button onClick={openNewCat} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Tambah Kategori</span><span className="sm:hidden">Tambah</span>
+            <Plus size={13} /> <span className="hidden sm:inline">Tambah Kategori</span>
           </button>
         </div>
       </div>

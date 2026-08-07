@@ -1179,20 +1179,20 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                 <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                   <Clock size={11} /> Riwayat Pembelian ({purchases.length})
                 </p>
-                {purchases.length > 0 && (
-                  <div className="relative flex-1 min-w-0">
-                    <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                    <input
-                      value={purchaseSearch}
-                      onChange={e => { setPurchaseSearch(e.target.value); resetPurchasePage(); }}
-                      className="input text-sm w-full"
-                      style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-                      placeholder="Cari nama supplier…"
-                    />
-                  </div>
-                )}
-                <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                  <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-row items-center gap-2 sm:gap-3 sm:flex-1">
+                  {purchases.length > 0 && (
+                    <div className="relative flex-1 min-w-0">
+                      <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                      <input
+                        value={purchaseSearch}
+                        onChange={e => { setPurchaseSearch(e.target.value); resetPurchasePage(); }}
+                        className="input text-sm w-full"
+                        style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                        placeholder="Cari nama supplier…"
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                     <Tooltip label="Unduh Template">
                       <button onClick={downloadPurchaseTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                         <FileSpreadsheet size={14} />
@@ -1214,10 +1214,10 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                       </Tooltip>
                     )}
                     {purchases.length > 0 && <ViewToggle mode={purchaseView} onChange={setPurchaseView} height={HEADER_BTN_H} />}
+                    <button onClick={openCreatePurchase} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                      <Plus size={13} /> <span className="hidden sm:inline">Catat Pembelian</span>
+                    </button>
                   </div>
-                  <button onClick={openCreatePurchase} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-                    <Plus size={13} /> <span className="hidden sm:inline">Catat Pembelian</span><span className="sm:hidden">Tambah</span>
-                  </button>
                 </div>
               </div>
 

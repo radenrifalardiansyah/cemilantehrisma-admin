@@ -372,20 +372,20 @@ export default function ExpensesTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        {expenses.length > 0 && (
-          <div className="relative flex-1 min-w-0">
-            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input
-              value={search}
-              onChange={e => { setSearch(e.target.value); resetPage(); }}
-              className="input text-sm w-full"
-              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-              placeholder="Cari keterangan, kategori, atau catatan…"
-            />
-          </div>
-        )}
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-row items-center gap-2 sm:gap-3 sm:flex-1">
+          {expenses.length > 0 && (
+            <div className="relative flex-1 min-w-0">
+              <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); resetPage(); }}
+                className="input text-sm w-full"
+                style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                placeholder="Cari keterangan, kategori, atau catatan…"
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
             {expenses.length > 0 && (
               <Tooltip label="Export Excel">
                 <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
@@ -395,10 +395,10 @@ export default function ExpensesTab({ creds }: { creds: string }) {
               </Tooltip>
             )}
             {expenses.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+            <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+              <Plus size={13} /> <span className="hidden sm:inline">Catat Pengeluaran</span>
+            </button>
           </div>
-          <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Catat Pengeluaran</span><span className="sm:hidden">Tambah</span>
-          </button>
         </div>
       </div>
 

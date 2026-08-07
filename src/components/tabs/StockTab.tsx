@@ -1251,7 +1251,7 @@ export default function StockTab({
         {/* ════ MASUK ═══════════════════════════════════════════ */}
         {subTab === 'masuk' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {inTx.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1264,17 +1264,15 @@ export default function StockTab({
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                <div className="flex items-center gap-2">
-                  <Tooltip label="Refresh">
-                    <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
-                      <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
-                    </button>
-                  </Tooltip>
-                  {inTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
-                </div>
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                <Tooltip label="Refresh">
+                  <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
+                    <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                </Tooltip>
+                {inTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
                 <button onClick={() => openTxModal('in')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Stok Masuk</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Stok Masuk</span>
                 </button>
               </div>
             </div>
@@ -1309,7 +1307,7 @@ export default function StockTab({
         {/* ════ KELUAR ══════════════════════════════════════════ */}
         {subTab === 'keluar' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {outTx.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1322,17 +1320,15 @@ export default function StockTab({
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                <div className="flex items-center gap-2">
-                  <Tooltip label="Refresh">
-                    <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
-                      <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
-                    </button>
-                  </Tooltip>
-                  {outTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
-                </div>
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                <Tooltip label="Refresh">
+                  <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
+                    <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                </Tooltip>
+                {outTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
                 <button onClick={() => openTxModal('out')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, background: 'linear-gradient(135deg,#DC2626,#B91C1C)' }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Stok Keluar</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Stok Keluar</span>
                 </button>
               </div>
             </div>
@@ -1367,7 +1363,7 @@ export default function StockTab({
         {/* ════ TRANSFER ════════════════════════════════════════ */}
         {subTab === 'transfer' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {transferTx.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1380,17 +1376,15 @@ export default function StockTab({
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                <div className="flex items-center gap-2">
-                  <Tooltip label="Refresh">
-                    <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
-                      <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
-                    </button>
-                  </Tooltip>
-                  {transferTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
-                </div>
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                <Tooltip label="Refresh">
+                  <button onClick={loadTx} className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Refresh">
+                    <RefreshCw size={14} className={txLoading ? 'animate-spin' : ''} />
+                  </button>
+                </Tooltip>
+                {transferTx.length > 0 && <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />}
                 <button onClick={openTransferModal} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, background: 'linear-gradient(135deg,#0284C7,#0369A1)' }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Transfer</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Transfer</span>
                 </button>
               </div>
             </div>

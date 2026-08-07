@@ -1563,7 +1563,7 @@ _${storeHeader.name}_`.trim();
         {/* ════ LOKASI ═════════════════════════════════════════ */}
         {subTab === 'lokasi' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {locations.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1576,32 +1576,30 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Tooltip label="Unduh Template">
-                    <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      <FileSpreadsheet size={14} />
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                <Tooltip label="Unduh Template">
+                  <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    <FileSpreadsheet size={14} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={importingLocations ? 'Mengimpor…' : 'Upload Excel'}>
+                  <button onClick={() => importLocationFileRef.current?.click()} disabled={importingLocations} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {importingLocations ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  </button>
+                </Tooltip>
+                <input ref={importLocationFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importLocationsFromExcel(f); e.target.value = ''; }} />
+                {locations.length > 0 && (
+                  <Tooltip label="Export Excel">
+                    <button onClick={() => exportLocationsExcel(filteredLocations, 'sesuai filter')} disabled={exportingLocations} aria-label="Export Excel"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingLocations ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
                     </button>
                   </Tooltip>
-                  <Tooltip label={importingLocations ? 'Mengimpor…' : 'Upload Excel'}>
-                    <button onClick={() => importLocationFileRef.current?.click()} disabled={importingLocations} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      {importingLocations ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                    </button>
-                  </Tooltip>
-                  <input ref={importLocationFileRef} type="file" accept=".xlsx,.xls" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) importLocationsFromExcel(f); e.target.value = ''; }} />
-                  {locations.length > 0 && (
-                    <Tooltip label="Export Excel">
-                      <button onClick={() => exportLocationsExcel(filteredLocations, 'sesuai filter')} disabled={exportingLocations} aria-label="Export Excel"
-                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                        {exportingLocations ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  {locations.length > 0 && <ViewToggle mode={locationView} onChange={setLocationView} height={HEADER_BTN_H} />}
-                </div>
+                )}
+                {locations.length > 0 && <ViewToggle mode={locationView} onChange={setLocationView} height={HEADER_BTN_H} />}
                 <button onClick={openCreateL} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Lokasi</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Lokasi</span>
                 </button>
               </div>
             </div>
@@ -1765,7 +1763,7 @@ _${storeHeader.name}_`.trim();
         {/* ════ KIRIM STOK ═════════════════════════════════════ */}
         {subTab === 'kirim' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {shipments.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1778,20 +1776,18 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {shipments.length > 0 && (
-                    <Tooltip label="Export Excel">
-                      <button onClick={() => exportShipmentsExcel(filteredShipments, 'sesuai filter')} disabled={exportingShipments} aria-label="Export Excel"
-                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                        {exportingShipments ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  {shipments.length > 0 && <ViewToggle mode={shipmentView} onChange={setShipmentView} height={HEADER_BTN_H} />}
-                </div>
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                {shipments.length > 0 && (
+                  <Tooltip label="Export Excel">
+                    <button onClick={() => exportShipmentsExcel(filteredShipments, 'sesuai filter')} disabled={exportingShipments} aria-label="Export Excel"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingShipments ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {shipments.length > 0 && <ViewToggle mode={shipmentView} onChange={setShipmentView} height={HEADER_BTN_H} />}
                 <button onClick={openCreateSend} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Kirim</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Kirim</span>
                 </button>
               </div>
             </div>
@@ -1941,7 +1937,7 @@ _${storeHeader.name}_`.trim();
         {/* ════ REKAP HARIAN ═══════════════════════════════════ */}
         {subTab === 'rekap' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex flex-row items-center gap-2 sm:gap-3">
               {recaps.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1954,20 +1950,18 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {recaps.length > 0 && (
-                    <Tooltip label="Export Excel">
-                      <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
-                        className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                        {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  {recaps.length > 0 && <ViewToggle mode={recapView} onChange={setRecapView} height={HEADER_BTN_H} />}
-                </div>
+              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+                {recaps.length > 0 && (
+                  <Tooltip label="Export Excel">
+                    <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {recaps.length > 0 && <ViewToggle mode={recapView} onChange={setRecapView} height={HEADER_BTN_H} />}
                 <button onClick={openCreateRecap} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Rekap</span><span className="sm:hidden">Tambah</span>
+                  <Plus size={13} /> <span className="hidden sm:inline">Tambah Rekap</span>
                 </button>
               </div>
             </div>
