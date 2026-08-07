@@ -62,6 +62,11 @@ const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
+// Tanggal kalender WIB (Asia/Jakarta) dalam format yyyy-mm-dd — dipakai untuk menyamakan
+// pengelompokan "hari ini" di dashboard dengan konvensi wibDayStart/wibDayEnd di API orders,
+// supaya tidak selisih beberapa jam di sekitar tengah malam akibat timezone browser.
+const wibDateKey = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
 function parseWebStats(ws: Record<string, unknown>): WebStats {
   const devArr = (ws.devices as { type: string; count: number }[]) ?? [];
   return {
@@ -317,8 +322,13 @@ export default function AdminPage() {
     const token = authHeader ?? creds;
     const h = { 'x-admin-auth': token };
     try {
+      // Rentang 7 hari (WIB) eksplisit — bukan cuma limit=50 default API, supaya "Omzet Hari Ini"
+      // dan tren 7 hari tetap akurat walau ada >50 transaksi dalam rentang ini.
+      const todayKey = wibDateKey(new Date());
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6);
+      const fromKey = wibDateKey(weekAgo);
       const [oRes, pRes, rRes, cRes, bRes, custRes, webRes] = await Promise.all([
-        fetch('/api/orders',       { headers: h }),
+        fetch(`/api/orders?from=${fromKey}&to=${todayKey}`, { headers: h }),
         fetch('/api/products',     { headers: h }),
         fetch('/api/resellers',    { headers: h }),
         fetch('/api/categories',   { headers: h }),
@@ -353,10 +363,10 @@ export default function AdminPage() {
       const now = new Date();
       const revenueTrend = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(now); d.setDate(d.getDate() - (6 - i));
-        const key = d.toISOString().split('T')[0];
-        const label = `${d.getDate()}/${d.getMonth() + 1}`;
+        const key = wibDateKey(d);
+        const label = `${parseInt(key.slice(8, 10), 10)}/${parseInt(key.slice(5, 7), 10)}`;
         const dayOrders = orders.filter(o =>
-          o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toISOString().split('T')[0] === key : false
+          o.createdAt?.seconds ? wibDateKey(new Date(o.createdAt.seconds * 1000)) === key : false
         );
         return { date: label, revenue: dayOrders.reduce((s, o) => s + o.total, 0), count: dayOrders.length };
       });
@@ -607,10 +617,10 @@ export default function AdminPage() {
           {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { icon: <Receipt    size={16}/>, label: 'Total Pesanan',  val: dashData.orderCount.toString(),   color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: '#D4691E,#A84F10' },
-              { icon: <TrendingUp size={16}/>, label: 'Total Omzet',    val: formatRp(dashData.revenue),       color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
-              { icon: <Package    size={16}/>, label: 'Produk Aktif',   val: dashData.productCount.toString(), color: '#0284C7',        iconBg: '#EFF6FF',           bar: '#0284C7,#0369A1' },
-              { icon: <Users      size={16}/>, label: 'Total Reseller', val: dashData.resellerCount.toString(),color: '#7C3AED',        iconBg: '#F5F3FF',           bar: '#7C3AED,#6D28D9' },
+              { icon: <Receipt    size={16}/>, label: 'Pesanan Hari Ini', val: (dashData.revenueTrend[dashData.revenueTrend.length - 1]?.count ?? 0).toString(),   color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: '#D4691E,#A84F10' },
+              { icon: <TrendingUp size={16}/>, label: 'Omzet Hari Ini',  val: formatRp(dashData.revenueTrend[dashData.revenueTrend.length - 1]?.revenue ?? 0),      color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
+              { icon: <Package    size={16}/>, label: 'Produk Aktif',    val: dashData.productCount.toString(), color: '#0284C7',        iconBg: '#EFF6FF',           bar: '#0284C7,#0369A1' },
+              { icon: <Users      size={16}/>, label: 'Total Reseller',  val: dashData.resellerCount.toString(),color: '#7C3AED',        iconBg: '#F5F3FF',           bar: '#7C3AED,#6D28D9' },
             ].map((c, i) => (
               <div key={i} className="card relative p-4 overflow-hidden"
                 style={{ transition: 'transform 0.18s, box-shadow 0.18s', cursor: 'default' }}
@@ -636,7 +646,7 @@ export default function AdminPage() {
               </div>
               {dashData.revenueTrend.some(d => d.revenue > 0) && (
                 <span className="badge badge-amber">
-                  Hari ini: {formatRp(dashData.revenueTrend[dashData.revenueTrend.length - 1].revenue)}
+                  Total 7 hari: {formatRp(dashData.revenue)}
                 </span>
               )}
             </div>
