@@ -84,7 +84,7 @@ export default function Tooltip({ label, children, side = 'bottom' }: TooltipPro
         <span
           ref={bubbleRef}
           role="tooltip"
-          className="pointer-events-none fixed z-50 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-semibold"
+          className="pointer-events-none fixed z-50 max-w-[260px] whitespace-normal rounded-lg px-2.5 py-1.5 text-[11px] font-semibold"
           style={{
             top: pos?.top ?? 0,
             left: pos?.left ?? 0,
