@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -11,34 +12,42 @@ type ResellerBody = {
   status?: ResellerStatus;
 };
 
+const getCachedResellers = unstable_cache(
+  async () => {
+    const db = getDb();
+    const snap = await db.collection('resellers').orderBy('createdAt', 'desc').get();
+    const resellers = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<Record<string, unknown> & { id: string; customerId?: string }>;
+
+    const customerIds = [...new Set(resellers.map(r => r.customerId).filter((v): v is string => !!v))];
+    const customerDocs = customerIds.length
+      ? await db.getAll(...customerIds.map(id => db.collection('customers').doc(id)))
+      : [];
+    const customerMap = new Map(customerDocs.map(d => [d.id, d.data()]));
+
+    const merged = resellers.map(r => {
+      const c = r.customerId ? customerMap.get(r.customerId) : undefined;
+      return {
+        ...r,
+        name: c?.name ?? '(Pelanggan dihapus)',
+        phone: c?.phone ?? '',
+        code: c?.code ?? '',
+        email: c?.email ?? '',
+        address: c?.address ?? '',
+        city: c?.city ?? '',
+        type: c?.type ?? 'personal',
+      };
+    });
+    merged.sort((a, b) => a.name.localeCompare(b.name, 'id'));
+    return merged;
+  },
+  ['admin-resellers'],
+  { revalidate: 15 }
+);
+
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
-  const db = getDb();
-  const snap = await db.collection('resellers').orderBy('createdAt', 'desc').get();
-  const resellers = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<Record<string, unknown> & { id: string; customerId?: string }>;
-
-  const customerIds = [...new Set(resellers.map(r => r.customerId).filter((v): v is string => !!v))];
-  const customerDocs = customerIds.length
-    ? await db.getAll(...customerIds.map(id => db.collection('customers').doc(id)))
-    : [];
-  const customerMap = new Map(customerDocs.map(d => [d.id, d.data()]));
-
-  const merged = resellers.map(r => {
-    const c = r.customerId ? customerMap.get(r.customerId) : undefined;
-    return {
-      ...r,
-      name: c?.name ?? '(Pelanggan dihapus)',
-      phone: c?.phone ?? '',
-      code: c?.code ?? '',
-      email: c?.email ?? '',
-      address: c?.address ?? '',
-      city: c?.city ?? '',
-      type: c?.type ?? 'personal',
-    };
-  });
-  merged.sort((a, b) => a.name.localeCompare(b.name, 'id'));
-
-  return Response.json({ resellers: merged });
+  const resellers = await getCachedResellers();
+  return Response.json({ resellers });
 }
 
 export async function POST(req: NextRequest) {

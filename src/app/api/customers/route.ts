@@ -1,13 +1,21 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue } from 'firebase-admin/firestore';
 
+const getCachedCustomers = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('customers').orderBy('createdAt', 'desc').get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  ['admin-customers'],
+  { revalidate: 15 }
+);
+
 export async function GET(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
-  const db = getDb();
-  const snap = await db.collection('customers').orderBy('createdAt', 'desc').get();
-  const customers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const customers = await getCachedCustomers();
   return Response.json({ customers });
 }
 
