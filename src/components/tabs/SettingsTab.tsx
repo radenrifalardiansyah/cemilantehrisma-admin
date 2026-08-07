@@ -132,12 +132,31 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const set = (key: string, val: string | number | boolean) =>
     setSettings(s => ({ ...s, [key]: val }));
 
+  const compressLogo = async (file: File): Promise<File> => {
+    const MAX_PX = 1200;
+    const bitmap = await createImageBitmap(file);
+    const scale  = Math.min(1, MAX_PX / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+    return new Promise(resolve =>
+      canvas.toBlob(
+        blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })),
+        'image/jpeg', 0.82,
+      ),
+    );
+  };
+
   const uploadLogo = async (file: File | undefined) => {
     if (!file) return;
     setLogoUploading(true);
     try {
+      const compressed = await compressLogo(file);
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', compressed);
       const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
       if (!r.ok) throw new Error('upload failed');
       const { url } = await r.json() as { url: string };

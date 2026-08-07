@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
         locationId: data.locationId, locationName: data.locationName,
         warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
-        createdAt: data.date ? Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) : FieldValue.serverTimestamp(),
+        createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
       });
     });
   } catch (err) {

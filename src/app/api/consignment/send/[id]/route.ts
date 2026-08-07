@@ -223,7 +223,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         locationId: data.locationId, locationName: data.locationName,
         warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
-        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) } : {}),
+        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });

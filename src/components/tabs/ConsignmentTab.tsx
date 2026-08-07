@@ -5,7 +5,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Upload,
-  History, Warehouse, Ban,
+  History, Warehouse, Ban, MessageCircle,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
@@ -21,6 +21,7 @@ import Tooltip from '@/components/Tooltip';
 import type { PosProduct } from '@/lib/pos-types';
 import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
+import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -58,6 +59,17 @@ function formatDate(seconds?: number) {
 
 function toISODate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// Format untuk input datetime-local (tanggal + jam bisa diedit, dipakai di form Kirim Stok & Rekap Harian)
+function toLocalDateTimeInput(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${toISODate(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function normalizePhone(raw: string) {
+  const d = raw.replace(/\D/g, '');
+  return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
 type SubTab = 'lokasi' | 'kirim' | 'rekap';
@@ -168,13 +180,18 @@ function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPag
 interface LocationStats { totalKirim: number; totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number }
 const EMPTY_LOCATION_STATS: LocationStats = { totalKirim: 0, totalSold: 0, totalRetur: 0, totalReject: 0, totalRevenue: 0 };
 
-// Ringkasan stok saat ini / dikirim / pendapatan / jual-retur-reject per lokasi (dipakai di table & card, sama seperti di modal Riwayat)
+// Ringkasan stok saat ini / dikirim / pendapatan / selisih / persentase / jual-retur-reject per
+// lokasi (dipakai di table & card, sama seperti di modal Riwayat). Selisih & persentase dihitung
+// dari Dikirim vs Pendapatan — menunjukkan seberapa besar nilai titip yang belum "kembali" jadi
+// pendapatan (masih di stok lokasi, belum direkap, atau hilang lewat retur/reject).
 function LocationStatTiles({ stockQty, stockValue, stats }: { stockQty: number; stockValue: number; stats: LocationStats }) {
+  const selisih = stats.totalKirim - stats.totalRevenue;
+  const pctLabel = stats.totalKirim > 0 ? `${((stats.totalRevenue / stats.totalKirim) * 100).toFixed(1)}%` : '–';
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: stockQty > 0 ? 'var(--success-bg)' : 'var(--surface-2)' }}>
         <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
-        <p className="text-xs font-bold tabular" style={{ color: 'var(--accent)' }}>{stockQty} pcs</p>
+        <p className="text-xs font-bold tabular" style={{ color: stockQty > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{stockQty} pcs</p>
         <p className="text-[10px] tabular" style={{ color: 'var(--text-muted)' }}>{formatRp(stockValue)}</p>
       </div>
       <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
@@ -184,6 +201,14 @@ function LocationStatTiles({ stockQty, stockValue, stats }: { stockQty: number; 
       <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--success-bg)' }}>
         <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Pendapatan</p>
         <p className="text-xs font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(stats.totalRevenue)}</p>
+      </div>
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Selisih</p>
+        <p className="text-xs font-bold tabular" style={{ color: selisih > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>{formatRp(selisih)}</p>
+      </div>
+      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>% Terealisasi</p>
+        <p className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{pctLabel}</p>
       </div>
       <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
         <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Jual/Retur/Reject</p>
@@ -228,6 +253,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [historyLoading,   setHistoryLoading]   = useState(false);
   const [historyShipments, setHistoryShipments] = useState<Shipment[]>([]);
   const [historyRecaps,    setHistoryRecaps]    = useState<Recap[]>([]);
+  const [exportingHistoryExcel, setExportingHistoryExcel] = useState(false);
+  const [exportingHistoryPdf,   setExportingHistoryPdf]   = useState(false);
 
   const openLocationHistory = async (l: ConsignmentLocation) => {
     setHistoryLocation(l);
@@ -622,7 +649,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [sendWarehouseId, setSendWarehouseId] = useState('');
   const [sendRows,       setSendRows]       = useState<SendRow[]>([{ ...EMPTY_SEND_ROW }]);
   const [sendNote,       setSendNote]       = useState('');
-  const [sendDate,       setSendDate]       = useState(() => toISODate(new Date()));
+  const [sendDate,       setSendDate]       = useState(() => toLocalDateTimeInput(new Date()));
   const [sending,        setSending]        = useState(false);
   const [shipments,        setShipments]        = useState<Shipment[]>([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(true);
@@ -655,7 +682,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
 
   const openCreateSend = () => {
     setEditingShipment(null); setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
-    setSendDate(toISODate(new Date()));
+    setSendDate(toLocalDateTimeInput(new Date()));
     setShowSendForm(true);
   };
   const openEditSend = (s: Shipment) => {
@@ -664,7 +691,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setSendWarehouseId(s.warehouseId ?? '');
     setSendRows(s.items.map(it => ({ productId: it.productId, qty: String(it.qty), hargaTitip: String(it.hargaTitip) })));
     setSendNote(s.note ?? '');
-    setSendDate(s.createdAt?.seconds ? toISODate(new Date(s.createdAt.seconds * 1000)) : toISODate(new Date()));
+    setSendDate(s.createdAt?.seconds ? toLocalDateTimeInput(new Date(s.createdAt.seconds * 1000)) : toLocalDateTimeInput(new Date()));
     setShowSendForm(true);
   };
 
@@ -683,7 +710,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       const body = JSON.stringify({
         locationId: location.id, locationName: location.name,
         warehouseId: warehouse.id, warehouseName: warehouse.name,
-        items, note: sendNote, date: sendDate,
+        items, note: sendNote, date: new Date(sendDate).toISOString(),
       });
       const res = editingShipment
         ? await fetch(`${API}/api/consignment/send/${editingShipment.id}`, {
@@ -856,6 +883,40 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setPrintingShipmentId(null);
   };
 
+  // Nota kirim dikirim via WA sebagai teks rincian + link PDF (server render on-demand di
+  // /api/consignment/send/[id]/pdf) — link ini publik supaya mitra bisa buka tanpa login admin.
+  const sendShipmentWhatsApp = (s: Shipment) => {
+    const location = locations.find(l => l.id === s.locationId);
+    const phone = location?.contactPhone?.trim();
+    if (!phone) { toast.error(`Nomor WhatsApp untuk "${s.locationName}" belum diisi di data lokasi.`); return; }
+
+    const total = s.items.reduce((sum, it) => sum + it.subtotal, 0);
+    const pdfUrl = `${window.location.origin}/api/consignment/send/${s.id}/pdf`;
+    const SEP = '─────────────────────';
+    const itemLines = s.items
+      .map((it, i) => `${i + 1}. ${it.productName}\n   ${it.qty} pcs x ${formatRp(it.hargaTitip)} = *${formatRp(it.subtotal)}*`)
+      .join('\n');
+    const message = `*${storeHeader.name.toUpperCase()}* 📦
+${storeHeader.address ? `${storeHeader.address}\n` : ''}${storeHeader.phone ? `📞 ${storeHeader.phone}\n` : ''}${SEP}
+
+Halo *${location?.contactName || s.locationName}*! 👋
+Berikut nota kirim stok titip untuk *${s.locationName}*:
+
+Tanggal : ${formatDate(s.createdAt?.seconds)}
+${SEP}
+${itemLines}
+${SEP}
+*Total Nilai Titip : ${formatRp(total)}*
+${SEP}
+${s.note ? `Catatan : ${s.note}\n${SEP}\n` : ''}📄 Nota PDF:
+${pdfUrl}
+
+Terima kasih! 🙏
+_${storeHeader.name}_`.trim();
+
+    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
   const bulkDeleteShipments = async () => {
     if (selectedShipments.size === 0) return;
     if (!await confirm({ message: `Hapus ${selectedShipments.size} riwayat kirim yang dipilih? Stok toko akan dikembalikan.`, danger: true })) return;
@@ -906,7 +967,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [recapNote,         setRecapNote]         = useState('');
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [recapWarehouseId,  setRecapWarehouseId]  = useState('');
-  const [recapDate,         setRecapDate]         = useState(() => toISODate(new Date()));
+  const [recapDate,         setRecapDate]         = useState(() => toLocalDateTimeInput(new Date()));
   const [submittingRecap,   setSubmittingRecap]   = useState(false);
   const [recaps,        setRecaps]        = useState<Recap[]>([]);
   const [recapsLoading, setRecapsLoading] = useState(true);
@@ -959,7 +1020,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setEditingRecap(null);
     setRecapLocationId(''); setRecapStock([]); setRecapInputs({});
     setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
-    setRecapDate(toISODate(new Date()));
+    setRecapDate(toLocalDateTimeInput(new Date()));
     setShowRecapForm(true);
   };
   const openEditRecap = async (r: Recap) => {
@@ -968,7 +1029,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setRecapPaymentStatus(r.paymentStatus ?? 'lunas');
     setRecapWarehouseId(r.warehouseId ?? '');
     setRecapLocationId(r.locationId ?? '');
-    setRecapDate(r.createdAt?.seconds ? toISODate(new Date(r.createdAt.seconds * 1000)) : toISODate(new Date()));
+    setRecapDate(r.createdAt?.seconds ? toLocalDateTimeInput(new Date(r.createdAt.seconds * 1000)) : toLocalDateTimeInput(new Date()));
     await loadRecapStock(r.locationId ?? '');
     // Kembalikan qty rekap ini ke stok lokasi secara sementara di UI, supaya validasi
     // "sisa stok di lokasi" konsisten dengan reversal yang dilakukan backend saat disimpan.
@@ -1003,7 +1064,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
         paymentStatus: recapPaymentStatus,
         warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
         warehouseName: recapNeedsWarehouse ? warehouse?.name : undefined,
-        date: recapDate,
+        date: new Date(recapDate).toISOString(),
       });
       const res = editingRecap
         ? await fetch(`${API}/api/consignment/recap/${editingRecap.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body })
@@ -1013,7 +1074,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
       setShowRecapForm(false); setEditingRecap(null);
       setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
-      setRecapDate(toISODate(new Date()));
+      setRecapDate(toLocalDateTimeInput(new Date()));
       await Promise.all([loadRecaps(), loadLocations()]);
     } finally { setSubmittingRecap(false); }
   };
@@ -1254,6 +1315,227 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const historyTotalReject  = historyRecaps.reduce((s, r) => s + (r.totalReject || 0), 0);
   const historyTotalRevenue = historyRecaps.reduce((s, r) => s + r.totalRevenue, 0);
   const historyBelumLunas   = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas').length;
+
+  // Excel riwayat lokasi — 2 sheet (Kirim & Rekap) dalam satu file, sama gaya dengan
+  // exportShipmentsExcel/exportRecapsExcel tapi diringkas ke satu lokasi saja.
+  const exportHistoryExcel = async () => {
+    if (!historyLocation) return;
+    if (historyShipments.length === 0 && historyRecaps.length === 0) { toast.error('Tidak ada riwayat untuk diexport.'); return; }
+    setExportingHistoryExcel(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const todayLabel = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      const buildSheet = (
+        name: string, title: string, subtitle: string,
+        cols: { header: string; key: string; width: number }[],
+        addRows: (ws: ExcelJS.Worksheet) => void,
+      ) => {
+        const ws = wb.addWorksheet(name);
+        const colCount = cols.length;
+        ws.columns = cols.map(c => ({ key: c.key, width: c.width }));
+
+        ws.mergeCells(1, 1, 1, colCount);
+        const titleCell = ws.getCell(1, 1);
+        titleCell.value = title;
+        titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+        ws.getRow(1).height = 26;
+
+        ws.mergeCells(2, 1, 2, colCount);
+        const subCell = ws.getCell(2, 1);
+        subCell.value = subtitle;
+        subCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+        subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+        ws.getRow(2).height = 20;
+
+        const HEADER_ROW_NUM = 3;
+        const headerRow = ws.getRow(HEADER_ROW_NUM);
+        cols.forEach((c, i) => { headerRow.getCell(i + 1).value = c.header; });
+        headerRow.height = 22;
+        headerRow.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10.5 };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFC96018' } }, bottom: { style: 'thin', color: { argb: 'FFC96018' } },
+            left: { style: 'thin', color: { argb: 'FFC96018' } }, right: { style: 'thin', color: { argb: 'FFC96018' } },
+          };
+        });
+        ws.views = [{ state: 'frozen', ySplit: HEADER_ROW_NUM }];
+
+        addRows(ws);
+
+        const lastColLetter = ws.getColumn(colCount).letter;
+        ws.autoFilter = { from: `A${HEADER_ROW_NUM}`, to: `${lastColLetter}${HEADER_ROW_NUM}` };
+      };
+
+      buildSheet(
+        'Kirim', `RIWAYAT KIRIM — ${historyLocation.name.toUpperCase()}`,
+        `${historyShipments.length} pengiriman · Diexport ${todayLabel}`,
+        [
+          { header: 'No', key: 'no', width: 6 },
+          { header: 'Tanggal', key: 'date', width: 20 },
+          { header: 'Produk', key: 'items', width: 46 },
+          { header: 'Total Nilai Titip', key: 'total', width: 18 },
+          { header: 'Catatan', key: 'note', width: 28 },
+        ],
+        ws => {
+          historyShipments.forEach((sh, i) => {
+            const row = ws.addRow({
+              no: i + 1,
+              date: formatDate(sh.createdAt?.seconds),
+              items: sh.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', '),
+              total: sh.items.reduce((sum, it) => sum + it.subtotal, 0),
+              note: sh.note || '-',
+            });
+            const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+            row.eachCell(cell => {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+              cell.border = {
+                top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              };
+              cell.alignment = { vertical: 'middle', wrapText: false };
+            });
+            row.getCell('no').alignment    = { horizontal: 'center', vertical: 'middle' };
+            row.getCell('items').alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+            row.getCell('total').numFmt    = '#,##0';
+          });
+        },
+      );
+
+      buildSheet(
+        'Rekap', `RIWAYAT REKAP — ${historyLocation.name.toUpperCase()}`,
+        `${historyRecaps.length} rekap · Diexport ${todayLabel}`,
+        [
+          { header: 'No', key: 'no', width: 6 },
+          { header: 'Tanggal', key: 'date', width: 20 },
+          { header: 'Produk', key: 'items', width: 46 },
+          { header: 'Terjual', key: 'sold', width: 12 },
+          { header: 'Retur', key: 'retur', width: 12 },
+          { header: 'Reject', key: 'reject', width: 12 },
+          { header: 'Gudang Tujuan', key: 'warehouse', width: 20 },
+          { header: 'Pendapatan', key: 'revenue', width: 16 },
+          { header: 'Status Bayar', key: 'status', width: 14 },
+          { header: 'Catatan', key: 'note', width: 26 },
+        ],
+        ws => {
+          historyRecaps.forEach((r, i) => {
+            const row = ws.addRow({
+              no: i + 1,
+              date: formatDate(r.createdAt?.seconds),
+              items: r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', '),
+              sold: r.totalSold,
+              retur: r.totalRetur,
+              reject: r.totalReject || 0,
+              warehouse: r.warehouseName || '-',
+              revenue: r.totalRevenue,
+              status: r.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+              note: r.note || '-',
+            });
+            const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
+            row.eachCell(cell => {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebraFill } };
+              cell.border = {
+                top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              };
+              cell.alignment = { vertical: 'middle', wrapText: false };
+            });
+            row.getCell('no').alignment      = { horizontal: 'center', vertical: 'middle' };
+            row.getCell('sold').alignment    = { horizontal: 'center', vertical: 'middle' };
+            row.getCell('retur').alignment   = { horizontal: 'center', vertical: 'middle' };
+            row.getCell('reject').alignment  = { horizontal: 'center', vertical: 'middle' };
+            row.getCell('items').alignment   = { horizontal: 'left', vertical: 'top', wrapText: true };
+            row.getCell('revenue').numFmt    = '#,##0';
+            const statusCell = row.getCell('status');
+            statusCell.font = { bold: true, color: { argb: r.paymentStatus === 'belum_lunas' ? 'FFDC2626' : 'FF16A34A' } };
+            statusCell.alignment = { horizontal: 'center', vertical: 'middle' };
+          });
+        },
+      );
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const safeName = historyLocation.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riwayat-konsinyasi-${safeName}-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Riwayat "${historyLocation.name}" berhasil diexport ke Excel.`);
+    } catch {
+      toast.error('Gagal membuat file Excel.');
+    } finally {
+      setExportingHistoryExcel(false);
+    }
+  };
+
+  // PDF riwayat lokasi — satu dokumen berisi ringkasan + linimasa lengkap (kirim & rekap).
+  const exportHistoryPdf = async () => {
+    if (!historyLocation) return;
+    if (historyTimeline.length === 0) { toast.error('Tidak ada riwayat untuk diexport.'); return; }
+    setExportingHistoryPdf(true);
+    try {
+      const entries = historyTimeline.map(entry => entry.kind === 'kirim'
+        ? {
+            kind: 'kirim' as const,
+            date: formatDate(entry.shipment.createdAt?.seconds),
+            description: entry.shipment.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', '),
+            amount: entry.shipment.items.reduce((s, it) => s + it.subtotal, 0),
+          }
+        : {
+            kind: 'rekap' as const,
+            date: formatDate(entry.recap.createdAt?.seconds),
+            description: entry.recap.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', '),
+            amount: entry.recap.totalRevenue,
+            status: entry.recap.paymentStatus === 'belum_lunas' ? 'BELUM LUNAS' : undefined,
+          });
+
+      const blob = await pdf(
+        <LocationHistoryPDF
+          store={storeHeader}
+          data={{
+            locationName:    historyLocation.name,
+            contactName:     historyLocation.contactName || undefined,
+            contactPhone:    historyLocation.contactPhone || undefined,
+            address:         historyLocation.address || undefined,
+            generatedAt:     new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+            currentStockQty: locationStockTotals(historyLocation.id).qty,
+            totalKirim:      historyTotalKirim,
+            totalRevenue:    historyTotalRevenue,
+            totalSold:       historyTotalSold,
+            totalRetur:      historyTotalRetur,
+            totalReject:     historyTotalReject,
+            entries,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const safeName = historyLocation.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riwayat-konsinyasi-${safeName}-${toISODate(new Date())}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat PDF riwayat.');
+    } finally {
+      setExportingHistoryPdf(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -1566,6 +1848,11 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               )}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
+                              <Tooltip label="Kirim Nota via WhatsApp">
+                                <button onClick={() => sendShipmentWhatsApp(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Nota via WhatsApp">
+                                  <MessageCircle size={12} />
+                                </button>
+                              </Tooltip>
                               <Tooltip label="Cetak Nota PDF">
                                 <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
                                   {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
@@ -1602,6 +1889,11 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                               </div>
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
                               <div className="flex items-center gap-1 flex-shrink-0">
+                                <Tooltip label="Kirim Nota via WhatsApp">
+                                  <button onClick={() => sendShipmentWhatsApp(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Nota via WhatsApp">
+                                    <MessageCircle size={12} />
+                                  </button>
+                                </Tooltip>
                                 <Tooltip label="Cetak Nota PDF">
                                   <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
                                     {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
@@ -1923,8 +2215,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                       placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
                   </div>
                   <div>
-                    <label className="field-label">Tanggal Kirim</label>
-                    <input type="date" value={sendDate} onChange={e => setSendDate(e.target.value)} className="input" />
+                    <label className="field-label">Tanggal &amp; Jam Kirim</label>
+                    <input type="datetime-local" value={sendDate} onChange={e => setSendDate(e.target.value)} className="input" />
                   </div>
                 </div>
 
@@ -2013,8 +2305,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                       options={locationOptions} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
                   </div>
                   <div>
-                    <label className="field-label">Tanggal</label>
-                    <input type="date" value={recapDate} onChange={e => setRecapDate(e.target.value)} className="input" />
+                    <label className="field-label">Tanggal &amp; Jam</label>
+                    <input type="datetime-local" value={recapDate} onChange={e => setRecapDate(e.target.value)} className="input" />
                   </div>
                 </div>
 
@@ -2146,9 +2438,21 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
                   </p>
                 </div>
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={closeLocationHistory} className="modal-close"><X size={14} /></button>
-              </Tooltip>
+              <div className="flex items-center gap-1.5">
+                <Tooltip label="Export Excel">
+                  <button onClick={exportHistoryExcel} disabled={exportingHistoryExcel || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                    {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="Export PDF">
+                  <button onClick={exportHistoryPdf} disabled={exportingHistoryPdf || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                    {exportingHistoryPdf ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="Tutup">
+                  <button onClick={closeLocationHistory} className="modal-close"><X size={14} /></button>
+                </Tooltip>
+              </div>
             </div>
             <div className="modal-body">
               {historyLoading ? (

@@ -281,7 +281,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
-        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) } : {}),
+        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });

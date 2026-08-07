@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
-        createdAt: data.date ? Timestamp.fromDate(new Date(`${data.date}T12:00:00`)) : FieldValue.serverTimestamp(),
+        createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
       });
     });
   } catch (err) {
