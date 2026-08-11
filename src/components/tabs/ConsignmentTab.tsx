@@ -22,6 +22,7 @@ import type { PosProduct } from '@/lib/pos-types';
 import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
+import { toDataUri } from '@/lib/pdf/logo';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -80,10 +81,21 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
 ];
 
 interface ConsignmentLocation {
-  id: string; name: string; contactName: string; contactPhone: string; address: string; note: string;
+  id: string; name: string; contactName: string; contactPhone: string; address: string; note: string; code?: string;
 }
-type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string };
-const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '' };
+type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string };
+const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '' };
+
+const LOCATION_CODE_PREFIX = 'MTR';
+
+function nextLocationCode(locations: ConsignmentLocation[]) {
+  let max = 0;
+  for (const l of locations) {
+    const m = new RegExp(`^${LOCATION_CODE_PREFIX}(\\d+)$`, 'i').exec((l.code ?? '').trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `${LOCATION_CODE_PREFIX}${String(max + 1).padStart(3, '0')}`;
+}
 
 interface ConsignmentStockItem { productId: string; productName: string; stockQty: number; hargaTitip: number }
 
@@ -235,17 +247,19 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
 
   // ── Info toko (nota/rekap PDF) ──────────────────────────────────
   const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
   useEffect(() => {
     fetch(`${API}/api/settings`, { headers }).then(async r => {
       if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { toDataUri(storeInfo.logo).then(setLogoDataUri); }, [storeInfo.logo]);
   const storeHeader = {
     name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
     tagline: storeInfo.storeTagline?.trim() || undefined,
     address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
     phone:   storeInfo.whatsapp?.trim() || undefined,
-    logo:    storeInfo.logo,
+    logo:    logoDataUri,
   };
 
   // ── Riwayat per lokasi (modal) ─────────────────────────────────
@@ -333,9 +347,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   };
   useEffect(() => { loadLocations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openCreateL = () => { setEditingL(null); setLForm(EMPTY_LOCATION); setShowLForm(true); };
+  const openCreateL = () => { setEditingL(null); setLForm({ ...EMPTY_LOCATION, code: nextLocationCode(locations) }); setShowLForm(true); };
   const openEditL = (l: ConsignmentLocation) => {
-    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note }); setShowLForm(true);
+    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '' }); setShowLForm(true);
   };
   const saveLocation = async () => {
     if (!lForm.name.trim()) return;
@@ -344,7 +358,10 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
       ? await fetch(`${API}/api/consignment/locations/${editingL.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) })
       : await fetch(`${API}/api/consignment/locations`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) });
     if (r.ok) { await loadLocations(); setShowLForm(false); toast.success(editingL ? 'Lokasi berhasil diperbarui.' : 'Lokasi berhasil ditambahkan.'); }
-    else toast.error('Gagal menyimpan lokasi.');
+    else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menyimpan lokasi.');
+    }
     setSavingL(false);
   };
   const deleteLocation = async (l: ConsignmentLocation) => {
@@ -592,7 +609,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
           raw[field] = cell.value?.toString().trim() ?? '';
         });
         if (!raw.name.trim()) return;
-        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note });
+        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '' });
       });
 
       if (rows.length === 0) {
@@ -623,7 +640,8 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     return l.name.toLowerCase().includes(q)
       || l.contactName.toLowerCase().includes(q)
       || l.contactPhone.toLowerCase().includes(q)
-      || l.address.toLowerCase().includes(q);
+      || l.address.toLowerCase().includes(q)
+      || (l.code ?? '').toLowerCase().includes(q);
   });
   const totalLocationPages   = Math.max(1, Math.ceil(filteredLocations.length / locationPageSize));
   const safeLocationPage     = Math.min(locationPage, totalLocationPages);
@@ -857,6 +875,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
           store={storeHeader}
           data={{
             locationName:   s.locationName,
+            locationCode:   location?.code,
             contactName:    location?.contactName,
             contactPhone:   location?.contactPhone,
             address:        location?.address,
@@ -1225,11 +1244,13 @@ _${storeHeader.name}_`.trim();
   const printRecapNota = async (r: Recap) => {
     setPrintingRecapId(r.id);
     try {
+      const location = locations.find(l => l.id === r.locationId);
       const blob = await pdf(
         <RecapNotePDF
           store={storeHeader}
           data={{
             locationName:   r.locationName,
+            locationCode:   location?.code,
             warehouseName:  r.warehouseName,
             date:           formatDate(r.createdAt?.seconds),
             docNo:          `RKP-${r.id.slice(-6).toUpperCase()}`,
@@ -1649,6 +1670,12 @@ _${storeHeader.name}_`.trim();
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                              {l.code && (
+                                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                  {l.code}
+                                </span>
+                              )}
                               {l.contactName && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {l.contactName}</span>}
                             </div>
                             <div className="flex items-center gap-3 mt-0.5 flex-wrap">
@@ -1721,7 +1748,15 @@ _${storeHeader.name}_`.trim();
                               </Tooltip>
                             </div>
                           </div>
-                          <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                            {l.code && (
+                              <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                {l.code}
+                              </span>
+                            )}
+                          </div>
                           {l.contactName && (
                             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{l.contactName}</p>
                           )}
@@ -1830,7 +1865,15 @@ _${storeHeader.name}_`.trim();
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} /></div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
-                                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                                  {locations.find(l => l.id === s.locationId)?.code && (
+                                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                      {locations.find(l => l.id === s.locationId)?.code}
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
                                   {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
                                 </span>
@@ -1884,6 +1927,12 @@ _${storeHeader.name}_`.trim();
                                 <Send size={14} />
                               </div>
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                              {locations.find(l => l.id === s.locationId)?.code && (
+                                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                  {locations.find(l => l.id === s.locationId)?.code}
+                                </span>
+                              )}
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 <Tooltip label="Kirim Nota via WhatsApp">
                                   <button onClick={() => sendShipmentWhatsApp(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Nota via WhatsApp">
@@ -2006,6 +2055,12 @@ _${storeHeader.name}_`.trim();
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                                  {locations.find(l => l.id === r.locationId)?.code && (
+                                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                      {locations.find(l => l.id === r.locationId)?.code}
+                                    </span>
+                                  )}
                                   {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
                                   {r.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                                 </div>
@@ -2064,6 +2119,12 @@ _${storeHeader.name}_`.trim();
                             <div className="flex items-center justify-between gap-2 mb-1 pl-6">
                               <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                 <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                                {locations.find(l => l.id === r.locationId)?.code && (
+                                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                    {locations.find(l => l.id === r.locationId)?.code}
+                                  </span>
+                                )}
                                 {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
                                 {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                               </div>
@@ -2135,10 +2196,18 @@ _${storeHeader.name}_`.trim();
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label className="field-label">Nama Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
-                    placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ width: 110, flexShrink: 0 }}>
+                    <label className="field-label">Kode {editingL ? '(opsional)' : '(otomatis)'}</label>
+                    <input type="text" value={lForm.code} onChange={e => setLForm({ ...lForm, code: e.target.value })}
+                      placeholder="MTR001" className="input" readOnly={!editingL}
+                      style={!editingL ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="field-label">Nama Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
+                      placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
+                  </div>
                 </div>
                 <div>
                   <label className="field-label">Nama Kontak</label>

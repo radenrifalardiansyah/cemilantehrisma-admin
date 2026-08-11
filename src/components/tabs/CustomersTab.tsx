@@ -101,6 +101,17 @@ function formatDate(c: Customer) {
   return '–';
 }
 
+const CUSTOMER_CODE_PREFIX = 'PLG';
+
+function nextCustomerCode(customers: Customer[]) {
+  let max = 0;
+  for (const c of customers) {
+    const m = new RegExp(`^${CUSTOMER_CODE_PREFIX}(\\d+)$`, 'i').exec((c.code ?? '').trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `${CUSTOMER_CODE_PREFIX}${String(max + 1).padStart(3, '0')}`;
+}
+
 export default function CustomersTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -394,7 +405,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
     }
   };
 
-  const openNew   = () => { setEditing({ id: '', ...EMPTY_CUSTOMER }); setIsNew(true); setError(''); };
+  const openNew   = () => { setEditing({ id: '', ...EMPTY_CUSTOMER, code: nextCustomerCode(customers) }); setIsNew(true); setError(''); };
   const openEdit  = (c: Customer) => { setEditing({ ...c }); setIsNew(false); setError(''); };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
 
@@ -841,12 +852,14 @@ export default function CustomersTab({ creds }: { creds: string }) {
 
                 <div style={{ display: 'flex', gap: 12 }}>
                   <div style={{ width: 110, flexShrink: 0 }}>
-                    <label className="field-label">Kode (opsional)</label>
+                    <label className="field-label">Kode {isNew ? '(otomatis)' : '(opsional)'}</label>
                     <input
                       value={editing.code ?? ''}
                       onChange={e => setEditing({ ...editing, code: e.target.value })}
                       className="input"
                       placeholder="PLG001"
+                      readOnly={isNew}
+                      style={isNew ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined}
                     />
                   </div>
                   <div style={{ flex: 1 }}>

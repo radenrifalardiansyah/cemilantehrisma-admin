@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
     createdAt:    FieldValue.serverTimestamp(),
   });
 
-  const origin = req.nextUrl.origin;
+  // Fixed production origin — NOT req.nextUrl.origin. That previously baked in whatever
+  // host the upload request happened to come from (localhost, a Vercel preview URL, etc.),
+  // producing bannerUrls that were unreachable for real users on the live consumer app.
+  const origin = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'https://cemilantehrisma-admin.vercel.app';
   return Response.json({ url: `${origin}/api/img/${ref.id}` });
 }

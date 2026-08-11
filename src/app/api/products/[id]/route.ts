@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { validateAdminAuth, unauthorized, getAuthUser } from '@/lib/admin-auth';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -21,7 +21,29 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   // /api/warehouses/*/stock, yang menjaga products.stockQty & warehouse_stock tetap sinkron).
   delete data.stockQty;
   delete data.stock;
-  await getDb().collection('products').doc(id).update({
+
+  const db = getDb();
+  const ref = db.collection('products').doc(id);
+
+  // Catat riwayat perubahan harga jual (audit trail) di koleksi `price_history` supaya kalau
+  // ada transaksi dengan harga yang beda dari harga sekarang, bisa ditelusuri siapa & kapan
+  // harga produk ini pernah diubah — tanpa perlu mengubah alur update produk yang lain.
+  if (typeof data.price === 'number') {
+    const before = await ref.get();
+    const oldPrice = before.data()?.price;
+    if (typeof oldPrice === 'number' && oldPrice !== data.price) {
+      await db.collection('price_history').add({
+        productId: id,
+        productName: before.data()?.name ?? '',
+        oldPrice,
+        newPrice: data.price,
+        changedBy: getAuthUser(req)?.username ?? '',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  await ref.update({
     ...data,
     updatedAt: FieldValue.serverTimestamp(),
   });

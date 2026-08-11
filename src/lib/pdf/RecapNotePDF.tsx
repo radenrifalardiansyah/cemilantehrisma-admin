@@ -7,6 +7,7 @@ export interface RecapNoteItem {
 
 export interface RecapNoteData {
   locationName:    string;
+  locationCode?:   string;
   warehouseName?:  string;
   date:            string;
   docNo?:          string;
@@ -40,15 +41,15 @@ const s = StyleSheet.create({
 
   topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, maxWidth: '62%', flexShrink: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flexGrow: 1, flexShrink: 1, flexBasis: 0 },
   logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white, flexShrink: 0 },
-  storeInfo: { flexShrink: 1 },
+  storeInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
   storeName: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.dark },
   storeTagline: { fontSize: 8.5, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8.5, color: C.muted, marginTop: 2 },
-  headerRight: { alignItems: 'flex-end', maxWidth: '35%', flexShrink: 0 },
-  docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
+  headerRight: { alignItems: 'flex-end', width: '40%', flexShrink: 0 },
+  docTitle: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.3, textAlign: 'right' },
   docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
   docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 4 },
   docMetaLabel: { fontSize: 8.5, color: C.muted },
@@ -132,7 +133,7 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
         <View style={s.infoRow}>
           <View style={s.infoBox}>
             <Text style={s.infoLabel}>Lokasi / Mitra</Text>
-            <Text style={s.infoValue}>{data.locationName}</Text>
+            <Text style={s.infoValue}>{data.locationName}{data.locationCode ? `  ·  ${data.locationCode}` : ''}</Text>
             <Text
               style={[s.badge, isLunas
                 ? { backgroundColor: C.greenBg, color: C.green }

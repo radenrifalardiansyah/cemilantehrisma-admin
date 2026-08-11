@@ -66,7 +66,10 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'pembelian', label: 'Pembelian', Icon: ShoppingBag },
 ];
 
-interface RawMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
+interface RawMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number; minStock?: number }
+// Menipis = stok masih ada tapi sudah di batas minimum yang diset admin.
+export const isLowStock = (m: Pick<RawMaterial, 'stockQty' | 'minStock'>) =>
+  (m.minStock ?? 0) > 0 && m.stockQty > 0 && m.stockQty <= (m.minStock ?? 0);
 interface Supplier { id: string; name: string }
 interface PurchaseItem { materialId: string; materialName: string; unit: string; qty: number; price: number; subtotal: number }
 interface Purchase {
@@ -75,8 +78,8 @@ interface Purchase {
   voided?: boolean; voidNote?: string;
 }
 
-type MaterialForm = { name: string; unit: string };
-const EMPTY_MATERIAL: MaterialForm = { name: '', unit: '' };
+type MaterialForm = { name: string; unit: string; minStock: string };
+const EMPTY_MATERIAL: MaterialForm = { name: '', unit: '', minStock: '' };
 
 interface PurchaseRow { materialId: string; qty: string; price: string }
 const EMPTY_ROW: PurchaseRow = { materialId: '', qty: '', price: '' };
@@ -170,14 +173,15 @@ export default function MaterialsTab({ creds }: { creds: string }) {
   useEffect(() => { loadMaterials(); loadSuppliers(); loadPurchases(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreateM = () => { setEditingM(null); setMForm(EMPTY_MATERIAL); setShowMForm(true); };
-  const openEditM = (m: RawMaterial) => { setEditingM(m); setMForm({ name: m.name, unit: m.unit }); setShowMForm(true); };
+  const openEditM = (m: RawMaterial) => { setEditingM(m); setMForm({ name: m.name, unit: m.unit, minStock: m.minStock ? String(m.minStock) : '' }); setShowMForm(true); };
 
   const saveMaterial = async () => {
     if (!mForm.name.trim() || !mForm.unit.trim()) return;
     setSavingM(true);
+    const payload = { name: mForm.name, unit: mForm.unit, minStock: Number(mForm.minStock) || 0 };
     const r = editingM
-      ? await fetch(`${API}/api/materials/${editingM.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(mForm) })
-      : await fetch(`${API}/api/materials`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(mForm) });
+      ? await fetch(`${API}/api/materials/${editingM.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      : await fetch(`${API}/api/materials`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) { await loadMaterials(); setShowMForm(false); toast.success(editingM ? 'Bahan baku berhasil diperbarui.' : 'Bahan baku berhasil ditambahkan.'); }
     else toast.error('Gagal menyimpan bahan baku.');
     setSavingM(false);
@@ -346,7 +350,7 @@ export default function MaterialsTab({ creds }: { creds: string }) {
           if (!field) return;
           raw[field] = cell.value?.toString().trim() ?? '';
         });
-        if (raw.name.trim() && raw.unit.trim()) rows.push({ name: raw.name, unit: raw.unit });
+        if (raw.name.trim() && raw.unit.trim()) rows.push({ name: raw.name, unit: raw.unit, minStock: '' });
       });
 
       if (rows.length === 0) {
@@ -1036,7 +1040,14 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                             <Package size={16} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</p>
+                              {isLowStock(m) && (
+                                <Tooltip label={`Batas minimum ${m.minStock} ${m.unit}`}>
+                                  <span className="badge badge-amber">Stok Menipis</span>
+                                </Tooltip>
+                              )}
+                            </div>
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
                               Stok {m.stockQty} {m.unit} · Rata-rata {formatRp(m.avgCost)}/{m.unit}
                             </p>
@@ -1079,6 +1090,7 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                               <Package size={20} />
                             </div>
                             <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{m.name}</p>
+                            {isLowStock(m) && <span className="badge badge-amber">Stok Menipis</span>}
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Stok {m.stockQty} {m.unit}</p>
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Rata-rata {formatRp(m.avgCost)}/{m.unit}</p>
                             <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--accent-dark)' }}>{formatRp(m.stockQty * m.avgCost)}</p>
@@ -1459,6 +1471,11 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                   <label className="field-label">Satuan <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <input type="text" value={mForm.unit} onChange={e => setMForm({ ...mForm, unit: e.target.value })}
                     placeholder="cth: kg, liter, pcs" className="input" />
+                </div>
+                <div>
+                  <label className="field-label">Stok Minimum (peringatan &quot;Stok Menipis&quot;)</label>
+                  <NumberInput value={mForm.minStock} onChange={raw => setMForm({ ...mForm, minStock: raw })}
+                    placeholder="0 = tidak ada peringatan" />
                 </div>
               </div>
             </div>

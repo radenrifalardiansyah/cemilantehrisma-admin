@@ -6,13 +6,13 @@ import {
   RefreshCw, TrendingUp, Receipt, Package, Users,
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
-  MousePointerClick, Tag, ShoppingCart, Download,
+  MousePointerClick, Tag, ShoppingCart, Download, Share, AlertTriangle,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
-import ProductsTab   from '@/components/tabs/ProductsTab';
+import ProductsTab, { isLowStock as isProductLowStock } from '@/components/tabs/ProductsTab';
 import CategoriesTab from '@/components/tabs/CategoriesTab';
 import OrdersTab    from '@/components/tabs/OrdersTab';
 import ResellersTab from '@/components/tabs/ResellersTab';
@@ -20,7 +20,7 @@ import CustomersTab from '@/components/tabs/CustomersTab';
 import StockTab     from '@/components/tabs/StockTab';
 import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
-import MaterialsTab  from '@/components/tabs/MaterialsTab';
+import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
 import ConsignmentTab from '@/components/tabs/ConsignmentTab';
 import IncomeTab      from '@/components/tabs/IncomeTab';
@@ -43,12 +43,15 @@ interface WebStats {
   topCategories: { id: string; name: string; emoji: string; count: number }[];
   topProducts: { id: string; name: string; emoji: string; bgColor: string; clicks: number; addToCart: number }[];
 }
+interface DashMaterial { id: string; name: string; unit: string; stockQty: number; minStock?: number }
+interface LowStockItem { id: string; kind: 'product' | 'material'; name: string; unit: string; stockQty: number; minStock: number }
 interface DashData {
   orderCount: number; revenue: number;
   productCount: number; resellerCount: number;
   recentOrders: DashOrder[];
   revenueTrend: { date: string; revenue: number; count: number }[];
   topProducts: TopProduct[];
+  lowStockItems: LowStockItem[];
   webStats: WebStats | null;
   webStatsErr: string;
 }
@@ -296,7 +299,7 @@ export default function AdminPage() {
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [authUser, setAuthUser] = useState<{ username: string; role: string } | null>(null);
-  const { canInstall, installed, promptInstall } = usePwaInstall();
+  const { canInstall, installed, isIOS, promptInstall } = usePwaInstall();
 
   // ── Tab ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
@@ -327,13 +330,14 @@ export default function AdminPage() {
       const todayKey = wibDateKey(new Date());
       const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6);
       const fromKey = wibDateKey(weekAgo);
-      const [oRes, pRes, rRes, cRes, bRes, custRes, webRes] = await Promise.all([
+      const [oRes, pRes, rRes, cRes, bRes, custRes, matRes, webRes] = await Promise.all([
         fetch(`/api/orders?from=${fromKey}&to=${todayKey}`, { headers: h }),
         fetch('/api/products',     { headers: h }),
         fetch('/api/resellers',    { headers: h }),
         fetch('/api/categories',   { headers: h }),
         fetch('/api/master-banks', { headers: h }),
         fetch('/api/customers',    { headers: h }),
+        fetch('/api/materials',    { headers: h }),
         fetch(`/api/web-stats?days=${webRange}`, { headers: h }).catch(() => null),
       ]);
 
@@ -346,6 +350,8 @@ export default function AdminPage() {
         cRes.ok ? (await cRes.json() as { categories: { id: string; name: string; emoji: string }[] }).categories : [];
       const fetchedBanks: PosBank[] = bRes.ok ? (await bRes.json() as { banks: PosBank[] }).banks : [];
       const fetchedCustomers: PosCustomer[] = custRes.ok ? (await custRes.json() as { customers: PosCustomer[] }).customers : [];
+      const fetchedMaterials: DashMaterial[] =
+        matRes.ok ? (await matRes.json() as { materials: DashMaterial[] }).materials : [];
       setPosProducts(fetchedProducts);
       setPosCategories(fetchedCats.map(c => ({ id: c.id, label: c.name, emoji: c.emoji })));
       setResellerList(resellers.filter(r => r.status === 'approved'));
@@ -390,7 +396,16 @@ export default function AdminPage() {
           return { name, emoji: p?.emoji ?? '📦', bgColor: p?.bgColor ?? '#F5F0E9', stock: p?.stock ?? 'Ada', count };
         });
 
-      setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, topProducts, webStats, webStatsErr });
+      const lowStockItems: LowStockItem[] = [
+        ...fetchedProducts.filter(isProductLowStock).map(p => ({
+          id: p.id, kind: 'product' as const, name: p.name, unit: 'pcs', stockQty: p.stockQty ?? 0, minStock: p.minStock ?? 0,
+        })),
+        ...fetchedMaterials.filter(isMaterialLowStock).map(m => ({
+          id: m.id, kind: 'material' as const, name: m.name, unit: m.unit, stockQty: m.stockQty, minStock: m.minStock ?? 0,
+        })),
+      ].sort((a, b) => (a.stockQty / Math.max(a.minStock, 1)) - (b.stockQty / Math.max(b.minStock, 1)));
+
+      setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, topProducts, lowStockItems, webStats, webStatsErr });
     } catch {}
     setLoading(false);
   }, [creds, webRange]);
@@ -584,6 +599,19 @@ export default function AdminPage() {
               </button>
             )}
 
+            {isIOS && !installed && (
+              <div
+                className="login-field w-full mt-3 flex items-center gap-2 px-4 py-3 rounded-xl text-xs"
+                style={{ border: '1px solid var(--border-2)', color: 'var(--text-secondary)', animationDelay: '0.24s' }}
+              >
+                <Share size={14} style={{ flexShrink: 0 }} />
+                <span>
+                  Untuk install, ketuk ikon <strong>Share</strong> di Safari lalu pilih{' '}
+                  <strong>&quot;Add to Home Screen&quot;</strong>
+                </span>
+              </div>
+            )}
+
             <p className="text-center text-xs mt-8 login-field" style={{ color: 'var(--text-muted)', animationDelay: '0.28s' }}>
               Dikembangkan oleh PT. Eleven Digital Indonesia
             </p>
@@ -742,6 +770,36 @@ export default function AdminPage() {
               )}
             </div>
           </div>
+
+          {/* Stok menipis */}
+          {dashData.lowStockItems.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                <AlertTriangle size={15} style={{ color: 'var(--warning)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Stok Menipis</p>
+                <span className="badge badge-amber">{dashData.lowStockItems.length}</span>
+              </div>
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                {dashData.lowStockItems.slice(0, 8).map(item => (
+                  <button key={`${item.kind}-${item.id}`}
+                    onClick={() => setActiveTab(item.kind === 'product' ? 'products' : 'materials')}
+                    className="w-full px-5 py-3.5 flex items-center gap-3 text-left"
+                    style={{ transition: 'background 0.12s' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                  >
+                    <span className={`badge ${item.kind === 'product' ? 'badge-blue' : 'badge-gray'} flex-shrink-0`}>
+                      {item.kind === 'product' ? 'Produk' : 'Bahan Baku'}
+                    </span>
+                    <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
+                    <span className="text-xs font-semibold tabular flex-shrink-0" style={{ color: 'var(--warning)' }}>
+                      Sisa {item.stockQty} {item.unit} <span style={{ color: 'var(--text-muted)' }}>· min. {item.minStock}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 

@@ -14,6 +14,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   await getDb().collection('rawMaterials').doc(id).update({
     name: data.name,
     unit: data.unit ?? '',
+    minStock: Number(data.minStock) || 0,
     updatedAt: FieldValue.serverTimestamp(),
   });
   return Response.json({ ok: true });

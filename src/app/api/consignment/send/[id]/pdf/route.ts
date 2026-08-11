@@ -60,6 +60,7 @@ export async function GET(
 
     const data: ShipmentNoteData = {
       locationName: shipment.locationName,
+      locationCode: location?.code || undefined,
       contactName: location?.contactName || undefined,
       contactPhone: location?.contactPhone || undefined,
       address: location?.address || undefined,

@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
   const ref = await db.collection('rawMaterials').add({
     name: data.name,
     unit: data.unit ?? '',
+    minStock: Number(data.minStock) || 0,
     stockQty: 0,
     avgCost: 0,
     createdAt: FieldValue.serverTimestamp(),

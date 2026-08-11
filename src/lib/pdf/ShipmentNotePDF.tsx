@@ -4,6 +4,7 @@ export interface ShipmentNoteItem { productName: string; qty: number; hargaTitip
 
 export interface ShipmentNoteData {
   locationName:  string;
+  locationCode?: string;
   contactName?:  string;
   contactPhone?: string;
   address?:      string;
@@ -34,15 +35,15 @@ const s = StyleSheet.create({
 
   topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, maxWidth: '62%', flexShrink: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flexGrow: 1, flexShrink: 1, flexBasis: 0 },
   logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white, flexShrink: 0 },
-  storeInfo: { flexShrink: 1 },
+  storeInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
   storeName: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.dark },
   storeTagline: { fontSize: 8.5, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8.5, color: C.muted, marginTop: 2 },
-  headerRight: { alignItems: 'flex-end', maxWidth: '35%', flexShrink: 0 },
-  docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
+  headerRight: { alignItems: 'flex-end', width: '40%', flexShrink: 0 },
+  docTitle: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.3, textAlign: 'right' },
   docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 4 },
   docMetaLabel: { fontSize: 8.5, color: C.muted },
   docMetaValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark },
@@ -121,7 +122,7 @@ export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteDat
         <View style={s.infoRow}>
           <View style={s.infoBox}>
             <Text style={s.infoLabel}>Dikirim Kepada</Text>
-            <Text style={s.infoValue}>{data.locationName}</Text>
+            <Text style={s.infoValue}>{data.locationName}{data.locationCode ? `  ·  ${data.locationCode}` : ''}</Text>
             {data.contactName && <Text style={s.infoSub}>{data.contactName}</Text>}
             {data.contactPhone && <Text style={s.infoSub}>{data.contactPhone}</Text>}
             {data.address && <Text style={s.infoSub}>{data.address}</Text>}

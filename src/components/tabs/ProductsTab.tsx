@@ -33,7 +33,7 @@ interface FireProduct {
   price: number; originalPrice?: number; costPrice?: number; emoji: string; imageUrls: string[];
   category: string; badge?: string; stock: string; gradient: string;
   bgColor: string; weight: string; stockQty?: number; order?: number;
-  code?: string; openPO?: boolean; qrUrl?: string; published?: boolean;
+  code?: string; openPO?: boolean; qrUrl?: string; published?: boolean; minStock?: number;
 }
 
 interface FireCategory {
@@ -45,7 +45,7 @@ const EMPTY_PRODUCT: Omit<FireProduct, 'id'> = {
   name: '', description: '', details: [''], price: 0, costPrice: 0, emoji: '🛍️',
   imageUrls: [], category: '', badge: '', stock: 'habis',
   gradient: 'from-amber-700 to-yellow-500', bgColor: '#B45309', weight: '', stockQty: 0,
-  code: '', openPO: false, published: true,
+  code: '', openPO: false, published: true, minStock: 0,
 };
 
 const STOCK_MAP = {
@@ -58,6 +58,9 @@ const HEADER_BTN_H = 34; // samakan tinggi semua tombol di header Produk
 // Status stok dihitung dari total qty gudang (menu Stok), kecuali "Buka PO" diaktifkan manual.
 const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
   p.openPO ? STOCK_MAP.open_po : (p.stockQty ?? 0) > 0 ? STOCK_MAP.ready : STOCK_MAP.habis;
+// Menipis = stok masih ada (bukan habis/PO) tapi sudah di batas minimum yang diset admin.
+export const isLowStock = (p: Pick<FireProduct, 'stockQty' | 'openPO' | 'minStock'>) =>
+  !p.openPO && (p.minStock ?? 0) > 0 && (p.stockQty ?? 0) > 0 && (p.stockQty ?? 0) <= (p.minStock ?? 0);
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
@@ -895,6 +898,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                               <span className={`badge ${stock.cls}`}>
                                 {stock.label}{stock === STOCK_MAP.ready ? ` · ${p.stockQty ?? 0} pcs` : ''}
                               </span>
+                              {isLowStock(p) && (
+                                <Tooltip label={`Batas minimum ${p.minStock} pcs`}>
+                                  <span className="badge badge-amber">Stok Menipis</span>
+                                </Tooltip>
+                              )}
                               {p.category && (
                                 <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                                   style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
@@ -985,6 +993,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             <span className={`badge ${stock.cls}`}>
                               {stock.label}{stock === STOCK_MAP.ready ? ` · ${p.stockQty ?? 0} pcs` : ''}
                             </span>
+                            {isLowStock(p) && <span className="badge badge-amber">Stok Menipis</span>}
                           </div>
                           {p.category && (
                             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full self-start"
@@ -1253,6 +1262,13 @@ export default function ProductsTab({ creds }: { creds: string }) {
                       <span className={`badge ${stockStatus(editing).cls}`}>
                         {stockStatus(editing).label} · {editing.stockQty ?? 0} pcs
                       </span>
+                    </div>
+
+                    <div>
+                      <label className="field-label">Stok Minimum (peringatan &quot;Stok Menipis&quot;)</label>
+                      <NumberInput value={editing.minStock ?? 0}
+                        onChange={raw => setEditing({ ...editing, minStock: Number(raw) || 0 })}
+                        placeholder="0 = tidak ada peringatan" />
                     </div>
 
                     {/* Toggle Open PO */}

@@ -19,6 +19,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import StockReportPDF from '@/lib/pdf/StockReportPDF';
 import StockCardPDF from '@/lib/pdf/StockCardPDF';
+import { toDataUri } from '@/lib/pdf/logo';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -610,6 +611,7 @@ export default function StockReportTab({
   const [printingReportPdf, setPrintingReportPdf] = useState(false);
   const [printingCardId, setPrintingCardId]     = useState<string | null>(null);
   const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
@@ -618,13 +620,14 @@ export default function StockReportTab({
       if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { toDataUri(storeInfo.logo).then(setLogoDataUri); }, [storeInfo.logo]);
 
   const storeHeader = {
     name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
     tagline: storeInfo.storeTagline?.trim() || undefined,
     address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
     phone:   storeInfo.whatsapp?.trim() || undefined,
-    logo:    storeInfo.logo,
+    logo:    logoDataUri,
   };
 
   const loadWarehouses = async () => {

@@ -18,6 +18,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     headers: {
       'Content-Type': contentType ?? 'image/jpeg',
       'Cache-Control': 'public, max-age=31536000, immutable',
+      'Access-Control-Allow-Origin': '*',
     },
   });
 }
