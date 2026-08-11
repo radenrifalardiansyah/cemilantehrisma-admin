@@ -14,6 +14,7 @@ import { useViewMode, type ViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import ScrollChips from '@/components/ScrollChips';
 import { useToast } from '@/components/Toast';
+import Tooltip from '@/components/Tooltip';
 import ImageCarousel from '@/components/ImageCarousel';
 import TopbarPortal from '@/components/TopbarPortal';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -560,12 +561,11 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
                       {st.label}
                     </span>
                   </div>
-                  <button onClick={() => toggle(r.product.id)}
-                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md transition-transform"
-                    style={{ color: 'var(--text-muted)', transform: isOpen ? 'rotate(90deg)' : undefined }}
-                    title={isOpen ? 'Tutup kartu stok' : 'Lihat kartu stok'}>
-                    <ChevronRight size={14} />
-                  </button>
+                  <Tooltip label={isOpen ? 'Tutup kartu stok' : 'Lihat kartu stok'}>
+                    <button onClick={() => toggle(r.product.id)} className="btn-ghost p-2">
+                      <ChevronRight size={13} style={{ transform: isOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
               {isOpen && (

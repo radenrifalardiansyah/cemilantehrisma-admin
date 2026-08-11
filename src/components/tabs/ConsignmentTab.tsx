@@ -199,32 +199,36 @@ const EMPTY_LOCATION_STATS: LocationStats = { totalKirim: 0, totalSold: 0, total
 function LocationStatTiles({ stockQty, stockValue, stats }: { stockQty: number; stockValue: number; stats: LocationStats }) {
   const selisih = stats.totalKirim - stats.totalRevenue;
   const pctLabel = stats.totalKirim > 0 ? `${((stats.totalRevenue / stats.totalKirim) * 100).toFixed(1)}%` : '–';
+  const tileLabelCls = "text-[9px] font-semibold uppercase leading-tight break-words";
+  const tileValueCls = "text-xs font-bold tabular leading-tight mt-0.5";
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: stockQty > 0 ? 'var(--success-bg)' : 'var(--surface-2)' }}>
-        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
-        <p className="text-xs font-bold tabular" style={{ color: stockQty > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{stockQty} pcs</p>
-        <p className="text-[10px] tabular" style={{ color: 'var(--text-muted)' }}>{formatRp(stockValue)}</p>
+      <div className="flex flex-col justify-between px-2 py-1.5 rounded-lg min-h-[52px]" style={{ background: stockQty > 0 ? 'var(--success-bg)' : 'var(--surface-2)' }}>
+        <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
+        <div>
+          <p className={tileValueCls} style={{ color: stockQty > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{stockQty} pcs</p>
+          <p className="text-[10px] tabular leading-tight" style={{ color: 'var(--text-muted)' }}>{formatRp(stockValue)}</p>
+        </div>
       </div>
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Dikirim</p>
-        <p className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(stats.totalKirim)}</p>
+      <div className="flex flex-col justify-between px-2 py-1.5 rounded-lg min-h-[52px]" style={{ background: 'var(--surface-2)' }}>
+        <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Dikirim</p>
+        <p className={tileValueCls} style={{ color: 'var(--text-primary)' }}>{formatRp(stats.totalKirim)}</p>
       </div>
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--success-bg)' }}>
-        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Pendapatan</p>
-        <p className="text-xs font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(stats.totalRevenue)}</p>
+      <div className="flex flex-col justify-between px-2 py-1.5 rounded-lg min-h-[52px]" style={{ background: 'var(--success-bg)' }}>
+        <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Pendapatan</p>
+        <p className={tileValueCls} style={{ color: 'var(--success)' }}>{formatRp(stats.totalRevenue)}</p>
       </div>
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Selisih</p>
-        <p className="text-xs font-bold tabular" style={{ color: selisih > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>{formatRp(selisih)}</p>
+      <div className="flex flex-col justify-between px-2 py-1.5 rounded-lg min-h-[52px]" style={{ background: 'var(--surface-2)' }}>
+        <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Selisih</p>
+        <p className={tileValueCls} style={{ color: selisih > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>{formatRp(selisih)}</p>
       </div>
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>% Terealisasi</p>
-        <p className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{pctLabel}</p>
+      <div className="flex flex-col justify-between px-2 py-1.5 rounded-lg min-h-[52px]" style={{ background: 'var(--surface-2)' }}>
+        <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>% Terealisasi</p>
+        <p className={tileValueCls} style={{ color: 'var(--text-primary)' }}>{pctLabel}</p>
       </div>
-      <div className="px-2 py-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-        <p className="text-[9px] font-semibold uppercase truncate" style={{ color: 'var(--text-muted)' }}>Jual/Retur/Reject</p>
-        <p className="text-xs font-bold tabular" style={{ color: 'var(--text-primary)' }}>{stats.totalSold}/{stats.totalRetur}/{stats.totalReject}</p>
+      <div className="flex flex-col justify-between px-2 py-1.5 rounded-lg min-h-[52px]" style={{ background: 'var(--surface-2)' }}>
+        <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Jual/Retur/Reject</p>
+        <p className={tileValueCls} style={{ color: 'var(--text-primary)' }}>{stats.totalSold} / {stats.totalRetur} / {stats.totalReject}</p>
       </div>
     </div>
   );
