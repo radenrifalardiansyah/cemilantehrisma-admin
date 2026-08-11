@@ -29,7 +29,13 @@ import FinanceReportTab from '@/components/tabs/FinanceReportTab';
 import CapitalTab from '@/components/tabs/CapitalTab';
 import SettingsTab  from '@/components/tabs/SettingsTab';
 import PosTab from '@/components/tabs/PosTab';
+import UsersTab from '@/components/tabs/UsersTab';
+import RolesTab from '@/components/tabs/RolesTab';
+import ModulesTab from '@/components/tabs/ModulesTab';
+import MenusTab from '@/components/tabs/MenusTab';
+import RolePermissionsTab from '@/components/tabs/RolePermissionsTab';
 import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer } from '@/lib/pos-types';
+import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -299,6 +305,10 @@ export default function AdminPage() {
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [authUser, setAuthUser] = useState<{ username: string; role: string } | null>(null);
+  const [permissions, setPermissions] = useState<Record<string, Partial<Record<Action, boolean>>>>({});
+  const [superAdmin, setSuperAdmin] = useState(false);
+  const [modules, setModules] = useState<ModuleDoc[]>([]);
+  const [menus, setMenus] = useState<MenuDoc[]>([]);
   const { canInstall, installed, isIOS, promptInstall } = usePwaInstall();
 
   // ── Tab ──────────────────────────────────────────────────
@@ -439,18 +449,57 @@ export default function AdminPage() {
     setWebLoading(false);
   }, [creds]);
 
+  // ── Dynamic sidebar data — Struktur Menu / Modul drive the real nav ──
+  const fetchNav = useCallback(async (token: string) => {
+    try {
+      const res = await fetch('/api/menus', { headers: { 'x-admin-auth': token } });
+      if (res.ok) {
+        const { modules, menus } = await res.json() as { modules: ModuleDoc[]; menus: MenuDoc[] };
+        setModules(modules); setMenus(menus);
+      }
+    } catch {}
+  }, []);
+
+  // Resolves the caller's permission map from /api/me and hydrates auth
+  // state + kicks off the dashboard/nav fetches. Shared by session-restore
+  // and login so both end up with the exact same state shape.
+  const applySession = useCallback(async (token: string): Promise<boolean> => {
+    const res = await fetch('/api/me', { headers: { 'x-admin-auth': token } });
+    if (!res.ok) return false;
+    const { user, permissions, superAdmin } = await res.json() as {
+      user: { username: string; role: string };
+      permissions: Record<string, Partial<Record<Action, boolean>>>;
+      superAdmin: boolean;
+    };
+    setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
+    fetchDash(token); fetchNav(token);
+    return true;
+  }, [fetchDash, fetchNav]);
+
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
     const saved = localStorage.getItem('admin_creds');
     if (!saved) { setChecking(false); return; }
-    fetch('/api/me', { headers: { 'x-admin-auth': saved } }).then(async r => {
-      if (r.ok) {
-        const { user } = await r.json() as { user: { username: string; role: string } };
-        setCreds(saved); setAuthUser(user); setAuthed(true); fetchDash(saved);
-      } else localStorage.removeItem('admin_creds');
+    applySession(saved).then(ok => {
+      if (!ok) localStorage.removeItem('admin_creds');
       setChecking(false);
     }).catch(() => setChecking(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Jika tab aktif tidak (lagi) ada di daftar menu yang terlihat untuk role
+  // ini — baik saat load awal (mis. Kasir tidak punya akses Analitik) atau
+  // karena hak akses/struktur menu diubah di tengah sesi — pindah ke tab
+  // pertama yang memang terlihat, daripada membiarkan halaman kosong.
+  useEffect(() => {
+    if (!authed || menus.length === 0) return;
+    const visible = new Set(menus.map(m => m.featureKey));
+    if (!visible.has(activeTab)) {
+      const firstVisible = menus.slice().sort((a, b) => a.order - b.order)[0]?.featureKey as TabId | undefined;
+      if (firstVisible) setActiveTab(firstVisible);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menus, authed]);
 
   const login = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setLoginErr('');
@@ -466,9 +515,9 @@ export default function AdminPage() {
       body: JSON.stringify({ username, password }),
     });
     if (res.ok) {
-      const { token, user } = await res.json() as { token: string; user: { username: string; role: string } };
+      const { token } = await res.json() as { token: string };
       localStorage.setItem('admin_creds', token);
-      setCreds(token); setAuthUser(user); setAuthed(true); fetchDash(token);
+      await applySession(token);
     } else {
       setFieldErrors({ username: ' ', password: ' ' });
       setLoginErr('Username/email atau password salah.');
@@ -478,6 +527,7 @@ export default function AdminPage() {
   const logout = () => {
     localStorage.removeItem('admin_creds');
     setAuthed(false); setDashData(null); setCreds('');
+    setPermissions({}); setSuperAdmin(false); setModules([]); setMenus([]);
   };
 
   // ─── Screens: Loading & Login ────────────────────────────
@@ -1029,6 +1079,11 @@ export default function AdminPage() {
 
   // ─── Main render ──────────────────────────────────────────
   const adminUsername = authUser?.username ?? 'Admin';
+  // Lets the 5 RBAC-management tabs hide/disable actions the caller's own
+  // role can't perform (e.g. a role with `roles:view` but not `roles:create`
+  // shouldn't see a live "Tambah Role" button that only 403s on click) —
+  // the API is still the real enforcement point, this is just UI polish.
+  const can = (featureKey: string, action: Action) => superAdmin || permissions[featureKey]?.[action] === true;
   return (
     <AppShell
       activeTab={activeTab}
@@ -1037,6 +1092,9 @@ export default function AdminPage() {
       hasCart={posCartCount > 0}
       cartCount={posCartCount}
       username={adminUsername}
+      superAdmin={superAdmin}
+      modules={modules}
+      menus={menus}
     >
       {activeTab === 'dashboard'  && dashboardContent}
       <PosTab
@@ -1075,6 +1133,11 @@ export default function AdminPage() {
           onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />
       )}
       {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
+      {activeTab === 'users'      && <UsersTab     creds={creds} currentUsername={adminUsername} can={(a: Action) => can('users', a)} />}
+      {activeTab === 'roles'      && <RolesTab     creds={creds} can={(a: Action) => can('roles', a)} />}
+      {activeTab === 'modules'    && <ModulesTab   creds={creds} can={(a: Action) => can('modules', a)} onChanged={() => fetchNav(creds)} />}
+      {activeTab === 'menus'      && <MenusTab     creds={creds} can={(a: Action) => can('menus', a)} onChanged={() => fetchNav(creds)} />}
+      {activeTab === 'role-permissions' && <RolePermissionsTab creds={creds} can={(a: Action) => can('role-permissions', a)} />}
     </AppShell>
   );
 }

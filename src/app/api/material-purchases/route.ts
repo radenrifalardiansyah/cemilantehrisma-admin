@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 interface PurchaseItemInput {
@@ -9,7 +9,8 @@ interface PurchaseItemInput {
 }
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'view');
+  if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
   const snap = await getDb().collection('materialPurchases').orderBy('createdAt', 'desc').limit(limit).get();
@@ -18,7 +19,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as {
     supplierId?: string; supplierName: string; date?: string; note?: string; items: PurchaseItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas';

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { resolveCustomerId, RESELLER_STATUSES, ManualCustomer, ResellerStatus } from '@/lib/resellers';
 
@@ -13,7 +13,8 @@ type ResellerBody = {
 };
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'resellers', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const body = await req.json() as ResellerBody;
   const db = getDb();
@@ -44,7 +45,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'resellers', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   await getDb().collection('resellers').doc(id).delete();
   return Response.json({ ok: true });

@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'stock', 'edit');
+  if (guard instanceof Response) return guard;
 
   const data = await req.json() as {
     fromWarehouseId: string;

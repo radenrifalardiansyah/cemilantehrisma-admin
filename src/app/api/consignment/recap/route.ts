@@ -1,13 +1,19 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
+import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
+// Read by IncomeTab & FinanceReportTab (not just the Konsinyasi tab) to roll
+// consignment revenue into their totals — gate view with OR semantics so a
+// Finance role without `consignment` access doesn't get its totals silently
+// understated by a swallowed 401/403.
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, CONSIGNMENT_RECAP_VIEW_KEYS, 'view');
+  if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai Laporan Keuangan untuk filter per periode
   const to   = searchParams.get('to');
@@ -31,7 +37,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas';

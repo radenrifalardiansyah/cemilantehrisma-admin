@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 
 const getCachedBanks = unstable_cache(
   async () => {
@@ -13,7 +13,8 @@ const getCachedBanks = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'settings', 'view');
+  if (guard instanceof Response) return guard;
   const banks = await getCachedBanks();
   return Response.json({ banks });
 }

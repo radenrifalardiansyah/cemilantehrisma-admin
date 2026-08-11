@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { MASTER_BANKS } from '@/lib/master-banks';
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'settings', 'edit');
+  if (guard instanceof Response) return guard;
   const db = getDb();
   const batch = db.batch();
   let created = 0;

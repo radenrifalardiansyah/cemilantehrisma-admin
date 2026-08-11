@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 interface ImportRow { name: string; phone?: string; address?: string; note?: string }
@@ -8,7 +8,8 @@ interface ImportRow { name: string; phone?: string; address?: string; note?: str
 const BATCH_LIMIT = 400;
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'suppliers', 'create');
+  if (guard instanceof Response) return guard;
   const { suppliers } = await req.json() as { suppliers: ImportRow[] };
   if (!Array.isArray(suppliers) || suppliers.length === 0) {
     return Response.json({ error: 'Tidak ada data supplier untuk diimpor.' }, { status: 400 });

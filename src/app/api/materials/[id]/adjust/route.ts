@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,7 +9,8 @@ type Ctx = { params: Promise<{ id: string }> };
 // menulis ulang riwayat pembelian/produksi yang sudah terkunci. Dipakai kalau ada kesalahan
 // input lama yang sudah tidak bisa diedit lagi karena bahan bakunya sudah dipakai/dibeli lagi.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as { newStockQty?: number; newAvgCost?: number; note: string };
   if (!data.note?.trim()) return Response.json({ error: 'Catatan/alasan koreksi wajib diisi.' }, { status: 400 });

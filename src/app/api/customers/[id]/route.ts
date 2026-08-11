@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'customers', 'view');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const doc = await getDb().collection('customers').doc(id).get();
   if (!doc.exists) return Response.json({ error: 'Not found' }, { status: 404 });
@@ -14,7 +15,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'customers', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const { name, phone, code, type, email, address, city, notes } =
     await req.json() as {
@@ -56,7 +58,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'customers', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   await getDb().collection('customers').doc(id).delete();
   return Response.json({ ok: true });

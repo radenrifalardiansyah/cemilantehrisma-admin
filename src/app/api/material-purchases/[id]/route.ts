@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -15,7 +15,8 @@ const itemsKey = (items: PurchaseItem[]) =>
 // stok & harga rata-rata (avgCost) bisa dihitung ulang dengan tepat. Kalau cuma ganti supplier/tanggal/
 // catatan/status bayar tanpa mengubah barang, selalu boleh (tidak menyentuh stok).
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
     supplierId?: string; supplierName: string; date?: string; note?: string;
@@ -160,7 +161,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 // tiap bahan baku dikembalikan persis seperti sebelum pembelian ini, dan Pengeluaran otomatisnya
 // (kalau ada) ikut dihapus.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const purchaseRef = db.collection('materialPurchases').doc(id);

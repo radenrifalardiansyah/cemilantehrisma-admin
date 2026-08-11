@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -61,7 +61,8 @@ function applyProductState(curQty: number, curCost: number, yieldQty: number, co
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'production', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
     date?: string; note?: string; warehouseId?: string; warehouseName?: string;
@@ -269,7 +270,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'production', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const batchRef = db.collection('productionBatches').doc(id);

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,7 +9,8 @@ type Ctx = { params: Promise<{ id: string }> };
 // supaya tidak dobel hitung dengan pengeluaran yang seharusnya sudah dicatat kalau langsung lunas.
 // Pakai tanggal pembelian yang sudah diisi manual (bisa mundur), bukan tanggal hari ini.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const purchaseRef = db.collection('materialPurchases').doc(id);

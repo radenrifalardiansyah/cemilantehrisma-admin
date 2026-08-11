@@ -1,0 +1,24 @@
+import { NextRequest } from 'next/server';
+import { getDb } from '@/lib/firebase-admin';
+import { requirePermission } from '@/lib/rbac';
+import { FieldValue } from 'firebase-admin/firestore';
+
+export async function POST(req: NextRequest) {
+  const guard = await requirePermission(req, 'modules', 'edit');
+  if (guard instanceof Response) return guard;
+
+  const { orders } = await req.json() as { orders: { id: string; order: number }[] };
+  if (!Array.isArray(orders) || orders.length === 0)
+    return Response.json({ error: 'orders required' }, { status: 400 });
+
+  const db    = getDb();
+  const batch = db.batch();
+  for (const { id, order } of orders) {
+    batch.update(db.collection('modules').doc(id), {
+      order,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+  return Response.json({ ok: true });
+}

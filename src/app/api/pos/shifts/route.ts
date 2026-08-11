@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 export async function GET(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requirePermission(req, 'pos', 'view');
+  if (user instanceof Response) return user;
   // Cukup 1 field equality (tanpa orderBy) supaya tidak butuh composite index —
   // aman karena POST di bawah menjamin cuma ada 1 shift 'open' pada satu waktu.
   const snap = await getDb()
@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requirePermission(req, 'pos', 'create');
+  if (user instanceof Response) return user;
   const { openingBalance, note } = await req.json() as { openingBalance: number; note?: string };
 
   const db = getDb();

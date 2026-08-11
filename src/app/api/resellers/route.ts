@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { resolveCustomerId, RESELLER_STATUSES, ManualCustomer, ResellerStatus } from '@/lib/resellers';
 
@@ -45,13 +45,15 @@ const getCachedResellers = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'resellers', 'view');
+  if (guard instanceof Response) return guard;
   const resellers = await getCachedResellers();
   return Response.json({ resellers });
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'resellers', 'create');
+  if (guard instanceof Response) return guard;
   const body = await req.json() as ResellerBody;
   const db = getDb();
 

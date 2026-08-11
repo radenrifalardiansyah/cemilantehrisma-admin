@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const getCachedCategories = unstable_cache(
@@ -14,13 +14,15 @@ const getCachedCategories = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'categories', 'view');
+  if (guard instanceof Response) return guard;
   const categories = await getCachedCategories();
   return Response.json({ categories });
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'categories', 'create');
+  if (guard instanceof Response) return guard;
   const { slug, name, emoji, description, order, bannerUrl } =
     await req.json() as { slug: string; name: string; emoji: string; description?: string; order?: number; bannerUrl?: string };
 

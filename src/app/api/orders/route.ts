@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'orders', 'view');
+  if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai Laporan Keuangan untuk filter per periode
   const to   = searchParams.get('to');
@@ -30,7 +31,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'orders', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown> & {
     transactionAt?: string; invoiceNo?: string;
     items?: { productId?: string; qty: number }[];

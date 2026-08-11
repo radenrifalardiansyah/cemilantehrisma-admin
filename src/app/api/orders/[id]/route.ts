@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { restoreOrderStockInTx, RestorableOrder } from '@/lib/order-stock';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
@@ -28,7 +28,8 @@ function qtyByProduct(items: OrderItemInput[]): Map<string, number> {
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'orders', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const body = await req.json() as { status?: string; paymentStatus?: string; items?: OrderItemInput[] } & Partial<OrderEditInput>;
   const db = getDb();
@@ -170,7 +171,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'orders', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const ref = db.collection('orders').doc(id);

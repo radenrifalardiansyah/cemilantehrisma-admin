@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const getCachedCustomers = unstable_cache(
@@ -14,13 +14,15 @@ const getCachedCustomers = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'customers', 'view');
+  if (guard instanceof Response) return guard;
   const customers = await getCachedCustomers();
   return Response.json({ customers });
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'customers', 'create');
+  if (guard instanceof Response) return guard;
   const { name, phone, code, type, email, address, city, notes } =
     await req.json() as {
       name: string; phone: string; code?: string; type?: 'personal' | 'company';

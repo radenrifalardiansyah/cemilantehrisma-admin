@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -11,7 +11,8 @@ type Ctx = { params: Promise<{ id: string }> };
 // kalau ada) dan menandai transaksi ini sebagai batal/tidak berlaku lagi. Kalau stok sekarang perlu
 // dibetulkan gara-gara ini, pakai /api/materials/[id]/adjust setelahnya.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'materials', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const { note } = await req.json().catch(() => ({})) as { note?: string };
   const db = getDb();

@@ -192,6 +192,32 @@ function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPag
 interface LocationStats { totalKirim: number; totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number }
 const EMPTY_LOCATION_STATS: LocationStats = { totalKirim: 0, totalSold: 0, totalRetur: 0, totalReject: 0, totalRevenue: 0 };
 
+// Filter periode untuk statistik lokasi (sama seperti di tab Laporan).
+type LocationPeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'custom';
+const LOCATION_PERIOD_OPTIONS: { id: LocationPeriodKey; label: string }[] = [
+  { id: 'today', label: 'Hari Ini' },
+  { id: '7d',    label: '7 Hari' },
+  { id: '30d',   label: '30 Hari' },
+  { id: 'month', label: 'Bulan Ini' },
+  { id: 'year',  label: 'Tahun Ini' },
+  { id: 'custom', label: 'Custom' },
+];
+function locationToISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function locationPeriodRange(period: LocationPeriodKey, customFrom: string, customTo: string): { from: string; to: string } {
+  const now = new Date();
+  const today = locationToISO(now);
+  switch (period) {
+    case 'today': return { from: today, to: today };
+    case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: locationToISO(d), to: today }; }
+    case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: locationToISO(d), to: today }; }
+    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: locationToISO(d), to: today }; }
+    case 'year': { const d = new Date(now.getFullYear(), 0, 1); return { from: locationToISO(d), to: today }; }
+    case 'custom': return { from: customFrom || today, to: customTo || today };
+  }
+}
+
 // Ringkasan stok saat ini / dikirim / pendapatan / selisih / persentase / jual-retur-reject per
 // lokasi (dipakai di table & card, sama seperti di modal Riwayat). Selisih & persentase dihitung
 // dari Dikirim vs Pendapatan — menunjukkan seberapa besar nilai titip yang belum "kembali" jadi
@@ -315,6 +341,9 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [locationView, setLocationView] = useViewMode('consignment-locations', 'card');
 
   const [locationSearch,   setLocationSearch]   = useState('');
+  const [locationPeriod,     setLocationPeriod]     = useState<LocationPeriodKey>('month');
+  const [locationCustomFrom, setLocationCustomFrom] = useState('');
+  const [locationCustomTo,   setLocationCustomTo]   = useState('');
   const [locationPage,     setLocationPage]     = useState(1);
   const [locationPageSize, setLocationPageSize] = useState(10);
   const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
@@ -323,43 +352,49 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [importingLocations, setImportingLocations] = useState(false);
   const importLocationFileRef = useRef<HTMLInputElement>(null);
 
+  const loadLocationStats = async (ls: ConsignmentLocation[]) => {
+    const { from, to } = locationPeriodRange(locationPeriod, locationCustomFrom, locationCustomTo);
+    const qs = `from=${from}&to=${to}`;
+    const [sr, rr] = await Promise.all([
+      fetch(`${API}/api/consignment/send?${qs}`, { headers }),
+      fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
+    ]);
+    const sendData  = sr.ok ? (await sr.json() as { shipments: Shipment[] }).shipments : [];
+    const recapData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
+    const stats: Record<string, LocationStats> = {};
+    for (const l of ls) stats[l.id] = { ...EMPTY_LOCATION_STATS };
+    for (const s of sendData) {
+      if (!s.locationId || !stats[s.locationId]) continue;
+      stats[s.locationId].totalKirim += s.items.reduce((ss, it) => ss + it.subtotal, 0);
+    }
+    for (const rec of recapData) {
+      if (!rec.locationId || !stats[rec.locationId]) continue;
+      stats[rec.locationId].totalSold    += rec.totalSold;
+      stats[rec.locationId].totalRetur   += rec.totalRetur;
+      stats[rec.locationId].totalReject  += rec.totalReject || 0;
+      stats[rec.locationId].totalRevenue += rec.totalRevenue;
+    }
+    setLocationStats(stats);
+  };
+
   const loadLocations = async () => {
     setLocationsLoading(true);
     const r = await fetch(`${API}/api/consignment/locations`, { headers });
     if (r.ok) {
       const { locations: ls } = await r.json() as { locations: ConsignmentLocation[] };
       setLocations(ls);
-      const [stockEntries, sr, rr] = await Promise.all([
-        Promise.all(ls.map(async l => {
-          const stockRes = await fetch(`${API}/api/consignment/locations/${l.id}/stock`, { headers });
-          const stock = stockRes.ok ? (await stockRes.json() as { stock: ConsignmentStockItem[] }).stock : [];
-          return [l.id, stock] as const;
-        })),
-        fetch(`${API}/api/consignment/send?limit=500`, { headers }),
-        fetch(`${API}/api/consignment/recap?limit=500`, { headers }),
-      ]);
+      const stockEntries = await Promise.all(ls.map(async l => {
+        const stockRes = await fetch(`${API}/api/consignment/locations/${l.id}/stock`, { headers });
+        const stock = stockRes.ok ? (await stockRes.json() as { stock: ConsignmentStockItem[] }).stock : [];
+        return [l.id, stock] as const;
+      }));
       setLocationStock(Object.fromEntries(stockEntries));
-
-      const sendData  = sr.ok ? (await sr.json() as { shipments: Shipment[] }).shipments : [];
-      const recapData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
-      const stats: Record<string, LocationStats> = {};
-      for (const l of ls) stats[l.id] = { ...EMPTY_LOCATION_STATS };
-      for (const s of sendData) {
-        if (!s.locationId || !stats[s.locationId]) continue;
-        stats[s.locationId].totalKirim += s.items.reduce((ss, it) => ss + it.subtotal, 0);
-      }
-      for (const rec of recapData) {
-        if (!rec.locationId || !stats[rec.locationId]) continue;
-        stats[rec.locationId].totalSold    += rec.totalSold;
-        stats[rec.locationId].totalRetur   += rec.totalRetur;
-        stats[rec.locationId].totalReject  += rec.totalReject || 0;
-        stats[rec.locationId].totalRevenue += rec.totalRevenue;
-      }
-      setLocationStats(stats);
+      await loadLocationStats(ls);
     }
     setLocationsLoading(false);
   };
   useEffect(() => { loadLocations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (locations.length > 0) loadLocationStats(locations); }, [locationPeriod, locationCustomFrom, locationCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreateL = () => { setEditingL(null); setLForm({ ...EMPTY_LOCATION, code: nextLocationCode(locations) }); setShowLForm(true); };
   const openEditL = (l: ConsignmentLocation) => {
@@ -1600,6 +1635,25 @@ _${storeHeader.name}_`.trim();
         {/* ════ LOKASI ═════════════════════════════════════════ */}
         {subTab === 'lokasi' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            {locations.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {LOCATION_PERIOD_OPTIONS.map(p => (
+                  <button key={p.id} onClick={() => setLocationPeriod(p.id)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                    style={locationPeriod === p.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                    {p.label}
+                  </button>
+                ))}
+                {locationPeriod === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <input type="date" value={locationCustomFrom} onChange={e => setLocationCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                    <input type="date" value={locationCustomTo} onChange={e => setLocationCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-row items-center gap-2 sm:gap-3">
               {locations.length > 0 && (
                 <div className="relative flex-1 min-w-0">

@@ -4,91 +4,63 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart2, ShoppingCart, Package, Receipt, Tag,
-  Users, Contact, Warehouse, Settings, LogOut, Home,
-  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen,
-  Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark, Coins, FileBarChart,
+  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
+import { resolveIcon } from '@/lib/icon-registry';
+import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
+// The 23 fixed screens the app actually has code for (18 original tabs + 5
+// RBAC-management tabs). Struktur Menu / Modul only control label, icon,
+// order, nesting, and active-state for the sidebar — not which screens
+// exist — so this stays a closed union, just a bigger one than before.
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
-  | 'finance-report' | 'capital' | 'settings';
+  | 'finance-report' | 'capital' | 'settings'
+  | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions';
 
-interface NavTab {
-  id: TabId; label: string; mobileLabel: string; Icon: LucideIcon;
-  children?: NavTab[];
+interface NavTab { id: TabId; label: string; Icon: LucideIcon; children?: NavTab[] }
+interface NavGroup { id: string; label: string; Icon: LucideIcon; tabs: NavTab[] }
+
+// Builds the sidebar tree from the dynamic `modules`/`menus` data (Struktur
+// Menu / Modul) instead of a hardcoded array. `menus` is expected to already
+// be permission-filtered by the caller (GET /api/menus) — AppShell just renders
+// whatever it's given, sorted by `order`, nested one level via `parentId`.
+function buildNavGroups(modules: ModuleDoc[], menus: MenuDoc[]): NavGroup[] {
+  const toNavTab = (m: MenuDoc): NavTab => {
+    const children = menus
+      .filter(c => c.parentId === m.id)
+      .sort((a, b) => a.order - b.order)
+      .map(toNavTab);
+    return {
+      id: m.featureKey as TabId,
+      label: m.label,
+      Icon: resolveIcon(m.icon),
+      children: children.length ? children : undefined,
+    };
+  };
+
+  return modules
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map(mod => ({
+      id: mod.id,
+      label: mod.name,
+      Icon: resolveIcon(mod.icon),
+      tabs: menus
+        .filter(m => m.moduleId === mod.id && !m.parentId)
+        .sort((a, b) => a.order - b.order)
+        .map(toNavTab),
+    }))
+    .filter(g => g.tabs.length > 0);
 }
 
-const NAV_GROUPS: { label: string; tabs: NavTab[] }[] = [
-  {
-    label: 'Utama',
-    tabs: [
-      { id: 'dashboard' as TabId, label: 'Analitik',    mobileLabel: 'Analitik', Icon: BarChart2 },
-    ],
-  },
-  {
-    label: 'POS',
-    tabs: [
-      { id: 'pos'    as TabId, label: 'Kasir',   mobileLabel: 'Kasir',   Icon: ShoppingCart },
-      { id: 'orders' as TabId, label: 'Pesanan', mobileLabel: 'Pesanan', Icon: Receipt },
-    ],
-  },
-  {
-    label: 'Manajemen',
-    tabs: [
-      {
-        id: 'products' as TabId, label: 'Produk', mobileLabel: 'Produk', Icon: Package,
-        children: [
-          { id: 'categories' as TabId, label: 'Kategori', mobileLabel: 'Kategori', Icon: Tag },
-        ],
-      },
-      { id: 'resellers'  as TabId, label: 'Reseller',     mobileLabel: 'Reseller', Icon: Users },
-      { id: 'customers'  as TabId, label: 'Pelanggan',    mobileLabel: 'Pelanggan', Icon: Contact },
-      { id: 'consignment' as TabId, label: 'Mitra', mobileLabel: 'Mitra', Icon: Store },
-    ],
-  },
-  {
-    label: 'Keuangan',
-    tabs: [
-      { id: 'income' as TabId, label: 'Pemasukan', mobileLabel: 'Pemasukan', Icon: Coins },
-      { id: 'expenses' as TabId, label: 'Pengeluaran', mobileLabel: 'Pengeluaran', Icon: Banknote },
-      { id: 'capital' as TabId, label: 'Modal & Prive', mobileLabel: 'Modal', Icon: Landmark },
-      { id: 'finance-report' as TabId, label: 'Laporan Keuangan', mobileLabel: 'Laporan', Icon: LineChart },
-    ],
-  },
-  {
-    label: 'Operasional',
-    tabs: [
-      { id: 'stock' as TabId, label: 'Gudang', mobileLabel: 'Gudang', Icon: Warehouse },
-      {
-        id: 'materials' as TabId, label: 'Bahan Baku', mobileLabel: 'Bahan Baku', Icon: Boxes,
-        children: [
-          { id: 'suppliers'  as TabId, label: 'Supplier', mobileLabel: 'Supplier', Icon: Truck },
-          { id: 'production' as TabId, label: 'Produksi',  mobileLabel: 'Produksi', Icon: Factory },
-        ],
-      },
-      { id: 'stock-report' as TabId, label: 'Laporan Stok', mobileLabel: 'Laporan Stok', Icon: FileBarChart },
-    ],
-  },
-  {
-    label: 'Manajemen Aplikasi',
-    tabs: [
-      { id: 'settings'  as TabId, label: 'Pengaturan',   mobileLabel: 'Setelan',  Icon: Settings },
-    ],
-  },
-];
-
-// Flattened (parents + their children) — used for lookups like the topbar
-// title and "is this tab active" checks, regardless of nesting in the sidebar.
-const ALL_TABS = NAV_GROUPS.flatMap(g => g.tabs.flatMap(t => t.children ? [t, ...t.children] : [t]));
-// Fixed set (not a positional slice) so inserting new tabs into NAV_GROUPS
-// doesn't silently reshuffle which 4 tabs get mobile bottom-nav quick access.
-const PRIMARY_IDS: TabId[] = ['dashboard', 'pos', 'products', 'orders'];
-const PRIMARY_TABS = PRIMARY_IDS.map(id => ALL_TABS.find(t => t.id === id)!);
-const MORE_TABS    = ALL_TABS.filter(t => !PRIMARY_IDS.includes(t.id));
+// Preferred quick-access order for the mobile bottom nav; gracefully
+// degrades to whatever's actually visible for a narrower role instead of
+// assuming these 4 always exist.
+const PREFERRED_PRIMARY_IDS: TabId[] = ['dashboard', 'pos', 'products', 'orders'];
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
@@ -105,18 +77,29 @@ interface AppShellProps {
   children: React.ReactNode;
   topbarActions?: React.ReactNode;
   username?: string;
+  superAdmin?: boolean;
+  modules: ModuleDoc[];
+  menus: MenuDoc[];
 }
 
 export default function AppShell({
   activeTab, setActiveTab, onLogout,
   hasCart, cartCount, children, topbarActions,
-  username = 'Admin',
+  username = 'Admin', superAdmin = false, modules, menus,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<TabId>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const confirm = useConfirm();
+
+  const NAV_GROUPS  = buildNavGroups(modules, menus);
+  const ALL_TABS     = NAV_GROUPS.flatMap(g => g.tabs.flatMap(t => t.children ? [t, ...t.children] : [t]));
+  const preferred     = PREFERRED_PRIMARY_IDS.map(id => ALL_TABS.find(t => t.id === id)).filter((t): t is NavTab => !!t);
+  const rest           = ALL_TABS.filter(t => !preferred.includes(t));
+  const PRIMARY_TABS  = [...preferred, ...rest].slice(0, Math.min(4, ALL_TABS.length));
+  const primaryIds     = new Set(PRIMARY_TABS.map(t => t.id));
+  const MORE_TABS      = ALL_TABS.filter(t => !primaryIds.has(t.id));
 
   const handleLogout = async () => {
     if (await confirm({ message: 'Yakin ingin keluar dari akun ini?', danger: true, confirmLabel: 'Keluar' })) {
@@ -225,17 +208,20 @@ export default function AppShell({
           {NAV_GROUPS.map((group, gi) => {
             const groupCollapsed = !collapsed && collapsedGroups.has(group.label);
             return (
-            <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+            <div key={group.id} className={gi > 0 ? 'mt-4' : ''}>
               {!collapsed && (
                 <button
                   onClick={() => toggleGroup(group.label)}
                   className="w-full flex items-center justify-between px-3 mb-1.5"
                 >
-                  <span
-                    className="text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
-                    style={{ color: 'rgba(138,98,72,0.85)' }}
-                  >
-                    {group.label}
+                  <span className="flex items-center gap-1.5">
+                    <group.Icon size={12} style={{ color: 'rgba(138,98,72,0.85)' }} />
+                    <span
+                      className="text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap"
+                      style={{ color: 'rgba(138,98,72,0.85)' }}
+                    >
+                      {group.label}
+                    </span>
                   </span>
                   <ChevronDown
                     size={11}
@@ -387,7 +373,7 @@ export default function AppShell({
                 <p style={{ fontSize: 12, fontWeight: 700, color: '#EDD9C4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
                   {username}
                 </p>
-                <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>Administrator</p>
+                <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>{superAdmin ? 'Super Admin' : 'Administrator'}</p>
               </div>
               <Tooltip label="Keluar" side="top">
                 <button
@@ -512,7 +498,7 @@ export default function AppShell({
                   className="text-[10px] leading-none font-semibold"
                   style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}
                 >
-                  {tab.mobileLabel}
+                  {tab.label}
                 </span>
                 {isActive && (
                   <span
@@ -525,10 +511,11 @@ export default function AppShell({
           })}
 
           {/* More button */}
+          {MORE_TABS.length > 0 && (
           <button
             onClick={() => setMoreOpen(true)}
             className="flex flex-col items-center justify-center gap-1 flex-1 relative pb-1"
-            aria-label={isMoreActive ? (currentTab?.mobileLabel ?? 'Lainnya') : 'Lainnya'}
+            aria-label={isMoreActive ? (currentTab?.label ?? 'Lainnya') : 'Lainnya'}
           >
             <MoreHorizontal
               size={21}
@@ -539,7 +526,7 @@ export default function AppShell({
               className="text-[10px] leading-none font-semibold"
               style={{ color: isMoreActive ? 'var(--accent)' : 'var(--text-muted)' }}
             >
-              {isMoreActive ? (currentTab?.mobileLabel ?? 'Lainnya') : 'Lainnya'}
+              {isMoreActive ? (currentTab?.label ?? 'Lainnya') : 'Lainnya'}
             </span>
             {isMoreActive && (
               <span
@@ -548,6 +535,7 @@ export default function AppShell({
               />
             )}
           </button>
+          )}
         </div>
       </nav>
 
@@ -599,7 +587,7 @@ export default function AppShell({
                         className="text-[11px] font-semibold text-center leading-tight px-0.5"
                         style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
                       >
-                        {tab.mobileLabel}
+                        {tab.label}
                       </span>
                     </button>
                   );

@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const LOCATION_CODE_PREFIX = 'MTR';
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'view');
+  if (guard instanceof Response) return guard;
   const db = getDb();
   const snap = await db.collection('consignmentLocations').orderBy('createdAt', 'asc').get();
   const locations: Record<string, unknown>[] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -32,7 +33,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
   const codeTrim = typeof data.code === 'string' ? data.code.trim() : '';

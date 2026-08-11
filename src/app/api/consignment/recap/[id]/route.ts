@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -10,7 +10,8 @@ interface RecapItemInput { productId: string; productName: string; qtySold: numb
 // Tandai Lunas — pendapatan konsinyasi dibaca langsung dari totalRevenue rekap ini di Laporan
 // Keuangan, jadi menandai lunas cukup flip status (tidak perlu bikin dokumen tambahan).
 export async function PATCH(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   await getDb().collection('consignmentRecaps').doc(id).update({
     paymentStatus: 'lunas',
@@ -22,7 +23,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 // Hapus riwayat rekap — mengembalikan stok titip di lokasi, dan membalik stok gudang/produk
 // yang sudah ditambah dari retur. Ditolak jika stok retur tersebut sudah terpakai lebih lanjut.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const recapRef = db.collection('consignmentRecaps').doc(id);
@@ -98,7 +100,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 // lalu menerapkan efek stok yang baru dalam satu transaksi. Log gudang lama untuk retur/reject
 // dibiarkan sebagai riwayat historis; edit yang menghasilkan retur/reject baru dicatat sebagai log baru.
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];

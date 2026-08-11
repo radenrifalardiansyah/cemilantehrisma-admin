@@ -1,9 +1,10 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'suppliers', 'delete');
+  if (guard instanceof Response) return guard;
   const { ids } = await req.json() as { ids: string[] };
   if (!Array.isArray(ids) || ids.length === 0)
     return Response.json({ error: 'ids required' }, { status: 400 });

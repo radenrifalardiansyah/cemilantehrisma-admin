@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'categories', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data   = await req.json() as Record<string, unknown>;
   await getDb().collection('categories').doc(id).update({
@@ -17,7 +18,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'categories', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db     = getDb();
 

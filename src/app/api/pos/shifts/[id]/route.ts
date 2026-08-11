@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requirePermission(req, 'pos', 'edit');
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const { actualBalance, note } = await req.json() as { actualBalance: number; note?: string };
 

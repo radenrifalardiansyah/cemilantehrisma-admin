@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -10,7 +10,8 @@ interface SendItemInput { productId: string; productName: string; qty: number; h
 // Hapus riwayat kirim — mengembalikan stok toko & stok gudang asal, dan mengurangi stok titip di lokasi.
 // Ditolak jika stok titip sudah terpakai (terjual/direkap) sehingga tidak cukup untuk dibalik.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'delete');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const shipmentRef = db.collection('consignmentShipments').doc(id);
@@ -73,7 +74,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 // lalu menerapkan efek stok yang baru dalam satu transaksi. Ditolak jika stok lama sudah terpakai
 // atau stok toko tidak cukup. Log gudang lama dibiarkan sebagai riwayat historis.
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'edit');
+  if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;

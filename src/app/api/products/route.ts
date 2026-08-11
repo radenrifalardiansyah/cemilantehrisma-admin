@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { productUrl } from '@/lib/site';
 
@@ -18,13 +18,15 @@ const getCachedProducts = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'products', 'view');
+  if (guard instanceof Response) return guard;
   const products = await getCachedProducts();
   return Response.json({ products });
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'products', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
   const ref = db.collection('products').doc();

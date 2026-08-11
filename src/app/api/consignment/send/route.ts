@@ -1,15 +1,27 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { requirePermission } from '@/lib/rbac';
+import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
+import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'view');
+  if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
-  const limit = parseInt(searchParams.get('limit') ?? '50');
-  const snap = await getDb().collection('consignmentShipments').orderBy('createdAt', 'desc').limit(limit).get();
+  const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai filter periode di tab Lokasi/Laporan
+  const to   = searchParams.get('to');
+
+  let query: Query<DocumentData> = getDb().collection('consignmentShipments').orderBy('createdAt', 'desc');
+  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
+  if (!from && !to) {
+    const limit = parseInt(searchParams.get('limit') ?? '50');
+    query = query.limit(limit);
+  }
+
+  const snap = await query.get();
   const shipments = snap.docs.map(d => {
     const data = d.data();
     const createdAt = data.createdAt as Timestamp | undefined;
@@ -19,7 +31,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'consignment', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
     note?: string; items: SendItemInput[]; date?: string;

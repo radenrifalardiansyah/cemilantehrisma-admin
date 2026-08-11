@@ -1,11 +1,13 @@
 import { NextRequest } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'users', 'view');
+  if (guard instanceof Response) return guard;
+
   const db = getDb();
   const snap = await db.collection('users').get();
   const users = snap.docs.map(d => {
@@ -17,15 +19,22 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
-  const { username, password, email, role } =
-    await req.json() as { username: string; password: string; email?: string; role?: string };
+  const guard = await requirePermission(req, 'users', 'create');
+  if (guard instanceof Response) return guard;
 
-  if (!username || !password) {
-    return Response.json({ error: 'Username dan password wajib diisi.' }, { status: 400 });
+  const { username, password, email, role } =
+    await req.json() as { username: string; password: string; email?: string; role: string };
+
+  if (!username || !password || !role) {
+    return Response.json({ error: 'Username, password, dan role wajib diisi.' }, { status: 400 });
   }
 
   const db = getDb();
+  const roleDoc = await db.collection('roles').doc(role).get();
+  if (!roleDoc.exists) {
+    return Response.json({ error: `Role "${role}" tidak ditemukan.` }, { status: 400 });
+  }
+
   const id = username.toLowerCase();
   const ref = db.collection('users').doc(id);
   if ((await ref.get()).exists) {
@@ -37,8 +46,8 @@ export async function POST(req: NextRequest) {
     username: id,
     email: email ? email.trim().toLowerCase() : null,
     passwordHash,
-    role: role || 'admin',
+    role,
     createdAt: FieldValue.serverTimestamp(),
   });
-  return Response.json({ username: id, email: email ?? null, role: role || 'admin' });
+  return Response.json({ username: id, email: email ?? null, role });
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 interface ImportRow {
@@ -24,7 +24,8 @@ function parseDate(v: string): Timestamp | null {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'orders', 'create');
+  if (guard instanceof Response) return guard;
   const { orders } = await req.json() as { orders: ImportRow[] };
   if (!Array.isArray(orders) || orders.length === 0) {
     return Response.json({ error: 'Tidak ada data pesanan untuk diimpor.' }, { status: 400 });

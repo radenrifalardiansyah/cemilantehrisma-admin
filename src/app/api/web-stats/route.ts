@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 
 const PAGE_KEYS: Record<string, string> = {
   home: '/', products: '/products', reseller: '/reseller',
@@ -47,7 +47,8 @@ const getRawWebStats = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'dashboard', 'view');
+  if (guard instanceof Response) return guard;
 
   const numDays = req.nextUrl.searchParams.get('days') === '7' ? 7 : 30;
   const { days, analyticsData, products, categories } = await getRawWebStats(numDays);

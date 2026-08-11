@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
@@ -8,7 +8,8 @@ interface OutputInput { productId: string; productName: string; yieldQty: number
 interface BatchWithMeta { id: string; warehouseId?: string; outputs?: { productId: string; yieldQty: number }[]; createdAt?: Timestamp }
 
 export async function GET(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'production', 'view');
+  if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
   const db = getDb();
@@ -76,7 +77,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const guard = await requirePermission(req, 'production', 'create');
+  if (guard instanceof Response) return guard;
   const data = await req.json() as {
     date?: string; note?: string; warehouseId?: string; warehouseName?: string;
     outputs: OutputInput[]; materialsUsed: MaterialUsedInput[]; otherCost?: number;
