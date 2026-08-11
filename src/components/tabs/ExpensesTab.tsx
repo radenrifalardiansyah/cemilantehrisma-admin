@@ -82,8 +82,11 @@ function Checkbox({ checked, indeterminate, onChange }: {
   );
 }
 
+interface ExpenseItem { description: string; amount: number }
+
 interface Expense {
   id: string; category: string; description: string; amount: number; date: string; note: string;
+  items?: ExpenseItem[];
   sourceType?: string; createdAt?: { seconds: number };
 }
 
@@ -91,8 +94,11 @@ const SOURCE_LOCK_MESSAGE: Record<string, string> = {
   'material-purchase': 'Entri ini otomatis dari Pembelian Bahan Baku — edit atau hapus dari menu Bahan Baku > Pembelian.',
 };
 
-type ExpenseForm = { category: string; categoryCustom: string; description: string; amount: string; date: string; note: string };
-const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', description: '', amount: '', date: todayISO(), note: '' });
+type ExpenseItemForm = { description: string; amount: string };
+const emptyItem = (): ExpenseItemForm => ({ description: '', amount: '' });
+
+type ExpenseForm = { category: string; categoryCustom: string; items: ExpenseItemForm[]; date: string; note: string };
+const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '' });
 
 export default function ExpensesTab({ creds }: { creds: string }) {
   const toast   = useToast();
@@ -134,23 +140,33 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const openEdit = (e: Expense) => {
     if (e.sourceType && SOURCE_LOCK_MESSAGE[e.sourceType]) { toast.error(SOURCE_LOCK_MESSAGE[e.sourceType]); return; }
     const known = EXPENSE_CATEGORIES.includes(e.category);
+    const items = e.items && e.items.length > 0
+      ? e.items.map(it => ({ description: it.description, amount: String(it.amount) }))
+      : [{ description: e.description, amount: String(e.amount) }];
     setEditing({
       id: e.id, category: known ? e.category : 'Lainnya', categoryCustom: known ? '' : e.category,
-      description: e.description, amount: String(e.amount), date: e.date, note: e.note,
+      items, date: e.date, note: e.note,
     });
     setIsNew(false); setError('');
   };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
 
+  const addItem    = () => setEditing(e => e ? { ...e, items: [...e.items, emptyItem()] } : e);
+  const removeItem = (idx: number) => setEditing(e => e ? { ...e, items: e.items.filter((_, i) => i !== idx) } : e);
+  const updateItem = (idx: number, patch: Partial<ExpenseItemForm>) =>
+    setEditing(e => e ? { ...e, items: e.items.map((it, i) => i === idx ? { ...it, ...patch } : it) } : e);
+
   const save = async () => {
     if (!editing) return;
     const finalCategory = editing.category === 'Lainnya' && editing.categoryCustom.trim() ? editing.categoryCustom.trim() : editing.category;
-    const amountNum = parseFloat(editing.amount) || 0;
-    if (!editing.description.trim()) { setError('Keterangan wajib diisi.'); return; }
-    if (amountNum <= 0) { setError('Jumlah harus lebih dari 0.'); return; }
+    const items = editing.items.map(it => ({ description: it.description.trim(), amount: parseFloat(it.amount) || 0 }));
+    if (items.some(it => !it.description)) { setError('Keterangan tiap item wajib diisi.'); return; }
+    if (items.some(it => it.amount <= 0)) { setError('Jumlah tiap item harus lebih dari 0.'); return; }
     if (!editing.date) { setError('Tanggal wajib diisi.'); return; }
     setSaving(true); setError('');
-    const payload = { category: finalCategory, description: editing.description.trim(), amount: amountNum, date: editing.date, note: editing.note };
+    const amountNum   = items.reduce((s, it) => s + it.amount, 0);
+    const description = items.map(it => it.description).join(', ');
+    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note };
     const r = isNew
       ? await fetch(`${API}/api/expenses`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -620,7 +636,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                 <div className="modal-icon"><Banknote size={17} /></div>
                 <div>
                   <p className="modal-title">{isNew ? 'Catat Pengeluaran' : 'Edit Pengeluaran'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Simpan biaya operasional baru' : `Edit: ${editing.description}`}</p>
+                  <p className="modal-subtitle">{isNew ? 'Simpan biaya operasional baru' : `Edit: ${editing.items.map(it => it.description).filter(Boolean).join(', ') || '(tanpa keterangan)'}`}</p>
                 </div>
               </div>
               <Tooltip label="Tutup">
@@ -651,15 +667,32 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                 )}
 
                 <div>
-                  <label className="field-label">Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })}
-                    className="input" placeholder="cth: Sewa toko bulan Agustus" autoFocus />
+                  <label className="field-label">Item / Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {editing.items.map((item, idx) => (
+                      <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: '3fr 1fr auto', alignItems: 'center' }}>
+                        <input value={item.description} onChange={e => updateItem(idx, { description: e.target.value })}
+                          className="input" placeholder="cth: Sewa toko bulan Agustus" autoFocus={idx === 0} />
+                        <NumberInput value={item.amount} onChange={raw => updateItem(idx, { amount: raw })} placeholder="Jumlah (Rp)" />
+                        <Tooltip label="Hapus item">
+                          <button onClick={() => removeItem(idx)} disabled={editing.items.length === 1}
+                            className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            <X size={14} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addItem} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Item
+                  </button>
                 </div>
 
-                <div>
-                  <label className="field-label">Jumlah (Rp) <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <NumberInput value={editing.amount} onChange={raw => setEditing({ ...editing, amount: raw })}
-                    placeholder="0" />
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--danger-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Pengeluaran</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--danger)' }}>
+                    {formatRp(editing.items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0))}
+                  </span>
                 </div>
 
                 <div>

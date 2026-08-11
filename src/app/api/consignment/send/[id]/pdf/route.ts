@@ -12,6 +12,20 @@ function formatDate(seconds?: number) {
   return new Date(seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// Logo tersimpan sebagai URL ke /api/img/{id} (bytes di Firestore). Server-side render
+// tidak boleh fetch balik ke domainnya sendiri lewat HTTP — bisa gagal (cold start/DNS)
+// dan @react-pdf menelan error itu diam-diam, jadi kotak logo tampil kosong. Ambil langsung
+// dari Firestore dan ubah jadi data URI supaya tidak butuh network round-trip.
+async function resolveLogoDataUri(db: ReturnType<typeof getDb>, logoUrl?: string) {
+  if (!logoUrl) return undefined;
+  const match = logoUrl.match(/\/api\/img\/([^/?#]+)/);
+  if (!match) return logoUrl;
+  const doc = await db.collection('images').doc(match[1]).get();
+  if (!doc.exists) return undefined;
+  const { data, contentType } = doc.data() as { data: Buffer; contentType?: string };
+  return `data:${contentType || 'image/jpeg'};base64,${Buffer.from(data).toString('base64')}`;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -41,7 +55,7 @@ export async function GET(
       tagline: settings.storeTagline?.trim() || undefined,
       address: [settings.address, settings.city].filter(Boolean).join(', ') || undefined,
       phone: settings.whatsapp?.trim() || undefined,
-      logo: settings.logo || undefined,
+      logo: await resolveLogoDataUri(db, settings.logo),
     };
 
     const data: ShipmentNoteData = {

@@ -41,12 +41,13 @@ const s = StyleSheet.create({
   topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
 
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, maxWidth: '62%', flexShrink: 1 },
+  logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white, flexShrink: 0 },
+  storeInfo: { flexShrink: 1 },
   storeName: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.dark },
   storeTagline: { fontSize: 8.5, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8.5, color: C.muted, marginTop: 2 },
-  headerRight: { alignItems: 'flex-end' },
+  headerRight: { alignItems: 'flex-end', maxWidth: '35%', flexShrink: 0 },
   docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
   docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
   docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 4 },
@@ -103,7 +104,7 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
         <View style={s.headerRow}>
           <View style={s.headerLeft}>
             {store.logo && <Image src={store.logo} style={s.logo} />}
-            <View>
+            <View style={s.storeInfo}>
               <Text style={s.storeName}>{store.name}</Text>
               {store.tagline && <Text style={s.storeTagline}>{store.tagline}</Text>}
               {store.address && <Text style={s.storeMeta}>{store.address}</Text>}

@@ -28,6 +28,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     category: data.category ?? 'Lainnya',
     description: data.description ?? '',
     amount: Number(data.amount) || 0,
+    items: Array.isArray(data.items) ? data.items : [],
     date: data.date,
     note: data.note ?? '',
     updatedAt: FieldValue.serverTimestamp(),

@@ -88,8 +88,11 @@ function Checkbox({ checked, indeterminate, onChange }: {
 // uang masuk, bukan cuma pemasukan lain-lain. Baris `auto` read-only (edit/hapus lewat sumbernya).
 type AutoSource = 'kasir' | 'online' | 'konsinyasi';
 
+interface IncomeItem { description: string; amount: number }
+
 interface Income {
   id: string; category: string; description: string; amount: number; date: string; note: string;
+  items?: IncomeItem[];
   createdAt?: { seconds: number };
   auto?: AutoSource;
 }
@@ -115,8 +118,11 @@ const AUTO_LOCK_MESSAGE: Record<AutoSource, string> = {
   konsinyasi: 'Ini rekap konsinyasi — edit/hapus dari menu Mitra.',
 };
 
-type IncomeForm = { category: string; categoryCustom: string; description: string; amount: string; date: string; note: string };
-const emptyForm = (): IncomeForm => ({ category: 'Penjualan Lain', categoryCustom: '', description: '', amount: '', date: todayISO(), note: '' });
+type IncomeItemForm = { description: string; amount: string };
+const emptyItem = (): IncomeItemForm => ({ description: '', amount: '' });
+
+type IncomeForm = { category: string; categoryCustom: string; items: IncomeItemForm[]; date: string; note: string };
+const emptyForm = (): IncomeForm => ({ category: 'Penjualan Lain', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '' });
 
 export default function IncomeTab({ creds }: { creds: string }) {
   const toast   = useToast();
@@ -192,23 +198,33 @@ export default function IncomeTab({ creds }: { creds: string }) {
   const openEdit = (i: Income) => {
     if (i.auto) { toast.error(AUTO_LOCK_MESSAGE[i.auto]); return; }
     const known = INCOME_CATEGORIES.includes(i.category);
+    const items = i.items && i.items.length > 0
+      ? i.items.map(it => ({ description: it.description, amount: String(it.amount) }))
+      : [{ description: i.description, amount: String(i.amount) }];
     setEditing({
       id: i.id, category: known ? i.category : 'Lainnya', categoryCustom: known ? '' : i.category,
-      description: i.description, amount: String(i.amount), date: i.date, note: i.note,
+      items, date: i.date, note: i.note,
     });
     setIsNew(false); setError('');
   };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
 
+  const addItem    = () => setEditing(e => e ? { ...e, items: [...e.items, emptyItem()] } : e);
+  const removeItem = (idx: number) => setEditing(e => e ? { ...e, items: e.items.filter((_, i) => i !== idx) } : e);
+  const updateItem = (idx: number, patch: Partial<IncomeItemForm>) =>
+    setEditing(e => e ? { ...e, items: e.items.map((it, i) => i === idx ? { ...it, ...patch } : it) } : e);
+
   const save = async () => {
     if (!editing) return;
     const finalCategory = editing.category === 'Lainnya' && editing.categoryCustom.trim() ? editing.categoryCustom.trim() : editing.category;
-    const amountNum = parseFloat(editing.amount) || 0;
-    if (!editing.description.trim()) { setError('Keterangan wajib diisi.'); return; }
-    if (amountNum <= 0) { setError('Jumlah harus lebih dari 0.'); return; }
+    const items = editing.items.map(it => ({ description: it.description.trim(), amount: parseFloat(it.amount) || 0 }));
+    if (items.some(it => !it.description)) { setError('Keterangan tiap item wajib diisi.'); return; }
+    if (items.some(it => it.amount <= 0)) { setError('Jumlah tiap item harus lebih dari 0.'); return; }
     if (!editing.date) { setError('Tanggal wajib diisi.'); return; }
     setSaving(true); setError('');
-    const payload = { category: finalCategory, description: editing.description.trim(), amount: amountNum, date: editing.date, note: editing.note };
+    const amountNum   = items.reduce((s, it) => s + it.amount, 0);
+    const description = items.map(it => it.description).join(', ');
+    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note };
     const r = isNew
       ? await fetch(`${API}/api/income`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/income/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -683,7 +699,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                 <div className="modal-icon"><Coins size={17} /></div>
                 <div>
                   <p className="modal-title">{isNew ? 'Catat Pemasukan' : 'Edit Pemasukan'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Simpan pemasukan lain-lain baru' : `Edit: ${editing.description}`}</p>
+                  <p className="modal-subtitle">{isNew ? 'Simpan pemasukan lain-lain baru' : `Edit: ${editing.items.map(it => it.description).filter(Boolean).join(', ') || '(tanpa keterangan)'}`}</p>
                 </div>
               </div>
               <Tooltip label="Tutup">
@@ -714,15 +730,32 @@ export default function IncomeTab({ creds }: { creds: string }) {
                 )}
 
                 <div>
-                  <label className="field-label">Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })}
-                    className="input" placeholder="cth: Komisi jadi reseller produk lain" autoFocus />
+                  <label className="field-label">Item / Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {editing.items.map((item, idx) => (
+                      <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: '3fr 1fr auto', alignItems: 'center' }}>
+                        <input value={item.description} onChange={e => updateItem(idx, { description: e.target.value })}
+                          className="input" placeholder="cth: Komisi jadi reseller produk lain" autoFocus={idx === 0} />
+                        <NumberInput value={item.amount} onChange={raw => updateItem(idx, { amount: raw })} placeholder="Jumlah (Rp)" />
+                        <Tooltip label="Hapus item">
+                          <button onClick={() => removeItem(idx)} disabled={editing.items.length === 1}
+                            className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                            <X size={14} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addItem} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Item
+                  </button>
                 </div>
 
-                <div>
-                  <label className="field-label">Jumlah (Rp) <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <NumberInput value={editing.amount} onChange={raw => setEditing({ ...editing, amount: raw })}
-                    placeholder="0" />
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Pemasukan</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--success)' }}>
+                    {formatRp(editing.items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0))}
+                  </span>
                 </div>
 
                 <div>
