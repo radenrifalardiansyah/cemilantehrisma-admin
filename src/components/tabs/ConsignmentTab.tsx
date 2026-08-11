@@ -1703,7 +1703,7 @@ _${storeHeader.name}_`.trim();
                                 </span>
                               )}
                             </div>
-                            <div className="mt-2 max-w-lg">
+                            <div className="mt-2">
                               <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                             </div>
                           </div>
