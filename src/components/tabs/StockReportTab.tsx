@@ -489,7 +489,6 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
     <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
       <div className="hidden lg:flex px-4 py-2.5 items-center gap-3" style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
         <span className="w-6 flex-shrink-0" />
-        <span className="w-6 flex-shrink-0" />
         <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Produk</span>
         <span className="w-14 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Awal</span>
         <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Masuk</span>
@@ -498,6 +497,7 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
         <span className="w-24 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>HPP</span>
         <span className="w-28 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Nilai Stok</span>
         <span className="w-20 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Status</span>
+        <span className="w-6 flex-shrink-0" />
       </div>
       <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
         {rows.map((r, i) => {
@@ -508,12 +508,6 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
             <div key={r.product.id} className="px-4 py-3">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
                 <div className="flex items-center gap-3 lg:contents">
-                  <button onClick={() => toggle(r.product.id)}
-                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md transition-transform"
-                    style={{ color: 'var(--text-muted)', transform: isOpen ? 'rotate(90deg)' : undefined }}
-                    title={isOpen ? 'Tutup kartu stok' : 'Lihat kartu stok'}>
-                    <ChevronRight size={14} />
-                  </button>
                   <span className="hidden lg:inline-block w-6 flex-shrink-0 text-right text-[11px] font-bold tabular" style={{ color: 'var(--text-muted)' }}>
                     {startIndex + i + 1}
                   </span>
@@ -559,11 +553,19 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
                     <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: 'var(--accent)' }}>{formatRpCell(r.nilai)}</p>
                   </div>
                 </div>
-                <div className="lg:w-20 lg:flex-shrink-0 min-w-0">
-                  <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Status</p>
-                  <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full lg:ml-auto" style={{ color: st.color, background: st.bg }}>
-                    {st.label}
-                  </span>
+                <div className="flex items-center justify-between gap-2 lg:contents">
+                  <div className="lg:w-20 lg:flex-shrink-0 min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Status</p>
+                    <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full lg:ml-auto" style={{ color: st.color, background: st.bg }}>
+                      {st.label}
+                    </span>
+                  </div>
+                  <button onClick={() => toggle(r.product.id)}
+                    className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md transition-transform"
+                    style={{ color: 'var(--text-muted)', transform: isOpen ? 'rotate(90deg)' : undefined }}
+                    title={isOpen ? 'Tutup kartu stok' : 'Lihat kartu stok'}>
+                    <ChevronRight size={14} />
+                  </button>
                 </div>
               </div>
               {isOpen && (
