@@ -11,6 +11,7 @@ const API = '';
 
 interface StoreSettings {
   storeName?: string; storeTagline?: string; storeDescription?: string; logo?: string;
+  ownerName?: string; ownerSignature?: string; ownerStamp?: string;
   whatsapp?: string; instagramUrl?: string; tiktokUrl?: string;
   address?: string; city?: string;
   privacyPolicy?: string; termsOfService?: string; returnPolicy?: string;
@@ -29,6 +30,7 @@ const FIELD_GROUPS = [
       { key: 'storeName',        label: 'Nama Toko',       type: 'text',     placeholder: 'Cemilan Teh Risma' },
       { key: 'storeTagline',     label: 'Tagline',         type: 'text',     placeholder: 'Camilan khas rumahan...' },
       { key: 'storeDescription', label: 'Deskripsi Toko',  type: 'textarea', placeholder: 'Tentang toko Anda...' },
+      { key: 'ownerName',        label: 'Nama Pemilik',    type: 'text',     placeholder: 'Nama pemilik untuk tanda tangan PDF' },
       { key: 'address',          label: 'Alamat',          type: 'text',     placeholder: 'Jl. ...' },
       { key: 'city',             label: 'Kota',            type: 'text',     placeholder: 'Kota / Kabupaten' },
     ],
@@ -75,6 +77,8 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [bankCount,   setBankCount]   = useState<number | null>(null);
   const [syncingBanks, setSyncingBanks] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const [stampUploading, setStampUploading] = useState(false);
   const [warehouses, setWarehouses] = useState<SettingsWarehouse[]>([]);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
@@ -132,41 +136,54 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const set = (key: string, val: string | number | boolean) =>
     setSettings(s => ({ ...s, [key]: val }));
 
-  const compressLogo = async (file: File): Promise<File> => {
-    const MAX_PX = 1200;
+  // keepAlpha (PNG) untuk ttd/cap supaya latar tetap transparan saat ditumpuk di PDF.
+  const compressImage = async (file: File, maxPx: number, keepAlpha: boolean): Promise<File> => {
     const bitmap = await createImageBitmap(file);
-    const scale  = Math.min(1, MAX_PX / Math.max(bitmap.width, bitmap.height));
+    const scale  = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height));
     const w = Math.round(bitmap.width * scale);
     const h = Math.round(bitmap.height * scale);
     const canvas = document.createElement('canvas');
     canvas.width  = w;
     canvas.height = h;
     canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+    const type = keepAlpha ? 'image/png' : 'image/jpeg';
+    const ext  = keepAlpha ? '.png' : '.jpg';
     return new Promise(resolve =>
       canvas.toBlob(
-        blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })),
-        'image/jpeg', 0.82,
+        blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, ext), { type })),
+        type, keepAlpha ? undefined : 0.82,
       ),
     );
   };
+  const compressLogo = (file: File) => compressImage(file, 1200, false);
 
-  const uploadLogo = async (file: File | undefined) => {
+  const uploadImage = async (
+    file: File | undefined,
+    key: 'logo' | 'ownerSignature' | 'ownerStamp',
+    compress: (f: File) => Promise<File>,
+    setUploading: (v: boolean) => void,
+    errorLabel: string,
+  ) => {
     if (!file) return;
-    setLogoUploading(true);
+    setUploading(true);
     try {
-      const compressed = await compressLogo(file);
+      const compressed = await compress(file);
       const form = new FormData();
       form.append('file', compressed);
       const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
       if (!r.ok) throw new Error('upload failed');
       const { url } = await r.json() as { url: string };
-      set('logo', url);
+      set(key, url);
     } catch {
-      toast.error('Gagal mengunggah logo.');
+      toast.error(`Gagal mengunggah ${errorLabel}.`);
     } finally {
-      setLogoUploading(false);
+      setUploading(false);
     }
   };
+
+  const uploadLogo      = (file?: File) => uploadImage(file, 'logo', compressLogo, setLogoUploading, 'logo');
+  const uploadSignature = (file?: File) => uploadImage(file, 'ownerSignature', f => compressImage(f, 800, true), setSignatureUploading, 'tanda tangan');
+  const uploadStamp     = (file?: File) => uploadImage(file, 'ownerStamp', f => compressImage(f, 800, true), setStampUploading, 'cap/stempel');
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -269,6 +286,78 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                     Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos.
                   </p>
+                </div>
+              )}
+              {activeGrp === 'store' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                      Tanda Tangan Elektronik
+                    </label>
+                    <div className="flex items-center gap-3">
+                      {settings.ownerSignature ? (
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={settings.ownerSignature} alt="Tanda tangan pemilik" className="w-full h-full object-contain" />
+                          <Tooltip label="Hapus Tanda Tangan">
+                            <button type="button" onClick={() => set('ownerSignature', '')}
+                              className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
+                              <X size={11} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ border: '1px dashed var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                          <ImageIcon size={20} />
+                        </div>
+                      )}
+                      <label className="btn-ghost text-xs cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" disabled={signatureUploading}
+                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadSignature(f); }} />
+                        {signatureUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        {signatureUploading ? 'Mengunggah…' : settings.ownerSignature ? 'Ganti' : 'Upload'}
+                      </label>
+                    </div>
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Foto/scan tanda tangan pemilik, latar transparan (PNG) lebih rapi.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                      Cap / Stempel Elektronik
+                    </label>
+                    <div className="flex items-center gap-3">
+                      {settings.ownerStamp ? (
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={settings.ownerStamp} alt="Cap toko" className="w-full h-full object-contain" />
+                          <Tooltip label="Hapus Cap">
+                            <button type="button" onClick={() => set('ownerStamp', '')}
+                              className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
+                              <X size={11} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ border: '1px dashed var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                          <ImageIcon size={20} />
+                        </div>
+                      )}
+                      <label className="btn-ghost text-xs cursor-pointer">
+                        <input type="file" accept="image/*" className="hidden" disabled={stampUploading}
+                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadStamp(f); }} />
+                        {stampUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        {stampUploading ? 'Mengunggah…' : settings.ownerStamp ? 'Ganti' : 'Upload'}
+                      </label>
+                    </div>
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Foto cap/stempel toko, latar transparan (PNG) lebih rapi.
+                    </p>
+                  </div>
                 </div>
               )}
               {activeGrp === 'operational' && (

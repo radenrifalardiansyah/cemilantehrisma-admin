@@ -53,6 +53,9 @@ export async function GET(
     const store: StoreHeader = {
       name: settings.storeName?.trim() || 'Cemilan Teh Risma',
       tagline: settings.storeTagline?.trim() || undefined,
+      ownerName: settings.ownerName?.trim() || undefined,
+      ownerSignature: await resolveLogoDataUri(db, settings.ownerSignature),
+      ownerStamp: await resolveLogoDataUri(db, settings.ownerStamp),
       address: [settings.address, settings.city].filter(Boolean).join(', ') || undefined,
       phone: settings.whatsapp?.trim() || undefined,
       logo: await resolveLogoDataUri(db, settings.logo),

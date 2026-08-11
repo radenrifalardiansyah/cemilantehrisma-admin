@@ -270,6 +270,7 @@ export default function PosTab({
   const [processErr,   setProcessErr]   = useState('');
   const [invoiceNo,    setInvoiceNo]    = useState('');
   const [lastReceipt,  setLastReceipt]  = useState<ReceiptData | null>(null);
+  const [receiptPrintedAt, setReceiptPrintedAt] = useState('');
   const [waPhoneDraft, setWaPhoneDraft] = useState('');
   const [heldTransactions, setHeldTransactions] = useState<HeldTransaction[]>([]);
   const [heldLoaded,       setHeldLoaded]       = useState(false);
@@ -657,7 +658,10 @@ export default function PosTab({
     );
   };
 
-  const printReceipt = () => window.print();
+  const printReceipt = () => {
+    setReceiptPrintedAt(new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+    setTimeout(() => window.print(), 0);
+  };
 
   // ── Sesi kasir — buka/tutup shift ─────────────────────────
   const openShift = async () => {
@@ -1334,6 +1338,7 @@ export default function PosTab({
         <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
         <p style={{ margin: 0 }}>No: {lastReceipt.invoiceNo}</p>
         <p style={{ margin: 0 }}>{lastReceipt.dateStr} · Kasir: {lastReceipt.cashier}</p>
+        {receiptPrintedAt && <p style={{ margin: 0 }}>Dicetak: {receiptPrintedAt}</p>}
         <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
         {lastReceipt.items.map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>

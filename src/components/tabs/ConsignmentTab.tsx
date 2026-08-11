@@ -246,20 +246,27 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   useEffect(() => { loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko (nota/rekap PDF) ──────────────────────────────────
-  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; ownerName?: string; ownerSignature?: string; ownerStamp?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
   const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
+  const [signatureDataUri, setSignatureDataUri] = useState<string | undefined>(undefined);
+  const [stampDataUri, setStampDataUri] = useState<string | undefined>(undefined);
   useEffect(() => {
     fetch(`${API}/api/settings`, { headers }).then(async r => {
       if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { toDataUri(storeInfo.logo).then(setLogoDataUri); }, [storeInfo.logo]);
+  useEffect(() => { toDataUri(storeInfo.ownerSignature).then(setSignatureDataUri); }, [storeInfo.ownerSignature]);
+  useEffect(() => { toDataUri(storeInfo.ownerStamp).then(setStampDataUri); }, [storeInfo.ownerStamp]);
   const storeHeader = {
-    name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
-    tagline: storeInfo.storeTagline?.trim() || undefined,
-    address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
-    phone:   storeInfo.whatsapp?.trim() || undefined,
-    logo:    logoDataUri,
+    name:           storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
+    tagline:        storeInfo.storeTagline?.trim() || undefined,
+    ownerName:      storeInfo.ownerName?.trim() || undefined,
+    ownerSignature: signatureDataUri,
+    ownerStamp:     stampDataUri,
+    address:        [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
+    phone:          storeInfo.whatsapp?.trim() || undefined,
+    logo:           logoDataUri,
   };
 
   // ── Riwayat per lokasi (modal) ─────────────────────────────────
@@ -881,6 +888,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
             address:        location?.address,
             warehouseName:  s.warehouseName,
             date:           formatDate(s.createdAt?.seconds),
+            printedAt:      new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             docNo:          `KRM-${s.id.slice(-6).toUpperCase()}`,
             note:           s.note,
             items:          s.items,
@@ -1253,6 +1261,7 @@ _${storeHeader.name}_`.trim();
             locationCode:   location?.code,
             warehouseName:  r.warehouseName,
             date:           formatDate(r.createdAt?.seconds),
+            printedAt:      new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             docNo:          `RKP-${r.id.slice(-6).toUpperCase()}`,
             paymentStatus:  r.paymentStatus,
             note:           r.note,
@@ -1531,7 +1540,7 @@ _${storeHeader.name}_`.trim();
             contactName:     historyLocation.contactName || undefined,
             contactPhone:    historyLocation.contactPhone || undefined,
             address:         historyLocation.address || undefined,
-            generatedAt:     new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+            generatedAt:     new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             currentStockQty: locationStockTotals(historyLocation.id).qty,
             totalKirim:      historyTotalKirim,
             totalRevenue:    historyTotalRevenue,

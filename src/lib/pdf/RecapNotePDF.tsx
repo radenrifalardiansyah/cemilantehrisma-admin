@@ -10,6 +10,7 @@ export interface RecapNoteData {
   locationCode?:   string;
   warehouseName?:  string;
   date:            string;
+  printedAt?:      string;
   docNo?:          string;
   paymentStatus?:  'lunas' | 'belum_lunas';
   note?:           string;
@@ -92,6 +93,15 @@ const s = StyleSheet.create({
   noteLabel: { fontSize: 8, color: C.muted, textTransform: 'uppercase', marginBottom: 3 },
   noteText: { fontSize: 9.5, color: C.dark },
 
+  signRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
+  signBox: { width: '42%', alignItems: 'center' },
+  signLabel: { fontSize: 9, color: C.muted },
+  signArea: { height: 54, width: '100%', position: 'relative', justifyContent: 'flex-end', alignItems: 'center' },
+  signStamp: { position: 'absolute', bottom: 2, width: 46, height: 46, opacity: 0.85 },
+  signImage: { position: 'absolute', bottom: 8, width: 74, height: 32, objectFit: 'contain' },
+  signLine: { borderTopWidth: 1, borderTopColor: C.dark, width: '100%' },
+  signName: { fontSize: 9, color: C.muted, marginTop: 4 },
+
   footer: { position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'center', fontSize: 7.5, color: C.muted },
 });
 
@@ -125,6 +135,12 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
               <Text style={s.docMetaLabel}>Tanggal:</Text>
               <Text style={s.docMetaValue}>{data.date}</Text>
             </View>
+            {data.printedAt && (
+              <View style={s.docMetaRow}>
+                <Text style={s.docMetaLabel}>Dicetak:</Text>
+                <Text style={s.docMetaValue}>{data.printedAt}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -200,6 +216,18 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
             <Text style={s.noteText}>{data.note}</Text>
           </View>
         )}
+
+        <View style={s.signRow}>
+          <View style={s.signBox}>
+            <Text style={s.signLabel}>Mengetahui,</Text>
+            <View style={s.signArea}>
+              {store.ownerStamp && <Image src={store.ownerStamp} style={s.signStamp} />}
+              {store.ownerSignature && <Image src={store.ownerSignature} style={s.signImage} />}
+              <View style={s.signLine} />
+            </View>
+            <Text style={s.signName}>{store.ownerName || store.name}</Text>
+          </View>
+        </View>
 
         <Text style={s.footer}>Dokumen internal — {store.name}</Text>
       </Page>

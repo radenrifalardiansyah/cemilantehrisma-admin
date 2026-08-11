@@ -170,12 +170,16 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
 
   // ── Cetak ulang struk pesanan ──
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
+  const [printedAt,  setPrintedAt]  = useState('');
   useEffect(() => {
     if (!printOrder) return;
     const t = setTimeout(() => window.print(), 60);
     return () => clearTimeout(t);
   }, [printOrder]);
-  const printReceiptFor = (o: Order) => setPrintOrder({ ...o });
+  const printReceiptFor = (o: Order) => {
+    setPrintedAt(new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+    setPrintOrder({ ...o });
+  };
 
   // Datang dari klik invoice di Jurnal Kas (Laporan Keuangan) — buka & scroll ke pesanan itu.
   useEffect(() => {
@@ -1170,6 +1174,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
             <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
             <p style={{ margin: 0 }}>No: {printOrder.invoiceNo}</p>
             <p style={{ margin: 0 }}>{formatDate(printOrder)}</p>
+            <p style={{ margin: 0 }}>Dicetak: {printedAt}</p>
             <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
             {printOrder.items.map((it, i) => (
               <div key={i} style={{ marginBottom: 3 }}>
