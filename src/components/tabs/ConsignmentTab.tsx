@@ -196,13 +196,16 @@ const EMPTY_LOCATION_STATS: LocationStats = { totalKirim: 0, totalSold: 0, total
 // lokasi (dipakai di table & card, sama seperti di modal Riwayat). Selisih & persentase dihitung
 // dari Dikirim vs Pendapatan — menunjukkan seberapa besar nilai titip yang belum "kembali" jadi
 // pendapatan (masih di stok lokasi, belum direkap, atau hilang lewat retur/reject).
-function LocationStatTiles({ stockQty, stockValue, stats }: { stockQty: number; stockValue: number; stats: LocationStats }) {
+// `dense`: card grid (Kartu view) keeps each tile in a narrow ~1/3-width column no matter how
+// wide the viewport gets, so tiles must cap at 3 columns instead of following viewport breakpoints
+// (xl:grid-cols-6 would cram 6 tiles into that narrow card and truncate every label).
+function LocationStatTiles({ stockQty, stockValue, stats, dense = false }: { stockQty: number; stockValue: number; stats: LocationStats; dense?: boolean }) {
   const selisih = stats.totalKirim - stats.totalRevenue;
   const pctLabel = stats.totalKirim > 0 ? `${((stats.totalRevenue / stats.totalKirim) * 100).toFixed(1)}%` : '–';
   const tileLabelCls = "text-[9px] font-semibold uppercase leading-tight whitespace-nowrap overflow-hidden text-ellipsis";
   const tileValueCls = "text-xs font-bold tabular leading-tight mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis";
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-1.5">
+    <div className={dense ? "grid grid-cols-2 sm:grid-cols-3 gap-1.5" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5"}>
       <div className="flex flex-col justify-between px-3 py-2 rounded-lg min-h-[52px] min-w-0" style={{ background: stockQty > 0 ? 'var(--success-bg)' : 'var(--surface-2)' }}>
         <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
         <div className="min-w-0">
@@ -1792,7 +1795,7 @@ _${storeHeader.name}_`.trim();
                             </div>
                           )}
                           <div className="mt-3 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
-                            <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
+                            <LocationStatTiles dense stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                           </div>
                         </div>
                       );
