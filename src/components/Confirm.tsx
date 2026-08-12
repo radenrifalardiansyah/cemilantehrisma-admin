@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useState } from 'react';
-import { AlertTriangle, HelpCircle } from 'lucide-react';
+import { AlertTriangle, HelpCircle, Loader2 } from 'lucide-react';
 
 interface ConfirmOptions {
   title?: string;
@@ -9,6 +9,8 @@ interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  /** When provided, runs on confirm before the dialog closes — the confirm button shows a spinner while it's pending. */
+  onConfirm?: () => Promise<void>;
 }
 
 interface ConfirmState extends ConfirmOptions {
@@ -27,6 +29,7 @@ export function useConfirm() {
 
 export default function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<ConfirmState | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const confirm = useCallback<ConfirmFn>((options) => {
     const opts = typeof options === 'string' ? { message: options } : options;
@@ -38,14 +41,26 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
     setState(null);
   };
 
+  const handleConfirm = async () => {
+    if (state?.onConfirm) {
+      setConfirming(true);
+      await state.onConfirm();
+      setConfirming(false);
+    }
+    close(true);
+  };
+
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
       {state && (
-        <div className="modal-overlay" onClick={() => close(false)} style={{ zIndex: 10000 }}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+        <div
+          className="modal-overlay confirm-overlay"
+          onClick={() => !confirming && close(false)}
+          style={{ zIndex: 10000 }}
+        >
+          <div className="modal-sheet confirm-sheet modal-sm" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <div className="modal-accent" style={state.danger ? { background: 'var(--danger)' } : undefined} />
-            <span className="modal-handle" />
 
             <div style={{ padding: '20px 22px 4px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
               <div
@@ -66,19 +81,24 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
               <button
                 onClick={() => close(false)}
                 className="btn-ghost"
-                style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}
+                disabled={confirming}
+                style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: confirming ? 0.5 : 1 }}
               >
                 {state.cancelLabel ?? 'Batal'}
               </button>
               <button
-                onClick={() => close(true)}
+                onClick={handleConfirm}
                 className="btn-primary"
+                disabled={confirming}
                 style={{
                   flex: 1, justifyContent: 'center', padding: '10px 0',
                   ...(state.danger ? { background: 'var(--danger)', boxShadow: 'none' } : {}),
+                  ...(confirming ? { opacity: 0.75, cursor: 'default' } : {}),
                 }}
               >
-                {state.confirmLabel ?? (state.danger ? 'Hapus' : 'Ya, Lanjutkan')}
+                {confirming
+                  ? <Loader2 size={15} className="animate-spin" />
+                  : (state.confirmLabel ?? (state.danger ? 'Hapus' : 'Ya, Lanjutkan'))}
               </button>
             </div>
           </div>

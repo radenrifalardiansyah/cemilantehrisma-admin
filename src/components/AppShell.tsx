@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home,
+  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
+import AboutModal from '@/components/AboutModal';
+import EditProfileModal from '@/components/EditProfileModal';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
@@ -78,16 +80,25 @@ interface AppShellProps {
   topbarActions?: React.ReactNode;
   username?: string;
   superAdmin?: boolean;
+  creds: string;
+  role?: string;
+  email?: string | null;
+  avatar?: string | null;
+  onProfileUpdated?: (patch: { email: string | null; avatar: string | null }) => void;
   modules: ModuleDoc[];
   menus: MenuDoc[];
+  badges?: Partial<Record<TabId, number>>;
 }
 
 export default function AppShell({
   activeTab, setActiveTab, onLogout,
   hasCart, cartCount, children, topbarActions,
-  username = 'Admin', superAdmin = false, modules, menus,
+  username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
+  onProfileUpdated, modules, menus, badges = {},
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
+  const [aboutOpen,  setAboutOpen]  = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<TabId>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -102,7 +113,13 @@ export default function AppShell({
   const MORE_TABS      = ALL_TABS.filter(t => !primaryIds.has(t.id));
 
   const handleLogout = async () => {
-    if (await confirm({ message: 'Yakin ingin keluar dari akun ini?', danger: true, confirmLabel: 'Keluar' })) {
+    if (await confirm({
+      title: 'Konfirmasi Keluar',
+      message: 'Yakin ingin keluar dari akun ini?',
+      danger: true,
+      confirmLabel: 'Keluar',
+      onConfirm: async () => { await new Promise(r => setTimeout(r, 1200)); },
+    })) {
       onLogout();
     }
   };
@@ -180,15 +197,11 @@ export default function AppShell({
             pointerEvents: 'none', zIndex: 0,
           }} />
 
-          <div className="relative flex-shrink-0" style={{ zIndex: 1 }}>
+          <div className="flex-shrink-0" style={{ zIndex: 1 }}>
             <Image
               src="/icon-192.png" alt="logo" width={34} height={34}
               className="rounded-xl"
               style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }}
-            />
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2"
-              style={{ borderColor: '#190C03' }}
             />
           </div>
           {!collapsed && (
@@ -264,6 +277,16 @@ export default function AppShell({
                           </span>
                         )}
                         {collapsed && tab.id === 'pos' && hasCart && (
+                          <span
+                            className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
+                          />
+                        )}
+                        {!collapsed && tab.id !== 'pos' && (badges[tab.id] ?? 0) > 0 && (
+                          <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
+                            {badges[tab.id]}
+                          </span>
+                        )}
+                        {collapsed && tab.id !== 'pos' && (badges[tab.id] ?? 0) > 0 && (
                           <span
                             className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
                           />
@@ -360,20 +383,39 @@ export default function AppShell({
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.07)',
             }}>
-              <div style={{
-                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                background: 'linear-gradient(135deg, #D4691E, #A84F10)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 12, fontWeight: 800, color: 'white',
-                boxShadow: '0 2px 6px rgba(212,105,30,0.35)',
-              }}>
-                {username[0].toUpperCase()}
-              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: '#EDD9C4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-                  {username}
-                </p>
-                <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>{superAdmin ? 'Super Admin' : 'Administrator'}</p>
+                <Tooltip label="Edit profil" side="top">
+                  <button
+                    onClick={() => setProfileOpen(true)}
+                    className="flex items-center w-full"
+                    style={{ gap: 10, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <div className="relative" style={{ flexShrink: 0 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: 8, overflow: 'hidden',
+                        background: 'linear-gradient(135deg, #D4691E, #A84F10)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 800, color: 'white',
+                        boxShadow: '0 2px 6px rgba(212,105,30,0.35)',
+                      }}>
+                        {avatar
+                          ? <img src={avatar} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : username[0].toUpperCase()}
+                      </div>
+                      <span
+                        className="status-dot-blink absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2"
+                        style={{ borderColor: '#190C03' }}
+                        title="Aktif"
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: '#EDD9C4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+                        {username}
+                      </p>
+                      <p style={{ fontSize: 10, color: '#8A6248', lineHeight: 1.3 }}>{superAdmin ? 'Super Admin' : 'Administrator'}</p>
+                    </div>
+                  </button>
+                </Tooltip>
               </div>
               <Tooltip label="Keluar" side="top">
                 <button
@@ -493,6 +535,11 @@ export default function AppShell({
                       {cartCount}
                     </span>
                   )}
+                  {tab.id !== 'pos' && (badges[tab.id] ?? 0) > 0 && (
+                    <span className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+                      {badges[tab.id]}
+                    </span>
+                  )}
                 </span>
                 <span
                   className="text-[10px] leading-none font-semibold"
@@ -511,17 +558,26 @@ export default function AppShell({
           })}
 
           {/* More button */}
-          {MORE_TABS.length > 0 && (
+          {MORE_TABS.length > 0 && (() => {
+            const moreBadgeTotal = MORE_TABS.reduce((s, t) => s + (badges[t.id] ?? 0), 0);
+            return (
           <button
             onClick={() => setMoreOpen(true)}
             className="flex flex-col items-center justify-center gap-1 flex-1 relative pb-1"
             aria-label={isMoreActive ? (currentTab?.label ?? 'Lainnya') : 'Lainnya'}
           >
+            <span className="relative">
             <MoreHorizontal
               size={21}
               strokeWidth={isMoreActive ? 2.2 : 1.6}
               style={{ color: isMoreActive ? 'var(--accent)' : 'var(--text-muted)' }}
             />
+            {moreBadgeTotal > 0 && (
+              <span className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+                {moreBadgeTotal}
+              </span>
+            )}
+            </span>
             <span
               className="text-[10px] leading-none font-semibold"
               style={{ color: isMoreActive ? 'var(--accent)' : 'var(--text-muted)' }}
@@ -535,7 +591,8 @@ export default function AppShell({
               />
             )}
           </button>
-          )}
+            );
+          })()}
         </div>
       </nav>
 
@@ -578,11 +635,18 @@ export default function AppShell({
                         border: `1.5px solid ${isActive ? 'var(--accent-light)' : 'transparent'}`,
                       }}
                     >
-                      <tab.Icon
-                        size={22}
-                        strokeWidth={isActive ? 2.5 : 1.8}
-                        style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
-                      />
+                      <span className="relative">
+                        <tab.Icon
+                          size={22}
+                          strokeWidth={isActive ? 2.5 : 1.8}
+                          style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
+                        />
+                        {(badges[tab.id] ?? 0) > 0 && (
+                          <span className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+                            {badges[tab.id]}
+                          </span>
+                        )}
+                      </span>
                       <span
                         className="text-[11px] font-semibold text-center leading-tight px-0.5"
                         style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
@@ -594,7 +658,23 @@ export default function AppShell({
                 })}
               </div>
 
-              <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>
+              <div className="mt-4 pt-4 flex flex-col gap-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                <button
+                  onClick={() => { setMoreOpen(false); setProfileOpen(true); }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+                >
+                  <UserCog size={20} strokeWidth={1.8} />
+                  <span className="font-semibold text-sm">Edit Profil</span>
+                </button>
+                <button
+                  onClick={() => { setMoreOpen(false); setAboutOpen(true); }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+                >
+                  <Info size={20} strokeWidth={1.8} />
+                  <span className="font-semibold text-sm">Tentang Aplikasi</span>
+                </button>
                 <button
                   onClick={() => { setMoreOpen(false); handleLogout(); }}
                   className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl"
@@ -607,6 +687,19 @@ export default function AppShell({
             </div>
           </div>
         </>
+      )}
+
+      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {profileOpen && (
+        <EditProfileModal
+          creds={creds}
+          username={username}
+          role={superAdmin ? 'Super Admin' : (role || 'Administrator')}
+          email={email}
+          avatar={avatar}
+          onClose={() => setProfileOpen(false)}
+          onSaved={patch => onProfileUpdated?.(patch)}
+        />
       )}
     </div>
   );

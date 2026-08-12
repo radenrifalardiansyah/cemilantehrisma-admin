@@ -63,7 +63,7 @@ function Checkbox({ checked, indeterminate, onChange }: {
 }
 
 interface Supplier {
-  id: string; name: string; phone: string; address: string; note: string;
+  id: string; code?: string; name: string; phone: string; address: string; note: string;
   createdAt?: { seconds: number };
 }
 
@@ -245,6 +245,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
 
       const COLS = [
         { header: 'No',        key: 'no',      width: 6  },
+        { header: 'Kode',      key: 'code',    width: 12 },
         { header: 'Nama',      key: 'name',    width: 24 },
         { header: 'Telepon',   key: 'phone',   width: 18 },
         { header: 'Alamat',    key: 'address', width: 32 },
@@ -290,7 +291,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
 
       rows.forEach((s, i) => {
         const row = ws.addRow({
-          no: i + 1, name: s.name, phone: s.phone || '-', address: s.address || '-',
+          no: i + 1, code: s.code || '-', name: s.name, phone: s.phone || '-', address: s.address || '-',
           note: s.note || '-', joined: formatDate(s),
         });
         const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
@@ -406,6 +407,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
   const filtered = suppliers
     .filter(s => !search
       || s.name.toLowerCase().includes(search.toLowerCase())
+      || (s.code ?? '').toLowerCase().includes(search.toLowerCase())
       || s.phone.toLowerCase().includes(search.toLowerCase())
       || s.address.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
@@ -445,7 +447,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
               onChange={e => { setSearch(e.target.value); resetPage(); }}
               className="input text-sm w-full"
               style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-              placeholder="Cari nama, telepon, atau alamat…"
+              placeholder="Cari nama, kode, telepon, atau alamat…"
             />
           </div>
         )}
@@ -522,7 +524,15 @@ export default function SuppliersTab({ creds }: { creds: string }) {
                         {initials(s.name)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
+                          {s.code && (
+                            <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                              {s.code}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                           {[s.phone, s.address].filter(Boolean).join(' · ') || '–'}
                         </p>
@@ -565,6 +575,12 @@ export default function SuppliersTab({ creds }: { creds: string }) {
                         {initials(s.name)}
                       </div>
                       <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
+                      {s.code && (
+                        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                          {s.code}
+                        </span>
+                      )}
                       <p className="text-xs truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
                         {[s.phone, s.address].filter(Boolean).join(' · ') || 'Tidak ada kontak'}
                       </p>
@@ -730,6 +746,7 @@ function SupplierDetail({ s }: { s: Supplier }) {
     <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {[
+          { label: 'Kode Supplier', val: s.code },
           { label: 'Telepon', val: s.phone },
           { label: 'Terdaftar', val: formatDate(s) },
         ].map((f, i) => (

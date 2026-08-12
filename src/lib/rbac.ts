@@ -41,7 +41,7 @@ export function assertCanEditUser(
   targetUsername: string,
   patch: { role?: string },
 ): { ok: true } | { ok: false; error: string } {
-  if ('role' in patch && actingUser.username === targetUsername) {
+  if (patch.role !== undefined && actingUser.username === targetUsername) {
     return { ok: false, error: 'Anda tidak dapat mengubah role Anda sendiri.' };
   }
   if (patch.role === 'super-admin' && actingUser.role !== 'super-admin') {

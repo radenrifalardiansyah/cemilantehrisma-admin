@@ -304,7 +304,7 @@ export default function AdminPage() {
   const [loginErr, setLoginErr] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
-  const [authUser, setAuthUser] = useState<{ username: string; role: string } | null>(null);
+  const [authUser, setAuthUser] = useState<{ username: string; role: string; email: string | null; avatar: string | null } | null>(null);
   const [permissions, setPermissions] = useState<Record<string, Partial<Record<Action, boolean>>>>({});
   const [superAdmin, setSuperAdmin] = useState(false);
   const [modules, setModules] = useState<ModuleDoc[]>([]);
@@ -318,6 +318,7 @@ export default function AdminPage() {
   // ── Analytics ────────────────────────────────────────────
   const [dashData, setDashData] = useState<DashData | null>(null);
   const [loading,  setLoading]  = useState(false);
+  const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [webRange, setWebRange] = useState<7 | 30>(30);
   const [webLoading, setWebLoading] = useState(false);
 
@@ -460,6 +461,20 @@ export default function AdminPage() {
     } catch {}
   }, []);
 
+  // ── Badge notifikasi "Pesanan" — pesanan Website yang belum ditandai selesai.
+  // Dipakai supaya badge di sidebar sudah muncul sebelum tab Pesanan pernah dibuka;
+  // begitu tab Pesanan dibuka, OrdersTab yang mengambil alih hitungan lewat state-nya sendiri.
+  const fetchNewOrdersCount = useCallback(async (authHeader?: string) => {
+    const token = authHeader ?? creds;
+    try {
+      const res = await fetch('/api/orders', { headers: { 'x-admin-auth': token } });
+      if (res.ok) {
+        const { orders } = await res.json() as { orders: { source?: string; status?: string }[] };
+        setNewOrdersCount(orders.filter(o => o.source === 'portal' && o.status === 'baru').length);
+      }
+    } catch {}
+  }, [creds]);
+
   // Resolves the caller's permission map from /api/me and hydrates auth
   // state + kicks off the dashboard/nav fetches. Shared by session-restore
   // and login so both end up with the exact same state shape.
@@ -467,14 +482,14 @@ export default function AdminPage() {
     const res = await fetch('/api/me', { headers: { 'x-admin-auth': token } });
     if (!res.ok) return false;
     const { user, permissions, superAdmin } = await res.json() as {
-      user: { username: string; role: string };
+      user: { username: string; role: string; email: string | null; avatar: string | null };
       permissions: Record<string, Partial<Record<Action, boolean>>>;
       superAdmin: boolean;
     };
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
-    fetchDash(token); fetchNav(token);
+    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token);
     return true;
-  }, [fetchDash, fetchNav]);
+  }, [fetchDash, fetchNav, fetchNewOrdersCount]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -527,7 +542,7 @@ export default function AdminPage() {
   const logout = () => {
     localStorage.removeItem('admin_creds');
     setAuthed(false); setDashData(null); setCreds('');
-    setPermissions({}); setSuperAdmin(false); setModules([]); setMenus([]);
+    setPermissions({}); setSuperAdmin(false); setModules([]); setMenus([]); setNewOrdersCount(0);
   };
 
   // ─── Screens: Loading & Login ────────────────────────────
@@ -677,7 +692,7 @@ export default function AdminPage() {
 
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => fetchDash()} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+          <button onClick={() => { fetchDash(); fetchNewOrdersCount(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
@@ -1093,8 +1108,14 @@ export default function AdminPage() {
       cartCount={posCartCount}
       username={adminUsername}
       superAdmin={superAdmin}
+      creds={creds}
+      role={authUser?.role}
+      email={authUser?.email ?? null}
+      avatar={authUser?.avatar ?? null}
+      onProfileUpdated={patch => setAuthUser(u => u ? { ...u, ...patch } : u)}
       modules={modules}
       menus={menus}
+      badges={{ orders: newOrdersCount }}
     >
       {activeTab === 'dashboard'  && dashboardContent}
       <PosTab
@@ -1115,7 +1136,8 @@ export default function AdminPage() {
       {activeTab === 'categories' && <CategoriesTab creds={creds} />}
       {activeTab === 'orders'     && (
         <OrdersTab creds={creds} highlightInvoice={highlightInvoice}
-          onHighlightHandled={() => setHighlightInvoice(null)} />
+          onHighlightHandled={() => setHighlightInvoice(null)}
+          onNewOrdersCountChange={setNewOrdersCount} />
       )}
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
       {activeTab === 'customers'  && <CustomersTab creds={creds} />}

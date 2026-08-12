@@ -82,8 +82,14 @@ body {
 .animate-scale-in { animation: scaleIn 0.18s ease forwards; }
 .animate-slide-up { animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
 
+@keyframes statusBlink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+  50%      { opacity: 0.55; box-shadow: 0 0 0 3px rgba(52, 211, 153, 0); }
+}
+.status-dot-blink { animation: statusBlink 1.8s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-up, .animate-scale-in, .animate-slide-up { animation: none; }
+  .animate-fade-up, .animate-scale-in, .animate-slide-up, .status-dot-blink { animation: none; }
 }
 
 /* ── Login screen ───────────────────────────────────────────── */
@@ -453,6 +459,18 @@ body {
   .modal-sm { max-width: 580px; }
   .modal-md { max-width: 660px; }
   .modal-lg { max-width: 780px; }
+}
+
+/* Small alert-style confirm dialog (Confirm.tsx): always centered, never a
+   bottom sheet — it's a short yes/no prompt, not a form. */
+.confirm-overlay {
+  align-items: center;
+  padding: 16px;
+}
+.confirm-sheet {
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.04);
+  animation: modal-scale-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 /* Top accent gradient bar */

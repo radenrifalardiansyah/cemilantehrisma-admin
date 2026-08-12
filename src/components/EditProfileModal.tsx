@@ -1,0 +1,211 @@
+'use client';
+
+import { useState } from 'react';
+import { UserCog, X, Check, Loader2, Eye, EyeOff, Camera } from 'lucide-react';
+import { useToast } from '@/components/Toast';
+import Tooltip from '@/components/Tooltip';
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? '';
+
+interface Props {
+  creds: string;
+  username: string;
+  role: string;
+  email: string | null;
+  avatar: string | null;
+  onClose: () => void;
+  onSaved: (patch: { email: string | null; avatar: string | null }) => void;
+}
+
+const compressImage = async (file: File): Promise<File> => {
+  const MAX_PX = 400;
+  const bitmap = await createImageBitmap(file);
+  const scale  = Math.min(1, MAX_PX / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width  = w;
+  canvas.height = h;
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+  return new Promise(resolve =>
+    canvas.toBlob(
+      blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })),
+      'image/jpeg', 0.85,
+    ),
+  );
+};
+
+export default function EditProfileModal({ creds, username, role, email, avatar, onClose, onSaved }: Props) {
+  const toast   = useToast();
+  const headers = { 'x-admin-auth': creds };
+
+  const [avatarUrl, setAvatarUrl] = useState(avatar);
+  const [uploading, setUploading] = useState(false);
+  const [emailVal,  setEmailVal]  = useState(email ?? '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword,     setNewPassword]     = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+
+  const uploadAvatar = async (file: File) => {
+    setUploading(true);
+    try {
+      const compressed = await compressImage(file);
+      const form = new FormData();
+      form.append('file', compressed);
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      setAvatarUrl(url);
+    } catch {
+      toast.error('Gagal mengunggah foto profil.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const save = async () => {
+    setError('');
+    if (newPassword && newPassword.length < 6) {
+      setError('Password baru minimal 6 karakter.'); return;
+    }
+    if (newPassword && newPassword !== confirmPassword) {
+      setError('Konfirmasi password baru tidak cocok.'); return;
+    }
+    if (newPassword && !currentPassword) {
+      setError('Masukkan password saat ini untuk mengubah password.'); return;
+    }
+
+    setSaving(true);
+    const body: Record<string, unknown> = { email: emailVal || undefined, avatar: avatarUrl };
+    if (newPassword) { body.currentPassword = currentPassword; body.newPassword = newPassword; }
+
+    const r = await fetch('/api/me', {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (r.ok) {
+      onSaved({ email: emailVal ? emailVal.trim().toLowerCase() : null, avatar: avatarUrl });
+      toast.success('Profil berhasil diperbarui.');
+      onClose();
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      setError(d.error ?? 'Gagal memperbarui profil.');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-accent" />
+        <span className="modal-handle" />
+
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon"><UserCog size={17} /></div>
+            <div>
+              <p className="modal-title">Edit Profil</p>
+              <p className="modal-subtitle">{username}</p>
+            </div>
+          </div>
+          <Tooltip label="Tutup"><button onClick={onClose} className="modal-close"><X size={14} /></button></Tooltip>
+        </div>
+
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            <div className="flex justify-center">
+              <label className="relative cursor-pointer" style={{ opacity: uploading ? 0.6 : 1 }}>
+                <input
+                  type="file" accept="image/*" className="hidden" disabled={uploading}
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAvatar(f); }}
+                />
+                <div style={{
+                  width: 76, height: 76, borderRadius: '50%', overflow: 'hidden',
+                  background: 'linear-gradient(135deg, #D4691E, #A84F10)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 26, fontWeight: 800, color: 'white',
+                  boxShadow: '0 2px 10px rgba(212,105,30,0.30)',
+                }}>
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : username[0].toUpperCase()}
+                </div>
+                <div style={{
+                  position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%',
+                  background: 'var(--accent)', border: '2px solid var(--surface)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+                }}>
+                  {uploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+                </div>
+              </label>
+            </div>
+
+            <div>
+              <label className="field-label">Username</label>
+              <input value={username} disabled className="input" style={{ opacity: 0.6 }} />
+            </div>
+
+            <div>
+              <label className="field-label">Role</label>
+              <input value={role} disabled className="input" style={{ opacity: 0.6 }} />
+            </div>
+
+            <div>
+              <label className="field-label">Email (opsional)</label>
+              <input value={emailVal} onChange={e => setEmailVal(e.target.value)}
+                className="input" placeholder="cth: budi@email.com" />
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+              <p className="field-label" style={{ marginBottom: 10 }}>Ubah Password (opsional)</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <input
+                  type={showPassword ? 'text' : 'password'} value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  className="input" placeholder="Password saat ini"
+                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'} value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    className="input" style={{ paddingRight: 40 }} placeholder="Password baru"
+                  />
+                  <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'} value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className="input" placeholder="Konfirmasi password baru"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+          <button onClick={save} disabled={saving || uploading}
+            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

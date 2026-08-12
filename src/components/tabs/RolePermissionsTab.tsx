@@ -12,8 +12,11 @@ type Matrix = Record<string, Partial<Record<Action, boolean>>>;
 
 const ACTION_LABELS: Record<Action, string> = { view: 'Lihat', create: 'Tambah', edit: 'Ubah', delete: 'Hapus' };
 const ACTIONS: Action[] = ['view', 'create', 'edit', 'delete'];
-// label col | row-select-all col | 4 action cols — shared by the header and every row so checkboxes line up in columns.
-const GRID_COLS = 'minmax(140px,1fr) 32px repeat(4, 48px)';
+// Fixed pixel widths applied literally to every row (header, module bar, data rows) so
+// columns line up exactly — a CSS Grid per row can size its own tracks slightly
+// differently even with an identical gridTemplateColumns, since each row is a separate grid.
+const SELECT_COL_W = 32;
+const ACTION_COL_W = 48;
 const MATRIX_MIN_WIDTH = 460;
 
 interface RolePermissionsTabProps { creds: string; can: (action: Action) => boolean }
@@ -104,6 +107,30 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
     setCollapsed(s => { const n = new Set(s); n.has(moduleId) ? n.delete(moduleId) : n.add(moduleId); return n; });
   };
 
+  // Module-scoped column toggle — same idea as toggleColumn, but limited to one
+  // module's own rows (top-level menu + its children) instead of the whole matrix.
+  const moduleFeatureKeys = (moduleId: string) => {
+    const tops = topOf(moduleId);
+    return [...tops, ...tops.flatMap(m => childOf(m.id))].map(m => m.featureKey);
+  };
+  const moduleColumnKeys = (moduleId: string, a: Action) =>
+    moduleFeatureKeys(moduleId).filter(k => getFeatureKeyDef(k)?.actions.includes(a));
+  const moduleColumnAllChecked = (moduleId: string, a: Action) => {
+    const keys = moduleColumnKeys(moduleId, a);
+    return keys.length > 0 && keys.every(k => matrix[k]?.[a]);
+  };
+  const toggleModuleColumn = (moduleId: string, a: Action) => {
+    if (readOnly) return;
+    const keys = moduleColumnKeys(moduleId, a);
+    if (keys.length === 0) return;
+    const next = !moduleColumnAllChecked(moduleId, a);
+    setMatrix(m => {
+      const copy = { ...m };
+      keys.forEach(k => { copy[k] = { ...copy[k], [a]: next }; });
+      return copy;
+    });
+  };
+
   const save = async () => {
     setSaving(true);
     const r = await fetch(`/api/role-permissions/${selectedRoleId}`, {
@@ -140,32 +167,40 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
     const Icon = resolveIcon(iconName);
     const rowAllChecked = actions.every(a => isSuperAdmin || matrix[featureKey]?.[a]);
     return (
-      <div key={featureKey} className="grid items-center gap-3 px-4 py-2.5" style={{ gridTemplateColumns: GRID_COLS, borderTop: '1px solid var(--border-2)' }}>
-        <div className="flex items-center gap-2 min-w-0" style={{ paddingLeft: indent ? 20 : 0 }}>
+      <div key={featureKey} className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+        <div className="flex-1 flex items-center gap-2 min-w-0" style={{ paddingLeft: indent ? 20 : 0 }}>
           {indent && <CornerDownRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
           <Icon size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
           <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{label}</span>
         </div>
-        <button
-          onClick={() => toggleAllForRow(featureKey, actions)}
-          disabled={readOnly || isSuperAdmin || actions.length < 2}
-          title="Pilih/batal semua aksi baris ini"
-          className="flex items-center justify-center disabled:opacity-20"
-        >
-          <CheckCheck size={14} style={{ color: rowAllChecked ? 'var(--accent)' : 'var(--text-muted)' }} />
-        </button>
+        <div style={{ width: SELECT_COL_W, flexShrink: 0 }} className="flex items-center justify-center">
+          <button
+            onClick={() => toggleAllForRow(featureKey, actions)}
+            disabled={readOnly || isSuperAdmin || actions.length < 2}
+            title="Pilih/batal semua aksi baris ini"
+            className="flex items-center justify-center disabled:opacity-20"
+          >
+            <CheckCheck size={14} style={{ color: rowAllChecked ? 'var(--accent)' : 'var(--text-muted)' }} />
+          </button>
+        </div>
         {ACTIONS.map(a => {
-          if (!actions.includes(a)) return <span key={a} className="flex justify-center text-xs" style={{ color: 'var(--border)' }}>–</span>;
+          if (!actions.includes(a)) return (
+            <div key={a} style={{ width: ACTION_COL_W, flexShrink: 0 }} className="flex justify-center text-xs">
+              <span style={{ color: 'var(--border)' }}>–</span>
+            </div>
+          );
           const checked = isSuperAdmin || !!matrix[featureKey]?.[a];
           return (
-            <button key={a} onClick={() => toggle(featureKey, a)} disabled={readOnly} className="flex items-center justify-center disabled:cursor-default">
-              <span
-                className="w-5 h-5 rounded-md flex items-center justify-center"
-                style={{ background: checked ? 'var(--accent)' : 'transparent', border: checked ? 'none' : '1.5px solid var(--border)' }}
-              >
-                {checked && <Check size={11} color="#fff" strokeWidth={3.5} />}
-              </span>
-            </button>
+            <div key={a} style={{ width: ACTION_COL_W, flexShrink: 0 }} className="flex justify-center">
+              <button onClick={() => toggle(featureKey, a)} disabled={readOnly} className="flex items-center justify-center disabled:cursor-default">
+                <span
+                  className="w-5 h-5 rounded-md flex items-center justify-center"
+                  style={{ background: checked ? 'var(--accent)' : 'transparent', border: checked ? 'none' : '1.5px solid var(--border)' }}
+                >
+                  {checked && <Check size={11} color="#fff" strokeWidth={3.5} />}
+                </span>
+              </button>
+            </div>
           );
         })}
       </div>
@@ -205,27 +240,29 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
       <div className="overflow-x-auto thin-scrollbar">
         <div style={{ minWidth: MATRIX_MIN_WIDTH }} className="space-y-3">
           {/* Column header — centang di sini menyalakan/mematikan 1 aksi untuk semua baris dari atas ke bawah */}
-          <div className="grid items-center gap-3 px-4 py-2 rounded-xl" style={{ gridTemplateColumns: GRID_COLS, background: 'var(--surface-2)' }}>
-            <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Screen</span>
-            <span />
+          <div className="flex items-center gap-3 px-4 py-2 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+            <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Screen</span>
+            <span style={{ width: SELECT_COL_W, flexShrink: 0 }} />
             {ACTIONS.map(a => {
               const allChecked = isSuperAdmin || columnAllChecked(a);
               return (
-                <Tooltip key={a} label={`${allChecked ? 'Batal' : 'Pilih'} semua "${ACTION_LABELS[a]}"`}>
-                  <button
-                    onClick={() => toggleColumn(a)}
-                    disabled={readOnly}
-                    className="flex flex-col items-center gap-1 disabled:cursor-default"
-                  >
-                    <span
-                      className="w-5 h-5 rounded-md flex items-center justify-center"
-                      style={{ background: allChecked ? 'var(--accent)' : 'transparent', border: allChecked ? 'none' : '1.5px solid var(--border)' }}
+                <div key={a} style={{ width: ACTION_COL_W, flexShrink: 0 }} className="flex justify-center">
+                  <Tooltip label={`${allChecked ? 'Batal' : 'Pilih'} semua "${ACTION_LABELS[a]}"`}>
+                    <button
+                      onClick={() => toggleColumn(a)}
+                      disabled={readOnly}
+                      className="flex flex-col items-center gap-1 disabled:cursor-default"
                     >
-                      {allChecked && <Check size={11} color="#fff" strokeWidth={3.5} />}
-                    </span>
-                    <span className="text-[9px] font-bold uppercase whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{ACTION_LABELS[a]}</span>
-                  </button>
-                </Tooltip>
+                      <span
+                        className="w-5 h-5 rounded-md flex items-center justify-center"
+                        style={{ background: allChecked ? 'var(--accent)' : 'transparent', border: allChecked ? 'none' : '1.5px solid var(--border)' }}
+                      >
+                        {allChecked && <Check size={11} color="#fff" strokeWidth={3.5} />}
+                      </span>
+                      <span className="text-[9px] font-bold uppercase whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{ACTION_LABELS[a]}</span>
+                    </button>
+                  </Tooltip>
+                </div>
               );
             })}
           </div>
@@ -237,17 +274,52 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
             const isCollapsed = collapsed.has(mod.id);
             return (
               <div key={mod.id} className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-                <button
-                  onClick={() => toggleModule(mod.id)}
-                  className="w-full flex items-center justify-between gap-2 px-4 py-3"
+                <div
+                  className="flex items-center gap-3 px-4 py-2.5"
                   style={{ background: 'var(--surface-2)', borderBottom: isCollapsed ? undefined : '1px solid var(--border-2)' }}
                 >
-                  <span className="flex items-center gap-2.5">
+                  <button onClick={() => toggleModule(mod.id)} className="flex-1 min-w-0 flex items-center gap-2.5 text-left">
                     <ModIcon size={15} style={{ color: 'var(--accent)' }} />
-                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{mod.name}</span>
-                  </span>
-                  <ChevronDown size={14} style={{ color: 'var(--text-muted)', transition: 'transform 0.15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }} />
-                </button>
+                    <span className="text-xs font-bold uppercase tracking-wide truncate" style={{ color: 'var(--text-secondary)' }}>{mod.name}</span>
+                    <ChevronDown
+                      size={14}
+                      style={{
+                        color: 'var(--text-muted)',
+                        transition: 'transform 0.15s',
+                        transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                        flexShrink: 0,
+                      }}
+                    />
+                  </button>
+                  <div style={{ width: SELECT_COL_W, flexShrink: 0 }} />
+                  {ACTIONS.map(a => {
+                    const keys = moduleColumnKeys(mod.id, a);
+                    if (keys.length === 0) return (
+                      <div key={a} style={{ width: ACTION_COL_W, flexShrink: 0 }} className="flex justify-center text-xs">
+                        <span style={{ color: 'var(--border)' }}>–</span>
+                      </div>
+                    );
+                    const checked = isSuperAdmin || moduleColumnAllChecked(mod.id, a);
+                    return (
+                      <div key={a} style={{ width: ACTION_COL_W, flexShrink: 0 }} className="flex justify-center">
+                        <Tooltip label={`${checked ? 'Batal' : 'Pilih'} semua "${ACTION_LABELS[a]}" di modul ${mod.name}`}>
+                          <button
+                            onClick={() => toggleModuleColumn(mod.id, a)}
+                            disabled={readOnly || isSuperAdmin}
+                            className="flex items-center justify-center disabled:cursor-default"
+                          >
+                            <span
+                              className="w-5 h-5 rounded-md flex items-center justify-center"
+                              style={{ background: checked ? 'var(--accent)' : 'transparent', border: checked ? 'none' : '1.5px solid var(--border)' }}
+                            >
+                              {checked && <Check size={11} color="#fff" strokeWidth={3.5} />}
+                            </span>
+                          </button>
+                        </Tooltip>
+                      </div>
+                    );
+                  })}
+                </div>
                 {!isCollapsed && tops.map(m => (
                   <div key={m.id}>
                     {row(m.featureKey, m.label, m.icon, false)}
@@ -270,7 +342,7 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
       </div>
 
       {!readOnly && (
-        <div className="flex justify-end">
+        <div className="card flex justify-end p-4" style={{ borderColor: 'var(--border-2)' }}>
           <button onClick={save} disabled={saving} className="btn-primary text-sm">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
             {saving ? 'Menyimpan…' : 'Simpan Hak Akses'}

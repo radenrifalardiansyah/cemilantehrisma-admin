@@ -357,6 +357,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
                 const isDeleting = deletingId === r.id;
                 const isSystem   = !!r.isSystem;
                 const isSelected = selected.has(r.id);
+                const rowNum     = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                 return (
                   <div key={r.id} style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, transition: 'background 0.1s' }}>
                     <div className="flex items-center gap-3 px-4 py-3.5">
@@ -365,6 +366,9 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
                           <span><Checkbox checked={isSelected} disabled={isSystem} onChange={() => toggleSelect(r.id)} /></span>
                         </Tooltip>
                       )}
+                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
+                        {rowNum}
+                      </span>
                       <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                         {isSystem ? <Lock size={16} /> : <IdCard size={16} />}
                       </div>

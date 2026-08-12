@@ -126,8 +126,9 @@ function detectOrderColumn(header: string): OrderTemplateKey | null {
   return null;
 }
 
-export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled }: {
+export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled, onNewOrdersCountChange }: {
   creds: string; highlightInvoice?: string | null; onHighlightHandled?: () => void;
+  onNewOrdersCountChange?: (count: number) => void;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -153,6 +154,11 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  // Pesanan Website yang belum ditandai selesai — dipakai buat badge notifikasi di menu sidebar.
+  useEffect(() => {
+    onNewOrdersCountChange?.(orders.filter(o => o.source === 'portal' && o.status === 'baru').length);
+  }, [orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko — dipakai saat cetak ulang struk ──
   interface StoreInfo { storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string; }
@@ -733,20 +739,20 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled 
       </TopbarPortal>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
-          { icon: <ShoppingBag size={16}/>, label: 'Total Transaksi', val: orders.length.toString(), sub: 'pesanan' },
-          { icon: <TrendingUp  size={16}/>, label: 'Total Omzet',     val: formatRp(totalRevenue), sub: 'dari semua pesanan' },
-          { icon: <Receipt     size={16}/>, label: 'Rata-rata Order', val: formatRp(avgOrder), sub: 'per transaksi' },
+          { icon: <ShoppingBag size={16}/>, label: 'Total Transaksi', val: orders.length.toString(), color: 'var(--accent)', bg: 'var(--accent-bg)' },
+          { icon: <TrendingUp  size={16}/>, label: 'Total Omzet',     val: formatRp(totalRevenue), color: 'var(--success)', bg: 'var(--success-bg)' },
+          { icon: <Receipt     size={16}/>, label: 'Rata-rata Order', val: formatRp(avgOrder), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
         ].map((c, i) => (
-          <div key={i} className="card relative p-4 overflow-hidden">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
-              style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+          <div key={i} className="card p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.bg, color: c.color }}>
               {c.icon}
             </div>
-            <p className="text-lg font-extrabold tabular leading-tight" style={{ color: 'var(--text-primary)' }}>{c.val}</p>
-            <p className="text-[11px] font-semibold mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <div className="stat-card-accent" />
+            <div>
+              <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{c.val}</p>
+              <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+            </div>
           </div>
         ))}
       </div>

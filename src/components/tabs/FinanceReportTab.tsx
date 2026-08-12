@@ -84,6 +84,7 @@ const GLOSSARY_LABA_RUGI: { term: string; desc: string }[] = [
   { term: 'Laba / Rugi Bersih', desc: 'Laba Kotor dikurangi Beban Operasional. Ini angka untung/rugi usaha yang sebenarnya di periode ini.' },
   { term: 'Modal & Prive', desc: 'Uang masuk (Modal) atau keluar (Prive) dari pemilik usaha secara pribadi — tidak dihitung sebagai hasil operasional usaha, jadi tidak masuk Laba Rugi.' },
   { term: 'Ringkasan Kas (versi sebelumnya)', desc: 'Total Pendapatan dikurangi Total Beban kas (termasuk beli bahan baku & produksi langsung dihitung sebagai beban saat itu juga). Cara hitung lama ini tetap ditampilkan di bawah untuk perbandingan, tapi angkanya bisa beda dari Laba Bersih di atas karena tidak menunggu barangnya laku dulu.' },
+  { term: 'Basis Akrual', desc: '"Akrual" (bukan "aktual") artinya biaya & pendapatan dicatat sesuai waktu transaksinya terjadi secara ekonomis — misalnya HPP dihitung saat barang laku, bukan saat bahan baku dibeli. Ini beda dengan "Ringkasan Kas" di bawah yang mencatat semua biaya begitu uang keluar. Basis akrual dianggap lebih akurat menggambarkan untung/rugi usaha di periode ini.' },
 ];
 const GLOSSARY_JURNAL: { term: string; desc: string }[] = [
   { term: 'Jurnal Kas', desc: 'Catatan pergerakan uang kas secara berurutan — ini pergerakan KAS RIIL, beda dari Laba Rugi. Uang keluar beli stok tetap tercatat di sini sebagai Kredit meski barangnya belum tentu laku (belum jadi HPP).' },
@@ -561,8 +562,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           )}
 
           {/* Ringkasan akrual */}
-          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Ringkasan Akrual — Laba Rugi Sebenarnya</p>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <p className="text-xs font-bold uppercase tracking-wide flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+            Ringkasan Akrual — Laba Rugi Sebenarnya <InfoTip label={GLOSSARY_LABA_RUGI[7].desc} />
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--success-bg)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
                 <TrendingUp size={16} />

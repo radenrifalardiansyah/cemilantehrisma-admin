@@ -105,7 +105,10 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
     if (!editing.role) { setError('Role wajib dipilih.'); return; }
     setSaving(true); setError('');
 
-    const body: Record<string, unknown> = { email: editing.email || undefined, role: editing.role };
+    const body: Record<string, unknown> = {
+      email: editing.email || undefined,
+      role: isSelf(editing.username) ? undefined : editing.role,
+    };
     if (editing.password) body.password = editing.password;
 
     const r = isNew
@@ -361,6 +364,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                 const isDeleting = deletingId === u.username;
                 const self       = isSelf(u.username);
                 const isSelected = selected.has(u.username);
+                const rowNum     = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                 return (
                   <div key={u.username} style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, transition: 'background 0.1s' }}>
                     <div className="flex items-center gap-3 px-4 py-3.5">
@@ -369,6 +373,9 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                           <span><Checkbox checked={isSelected} disabled={self} onChange={() => toggleSelect(u.username)} /></span>
                         </Tooltip>
                       )}
+                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
+                        {rowNum}
+                      </span>
                       <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-xs" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                         {u.username.slice(0, 2).toUpperCase()}
                       </div>

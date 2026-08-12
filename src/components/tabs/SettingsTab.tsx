@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, FileText, Shield, Clock, Save, Database, RefreshCw, Landmark, Upload, X, Image as ImageIcon, Warehouse } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import { useToast } from '@/components/Toast';
-import Tooltip from '@/components/Tooltip';
 
 const API = '';
 
@@ -257,32 +257,16 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                     Logo Toko
                   </label>
-                  <div className="flex items-center gap-3">
-                    {settings.logo ? (
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={settings.logo} alt="Logo toko" className="w-full h-full object-contain" />
-                        <Tooltip label="Hapus Logo">
-                          <button type="button" onClick={() => set('logo', '')}
-                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
-                            style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
-                            <X size={11} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ border: '1px dashed var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                        <ImageIcon size={20} />
-                      </div>
-                    )}
-                    <label className="btn-ghost text-xs cursor-pointer">
-                      <input type="file" accept="image/*" className="hidden" disabled={logoUploading}
-                        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadLogo(f); }} />
-                      {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                      {logoUploading ? 'Mengunggah…' : settings.logo ? 'Ganti Logo' : 'Upload Logo'}
-                    </label>
-                  </div>
+                  <ImageUploadBox
+                    src={settings.logo}
+                    alt="Logo toko"
+                    uploading={logoUploading}
+                    onSelect={f => uploadLogo(f)}
+                    onRemove={() => set('logo', '')}
+                    fit="contain"
+                    size={88}
+                    emptyText="Upload Logo"
+                  />
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                     Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos.
                   </p>
@@ -294,32 +278,16 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                       Tanda Tangan Elektronik
                     </label>
-                    <div className="flex items-center gap-3">
-                      {settings.ownerSignature ? (
-                        <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={settings.ownerSignature} alt="Tanda tangan pemilik" className="w-full h-full object-contain" />
-                          <Tooltip label="Hapus Tanda Tangan">
-                            <button type="button" onClick={() => set('ownerSignature', '')}
-                              className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
-                              style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
-                              <X size={11} />
-                            </button>
-                          </Tooltip>
-                        </div>
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{ border: '1px dashed var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                          <ImageIcon size={20} />
-                        </div>
-                      )}
-                      <label className="btn-ghost text-xs cursor-pointer">
-                        <input type="file" accept="image/*" className="hidden" disabled={signatureUploading}
-                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadSignature(f); }} />
-                        {signatureUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                        {signatureUploading ? 'Mengunggah…' : settings.ownerSignature ? 'Ganti' : 'Upload'}
-                      </label>
-                    </div>
+                    <ImageUploadBox
+                      src={settings.ownerSignature}
+                      alt="Tanda tangan pemilik"
+                      uploading={signatureUploading}
+                      onSelect={f => uploadSignature(f)}
+                      onRemove={() => set('ownerSignature', '')}
+                      fit="contain"
+                      size={72}
+                      emptyText="Upload"
+                    />
                     <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                       Foto/scan tanda tangan pemilik, latar transparan (PNG) lebih rapi.
                     </p>
@@ -328,32 +296,16 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                       Cap / Stempel Elektronik
                     </label>
-                    <div className="flex items-center gap-3">
-                      {settings.ownerStamp ? (
-                        <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={settings.ownerStamp} alt="Cap toko" className="w-full h-full object-contain" />
-                          <Tooltip label="Hapus Cap">
-                            <button type="button" onClick={() => set('ownerStamp', '')}
-                              className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full flex items-center justify-center"
-                              style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>
-                              <X size={11} />
-                            </button>
-                          </Tooltip>
-                        </div>
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{ border: '1px dashed var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                          <ImageIcon size={20} />
-                        </div>
-                      )}
-                      <label className="btn-ghost text-xs cursor-pointer">
-                        <input type="file" accept="image/*" className="hidden" disabled={stampUploading}
-                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadStamp(f); }} />
-                        {stampUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                        {stampUploading ? 'Mengunggah…' : settings.ownerStamp ? 'Ganti' : 'Upload'}
-                      </label>
-                    </div>
+                    <ImageUploadBox
+                      src={settings.ownerStamp}
+                      alt="Cap toko"
+                      uploading={stampUploading}
+                      onSelect={f => uploadStamp(f)}
+                      onRemove={() => set('ownerStamp', '')}
+                      fit="contain"
+                      size={72}
+                      emptyText="Upload"
+                    />
                     <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                       Foto cap/stempel toko, latar transparan (PNG) lebih rapi.
                     </p>

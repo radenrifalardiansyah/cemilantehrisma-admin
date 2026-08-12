@@ -13,6 +13,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import ScrollChips from '@/components/ScrollChips';
 import ImageCarousel from '@/components/ImageCarousel';
 import ImageLightbox from '@/components/ImageLightbox';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
@@ -940,34 +941,23 @@ export default function PosTab({
                     searchPlaceholder="Cari bank…"
                   />
 
-                  {!transferProofUrl ? (
-                    <label className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold cursor-pointer"
-                      style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)', color: 'var(--text-secondary)' }}>
-                      <input type="file" accept="image/*" capture="environment" className="hidden" disabled={transferProofUploading}
-                        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleTransferProofSelect(f); }} />
-                      {transferProofUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
-                      {transferProofUploading ? 'Mengunggah…' : 'Upload / Foto Bukti Transfer'}
-                    </label>
-                  ) : (
-                    <div className="flex items-center gap-2.5 p-2 rounded-xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                      <button type="button" onClick={() => setProofLightboxOpen(true)}
-                        className="relative w-11 h-11 rounded-lg overflow-hidden flex-shrink-0">
-                        <Image src={transferProofUrl} alt="Bukti transfer" fill className="object-cover" sizes="44px" unoptimized />
-                      </button>
-                      <span className="flex-1 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Bukti transfer terlampir</span>
-                      <label className="btn-ghost px-2.5 py-1.5 text-xs cursor-pointer">
-                        <input type="file" accept="image/*" capture="environment" className="hidden" disabled={transferProofUploading}
-                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleTransferProofSelect(f); }} />
-                        Ganti
-                      </label>
-                      <Tooltip label="Hapus bukti transfer">
-                        <button type="button" onClick={() => { setTransferProofUrl(''); setOcrStatus('idle'); }}
-                          className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
-                          <X size={13} />
-                        </button>
-                      </Tooltip>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2.5 p-2 rounded-xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <ImageUploadBox
+                      src={transferProofUrl}
+                      alt="Bukti transfer"
+                      uploading={transferProofUploading}
+                      onSelect={f => handleTransferProofSelect(f)}
+                      onRemove={() => { setTransferProofUrl(''); setOcrStatus('idle'); }}
+                      onView={() => setProofLightboxOpen(true)}
+                      capture="environment"
+                      icon={<Camera size={16} />}
+                      emptyText="Upload"
+                      size={44}
+                    />
+                    <span className="flex-1 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                      {transferProofUrl ? 'Bukti transfer terlampir' : 'Upload / foto bukti transfer'}
+                    </span>
+                  </div>
                   {ocrStatus === 'reading' && (
                     <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
                       <Loader2 size={11} className="animate-spin" /> Membaca nominal dari foto…

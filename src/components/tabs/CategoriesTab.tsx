@@ -4,12 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, Search,
-  ChevronLeft, ChevronRight, ImageIcon, ImagePlus, Tag, FileSpreadsheet, Upload,
+  ChevronLeft, ChevronRight, ImageIcon, Tag, FileSpreadsheet, Upload,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import EmojiPicker from '@/components/EmojiPicker';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
@@ -89,7 +90,6 @@ export default function CategoriesTab({ creds }: { creds: string }) {
   const [catPageSize,   setCatPageSize]   = useState(10);
   const [catView, setCatView] = useViewMode('categories');
   const [uploadingBanner, setUploadingBanner] = useState(false);
-  const bannerFileRef = useRef<HTMLInputElement>(null);
 
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -888,26 +888,15 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                 {/* Banner */}
                 <div>
                   <label className="field-label">Banner Kategori (opsional)</label>
-                  {editingCat.bannerUrl ? (
-                    <div className="relative w-full rounded-xl overflow-hidden group" style={{ aspectRatio: '2 / 1', background: 'var(--surface-2)' }}>
-                      <Image src={editingCat.bannerUrl} alt="" fill className="object-cover" sizes="480px" unoptimized />
-                      <Tooltip label="Hapus Banner">
-                        <button onClick={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
-                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X size={13} />
-                        </button>
-                      </Tooltip>
-                    </div>
-                  ) : (
-                    <button onClick={() => bannerFileRef.current?.click()} disabled={uploadingBanner}
-                      className="w-full rounded-xl flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition-colors"
-                      style={{ aspectRatio: '2 / 1', border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                      {uploadingBanner ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
-                      {uploadingBanner ? 'Mengunggah…' : 'Unggah Banner'}
-                    </button>
-                  )}
-                  <input ref={bannerFileRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => e.target.files?.[0] && uploadBannerImage(e.target.files[0])} />
+                  <ImageUploadBox
+                    src={editingCat.bannerUrl}
+                    alt="Banner kategori"
+                    uploading={uploadingBanner}
+                    onSelect={f => uploadBannerImage(f)}
+                    onRemove={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
+                    aspect="2 / 1"
+                    emptyText="Unggah Banner"
+                  />
                   <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
                     Tampil sebagai banner saat kategori ini dipilih di halaman toko (rasio 2:1).
                   </p>
