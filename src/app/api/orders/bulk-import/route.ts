@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 interface ImportRow {
   invoiceNo?: string; date?: string; customerName: string; customerPhone?: string;
@@ -83,6 +84,17 @@ export async function POST(req: NextRequest) {
     }
   }
   if (opsInBatch > 0) await batch.commit();
+
+  try {
+    await logHistory(db, {
+      entity: 'orders', entityId: `bulk-${Date.now()}`,
+      entityLabel: `Impor massal ${created} pesanan`,
+      action: 'create', actor: guard,
+      meta: { bulk: true, createdCount: created, rowCount: orders.length, skipped: skippedInvalid + skippedDuplicate },
+    });
+  } catch (err) {
+    console.error('Gagal menulis audit log impor massal pesanan:', err);
+  }
 
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

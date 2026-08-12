@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -253,13 +254,19 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         expenseIdToStore = null;
       }
 
-      tx.update(batchRef, {
+      const batchUpdate = {
         date, outputs: outputsWithCost, materialsUsed: materialsWithCost,
         materialCost, otherCost: newOtherCost, totalCost, totalYieldQty, costPerPcs,
         warehouseId: newWarehouseId, warehouseName: newWarehouseName,
         note: data.note ?? '',
         expenseId: expenseIdToStore,
         updatedAt: FieldValue.serverTimestamp(),
+      };
+      tx.update(batchRef, batchUpdate);
+      writeHistoryEntry(tx, db, {
+        entity: 'production', entityId: id,
+        entityLabel: `Produksi ${date} - ${outputsWithCost.map(o => o.productName).join(' & ') || id}`,
+        action: 'update', actor: guard, before: batch, after: batchUpdate,
       });
     });
   } catch (err) {
@@ -353,6 +360,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
       if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
       tx.delete(batchRef);
+      writeHistoryEntry(tx, db, {
+        entity: 'production', entityId: id,
+        entityLabel: `Produksi ${batch.date ?? id} - ${outputs.map(o => o.productName).join(' & ') || id}`,
+        action: 'delete', actor: guard, before: batch,
+      });
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus batch produksi.' }, { status: 400 });

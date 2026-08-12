@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
+import { writeHistoryEntry } from '@/lib/history';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -98,11 +99,22 @@ export async function POST(req: NextRequest) {
         });
       });
 
-      tx.set(shipmentRef, {
+      const shipmentDoc = {
         locationId: data.locationId, locationName: data.locationName,
         warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
         createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
+      };
+      tx.set(shipmentRef, shipmentDoc);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentShipments',
+        entityId: shipmentRef.id,
+        entityLabel: `${data.locationName ?? 'Kirim Konsinyasi'}${data.date ? ` - ${data.date}` : ''}`,
+        action: 'create',
+        actor: guard,
+        after: shipmentDoc,
       });
     });
   } catch (err) {

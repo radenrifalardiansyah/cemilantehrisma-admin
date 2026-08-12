@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 const LOCATION_CODE_PREFIX = 'MTR';
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: `Kode "${codeTrim}" sudah digunakan lokasi lain.` }, { status: 409 });
     }
   }
-  const ref = await db.collection('consignmentLocations').add({
+  const payload = {
     name: data.name,
     code: codeTrim,
     contactName: data.contactName ?? '',
@@ -53,6 +54,18 @@ export async function POST(req: NextRequest) {
     note: data.note ?? '',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-  });
+  };
+  const ref = await db.collection('consignmentLocations').add(payload);
+  try {
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentLocations',
+      entityId: ref.id,
+      entityLabel: typeof data.name === 'string' && data.name ? data.name : ref.id,
+      action: 'create',
+      actor: guard,
+      after: payload,
+    });
+  } catch {}
   return Response.json({ id: ref.id });
 }

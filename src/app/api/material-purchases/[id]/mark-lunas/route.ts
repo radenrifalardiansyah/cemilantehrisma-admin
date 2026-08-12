@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -23,7 +24,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const purchase = snap.data()!;
       if (purchase.paymentStatus !== 'belum_lunas') return; // sudah lunas, tidak perlu apa-apa
 
-      tx.update(purchaseRef, { paymentStatus: 'lunas', expenseId: expenseRef.id, updatedAt: FieldValue.serverTimestamp() });
+      const purchaseUpdate = { paymentStatus: 'lunas', expenseId: expenseRef.id, updatedAt: FieldValue.serverTimestamp() };
+      tx.update(purchaseRef, purchaseUpdate);
       const total = Number(purchase.total) || 0;
       if (total > 0) {
         const items = (purchase.items as { materialName: string }[] | undefined) ?? [];
@@ -40,6 +42,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           updatedAt: FieldValue.serverTimestamp(),
         });
       }
+
+      writeHistoryEntry(tx, db, {
+        entity: 'material-purchases',
+        entityId: id,
+        entityLabel: `${purchase.supplierName?.toString().trim() || 'Tanpa nama'} - Rp${total}`,
+        action: 'update',
+        actor: guard,
+        before: purchase,
+        after: { ...purchase, ...purchaseUpdate },
+      });
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menandai lunas.' }, { status: 400 });

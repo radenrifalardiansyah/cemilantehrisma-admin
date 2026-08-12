@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -40,6 +41,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         oldStockQty, newStockQty, oldAvgCost, newAvgCost,
         note: data.note.trim(),
         createdAt: FieldValue.serverTimestamp(),
+      });
+
+      writeHistoryEntry(tx, db, {
+        entity: 'materials',
+        entityId: id,
+        entityLabel: (m.name as string) ?? id,
+        action: 'update',
+        actor: guard,
+        before: m,
+        after: {
+          ...m,
+          stockQty: Math.max(0, newStockQty),
+          avgCost: Math.max(0, newAvgCost),
+        },
+        meta: { adjustQty: newStockQty - oldStockQty, note: data.note.trim() },
       });
     });
   } catch (err) {

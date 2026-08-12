@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 interface PurchaseItemInput {
   materialId: string; materialName: string; unit: string;
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
       // supaya Jurnal Kas/Laba Rugi tidak menghitung uang yang belum benar-benar keluar.
       const willCreateExpense = total > 0 && paymentStatus === 'lunas';
 
-      tx.set(purchaseRef, {
+      const purchaseData = {
         supplierId: data.supplierId ?? null,
         supplierName: data.supplierName ?? '',
         items: itemsWithSubtotal,
@@ -69,6 +70,16 @@ export async function POST(req: NextRequest) {
         expenseId: willCreateExpense ? expenseRef.id : null,
         note: data.note ?? '',
         createdAt: FieldValue.serverTimestamp(),
+      };
+      tx.set(purchaseRef, purchaseData);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'material-purchases',
+        entityId: purchaseRef.id,
+        entityLabel: `${data.supplierName?.trim() || 'Tanpa nama'} - Rp${total}`,
+        action: 'create',
+        actor: guard,
+        after: purchaseData,
       });
 
       if (willCreateExpense) {

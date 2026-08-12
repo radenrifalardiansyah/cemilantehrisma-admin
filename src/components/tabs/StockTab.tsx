@@ -18,6 +18,7 @@ import ImageCarousel from '@/components/ImageCarousel';
 import TopbarPortal from '@/components/TopbarPortal';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -588,6 +589,8 @@ export default function StockTab({
   const [hoveredCard, setHoveredCard]               = useState<string | null>(null);
   const [stockCatFilter, setStockCatFilter]         = useState('semua');
   const [historyView, setHistoryView]               = useViewMode('stock-history');
+  const [historyId, setHistoryId]                   = useState<string | null>(null);
+  const toggleHistory = (id: string) => setHistoryId(cur => cur === id ? null : id);
 
   // Warehouse CRUD
   const [showWForm, setShowWForm]       = useState(false);
@@ -956,60 +959,64 @@ export default function StockTab({
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {warehouses.map(w => (
-                  <div key={w.id} onClick={() => openWarehouse(w)}
-                    onMouseEnter={() => setHoveredCard(w.id)}
-                    onMouseLeave={() => setHoveredCard(null)}
-                    className="card cursor-pointer overflow-hidden"
-                    style={{
-                      transition: 'box-shadow 0.18s, transform 0.18s',
-                      boxShadow: hoveredCard === w.id ? '0 6px 24px rgba(0,0,0,0.09)' : '',
-                      transform:  hoveredCard === w.id ? 'translateY(-2px)' : '',
-                    }}
-                  >
-                    <div className="p-5">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
-                          <Warehouse size={20} style={{ color: 'var(--accent)' }} />
+                  <div key={w.id}>
+                    <div onClick={() => openWarehouse(w)}
+                      onMouseEnter={() => setHoveredCard(w.id)}
+                      onMouseLeave={() => setHoveredCard(null)}
+                      className="card cursor-pointer overflow-hidden"
+                      style={{
+                        transition: 'box-shadow 0.18s, transform 0.18s',
+                        boxShadow: hoveredCard === w.id ? '0 6px 24px rgba(0,0,0,0.09)' : '',
+                        transform:  hoveredCard === w.id ? 'translateY(-2px)' : '',
+                      }}
+                    >
+                      <div className="p-5">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
+                            <Warehouse size={20} style={{ color: 'var(--accent)' }} />
+                          </div>
+                          <div className="flex items-center gap-1"
+                            style={{ opacity: hoveredCard === w.id ? 1 : 0, transition: 'opacity 0.15s' }}
+                            onClick={e => e.stopPropagation()}>
+                            <RecordHistoryButton open={historyId === w.id} onToggle={() => toggleHistory(w.id)} />
+                            <Tooltip label="Edit">
+                              <button onClick={e => openEdit(w, e)}
+                                className="w-7 h-7 rounded-lg flex items-center justify-center"
+                                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+                                title="Edit">
+                                <Pencil size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Hapus">
+                              <button onClick={e => deleteWarehouse(w.id, e)}
+                                disabled={deletingId === w.id}
+                                className="w-7 h-7 rounded-lg flex items-center justify-center"
+                                style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}
+                                title="Hapus">
+                                {deletingId === w.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </Tooltip>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1"
-                          style={{ opacity: hoveredCard === w.id ? 1 : 0, transition: 'opacity 0.15s' }}
-                          onClick={e => e.stopPropagation()}>
-                          <Tooltip label="Edit">
-                            <button onClick={e => openEdit(w, e)}
-                              className="w-7 h-7 rounded-lg flex items-center justify-center"
-                              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
-                              title="Edit">
-                              <Pencil size={12} />
-                            </button>
-                          </Tooltip>
-                          <Tooltip label="Hapus">
-                            <button onClick={e => deleteWarehouse(w.id, e)}
-                              disabled={deletingId === w.id}
-                              className="w-7 h-7 rounded-lg flex items-center justify-center"
-                              style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}
-                              title="Hapus">
-                              {deletingId === w.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                            </button>
-                          </Tooltip>
+                        <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{w.name}</p>
+                        {w.location ? (
+                          <div className="flex items-center gap-1 mt-1.5">
+                            <MapPin size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{w.location}</p>
+                          </div>
+                        ) : (
+                          <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Tidak ada lokasi</p>
+                        )}
+                        {w.description && (
+                          <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-muted)' }}>{w.description}</p>
+                        )}
+                        <div className="flex items-center justify-between mt-4 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                          <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>Lihat Stok</span>
+                          <ChevronRight size={14} style={{ color: 'var(--accent)' }} />
                         </div>
-                      </div>
-                      <p className="font-bold text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{w.name}</p>
-                      {w.location ? (
-                        <div className="flex items-center gap-1 mt-1.5">
-                          <MapPin size={10} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{w.location}</p>
-                        </div>
-                      ) : (
-                        <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Tidak ada lokasi</p>
-                      )}
-                      {w.description && (
-                        <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-muted)' }}>{w.description}</p>
-                      )}
-                      <div className="flex items-center justify-between mt-4 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>Lihat Stok</span>
-                        <ChevronRight size={14} style={{ color: 'var(--accent)' }} />
                       </div>
                     </div>
+                    {historyId === w.id && <RecordHistoryPanel creds={creds} entity="warehouses" entityId={w.id} />}
                   </div>
                 ))}
 

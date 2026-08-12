@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { restoreOrderStockInTx, RestorableOrder } from '@/lib/order-stock';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -95,6 +96,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         };
         Object.keys(orderUpdate).forEach(k => { if (orderUpdate[k] === undefined) delete orderUpdate[k]; });
         tx.update(ref, orderUpdate);
+        writeHistoryEntry(tx, db, {
+          entity: 'orders', entityId: id, entityLabel: `Pesanan ${order.invoiceNo ?? id}`,
+          action: 'update', actor: guard, before: order, after: orderUpdate,
+        });
       });
     } catch (err) {
       return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui pesanan.' }, { status: 400 });
@@ -162,6 +167,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       }
 
       tx.update(ref, update);
+      writeHistoryEntry(tx, db, {
+        entity: 'orders', entityId: id, entityLabel: `Pesanan ${order.invoiceNo ?? id}`,
+        action: 'update', actor: guard, before: order, after: update,
+      });
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui pesanan.' }, { status: 400 });
@@ -185,6 +194,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const order = snap.data() as RestorableOrder | undefined;
     if (order) await restoreOrderStockInTx(tx, db, order);
     tx.delete(ref);
+    if (order) {
+      writeHistoryEntry(tx, db, {
+        entity: 'orders', entityId: id, entityLabel: `Pesanan ${order.invoiceNo ?? id}`,
+        action: 'delete', actor: guard, before: order,
+      });
+    }
   });
 
   return Response.json({ ok: true });

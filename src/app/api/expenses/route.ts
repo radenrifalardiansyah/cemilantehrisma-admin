@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'expenses', 'view');
@@ -24,15 +25,30 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
-  const ref = await db.collection('expenses').add({
+  const payload = {
     category: data.category ?? 'Lainnya',
     description: data.description ?? '',
     amount: Number(data.amount) || 0,
     items: Array.isArray(data.items) ? data.items : [],
     date: data.date,
     note: data.note ?? '',
+  };
+  const ref = await db.collection('expenses').add({
+    ...payload,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  try {
+    await logHistory(db, {
+      entity: 'expenses',
+      entityId: ref.id,
+      entityLabel: `${payload.description || payload.category || 'Pengeluaran'} - Rp ${(payload.amount ?? 0).toLocaleString('id-ID')}`,
+      action: 'create',
+      actor: guard,
+      after: payload,
+    });
+  } catch (err) {
+    console.error('Failed to write history for expenses create', err);
+  }
   return Response.json({ id: ref.id });
 }

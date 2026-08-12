@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -29,13 +30,24 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const expenseSnap = expenseId ? await tx.get(db.collection('expenses').doc(expenseId)) : null;
       if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
 
-      tx.update(purchaseRef, {
+      const purchaseUpdate = {
         voided: true,
         voidedAt: FieldValue.serverTimestamp(),
         voidNote: note?.trim() ?? '',
         paymentStatus: 'belum_lunas',
         expenseId: null,
         updatedAt: FieldValue.serverTimestamp(),
+      };
+      tx.update(purchaseRef, purchaseUpdate);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'material-purchases',
+        entityId: id,
+        entityLabel: `${purchase.supplierName?.toString().trim() || 'Tanpa nama'} - Rp${Number(purchase.total) || 0}`,
+        action: 'update',
+        actor: guard,
+        before: purchase,
+        after: { ...purchase, ...purchaseUpdate },
       });
     });
   } catch (err) {

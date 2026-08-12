@@ -10,6 +10,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -250,6 +251,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const [pageSize, setPageSize] = useState(10);
   const [view, setView] = useViewMode('production');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const toggleHistory = (id: string) => setHistoryId(cur => cur === id ? null : id);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -643,6 +646,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                                   </Tooltip>
                                 </>
                               )}
+                              <RecordHistoryButton open={historyId === b.id} onToggle={() => toggleHistory(b.id)} />
                               <Tooltip label="Lihat detail">
                                 <button onClick={() => setExpandedId(expandedId === b.id ? null : b.id)} className="btn-ghost p-2">
                                   <ChevronRight size={13} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
@@ -670,6 +674,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       </div>
                     </div>
                     {expandedId === b.id && <ProductionDetail b={b} />}
+                    {historyId === b.id && <RecordHistoryPanel creds={creds} entity="production" entityId={b.id} />}
                   </div>
                 );
               })}
@@ -714,22 +719,26 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                         className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
                         Detail <ChevronRight size={12} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                       </button>
-                      {manageable && (
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Tooltip label="Edit">
-                            <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                              <Pencil size={12} />
-                            </button>
-                          </Tooltip>
-                          <Tooltip label="Hapus">
-                            <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
-                              {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                            </button>
-                          </Tooltip>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <RecordHistoryButton open={historyId === b.id} onToggle={() => toggleHistory(b.id)} />
+                        {manageable && (
+                          <>
+                            <Tooltip label="Edit">
+                              <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Hapus">
+                              <button onClick={() => deleteBatch(b)} disabled={deletingId === b.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                                {deletingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </Tooltip>
+                          </>
+                        )}
+                      </div>
                     </div>
                     {expandedId === b.id && <ProductionDetail b={b} />}
+                    {historyId === b.id && <RecordHistoryPanel creds={creds} entity="production" entityId={b.id} />}
                   </div>
                 );
               })}

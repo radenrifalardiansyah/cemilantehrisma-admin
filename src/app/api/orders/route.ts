@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
+import { writeHistoryEntry } from '@/lib/history';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'view');
@@ -69,13 +70,18 @@ export async function POST(req: NextRequest) {
 
       const ref = db.collection('orders').doc();
       orderId = ref.id;
-      tx.set(ref, {
+      const orderData = {
         ...rest,
         items: itemsWithCost,
         status: 'done',
         source: 'kasir',
         stockCut: true,
         createdAt,
+      };
+      tx.set(ref, orderData);
+      writeHistoryEntry(tx, db, {
+        entity: 'orders', entityId: ref.id, entityLabel: `Pesanan ${data.invoiceNo ?? ref.id}`,
+        action: 'create', actor: guard, after: orderData,
       });
 
       for (const [productId, delta] of deltas) {

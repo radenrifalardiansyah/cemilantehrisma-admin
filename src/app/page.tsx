@@ -34,6 +34,8 @@ import RolesTab from '@/components/tabs/RolesTab';
 import ModulesTab from '@/components/tabs/ModulesTab';
 import MenusTab from '@/components/tabs/MenusTab';
 import RolePermissionsTab from '@/components/tabs/RolePermissionsTab';
+import HistoryTab from '@/components/tabs/HistoryTab';
+import AdminFeeTab from '@/components/tabs/AdminFeeTab';
 import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer } from '@/lib/pos-types';
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 
@@ -508,6 +510,9 @@ export default function AdminPage() {
   // pertama yang memang terlihat, daripada membiarkan halaman kosong.
   useEffect(() => {
     if (!authed || menus.length === 0) return;
+    // 'admin-fee' is deliberately not a MenuDoc (see AppShell's TabId comment) — exempt it here
+    // so opening it doesn't immediately bounce back to the first visible menu item.
+    if (activeTab === 'admin-fee') return;
     const visible = new Set(menus.map(m => m.featureKey));
     if (!visible.has(activeTab)) {
       const firstVisible = menus.slice().sort((a, b) => a.order - b.order)[0]?.featureKey as TabId | undefined;
@@ -1081,13 +1086,6 @@ export default function AdminPage() {
         );
       })()}
 
-      <p className="text-center text-xs pb-4" style={{ color: 'var(--text-muted)' }}>
-        Dikembangkan oleh{' '}
-        <a href="https://eleven-digital.id/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
-          PT. Eleven Digital Indonesia
-        </a>
-        {' · '}PT. RMedia Production
-      </p>
     </div>
   );
 
@@ -1160,6 +1158,8 @@ export default function AdminPage() {
       {activeTab === 'modules'    && <ModulesTab   creds={creds} can={(a: Action) => can('modules', a)} onChanged={() => fetchNav(creds)} />}
       {activeTab === 'menus'      && <MenusTab     creds={creds} can={(a: Action) => can('menus', a)} onChanged={() => fetchNav(creds)} />}
       {activeTab === 'role-permissions' && <RolePermissionsTab creds={creds} can={(a: Action) => can('role-permissions', a)} />}
+      {activeTab === 'history'    && <HistoryTab   creds={creds} />}
+      {activeTab === 'admin-fee' && superAdmin && <AdminFeeTab creds={creds} />}
     </AppShell>
   );
 }

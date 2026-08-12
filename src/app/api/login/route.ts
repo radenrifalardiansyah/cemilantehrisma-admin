@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getDb } from '@/lib/firebase-admin';
+import { recordLogin } from '@/lib/login-history';
 import type { QueryDocumentSnapshot, DocumentSnapshot } from 'firebase-admin/firestore';
 
 // Best-effort brute-force guard: in-memory per serverless instance, so it resets
@@ -58,6 +59,12 @@ export async function POST(req: NextRequest) {
   loginAttempts.delete(ip);
   const user = { username: snap.id, role: data.role };
   const token = jwt.sign(user, process.env.JWT_SECRET!, { expiresIn: '7d' });
+
+  try {
+    await recordLogin(db, { username: user.username, role: user.role, ip, userAgent: req.headers.get('user-agent') || 'unknown' });
+  } catch {
+    // Best-effort — gagal mencatat riwayat login tidak boleh menggagalkan login yang sudah valid.
+  }
 
   return Response.json({ ok: true, token, user });
 }

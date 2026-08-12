@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/rbac';
 import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
+import { writeHistoryEntry } from '@/lib/history';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -141,13 +142,24 @@ export async function POST(req: NextRequest) {
         });
       });
 
-      tx.set(recapRef, {
+      const recapDoc = {
         locationId: data.locationId, locationName: data.locationName,
         items: recapItems, totalSold, totalRetur, totalReject, totalRevenue,
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
         createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
+      };
+      tx.set(recapRef, recapDoc);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentRecaps',
+        entityId: recapRef.id,
+        entityLabel: `${data.locationName ?? 'Rekap'}${data.date ? ` - ${data.date}` : ''}`,
+        action: 'create',
+        actor: guard,
+        after: recapDoc,
       });
     });
   } catch (err) {

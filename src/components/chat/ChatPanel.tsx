@@ -1,0 +1,113 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { MessageCircle, X } from 'lucide-react';
+import ChatRoomList, { Contact } from './ChatRoomList';
+import ChatThread from './ChatThread';
+import { TEAM_ROOM_ID, directRoomId, SerializedTimestamp } from '@/lib/chat';
+
+interface Props {
+  username: string;
+  avatar: string | null;
+  creds: string;
+  unreadRoomIds: string[];
+  onRefreshUnread: () => void;
+  closing: boolean;
+  onClose: () => void;
+}
+
+type ActiveRoom = { kind: 'team' } | { kind: 'direct'; contact: Contact };
+
+const PRESENCE_POLL_MS = 10_000;
+
+export default function ChatPanel({ username, avatar, creds, unreadRoomIds, onRefreshUnread, closing, onClose }: Props) {
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
+  const [accounts, setAccounts] = useState<{ username: string; role: string; avatar: string | null; lastLoginAt: SerializedTimestamp | null }[]>([]);
+  const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
+  const [onlineCount, setOnlineCount] = useState(0);
+
+  useEffect(() => {
+    fetch('/api/chat/accounts', { headers: { 'x-admin-auth': creds } })
+      .then(r => r.json())
+      .then((data: { accounts: { username: string; role: string; avatar: string | null; lastLoginAt: SerializedTimestamp | null }[] }) => setAccounts(data.accounts))
+      .catch(() => {});
+  }, [creds]);
+
+  useEffect(() => {
+    const fetchPresence = () => {
+      fetch('/api/chat/presence', { headers: { 'x-admin-auth': creds } })
+        .then(r => r.json())
+        .then((data: { accounts: { username: string; online: boolean }[]; onlineCount: number }) => {
+          setOnlineMap(Object.fromEntries(data.accounts.map(a => [a.username, a.online])));
+          setOnlineCount(data.onlineCount);
+        })
+        .catch(() => {});
+    };
+    fetchPresence();
+    const id = setInterval(fetchPresence, PRESENCE_POLL_MS);
+    return () => clearInterval(id);
+  }, [creds]);
+
+  const contacts: Contact[] = accounts
+    .filter(a => a.username !== username)
+    .map(a => ({ username: a.username, role: a.role, avatar: a.avatar, online: onlineMap[a.username] ?? false, lastLoginAt: a.lastLoginAt }));
+
+  return (
+    <>
+      {/* Transparent click-outside catcher — dismisses the panel without dimming the page,
+          since this is a docked widget, not a modal dialog. */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 44, pointerEvents: closing ? 'none' : 'auto' }} onClick={onClose} />
+
+      <div
+        className={`chat-panel ${closing ? 'animate-scale-out' : 'animate-scale-in'}`}
+        onClick={e => e.stopPropagation()}
+      >
+        {!activeRoom && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px',
+            borderBottom: '1px solid var(--border-2)', flexShrink: 0,
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: '50%', background: 'var(--accent-bg)', color: 'var(--accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <MessageCircle size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>Akun &amp; Chat</p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{onlineCount} sedang online</p>
+            </div>
+            <button onClick={onClose} className="modal-close"><X size={14} /></button>
+          </div>
+        )}
+
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: activeRoom ? 'hidden' : 'auto' }}>
+          {!activeRoom && (
+            <ChatRoomList
+              username={username}
+              avatar={avatar}
+              contacts={contacts}
+              selfOnline={onlineMap[username] ?? true}
+              unreadRoomIds={unreadRoomIds}
+              onSelectTeam={() => setActiveRoom({ kind: 'team' })}
+              onSelectContact={contact => setActiveRoom({ kind: 'direct', contact })}
+            />
+          )}
+          {activeRoom && (
+            <ChatThread
+              roomId={activeRoom.kind === 'team' ? TEAM_ROOM_ID : directRoomId(username, activeRoom.contact.username)}
+              title={activeRoom.kind === 'team' ? 'Chat Tim' : activeRoom.contact.username}
+              avatarUsername={activeRoom.kind === 'direct' ? activeRoom.contact.username : undefined}
+              avatarUrl={activeRoom.kind === 'direct' ? activeRoom.contact.avatar : null}
+              username={username}
+              creds={creds}
+              onBack={() => setActiveRoom(null)}
+              onClose={onClose}
+              onMarkedRead={onRefreshUnread}
+            />
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

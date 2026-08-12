@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface ShipmentItem { productId: string; productName: string; qty: number }
@@ -20,6 +21,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     await db.runTransaction(async tx => {
       const shipmentSnap = await tx.get(shipmentRef);
       if (!shipmentSnap.exists) throw new Error('Riwayat kirim tidak ditemukan.');
+      const shipmentFull = shipmentSnap.data();
       const shipment = shipmentSnap.data()! as { locationId: string; warehouseId?: string; items: ShipmentItem[] };
       const items = shipment.items ?? [];
 
@@ -62,6 +64,16 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       });
 
       tx.delete(shipmentRef);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentShipments',
+        entityId: id,
+        entityLabel: (shipmentFull?.locationName as string | undefined) || id,
+        action: 'delete',
+        actor: guard,
+        before: shipmentFull ?? null,
+      });
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat kirim.' }, { status: 400 });
@@ -92,6 +104,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     await db.runTransaction(async tx => {
       const shipmentSnap = await tx.get(shipmentRef);
       if (!shipmentSnap.exists) throw new Error('Riwayat kirim tidak ditemukan.');
+      const oldShipmentFull = shipmentSnap.data();
       const oldShipment = shipmentSnap.data()! as { locationId: string; warehouseId?: string; items: ShipmentItem[] };
       const oldItems = oldShipment.items ?? [];
 
@@ -221,12 +234,24 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       });
 
       const itemsWithSubtotal = newItems.map(it => ({ ...it, subtotal: it.qty * it.hargaTitip }));
-      tx.update(shipmentRef, {
+      const updatePayload = {
         locationId: data.locationId, locationName: data.locationName,
         warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
         ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
         updatedAt: FieldValue.serverTimestamp(),
+      };
+      tx.update(shipmentRef, updatePayload);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentShipments',
+        entityId: id,
+        entityLabel: `${data.locationName ?? oldShipmentFull?.locationName ?? id}${data.date ? ` - ${data.date}` : ''}`,
+        action: 'update',
+        actor: guard,
+        before: oldShipmentFull ?? null,
+        after: { ...oldShipmentFull, ...updatePayload },
       });
     });
   } catch (err) {

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -137,7 +138,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         expenseIdToStore = null;
       }
 
-      tx.update(purchaseRef, {
+      const purchaseUpdate = {
         supplierId: data.supplierId ?? null,
         supplierName,
         items: itemsWithSubtotal,
@@ -147,6 +148,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         expenseId: expenseIdToStore,
         note: data.note ?? '',
         updatedAt: FieldValue.serverTimestamp(),
+      };
+      tx.update(purchaseRef, purchaseUpdate);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'material-purchases',
+        entityId: id,
+        entityLabel: `${supplierName?.trim() || purchase.supplierName || 'Tanpa nama'} - Rp${total}`,
+        action: 'update',
+        actor: guard,
+        before: purchase,
+        after: { ...purchase, ...purchaseUpdate },
       });
     });
   } catch (err) {
@@ -213,6 +225,17 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
       if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
       tx.delete(purchaseRef);
+
+      if (purchase) {
+        writeHistoryEntry(tx, db, {
+          entity: 'material-purchases',
+          entityId: id,
+          entityLabel: `${purchase.supplierName?.toString().trim() || 'Tanpa nama'} - Rp${Number(purchase.total) || 0}`,
+          action: 'delete',
+          actor: guard,
+          before: purchase,
+        });
+      }
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus pembelian.' }, { status: 400 });

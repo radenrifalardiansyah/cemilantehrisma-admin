@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,12 +21,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
-  const existing = await db.collection('expenses').doc(id).get();
-  const lockMsg = sourceLockMessage(existing.data()?.sourceType);
+  const ref = db.collection('expenses').doc(id);
+  const existing = await ref.get();
+  const before = existing.data();
+  const lockMsg = sourceLockMessage(before?.sourceType);
   if (lockMsg) return Response.json({ error: lockMsg }, { status: 400 });
 
   const data = await req.json() as Record<string, unknown>;
-  await db.collection('expenses').doc(id).update({
+  await ref.update({
     category: data.category ?? 'Lainnya',
     description: data.description ?? '',
     amount: Number(data.amount) || 0,
@@ -34,6 +37,21 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     note: data.note ?? '',
     updatedAt: FieldValue.serverTimestamp(),
   });
+  try {
+    const updated = await ref.get();
+    const after = updated.data();
+    await logHistory(db, {
+      entity: 'expenses',
+      entityId: id,
+      entityLabel: `${after?.description ?? after?.category ?? 'Pengeluaran'} - Rp ${Number(after?.amount ?? 0).toLocaleString('id-ID')}`,
+      action: 'update',
+      actor: guard,
+      before,
+      after,
+    });
+  } catch (err) {
+    console.error('Failed to write history for expenses update', err);
+  }
   return Response.json({ ok: true });
 }
 
@@ -42,10 +60,24 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
-  const existing = await db.collection('expenses').doc(id).get();
-  const lockMsg = sourceLockMessage(existing.data()?.sourceType);
+  const ref = db.collection('expenses').doc(id);
+  const existing = await ref.get();
+  const before = existing.data();
+  const lockMsg = sourceLockMessage(before?.sourceType);
   if (lockMsg) return Response.json({ error: lockMsg }, { status: 400 });
 
-  await db.collection('expenses').doc(id).delete();
+  await ref.delete();
+  try {
+    await logHistory(db, {
+      entity: 'expenses',
+      entityId: id,
+      entityLabel: `${before?.description ?? before?.category ?? 'Pengeluaran'} - Rp ${Number(before?.amount ?? 0).toLocaleString('id-ID')}`,
+      action: 'delete',
+      actor: guard,
+      before,
+    });
+  } catch (err) {
+    console.error('Failed to write history for expenses delete', err);
+  }
   return Response.json({ ok: true });
 }

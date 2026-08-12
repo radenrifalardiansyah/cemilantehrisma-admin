@@ -35,6 +35,7 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'modules',          label: 'Modul',              actions: CRUD },
   { key: 'menus',            label: 'Struktur Menu',      actions: CRUD },
   { key: 'role-permissions', label: 'Hak Akses Role',     actions: ['view', 'edit'] },
+  { key: 'history',          label: 'Riwayat',            actions: ['view'] },
 ];
 
 export const FEATURE_KEY_SET = new Set(FEATURE_KEYS.map(f => f.key));

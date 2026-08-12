@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 interface ImportRow {
   materialId: string; materialName: string; unit: string; qty: number; price: number;
@@ -77,6 +78,19 @@ export async function POST(req: NextRequest) {
     } catch {
       skippedInvalid++;
     }
+  }
+
+  try {
+    await logHistory(db, {
+      entity: 'material-purchases',
+      entityId: `bulk-${Date.now()}`,
+      entityLabel: `Impor massal ${created} pembelian bahan`,
+      action: 'create',
+      actor: guard,
+      meta: { bulk: true, createdCount: created, rowCount: purchases.length },
+    });
+  } catch {
+    // kegagalan menulis audit log tidak boleh menggagalkan hasil impor yang sudah terjadi
   }
 
   return Response.json({ created, skippedInvalid });

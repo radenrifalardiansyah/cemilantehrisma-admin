@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -41,5 +42,20 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   });
 
   const updated = await ref.get();
-  return Response.json({ shift: { id: ref.id, ...updated.data() } });
+  const updatedData = updated.data();
+  try {
+    await logHistory(db, {
+      entity: 'pos',
+      entityCollection: 'cashierShifts',
+      entityId: ref.id,
+      entityLabel: `Sesi kasir ${shift.openedBy ?? user.username}`,
+      action: 'update',
+      actor: user,
+      before: shift,
+      after: updatedData,
+    });
+  } catch (err) {
+    console.error('Failed to write history for pos shift update', err);
+  }
+  return Response.json({ shift: { id: ref.id, ...updatedData } });
 }

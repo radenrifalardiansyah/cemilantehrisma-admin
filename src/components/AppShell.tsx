@@ -4,24 +4,29 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog,
+  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog, Landmark,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
+import ChatWidget from '@/components/chat/ChatWidget';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
-// The 23 fixed screens the app actually has code for (18 original tabs + 5
-// RBAC-management tabs). Struktur Menu / Modul only control label, icon,
-// order, nesting, and active-state for the sidebar — not which screens
+// The 24 fixed screens the app actually has code for (18 original tabs + 5
+// RBAC-management tabs + Riwayat). Struktur Menu / Modul only control label,
+// icon, order, nesting, and active-state for the sidebar — not which screens
 // exist — so this stays a closed union, just a bigger one than before.
+// 'admin-fee' is intentionally NOT driven by ModuleDoc/MenuDoc like the rest — it's RMedia's own
+// internal billing tool, hardcoded to render only for `superAdmin` below, bypassing Struktur
+// Menu / Hak Akses Role entirely so it can never be granted to any other role.
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
   | 'finance-report' | 'capital' | 'settings'
-  | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions';
+  | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
+  | 'admin-fee';
 
 interface NavTab { id: TabId; label: string; Icon: LucideIcon; children?: NavTab[] }
 interface NavGroup { id: string; label: string; Icon: LucideIcon; tabs: NavTab[] }
@@ -112,6 +117,10 @@ export default function AppShell({
   const primaryIds     = new Set(PRIMARY_TABS.map(t => t.id));
   const MORE_TABS      = ALL_TABS.filter(t => !primaryIds.has(t.id));
 
+  // Pinned outside NAV_GROUPS on purpose — see the TabId comment above.
+  const SUPER_ADMIN_TAB: NavTab | null = superAdmin ? { id: 'admin-fee', label: 'Biaya Admin', Icon: Landmark } : null;
+  const MORE_TABS_DISPLAY = SUPER_ADMIN_TAB ? [...MORE_TABS, SUPER_ADMIN_TAB] : MORE_TABS;
+
   const handleLogout = async () => {
     if (await confirm({
       title: 'Konfirmasi Keluar',
@@ -150,8 +159,8 @@ export default function AppShell({
     });
   };
 
-  const currentTab   = ALL_TABS.find(t => t.id === activeTab);
-  const isMoreActive = MORE_TABS.some(t => t.id === activeTab);
+  const currentTab   = ALL_TABS.find(t => t.id === activeTab) ?? (SUPER_ADMIN_TAB?.id === activeTab ? SUPER_ADMIN_TAB : undefined);
+  const isMoreActive = MORE_TABS_DISPLAY.some(t => t.id === activeTab);
   const sw           = collapsed ? SIDEBAR_MINI : SIDEBAR_FULL;
 
   const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); };
@@ -348,6 +357,46 @@ export default function AppShell({
             </div>
             );
           })}
+
+          {/* Super Admin — pinned, not part of Struktur Menu (see TabId comment) */}
+          {SUPER_ADMIN_TAB && (
+            <div className="mt-4">
+              {!collapsed && (
+                <div className="px-3 mb-1.5">
+                  <span className="text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap" style={{ color: 'rgba(255,144,144,0.7)' }}>
+                    Super Admin
+                  </span>
+                </div>
+              )}
+              {collapsed && (
+                <div className="mx-auto mb-2 w-6" style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
+              )}
+              <div className="space-y-0.5">
+                {(() => {
+                  const isActive = activeTab === SUPER_ADMIN_TAB.id;
+                  const navButton = (
+                    <button
+                      onClick={() => setActiveTab(SUPER_ADMIN_TAB.id)}
+                      className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
+                      style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+                    >
+                      <SUPER_ADMIN_TAB.Icon
+                        size={17}
+                        strokeWidth={isActive ? 2.2 : 1.7}
+                        style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
+                      />
+                      {!collapsed && (
+                        <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
+                          {SUPER_ADMIN_TAB.label}
+                        </span>
+                      )}
+                    </button>
+                  );
+                  return collapsed ? <Tooltip label={SUPER_ADMIN_TAB.label}>{navButton}</Tooltip> : navButton;
+                })()}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Footer */}
@@ -558,8 +607,8 @@ export default function AppShell({
           })}
 
           {/* More button */}
-          {MORE_TABS.length > 0 && (() => {
-            const moreBadgeTotal = MORE_TABS.reduce((s, t) => s + (badges[t.id] ?? 0), 0);
+          {MORE_TABS_DISPLAY.length > 0 && (() => {
+            const moreBadgeTotal = MORE_TABS_DISPLAY.reduce((s, t) => s + (badges[t.id] ?? 0), 0);
             return (
           <button
             onClick={() => setMoreOpen(true)}
@@ -623,7 +672,7 @@ export default function AppShell({
                 Menu Lainnya
               </p>
               <div className="grid grid-cols-4 gap-3">
-                {MORE_TABS.map(tab => {
+                {MORE_TABS_DISPLAY.map(tab => {
                   const isActive = activeTab === tab.id;
                   return (
                     <button
@@ -701,6 +750,8 @@ export default function AppShell({
           onSaved={patch => onProfileUpdated?.(patch)}
         />
       )}
+
+      <ChatWidget username={username} creds={creds} avatar={avatar} />
     </div>
   );
 }

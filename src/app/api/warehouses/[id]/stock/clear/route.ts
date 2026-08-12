@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { clearWarehouseProductStock } from '@/lib/warehouse-stock';
+import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -22,6 +23,20 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   await Promise.all(productIds.map(productId =>
     clearWarehouseProductStock(warehouseId, productId, 'Kosongkan semua stok gudang')
   ));
+
+  try {
+    const warehouseSnap = await db.collection('warehouses').doc(warehouseId).get();
+    await logHistory(db, {
+      entity: 'stock',
+      entityId: warehouseId,
+      entityLabel: (warehouseSnap.data()?.name as string) ?? warehouseId,
+      action: 'delete',
+      actor: guard,
+      meta: { clearedProductCount: productIds.length },
+    });
+  } catch {
+    // audit log failure must never fail the business request
+  }
 
   return Response.json({ ok: true, cleared: productIds.length });
 }

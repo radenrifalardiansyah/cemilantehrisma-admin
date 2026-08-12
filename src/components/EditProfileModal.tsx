@@ -1,11 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { UserCog, X, Check, Loader2, Eye, EyeOff, Camera } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? '';
+
+// Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
+type SerializedTimestamp = { seconds: number; nanoseconds: number };
+type LoginHistoryEntry = { id: string; ip: string | null; userAgent: string | null; createdAt: SerializedTimestamp | null };
+type LoginHistoryResponse = { lastLoginAt: SerializedTimestamp | null; history: LoginHistoryEntry[] };
+
+function formatLoginTime(ts: SerializedTimestamp | null | undefined) {
+  if (!ts) return 'Belum ada data';
+  return new Date(ts.seconds * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 interface Props {
   creds: string;
@@ -48,6 +58,18 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
+
+  const [loginHistory, setLoginHistory] = useState<LoginHistoryResponse | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/login-history', { headers })
+      .then(r => r.json())
+      .then((data: LoginHistoryResponse) => setLoginHistory(data))
+      .catch(() => {})
+      .finally(() => setLoadingHistory(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creds]);
 
   const uploadAvatar = async (file: File) => {
     setUploading(true);
@@ -187,6 +209,30 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
                   className="input" placeholder="Konfirmasi password baru"
                 />
               </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+              <p className="field-label" style={{ marginBottom: 10 }}>Aktivitas Login</p>
+              {loadingHistory ? (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Memuat riwayat login…</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Login terakhir: <strong>{formatLoginTime(loginHistory?.lastLoginAt)}</strong>
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
+                    {(loginHistory?.history.length ?? 0) === 0 && (
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Belum ada riwayat login 7 hari terakhir.</p>
+                    )}
+                    {loginHistory?.history.map(h => (
+                      <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <span>{formatLoginTime(h.createdAt)}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{h.ip ?? '-'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {error && (

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
@@ -170,7 +171,7 @@ export async function POST(req: NextRequest) {
         return { ...o, costPerPcs };
       });
 
-      tx.set(batchRef, {
+      const batchData = {
         date, outputs: outputsWithCost,
         materialsUsed: materialsWithCost,
         materialCost, otherCost, totalCost, totalYieldQty, costPerPcs,
@@ -178,6 +179,12 @@ export async function POST(req: NextRequest) {
         note: data.note ?? '',
         expenseId: otherCost > 0 ? expenseRef.id : null,
         createdAt: FieldValue.serverTimestamp(),
+      };
+      tx.set(batchRef, batchData);
+      writeHistoryEntry(tx, db, {
+        entity: 'production', entityId: batchRef.id,
+        entityLabel: `Produksi ${date} - ${outputsWithCost.map(o => o.productName).join(' & ') || batchRef.id}`,
+        action: 'create', actor: guard, after: batchData,
       });
 
       // Catat otomatis sebagai Pengeluaran — hanya biaya lain (tenaga kerja/overhead), pakai tanggal produksi

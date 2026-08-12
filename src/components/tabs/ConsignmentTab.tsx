@@ -18,6 +18,7 @@ import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import type { PosProduct } from '@/lib/pos-types';
 import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
@@ -269,6 +270,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const headers = { 'x-admin-auth': creds };
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
+
+  // ── Riwayat audit per record (generic, dipakai di 3 list: lokasi/kirim/rekap) ──
+  // Beda dengan `historyLocation` di bawah (riwayat bisnis kirim/rekap per lokasi, modal) —
+  // ini adalah audit trail siapa membuat/mengubah/menghapus record itu sendiri (collapse inline).
+  const [auditHistoryId, setAuditHistoryId] = useState<string | null>(null);
+  const toggleAuditHistory = (id: string) => setAuditHistoryId(cur => cur === id ? null : id);
 
   // ── Gudang (untuk tujuan retur/reject di Rekap Harian) ────────
   const [warehouses, setWarehouses] = useState<ConsignmentWarehouse[]>([]);
@@ -1731,7 +1738,8 @@ _${storeHeader.name}_`.trim();
                       const isSelected = selectedLocations.has(l.id);
                       const num = (safeLocationPage - 1) * locationPageSize + i + 1;
                       return (
-                        <div key={l.id} className="flex items-center gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                        <div key={l.id}>
+                          <div className="flex items-center gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                           <span className="w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                           <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)' }}>
@@ -1770,6 +1778,7 @@ _${storeHeader.name}_`.trim();
                                 <History size={12} />
                               </button>
                             </Tooltip>
+                            <RecordHistoryButton open={auditHistoryId === l.id} onToggle={() => toggleAuditHistory(l.id)} />
                             <Tooltip label="Edit">
                               <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                 <Pencil size={12} />
@@ -1781,6 +1790,8 @@ _${storeHeader.name}_`.trim();
                               </button>
                             </Tooltip>
                           </div>
+                          </div>
+                          {auditHistoryId === l.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={l.id} />}
                         </div>
                       );
                     })}
@@ -1791,7 +1802,8 @@ _${storeHeader.name}_`.trim();
                       const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
                       const isSelected = selectedLocations.has(l.id);
                       return (
-                        <div key={l.id} className="card overflow-hidden p-5 relative"
+                        <div key={l.id}>
+                          <div className="card overflow-hidden p-5 relative"
                           style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                           <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                             <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
@@ -1806,6 +1818,7 @@ _${storeHeader.name}_`.trim();
                                   <History size={12} />
                                 </button>
                               </Tooltip>
+                              <RecordHistoryButton open={auditHistoryId === l.id} onToggle={() => toggleAuditHistory(l.id)} />
                               <Tooltip label="Edit">
                                 <button onClick={() => openEditL(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                   <Pencil size={12} />
@@ -1851,6 +1864,8 @@ _${storeHeader.name}_`.trim();
                           <div className="mt-3 pt-3.5" style={{ borderTop: '1px solid var(--border-2)' }}>
                             <LocationStatTiles dense stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                           </div>
+                          </div>
+                          {auditHistoryId === l.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={l.id} />}
                         </div>
                       );
                     })}
@@ -1930,7 +1945,8 @@ _${storeHeader.name}_`.trim();
                         const isSelected = selectedShipments.has(s.id);
                         const num = (safeShipmentPage - 1) * shipmentPageSize + i + 1;
                         return (
-                          <div key={s.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <div key={s.id}>
+                          <div className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                             <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} /></div>
                             <div className="flex-1 min-w-0">
@@ -1967,6 +1983,7 @@ _${storeHeader.name}_`.trim();
                                   {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
                                 </button>
                               </Tooltip>
+                              <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
                               <Tooltip label="Edit">
                                 <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                   <Pencil size={12} />
@@ -1979,6 +1996,8 @@ _${storeHeader.name}_`.trim();
                               </Tooltip>
                             </div>
                           </div>
+                          {auditHistoryId === s.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={s.id} />}
+                          </div>
                         );
                       })}
                     </div>
@@ -1987,7 +2006,8 @@ _${storeHeader.name}_`.trim();
                       {paginatedShipments.map((s) => {
                         const isSelected = selectedShipments.has(s.id);
                         return (
-                          <div key={s.id} className="card overflow-hidden p-4 relative"
+                          <div key={s.id}>
+                          <div className="card overflow-hidden p-4 relative"
                             style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
@@ -2014,6 +2034,7 @@ _${storeHeader.name}_`.trim();
                                     {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
                                   </button>
                                 </Tooltip>
+                                <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
                                 <Tooltip label="Edit">
                                   <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                     <Pencil size={12} />
@@ -2039,6 +2060,8 @@ _${storeHeader.name}_`.trim();
                                 {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
                               </span>
                             </div>
+                          </div>
+                          {auditHistoryId === s.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={s.id} />}
                           </div>
                         );
                       })}
@@ -2118,7 +2141,8 @@ _${storeHeader.name}_`.trim();
                         const isSelected = selectedRecaps.has(r.id);
                         const num = (safeRecapPage - 1) * recapPageSize + i + 1;
                         return (
-                          <div key={r.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <div key={r.id}>
+                          <div className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                             <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
                             <div className="flex-1 min-w-0">
@@ -2161,6 +2185,7 @@ _${storeHeader.name}_`.trim();
                                   {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
                                 </button>
                               </Tooltip>
+                              <RecordHistoryButton open={auditHistoryId === r.id} onToggle={() => toggleAuditHistory(r.id)} />
                               <Tooltip label="Edit">
                                 <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                   <Pencil size={12} />
@@ -2173,6 +2198,8 @@ _${storeHeader.name}_`.trim();
                               </Tooltip>
                             </div>
                           </div>
+                          {auditHistoryId === r.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={r.id} />}
+                          </div>
                         );
                       })}
                     </div>
@@ -2181,7 +2208,8 @@ _${storeHeader.name}_`.trim();
                       {paginatedRecaps.map((r) => {
                         const isSelected = selectedRecaps.has(r.id);
                         return (
-                          <div key={r.id} className="card overflow-hidden p-4 relative"
+                          <div key={r.id}>
+                          <div className="card overflow-hidden p-4 relative"
                             style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
@@ -2204,6 +2232,7 @@ _${storeHeader.name}_`.trim();
                                     {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
                                   </button>
                                 </Tooltip>
+                                <RecordHistoryButton open={auditHistoryId === r.id} onToggle={() => toggleAuditHistory(r.id)} />
                                 <Tooltip label="Edit">
                                   <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
                                     <Pencil size={12} />
@@ -2232,6 +2261,8 @@ _${storeHeader.name}_`.trim();
                                 </button>
                               )}
                             </div>
+                          </div>
+                          {auditHistoryId === r.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={r.id} />}
                           </div>
                         );
                       })}

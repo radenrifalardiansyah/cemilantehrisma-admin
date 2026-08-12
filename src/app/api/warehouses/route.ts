@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { WAREHOUSES_LIST_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, WAREHOUSES_LIST_VIEW_KEYS, 'view');
@@ -17,12 +18,27 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
-  const ref = await db.collection('warehouses').add({
+  const payload = {
     name: data.name,
     location: data.location ?? '',
     description: data.description ?? '',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-  });
+  };
+  const ref = await db.collection('warehouses').add(payload);
+
+  try {
+    await logHistory(db, {
+      entity: 'warehouses',
+      entityId: ref.id,
+      entityLabel: (data.name as string) ?? ref.id,
+      action: 'create',
+      actor: guard,
+      after: payload,
+    });
+  } catch {
+    // audit log failure must never fail the business request
+  }
+
   return Response.json({ id: ref.id });
 }

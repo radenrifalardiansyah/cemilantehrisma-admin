@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { writeHistoryEntry, logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number }
@@ -13,10 +14,27 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  await getDb().collection('consignmentRecaps').doc(id).update({
+  const db = getDb();
+  const recapRef = db.collection('consignmentRecaps').doc(id);
+  const beforeSnap = await recapRef.get();
+  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
+  const payload = {
     paymentStatus: 'lunas',
     updatedAt: FieldValue.serverTimestamp(),
-  });
+  };
+  await recapRef.update(payload);
+  try {
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentRecaps',
+      entityId: id,
+      entityLabel: (before?.locationName as string | undefined) || id,
+      action: 'update',
+      actor: guard,
+      before,
+      after: { ...before, ...payload },
+    });
+  } catch {}
   return Response.json({ ok: true });
 }
 
@@ -33,6 +51,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     await db.runTransaction(async tx => {
       const recapSnap = await tx.get(recapRef);
       if (!recapSnap.exists) throw new Error('Riwayat rekap tidak ditemukan.');
+      const recapFull = recapSnap.data();
       const recap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
       const items = recap.items ?? [];
       const returItems = items.filter(it => it.qtyRetur > 0);
@@ -88,6 +107,16 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       });
 
       tx.delete(recapRef);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentRecaps',
+        entityId: id,
+        entityLabel: (recapFull?.locationName as string | undefined) || id,
+        action: 'delete',
+        actor: guard,
+        before: recapFull ?? null,
+      });
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
@@ -125,6 +154,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     await db.runTransaction(async tx => {
       const recapSnap = await tx.get(recapRef);
       if (!recapSnap.exists) throw new Error('Riwayat rekap tidak ditemukan.');
+      const oldRecapFull = recapSnap.data();
       const oldRecap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
       const oldItems = oldRecap.items ?? [];
       const oldReturItems = oldItems.filter(it => it.qtyRetur > 0);
@@ -278,7 +308,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         });
       });
 
-      tx.update(recapRef, {
+      const updatePayload = {
         locationId: data.locationId, locationName: data.locationName,
         items: recapItems, totalSold, totalRetur, totalReject, totalRevenue,
         paymentStatus,
@@ -286,6 +316,18 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         note: data.note ?? '',
         ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
         updatedAt: FieldValue.serverTimestamp(),
+      };
+      tx.update(recapRef, updatePayload);
+
+      writeHistoryEntry(tx, db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentRecaps',
+        entityId: id,
+        entityLabel: `${data.locationName ?? oldRecapFull?.locationName ?? id}${data.date ? ` - ${data.date}` : ''}`,
+        action: 'update',
+        actor: guard,
+        before: oldRecapFull ?? null,
+        after: { ...oldRecapFull, ...updatePayload },
       });
     });
   } catch (err) {

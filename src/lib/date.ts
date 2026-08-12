@@ -11,3 +11,10 @@ export function wibDayStart(dateStr: string): Timestamp {
 export function wibDayEnd(dateStr: string): Timestamp {
   return Timestamp.fromDate(new Date(`${dateStr}T23:59:59.999+07:00`));
 }
+
+// yyyy-mm-dd hari kalender WIB dari sebuah Date — mirror dari `wibDateKey` di page.tsx (client),
+// versi server-side. Dipakai untuk menormalkan momen apa pun (mis. Timestamp.now()) ke hari WIB
+// yang sama sebelum dibandingkan dengan tanggal-tanggal lain yang berasal dari date-picker.
+export function wibDateKey(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+}

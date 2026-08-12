@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'capital', 'view');
@@ -24,13 +25,29 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
-  const ref = await db.collection('capitalEntries').add({
+  const payload = {
     type: data.type === 'prive' ? 'prive' : 'modal',
     amount: Number(data.amount) || 0,
     date: data.date,
     note: data.note ?? '',
+  };
+  const ref = await db.collection('capitalEntries').add({
+    ...payload,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  try {
+    const typeLabel = payload.type === 'prive' ? 'Modal Keluar' : 'Modal Masuk';
+    await logHistory(db, {
+      entity: 'capital',
+      entityId: ref.id,
+      entityLabel: `${typeLabel} Rp ${(payload.amount ?? 0).toLocaleString('id-ID')}`,
+      action: 'create',
+      actor: guard,
+      after: payload,
+    });
+  } catch (err) {
+    console.error('Failed to write history for capital create', err);
+  }
   return Response.json({ id: ref.id });
 }

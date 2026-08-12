@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { writeHistoryEntry } from '@/lib/history';
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'stock', 'edit');
@@ -56,6 +57,15 @@ export async function POST(req: NextRequest) {
         fromWarehouseId, fromWarehouseName, toWarehouseId, toWarehouseName,
         productId, productName, qty, note: note ?? '',
         createdAt: FieldValue.serverTimestamp(),
+      });
+
+      writeHistoryEntry(tx, db, {
+        entity: 'stock',
+        entityId: productId,
+        entityLabel: productName ?? productId,
+        action: 'update',
+        actor: guard,
+        meta: { fromWarehouseId, toWarehouseId, qty },
       });
     });
   } catch (err) {

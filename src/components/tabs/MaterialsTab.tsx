@@ -15,6 +15,7 @@ import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -619,6 +620,8 @@ export default function MaterialsTab({ creds }: { creds: string }) {
   const [exportingPurchases, setExportingPurchases] = useState(false);
   const [importingPurchases, setImportingPurchases] = useState(false);
   const importPurchaseFileRef = useRef<HTMLInputElement>(null);
+  const [purchaseHistoryId, setPurchaseHistoryId] = useState<string | null>(null);
+  const togglePurchaseHistory = (id: string) => setPurchaseHistoryId(cur => cur === id ? null : id);
 
   const toggleSelectPurchase = (id: string) =>
     setSelectedPurchases(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1264,59 +1267,63 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                         const isSelected = selectedPurchases.has(p.id);
                         const rowNum = (purchaseSafePage - 1) * purchasePageSize + idx + 1;
                         return (
-                          <div key={p.id} className="px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: p.voided ? 0.55 : 1 }}>
-                            <div className="flex items-start gap-3">
-                              <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectPurchase(p.id)} /></div>
-                              <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {rowNum}
-                              </span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
-                                    {p.voided && <span className="badge badge-gray">Dibatalkan</span>}
-                                    {!p.voided && p.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                          <div key={p.id}>
+                            <div className="px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: p.voided ? 0.55 : 1 }}>
+                              <div className="flex items-start gap-3">
+                                <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectPurchase(p.id)} /></div>
+                                <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                  {rowNum}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
+                                      {p.voided && <span className="badge badge-gray">Dibatalkan</span>}
+                                      {!p.voided && p.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
+                                      {!p.voided && (
+                                        <>
+                                          {p.paymentStatus === 'belum_lunas' && (
+                                            <button onClick={() => markPurchaseLunas(p.id)} disabled={markingPurchaseId === p.id}
+                                              className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                              {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                            </button>
+                                          )}
+                                          <Tooltip label="Edit">
+                                            <button onClick={() => openEditPurchase(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
+                                              <Pencil size={12} />
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Hapus">
+                                            <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
+                                              className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
+                                              {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Batalkan pembelian">
+                                            <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
+                                              className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
+                                              {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                                            </button>
+                                          </Tooltip>
+                                        </>
+                                      )}
+                                      <RecordHistoryButton open={purchaseHistoryId === p.id} onToggle={() => togglePurchaseHistory(p.id)} />
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
-                                    {!p.voided && (
-                                      <>
-                                        {p.paymentStatus === 'belum_lunas' && (
-                                          <button onClick={() => markPurchaseLunas(p.id)} disabled={markingPurchaseId === p.id}
-                                            className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                                            {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
-                                          </button>
-                                        )}
-                                        <Tooltip label="Edit">
-                                          <button onClick={() => openEditPurchase(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
-                                            <Pencil size={12} />
-                                          </button>
-                                        </Tooltip>
-                                        <Tooltip label="Hapus">
-                                          <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
-                                            className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
-                                            {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                          </button>
-                                        </Tooltip>
-                                        <Tooltip label="Batalkan pembelian">
-                                          <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
-                                            className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
-                                            {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
-                                          </button>
-                                        </Tooltip>
-                                      </>
-                                    )}
-                                  </div>
+                                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
+                                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                    {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
+                                  </p>
+                                  {p.voided && p.voidNote && (
+                                    <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.voidNote}</p>
+                                  )}
                                 </div>
-                                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
-                                <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                                  {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
-                                </p>
-                                {p.voided && p.voidNote && (
-                                  <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.voidNote}</p>
-                                )}
                               </div>
                             </div>
+                            {purchaseHistoryId === p.id && <RecordHistoryPanel creds={creds} entity="material-purchases" entityId={p.id} />}
                           </div>
                         );
                       })}
@@ -1326,52 +1333,58 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                       {paginatedPurchases.map(p => {
                         const isSelected = selectedPurchases.has(p.id);
                         return (
-                          <div key={p.id} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2, opacity: p.voided ? 0.55 : 1 }}>
-                            <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
-                              <Checkbox checked={isSelected} onChange={() => toggleSelectPurchase(p.id)} />
-                            </div>
-                            <div className="pt-8 pb-3 px-4">
-                              <div className="flex items-center gap-1.5 flex-wrap justify-center text-center">
-                                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
+                          <div key={p.id}>
+                            <div className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2, opacity: p.voided ? 0.55 : 1 }}>
+                              <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                                <Checkbox checked={isSelected} onChange={() => toggleSelectPurchase(p.id)} />
                               </div>
-                              {p.voided && <div className="text-center mt-1"><span className="badge badge-gray">Dibatalkan</span></div>}
-                              {!p.voided && p.paymentStatus === 'belum_lunas' && <div className="text-center mt-1"><span className="badge badge-amber">Belum Lunas</span></div>}
-                              <p className="text-xs text-center mt-1" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
-                              <p className="text-xs text-center mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                                {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
-                              </p>
-                              <p className="text-base font-extrabold tabular text-center mt-2" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</p>
-                            </div>
-                            {!p.voided && (
+                              <div className="pt-8 pb-3 px-4">
+                                <div className="flex items-center gap-1.5 flex-wrap justify-center text-center">
+                                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
+                                </div>
+                                {p.voided && <div className="text-center mt-1"><span className="badge badge-gray">Dibatalkan</span></div>}
+                                {!p.voided && p.paymentStatus === 'belum_lunas' && <div className="text-center mt-1"><span className="badge badge-amber">Belum Lunas</span></div>}
+                                <p className="text-xs text-center mt-1" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
+                                <p className="text-xs text-center mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                  {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
+                                </p>
+                                <p className="text-base font-extrabold tabular text-center mt-2" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</p>
+                              </div>
                               <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                                {p.paymentStatus === 'belum_lunas' && (
-                                  <button onClick={() => markPurchaseLunas(p.id)} disabled={markingPurchaseId === p.id}
-                                    className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                                    {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
-                                  </button>
+                                {!p.voided && (
+                                  <>
+                                    {p.paymentStatus === 'belum_lunas' && (
+                                      <button onClick={() => markPurchaseLunas(p.id)} disabled={markingPurchaseId === p.id}
+                                        className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                        {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                      </button>
+                                    )}
+                                    <Tooltip label="Edit">
+                                      <button onClick={() => openEditPurchase(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
+                                        <Pencil size={12} />
+                                      </button>
+                                    </Tooltip>
+                                    <Tooltip label="Hapus">
+                                      <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
+                                        className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
+                                        {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                      </button>
+                                    </Tooltip>
+                                    <Tooltip label="Batalkan pembelian">
+                                      <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
+                                        className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
+                                        {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                                      </button>
+                                    </Tooltip>
+                                  </>
                                 )}
-                                <Tooltip label="Edit">
-                                  <button onClick={() => openEditPurchase(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
-                                    <Pencil size={12} />
-                                  </button>
-                                </Tooltip>
-                                <Tooltip label="Hapus">
-                                  <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
-                                    className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
-                                    {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                  </button>
-                                </Tooltip>
-                                <Tooltip label="Batalkan pembelian">
-                                  <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
-                                    className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
-                                    {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
-                                  </button>
-                                </Tooltip>
+                                <RecordHistoryButton open={purchaseHistoryId === p.id} onToggle={() => togglePurchaseHistory(p.id)} />
                               </div>
-                            )}
-                            {p.voided && p.voidNote && (
-                              <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.voidNote}</p>
-                            )}
+                              {p.voided && p.voidNote && (
+                                <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.voidNote}</p>
+                              )}
+                            </div>
+                            {purchaseHistoryId === p.id && <RecordHistoryPanel creds={creds} entity="material-purchases" entityId={p.id} />}
                           </div>
                         );
                       })}

@@ -16,6 +16,7 @@ import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -132,6 +133,8 @@ export default function IncomeTab({ creds }: { creds: string }) {
   const [income,      setIncome]      = useState<Income[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
+  const [historyId,  setHistoryId]  = useState<string | null>(null);
+  const toggleHistory = (id: string) => setHistoryId(cur => cur === id ? null : id);
   const [search,      setSearch]      = useState('');
   const [categoryFilter, setCategoryFilter] = useState('semua');
   const [page,        setPage]        = useState(1);
@@ -549,6 +552,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                             </button>
                           </Tooltip>
                         )}
+                        <RecordHistoryButton open={historyId === i.id} onToggle={() => toggleHistory(i.id)} />
                       </div>
                     </div>
                     {expandedId === i.id && i.note && (
@@ -557,6 +561,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                         <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{i.note}</p>
                       </div>
                     )}
+                    {historyId === i.id && <RecordHistoryPanel creds={creds} entity="income" entityId={i.id} />}
                   </div>
                 );
               })}
@@ -606,6 +611,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                             </Tooltip>
                           </>
                         )}
+                        <RecordHistoryButton open={historyId === i.id} onToggle={() => toggleHistory(i.id)} />
                       </div>
                     </div>
                     {expandedId === i.id && i.note && (
@@ -613,6 +619,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                         <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{i.note}</p>
                       </div>
                     )}
+                    {historyId === i.id && <RecordHistoryPanel creds={creds} entity="income" entityId={i.id} />}
                   </div>
                 );
               })}

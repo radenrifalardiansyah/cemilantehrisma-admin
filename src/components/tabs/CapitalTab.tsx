@@ -14,6 +14,7 @@ import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -68,6 +69,8 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const [entries,     setEntries]     = useState<CapitalEntry[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
+  const [historyId,  setHistoryId]  = useState<string | null>(null);
+  const toggleHistory = (id: string) => setHistoryId(cur => cur === id ? null : id);
   const [search,      setSearch]      = useState('');
   const [typeFilter,  setTypeFilter]  = useState<'semua' | 'modal' | 'prive'>('semua');
   const [page,        setPage]        = useState(1);
@@ -389,6 +392,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
                             </button>
                           </Tooltip>
                         )}
+                        <RecordHistoryButton open={historyId === e.id} onToggle={() => toggleHistory(e.id)} />
                       </div>
                     </div>
                     {expandedId === e.id && e.note && (
@@ -396,6 +400,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
                         <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{e.note}</p>
                       </div>
                     )}
+                    {historyId === e.id && <RecordHistoryPanel creds={creds} entity="capital" entityId={e.id} />}
                   </div>
                 );
               })}
@@ -438,6 +443,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
                             {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                           </button>
                         </Tooltip>
+                        <RecordHistoryButton open={historyId === e.id} onToggle={() => toggleHistory(e.id)} />
                       </div>
                     </div>
                     {expandedId === e.id && e.note && (
@@ -445,6 +451,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
                         <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{e.note}</p>
                       </div>
                     )}
+                    {historyId === e.id && <RecordHistoryPanel creds={creds} entity="capital" entityId={e.id} />}
                   </div>
                 );
               })}

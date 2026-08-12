@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logHistory } from '@/lib/history';
 
 export async function GET(req: NextRequest) {
   const user = await requirePermission(req, 'pos', 'view');
@@ -36,5 +37,19 @@ export async function POST(req: NextRequest) {
     status: 'open',
   });
   const doc = await ref.get();
-  return Response.json({ shift: { id: ref.id, ...doc.data() } });
+  const shiftData = doc.data();
+  try {
+    await logHistory(db, {
+      entity: 'pos',
+      entityCollection: 'cashierShifts',
+      entityId: ref.id,
+      entityLabel: `Sesi kasir ${shiftData?.openedBy ?? user.username}`,
+      action: 'create',
+      actor: user,
+      after: shiftData,
+    });
+  } catch (err) {
+    console.error('Failed to write history for pos shift create', err);
+  }
+  return Response.json({ shift: { id: ref.id, ...shiftData } });
 }

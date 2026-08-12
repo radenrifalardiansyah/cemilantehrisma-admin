@@ -32,6 +32,17 @@ export async function requirePermission(
   return user;
 }
 
+// Route guard for RMedia's own internal tooling (Biaya Admin) — deliberately bypasses
+// hasPermission/role_permissions entirely, unlike requirePermission. That matrix is editable
+// via the Hak Akses Role UI, so routing this through a featureKey would let `admin` be granted
+// access; this must stay impossible regardless of how the matrix is configured.
+export function requireSuperAdmin(req: Request): AuthUser | Response {
+  const user = getAuthUser(req);
+  if (!user) return unauthorized();
+  if (user.role !== 'super-admin') return forbidden();
+  return user;
+}
+
 // ─── Hardcoded self-escalation guards ──────────────────────────────────────
 // These hold regardless of what a role's permission matrix says — a
 // misconfigured matrix must never be able to grant either of these.

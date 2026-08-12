@@ -13,6 +13,7 @@ import Tooltip from '@/components/Tooltip';
 import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
 import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
+import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -135,6 +136,8 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled,
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const toggleHistory = (id: string) => setHistoryId(cur => cur === id ? null : id);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [view, setView] = useViewMode('orders');
   const [exporting, setExporting] = useState(false);
@@ -858,6 +861,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled,
                       <Trash2 size={13} />
                     </button>
                   </Tooltip>
+                  <RecordHistoryButton open={historyId === o.id} onToggle={() => toggleHistory(o.id)} />
                   <Tooltip label="Lihat Detail">
                     <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
                       <ChevronRight size={13} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
@@ -867,6 +871,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled,
               </div>
 
               {expandedId === o.id && <OrderDetail o={o} />}
+              {historyId === o.id && <RecordHistoryPanel creds={creds} entity="orders" entityId={o.id} />}
             </div>
             );
           })}
@@ -924,6 +929,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled,
                         <Trash2 size={13} />
                       </button>
                     </Tooltip>
+                    <RecordHistoryButton open={historyId === o.id} onToggle={() => toggleHistory(o.id)} />
                   </div>
                 </div>
 
@@ -956,6 +962,7 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled,
               </div>
 
               {expandedId === o.id && <OrderDetail o={o} />}
+              {historyId === o.id && <RecordHistoryPanel creds={creds} entity="orders" entityId={o.id} />}
             </div>
             );
           })}
