@@ -7,6 +7,7 @@ import {
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
   MousePointerClick, Tag, ShoppingCart, Download, Share, AlertTriangle,
+  LayoutDashboard, PieChart,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
@@ -39,6 +40,9 @@ import AdminFeeTab from '@/components/tabs/AdminFeeTab';
 import AdminFeeBillingTab from '@/components/tabs/AdminFeeBillingTab';
 import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer } from '@/lib/pos-types';
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
+import TopListChart from '@/components/dashboard/TopListChart';
+import BusinessAnalyticsSection, { type BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
+import { type PeriodKey, periodRange } from '@/lib/period';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -260,41 +264,6 @@ function PageviewChart({ data }: { data: { date: string; views: number }[] }) {
   );
 }
 
-// ─── Top-N interactive bar list (hover to highlight + tooltip) ───────────────
-interface TopListItem { label: string; value: number; emoji?: string; sub?: string }
-function TopListChart({ items, color }: { items: TopListItem[]; color: string }) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const max = Math.max(...items.map(i => i.value), 1);
-  return (
-    <div className="space-y-3.5">
-      {items.map((it, i) => {
-        const pct = Math.round((it.value / max) * 100);
-        const active = hoverIdx === i;
-        return (
-          <div key={i} onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}>
-            <div className="flex items-center justify-between mb-1.5 gap-2">
-              <span className="text-xs font-semibold flex items-center gap-1.5 truncate min-w-0"
-                style={{ color: active ? color : 'var(--text-secondary)' }}>
-                {it.emoji && <span className="flex-shrink-0">{it.emoji}</span>}
-                <span className="truncate">{it.label}</span>
-              </span>
-              <span className="text-xs font-bold tabular flex-shrink-0" style={{ color: active ? color : 'var(--text-primary)' }}>
-                {it.value.toLocaleString('id')}{it.sub ? <span className="font-medium opacity-60 ml-1">{it.sub}</span> : null}
-              </span>
-            </div>
-            <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--border-2)' }}>
-              <div
-                className="h-full rounded-full transition-all duration-300"
-                style={{ width: `${pct}%`, background: color, opacity: active ? 1 : 0.72 }}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
 
@@ -319,11 +288,21 @@ export default function AdminPage() {
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
 
   // ── Analytics ────────────────────────────────────────────
+  // Sub-view di dalam tab Analitik — dipisah supaya tidak jadi satu halaman yang kepanjangan ke
+  // bawah (pola sama seperti subView di FinanceReportTab / stokView di StockTab).
+  const [dashSubView, setDashSubView] = useState<'ringkasan' | 'analitik-bisnis' | 'analitik-web'>('ringkasan');
   const [dashData, setDashData] = useState<DashData | null>(null);
   const [loading,  setLoading]  = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [webRange, setWebRange] = useState<7 | 30>(30);
   const [webLoading, setWebLoading] = useState(false);
+
+  // ── Analitik Bisnis (channel, laba rugi, bahan baku) — agregasi server-side ──
+  const [bizPeriod, setBizPeriod] = useState<PeriodKey>('30d');
+  const [bizCustomFrom, setBizCustomFrom] = useState('');
+  const [bizCustomTo, setBizCustomTo] = useState('');
+  const [bizData, setBizData] = useState<BusinessAnalyticsData | null>(null);
+  const [bizLoading, setBizLoading] = useState(false);
 
   // ── POS (shared data — PosTab owns cart/checkout state itself) ─────
   const [posProducts,    setPosProducts]    = useState<PosProduct[]>([]);
@@ -453,6 +432,27 @@ export default function AdminPage() {
     setWebLoading(false);
   }, [creds]);
 
+  // ── Analitik Bisnis — agregasi channel/laba-rugi/bahan-baku dari endpoint server-side,
+  // supaya angkanya identik dengan tab Laporan Keuangan untuk periode yang sama ──
+  const fetchBusinessAnalytics = useCallback(async (authHeader?: string) => {
+    const token = authHeader ?? creds;
+    if (!token) return;
+    setBizLoading(true);
+    try {
+      const { from, to } = periodRange(bizPeriod, bizCustomFrom, bizCustomTo);
+      const res = await fetch(`/api/analytics/overview?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token } });
+      if (res.ok) setBizData(await res.json() as BusinessAnalyticsData);
+    } catch {}
+    setBizLoading(false);
+  }, [creds, bizPeriod, bizCustomFrom, bizCustomTo]);
+
+  // Refetch tiap kali periode (atau rentang custom) diubah dari toggle di dashboard.
+  useEffect(() => {
+    if (!authed) return;
+    fetchBusinessAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bizPeriod, bizCustomFrom, bizCustomTo]);
+
   // ── Dynamic sidebar data — Struktur Menu / Modul drive the real nav ──
   const fetchNav = useCallback(async (token: string) => {
     try {
@@ -490,9 +490,9 @@ export default function AdminPage() {
       superAdmin: boolean;
     };
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
-    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token);
+    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token);
     return true;
-  }, [fetchDash, fetchNav, fetchNewOrdersCount]);
+  }, [fetchDash, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -699,12 +699,29 @@ export default function AdminPage() {
 
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => { fetchDash(); fetchNewOrdersCount(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+          <button onClick={() => { fetchDash(); fetchNewOrdersCount(); fetchBusinessAnalytics(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
       </TopbarPortal>
 
+      {/* Sub-view — Ringkasan (harian) vs Analitik Bisnis (channel/keuangan/bahan baku) vs Analitik Web (pengunjung situs) */}
+      <div className="inline-flex rounded-xl overflow-hidden border flex-wrap" style={{ borderColor: 'var(--border)' }}>
+        {([
+          { id: 'ringkasan' as const, label: 'Ringkasan', Icon: LayoutDashboard },
+          { id: 'analitik-bisnis' as const, label: 'Analitik Bisnis', Icon: PieChart },
+          { id: 'analitik-web' as const, label: 'Analitik Web', Icon: Globe },
+        ]).map(t => (
+          <button key={t.id} onClick={() => setDashSubView(t.id)}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all"
+            style={dashSubView === t.id ? { background: 'var(--accent)', color: 'white' } : { color: 'var(--text-muted)' }}>
+            <t.Icon size={13} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {dashSubView === 'ringkasan' && (
+      <div className="space-y-5">
       {/* Loading */}
       {loading && !dashData && (
         <div className="flex items-center justify-center py-20">
@@ -874,7 +891,11 @@ export default function AdminPage() {
           )}
         </>
       )}
+      </div>
+      )}
 
+      {dashSubView === 'analitik-web' && (
+      <div className="space-y-5">
       {/* ── Analitik Pengunjung Web ── */}
       <div className="flex items-center justify-between gap-2.5 pt-2 flex-wrap">
         <div className="flex items-center gap-2.5">
@@ -1087,6 +1108,22 @@ export default function AdminPage() {
           </>
         );
       })()}
+      </div>
+      )}
+
+      {dashSubView === 'analitik-bisnis' && (
+        <BusinessAnalyticsSection
+          data={bizData}
+          loading={bizLoading}
+          period={bizPeriod}
+          customFrom={bizCustomFrom}
+          customTo={bizCustomTo}
+          onPeriodChange={setBizPeriod}
+          onCustomFromChange={setBizCustomFrom}
+          onCustomToChange={setBizCustomTo}
+          onNavigateFinance={() => setActiveTab('finance-report')}
+        />
+      )}
 
     </div>
   );

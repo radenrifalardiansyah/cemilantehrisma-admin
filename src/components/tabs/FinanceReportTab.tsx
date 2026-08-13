@@ -10,6 +10,7 @@ import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
+import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 
 const API = '';
 
@@ -17,34 +18,6 @@ const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
 const SALDO_AWAL_KEY = 'finance_report_saldo_awal';
-
-// ─── Periode ──────────────────────────────────────────────────────────────────
-type PeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'custom';
-const PERIOD_OPTIONS: { id: PeriodKey; label: string }[] = [
-  { id: 'today', label: 'Hari Ini' },
-  { id: '7d',    label: '7 Hari' },
-  { id: '30d',   label: '30 Hari' },
-  { id: 'month', label: 'Bulan Ini' },
-  { id: 'year',  label: 'Tahun Ini' },
-  { id: 'custom', label: 'Custom' },
-];
-
-function toISO(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function periodRange(period: PeriodKey, customFrom: string, customTo: string): { from: string; to: string } {
-  const now = new Date();
-  const today = toISO(now);
-  switch (period) {
-    case 'today': return { from: today, to: today };
-    case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: toISO(d), to: today }; }
-    case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: toISO(d), to: today }; }
-    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: toISO(d), to: today }; }
-    case 'year': { const d = new Date(now.getFullYear(), 0, 1); return { from: toISO(d), to: today }; }
-    case 'custom': return { from: customFrom || today, to: customTo || today };
-  }
-}
 
 // ─── Tipe data ────────────────────────────────────────────────────────────────
 interface OrderRecord {
