@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { getDb } from '@/lib/firebase-admin';
+import { getAllUsernames } from '@/lib/chat-server';
 import { directRoomId, TEAM_ROOM_ID } from '@/lib/chat';
 
 export async function GET(req: NextRequest) {
@@ -9,21 +10,30 @@ export async function GET(req: NextRequest) {
   if (!authUser) return unauthorized();
 
   const db = getDb();
-  const usersSnap = await db.collection('users').get();
-  const otherUsernames = usersSnap.docs.map(d => d.id).filter(u => u !== authUser.username);
+  const usernames = await getAllUsernames();
+  const otherUsernames = usernames.filter(u => u !== authUser.username);
   const roomIds = [TEAM_ROOM_ID, ...otherUsernames.map(u => directRoomId(authUser.username, u))];
 
-  const [roomDocs, readDocs] = await Promise.all([
-    Promise.all(roomIds.map(id => db.collection('chatRooms').doc(id).get())),
-    Promise.all(roomIds.map(id => db.collection('chatRooms').doc(id).collection('reads').doc(authUser.username).get())),
-  ]);
+  // Single batchGet instead of N separate .get() calls — same read count, one round trip.
+  const roomDocs = await db.getAll(...roomIds.map(id => db.collection('chatRooms').doc(id)));
 
-  const unreadRoomIds = roomIds.filter((_, i) => {
-    const lastMessageAt = roomDocs[i].data()?.lastMessageAt as Timestamp | undefined;
-    if (!lastMessageAt) return false;
-    const lastReadAt = readDocs[i].data()?.lastReadAt as Timestamp | undefined;
-    return !lastReadAt || lastMessageAt.toMillis() > lastReadAt.toMillis();
-  });
+  // Most direct-message pairs in a team never actually talked — skip the reads-subdoc
+  // lookup entirely for any room that has no lastMessageAt yet, instead of reading it
+  // unconditionally for every possible pair on every poll.
+  const active = roomIds
+    .map((id, i) => ({ id, lastMessageAt: roomDocs[i].data()?.lastMessageAt as Timestamp | undefined }))
+    .filter((r): r is { id: string; lastMessageAt: Timestamp } => !!r.lastMessageAt);
+
+  const readDocs = active.length > 0
+    ? await db.getAll(...active.map(r => db.collection('chatRooms').doc(r.id).collection('reads').doc(authUser.username)))
+    : [];
+
+  const unreadRoomIds = active
+    .filter((r, i) => {
+      const lastReadAt = readDocs[i].data()?.lastReadAt as Timestamp | undefined;
+      return !lastReadAt || r.lastMessageAt.toMillis() > lastReadAt.toMillis();
+    })
+    .map(r => r.id);
 
   return Response.json({ totalUnread: unreadRoomIds.length, unreadRoomIds });
 }

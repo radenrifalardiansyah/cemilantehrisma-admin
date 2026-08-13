@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { MessageCircle, X } from 'lucide-react';
 import ChatRoomList, { Contact } from './ChatRoomList';
 import ChatThread from './ChatThread';
 import { TEAM_ROOM_ID, directRoomId, SerializedTimestamp } from '@/lib/chat';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
 interface Props {
   username: string;
@@ -18,7 +19,9 @@ interface Props {
 
 type ActiveRoom = { kind: 'team' } | { kind: 'direct'; contact: Contact };
 
-const PRESENCE_POLL_MS = 10_000;
+// Was 10s — this scans the entire `users` collection on every call, so it's the poll
+// most sensitive to team size. Panel is also only mounted while the widget is open.
+const PRESENCE_POLL_MS = 20_000;
 
 export default function ChatPanel({ username, avatar, creds, unreadRoomIds, onRefreshUnread, closing, onClose }: Props) {
   const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
@@ -33,20 +36,17 @@ export default function ChatPanel({ username, avatar, creds, unreadRoomIds, onRe
       .catch(() => {});
   }, [creds]);
 
-  useEffect(() => {
-    const fetchPresence = () => {
-      fetch('/api/chat/presence', { headers: { 'x-admin-auth': creds } })
-        .then(r => r.json())
-        .then((data: { accounts: { username: string; online: boolean }[]; onlineCount: number }) => {
-          setOnlineMap(Object.fromEntries(data.accounts.map(a => [a.username, a.online])));
-          setOnlineCount(data.onlineCount);
-        })
-        .catch(() => {});
-    };
-    fetchPresence();
-    const id = setInterval(fetchPresence, PRESENCE_POLL_MS);
-    return () => clearInterval(id);
+  const fetchPresence = useCallback(() => {
+    fetch('/api/chat/presence', { headers: { 'x-admin-auth': creds } })
+      .then(r => r.json())
+      .then((data: { accounts: { username: string; online: boolean }[]; onlineCount: number }) => {
+        setOnlineMap(Object.fromEntries(data.accounts.map(a => [a.username, a.online])));
+        setOnlineCount(data.onlineCount);
+      })
+      .catch(() => {});
   }, [creds]);
+
+  useVisiblePolling(fetchPresence, PRESENCE_POLL_MS, [fetchPresence]);
 
   const contacts: Contact[] = accounts
     .filter(a => a.username !== username)

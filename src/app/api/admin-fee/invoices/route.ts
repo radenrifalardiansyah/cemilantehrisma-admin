@@ -1,18 +1,23 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { requireSuperAdmin } from '@/lib/rbac';
+import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { computeReport, collectTransactionIds } from '@/lib/admin-fee';
 
 export async function GET(req: NextRequest) {
-  const guard = requireSuperAdmin(req);
+  const guard = requireAdminOrSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const snap = await getDb().collection('adminFeeInvoices').orderBy('createdAt', 'desc').get();
-  const invoices = snap.docs.map(d => {
-    const data = d.data();
-    const createdAt = data.createdAt as Timestamp | undefined;
-    return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
-  });
+  const invoices = snap.docs
+    // `admin` (pemilik usaha yang ditagih) cuma boleh lihat invoice yang sudah benar-benar
+    // ditagihkan — draft masih internal RMedia Solutions dan belum tentu final, dan yang
+    // dibatalkan bukan lagi tagihan aktif.
+    .filter(d => guard.role === 'super-admin' || !['draft', 'cancelled'].includes(d.data().status))
+    .map(d => {
+      const data = d.data();
+      const createdAt = data.createdAt as Timestamp | undefined;
+      return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
+    });
   return Response.json({ invoices });
 }
 
@@ -22,7 +27,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const guard = requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
-  const data = await req.json() as { from?: string; to?: string };
+  const data = await req.json() as { from?: string; to?: string; note?: string; dueDate?: string };
   if (!data.from || !data.to) return Response.json({ error: 'Periode (from/to) wajib diisi.' }, { status: 400 });
 
   const db = getDb();
@@ -39,6 +44,10 @@ export async function POST(req: NextRequest) {
     totalRevenue: report.totalRevenue,
     totalFee: report.totalFee,
     status: 'draft',
+    // Catatan bebas dari superadmin untuk invoice ini (mis. penjelasan penyesuaian rate,
+    // permintaan khusus) — ikut tampil di halaman Tagihan admin & di PDF, bukan cuma internal.
+    note: data.note?.trim() || null,
+    dueDate: data.dueDate || null,
     createdAt: FieldValue.serverTimestamp(),
     createdBy: guard.username,
   });

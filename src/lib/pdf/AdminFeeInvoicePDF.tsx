@@ -8,13 +8,22 @@ export interface AdminFeeInvoiceRow {
   feeAmount: number;
 }
 
+export interface AdminFeePaymentInfo {
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+}
+
 export interface AdminFeeInvoiceData {
   invoiceNo: string;
   clientName: string;
   periodFrom: string;
   periodTo: string;
+  dueDate?: string | null;
   generatedAt: string;
   status: string;
+  note?: string | null;
+  paymentInfo?: AdminFeePaymentInfo | null;
   rows: AdminFeeInvoiceRow[];
   totalRevenue: number;
   totalFee: number;
@@ -73,9 +82,30 @@ const s = StyleSheet.create({
   totalValue: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.green, paddingVertical: 9, paddingHorizontal: 6, width: '36%', textAlign: 'right' },
 
   footer: { position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'center', fontSize: 7.5, color: C.muted },
+
+  statusBadge: { alignSelf: 'flex-end', marginTop: 6, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 4 },
+  statusBadgeText: { fontSize: 8, fontFamily: 'Helvetica-Bold', letterSpacing: 0.5 },
+
+  noteBox: { marginTop: 16, backgroundColor: C.accentBg, borderRadius: 6, padding: 10, borderLeftWidth: 3, borderLeftColor: C.accent },
+  noteLabel: { fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4, fontFamily: 'Helvetica-Bold' },
+  noteText: { fontSize: 9, color: C.dark, lineHeight: 1.4 },
+
+  payBox: { marginTop: 16, borderRadius: 6, padding: 12, borderWidth: 1.5, borderColor: C.green, backgroundColor: C.greenBg },
+  payLabel: { fontSize: 8.5, color: C.green, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, fontFamily: 'Helvetica-Bold' },
+  payRow: { flexDirection: 'row', marginTop: 3 },
+  payKey: { fontSize: 9, color: C.muted, width: 90 },
+  payValue: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', color: C.dark, flex: 1 },
 });
 
+const STATUS_LABEL: Record<string, { label: string; bg: string; fg: string }> = {
+  draft:    { label: 'DRAFT',              bg: '#EDE7DD', fg: C.muted },
+  invoiced: { label: 'BELUM DIBAYAR',      bg: C.accentBg, fg: C.accent },
+  paid:     { label: 'LUNAS',              bg: C.greenBg,  fg: C.green },
+};
+
 export default function AdminFeeInvoicePDF({ data }: { data: AdminFeeInvoiceData }) {
+  const statusInfo = STATUS_LABEL[data.status] ?? STATUS_LABEL.draft;
+
   return (
     <Document>
       <Page size="A4" style={s.page} wrap>
@@ -89,6 +119,9 @@ export default function AdminFeeInvoicePDF({ data }: { data: AdminFeeInvoiceData
           <View style={s.headerRight}>
             <Text style={s.docTitle}>INVOICE BIAYA ADMIN</Text>
             <Text style={s.docSub}>Dokumen Internal — Tidak untuk Pembeli Akhir</Text>
+            <View style={[s.statusBadge, { backgroundColor: statusInfo.bg }]}>
+              <Text style={[s.statusBadgeText, { color: statusInfo.fg }]}>{statusInfo.label}</Text>
+            </View>
           </View>
         </View>
 
@@ -107,6 +140,12 @@ export default function AdminFeeInvoicePDF({ data }: { data: AdminFeeInvoiceData
             <Text style={s.infoLabel}>Periode</Text>
             <Text style={s.infoValue}>{data.periodFrom} – {data.periodTo}</Text>
           </View>
+          {data.dueDate && (
+            <View style={s.infoBox}>
+              <Text style={s.infoLabel}>Jatuh Tempo</Text>
+              <Text style={s.infoValue}>{data.dueDate}</Text>
+            </View>
+          )}
         </View>
 
         <Text style={s.sectionTitle}>Rincian Biaya Admin per Channel</Text>
@@ -133,6 +172,31 @@ export default function AdminFeeInvoicePDF({ data }: { data: AdminFeeInvoiceData
             <Text style={s.totalValue}>{rp(data.totalFee)}</Text>
           </View>
         </View>
+
+        {data.paymentInfo && (data.paymentInfo.bankName || data.paymentInfo.accountNumber) && (
+          <View style={s.payBox} wrap={false}>
+            <Text style={s.payLabel}>Instruksi Pembayaran</Text>
+            <View style={s.payRow}>
+              <Text style={s.payKey}>Bank</Text>
+              <Text style={s.payValue}>{data.paymentInfo.bankName || '–'}</Text>
+            </View>
+            <View style={s.payRow}>
+              <Text style={s.payKey}>No. Rekening</Text>
+              <Text style={s.payValue}>{data.paymentInfo.accountNumber || '–'}</Text>
+            </View>
+            <View style={s.payRow}>
+              <Text style={s.payKey}>Atas Nama</Text>
+              <Text style={s.payValue}>{data.paymentInfo.accountHolder || '–'}</Text>
+            </View>
+          </View>
+        )}
+
+        {data.note && (
+          <View style={s.noteBox} wrap={false}>
+            <Text style={s.noteLabel}>Catatan dari RMedia Solutions</Text>
+            <Text style={s.noteText}>{data.note}</Text>
+          </View>
+        )}
 
         <Text style={s.footer}>Dicetak {data.generatedAt} — Dokumen internal RMedia Solutions</Text>
       </Page>

@@ -5,8 +5,6 @@ import { UserCog, X, Check, Loader2, Eye, EyeOff, Camera } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? '';
-
 // Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
 type SerializedTimestamp = { seconds: number; nanoseconds: number };
 type LoginHistoryEntry = { id: string; ip: string | null; userAgent: string | null; createdAt: SerializedTimestamp | null };
@@ -77,7 +75,7 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
       const compressed = await compressImage(file);
       const form = new FormData();
       form.append('file', compressed);
-      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers, body: form });
+      const r = await fetch('/api/upload', { method: 'POST', headers, body: form });
       if (!r.ok) throw new Error('upload failed');
       const { url } = await r.json() as { url: string };
       setAvatarUrl(url);

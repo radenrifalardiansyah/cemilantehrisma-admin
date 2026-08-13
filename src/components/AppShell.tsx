@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog, Landmark,
+  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog, Landmark, Receipt,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
@@ -21,12 +21,14 @@ import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 // 'admin-fee' is intentionally NOT driven by ModuleDoc/MenuDoc like the rest — it's RMedia's own
 // internal billing tool, hardcoded to render only for `superAdmin` below, bypassing Struktur
 // Menu / Hak Akses Role entirely so it can never be granted to any other role.
+// 'tagihan-admin-fee' is the mirror image for `role === 'admin'`: the read/pay side of the same
+// Biaya Admin invoices, also hardcoded (not a MenuDoc) so it can't be granted to staff/kasir/finance.
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
   | 'finance-report' | 'capital' | 'settings'
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
-  | 'admin-fee';
+  | 'admin-fee' | 'tagihan-admin-fee';
 
 interface NavTab { id: TabId; label: string; Icon: LucideIcon; children?: NavTab[] }
 interface NavGroup { id: string; label: string; Icon: LucideIcon; tabs: NavTab[] }
@@ -119,7 +121,9 @@ export default function AppShell({
 
   // Pinned outside NAV_GROUPS on purpose — see the TabId comment above.
   const SUPER_ADMIN_TAB: NavTab | null = superAdmin ? { id: 'admin-fee', label: 'Biaya Admin', Icon: Landmark } : null;
-  const MORE_TABS_DISPLAY = SUPER_ADMIN_TAB ? [...MORE_TABS, SUPER_ADMIN_TAB] : MORE_TABS;
+  const ADMIN_BILLING_TAB: NavTab | null = role === 'admin' ? { id: 'tagihan-admin-fee', label: 'Tagihan Biaya Admin', Icon: Receipt } : null;
+  const PINNED_TAB = SUPER_ADMIN_TAB ?? ADMIN_BILLING_TAB;
+  const MORE_TABS_DISPLAY = PINNED_TAB ? [...MORE_TABS, PINNED_TAB] : MORE_TABS;
 
   const handleLogout = async () => {
     if (await confirm({
@@ -358,13 +362,13 @@ export default function AppShell({
             );
           })}
 
-          {/* Super Admin — pinned, not part of Struktur Menu (see TabId comment) */}
-          {SUPER_ADMIN_TAB && (
+          {/* Super Admin / Tagihan — pinned, not part of Struktur Menu (see TabId comment) */}
+          {PINNED_TAB && (
             <div className="mt-4">
               {!collapsed && (
                 <div className="px-3 mb-1.5">
                   <span className="text-[9.5px] font-bold uppercase tracking-[0.1em] whitespace-nowrap" style={{ color: 'rgba(255,144,144,0.7)' }}>
-                    Super Admin
+                    {SUPER_ADMIN_TAB ? 'Super Admin' : 'Tagihan'}
                   </span>
                 </div>
               )}
@@ -373,26 +377,26 @@ export default function AppShell({
               )}
               <div className="space-y-0.5">
                 {(() => {
-                  const isActive = activeTab === SUPER_ADMIN_TAB.id;
+                  const isActive = activeTab === PINNED_TAB.id;
                   const navButton = (
                     <button
-                      onClick={() => setActiveTab(SUPER_ADMIN_TAB.id)}
+                      onClick={() => setActiveTab(PINNED_TAB.id)}
                       className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
                       style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
                     >
-                      <SUPER_ADMIN_TAB.Icon
+                      <PINNED_TAB.Icon
                         size={17}
                         strokeWidth={isActive ? 2.2 : 1.7}
                         style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
                       />
                       {!collapsed && (
                         <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
-                          {SUPER_ADMIN_TAB.label}
+                          {PINNED_TAB.label}
                         </span>
                       )}
                     </button>
                   );
-                  return collapsed ? <Tooltip label={SUPER_ADMIN_TAB.label}>{navButton}</Tooltip> : navButton;
+                  return collapsed ? <Tooltip label={PINNED_TAB.label}>{navButton}</Tooltip> : navButton;
                 })()}
               </div>
             </div>

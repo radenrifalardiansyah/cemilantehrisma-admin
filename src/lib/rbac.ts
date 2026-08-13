@@ -43,6 +43,17 @@ export function requireSuperAdmin(req: Request): AuthUser | Response {
   return user;
 }
 
+// Same hardcoded-bypass reasoning as requireSuperAdmin, but also lets `admin` through — used by
+// the Biaya Admin routes that `admin` (the business owner being billed) needs to read/act on:
+// viewing invoices raised against them and marking one paid. Creating invoices and setting rates
+// stays requireSuperAdmin-only.
+export function requireAdminOrSuperAdmin(req: Request): AuthUser | Response {
+  const user = getAuthUser(req);
+  if (!user) return unauthorized();
+  if (user.role !== 'super-admin' && user.role !== 'admin') return forbidden();
+  return user;
+}
+
 // ─── Hardcoded self-escalation guards ──────────────────────────────────────
 // These hold regardless of what a role's permission matrix says — a
 // misconfigured matrix must never be able to grant either of these.

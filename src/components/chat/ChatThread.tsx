@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, CheckCheck, Send, Users, X } from 'lucide-react';
 import ChatAvatar from './ChatAvatar';
 import { TEAM_ROOM_ID } from '@/lib/chat';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
 interface Message {
   id: string;
@@ -81,9 +82,11 @@ export default function ChatThread({
     setMessages([]);
     lastCreatedAtRef.current = null;
     loadMessages(true).then(markRead);
-    const id = setInterval(() => { loadMessages(false); refreshReadReceipts(); }, POLL_MS);
-    return () => clearInterval(id);
-  }, [roomId, loadMessages, markRead, refreshReadReceipts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
+  const pollTick = useCallback(() => { loadMessages(false); refreshReadReceipts(); }, [loadMessages, refreshReadReceipts]);
+  useVisiblePolling(pollTick, POLL_MS, [pollTick]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });

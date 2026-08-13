@@ -2,14 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Loader2, RefreshCw, Percent, Coins, History, FileDown, Receipt, CheckCircle2, Landmark, X, ListChecks,
+  Loader2, RefreshCw, Percent, Coins, History, FileDown, Receipt, CheckCircle2, Landmark, X, ListChecks, Send, Building2, XCircle,
 } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
+import SearchableSelect, { type SearchableSelectOption } from '@/components/SearchableSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
-import AdminFeeInvoicePDF, { type AdminFeeInvoiceData } from '@/lib/pdf/AdminFeeInvoicePDF';
+import { useViewMode } from '@/lib/useViewMode';
+import ViewToggle from '@/components/ViewToggle';
+import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
 
 type Channel = 'online' | 'kasir' | 'consignment';
 type FeeType = 'percent' | 'fixed';
@@ -35,7 +38,10 @@ interface ReportData { from: string; to: string; breakdown: ChannelBreakdown[]; 
 interface InvoiceRecord {
   id: string; invoiceNo: string; periodFrom: string; periodTo: string;
   breakdown: ChannelBreakdown[]; totalRevenue: number; totalFee: number;
-  status: 'draft' | 'invoiced' | 'paid'; createdAt: { seconds: number } | null;
+  status: 'draft' | 'invoiced' | 'paid' | 'cancelled'; createdAt: { seconds: number } | null;
+  paidAt: { seconds: number } | null; paidBy: string | null;
+  cancelledAt: { seconds: number } | null; cancelledBy: string | null;
+  note: string | null; dueDate: string | null;
 }
 
 const formatRp = (n: number) =>
@@ -54,11 +60,30 @@ const rateLabel = (rate: { type: FeeType; value: number } | null) => {
 const fmtDate = (ts: { seconds: number } | null) =>
   ts ? new Date(ts.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
+const fmtTime = (ts: { seconds: number } | null) =>
+  ts ? new Date(ts.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '–';
+
+// Bila superadmin mengganti rate lebih dari sekali untuk hari efektif yang sama, entri lama
+// itu tidak pernah benar-benar berlaku (lihat rateAtTime di admin-fee.ts) — hanya entri dengan
+// createdAt terakhir per hari yang dipakai, jadi itu satu-satunya yang perlu tampil di riwayat.
+const dedupeHistoryByDay = (list: RateEntry[]): RateEntry[] => {
+  const latestByDay = new Map<number, RateEntry>();
+  for (const r of list) {
+    if (!r.effectiveFrom) continue;
+    const day = Math.floor(r.effectiveFrom.seconds / 86400);
+    const existing = latestByDay.get(day);
+    if (!existing || (r.createdAt?.seconds ?? 0) > (existing.createdAt?.seconds ?? 0)) {
+      latestByDay.set(day, r);
+    }
+  }
+  return Array.from(latestByDay.values());
+};
+
 function toISO(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-type SubTab = 'pengaturan' | 'laporan';
+type SubTab = 'pengaturan' | 'laporan' | 'rekening';
 
 export default function AdminFeeTab({ creds }: { creds: string }) {
   const toast = useToast();
@@ -133,6 +158,53 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [clientName, setClientName] = useState('Cemilan Teh Risma');
   const [txnModalChannel, setTxnModalChannel] = useState<Channel | null>(null);
+  const [note, setNote] = useState('');
+  // Jatuh tempo default 7 hari setelah akhir periode — bisa diubah manual per invoice.
+  const [dueDate, setDueDate] = useState(toISO(new Date(now.getTime() + 7 * 86400000)));
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoiceView, setInvoiceView] = useViewMode('adminfee-invoices');
+  const [channelView, setChannelView] = useViewMode('adminfee-channels');
+
+  // ── Rekening Pembayaran (tujuan transfer Biaya Admin milik RMedia Solutions) ──
+  const [paymentInfo, setPaymentInfo] = useState<AdminFeePaymentInfo>({ bankName: '', accountNumber: '', accountHolder: '' });
+  const [loadingPaymentInfo, setLoadingPaymentInfo] = useState(false);
+  const [savingPaymentInfo, setSavingPaymentInfo] = useState(false);
+  const [bankOptions, setBankOptions] = useState<SearchableSelectOption[]>([]);
+
+  const loadPaymentInfo = useCallback(async () => {
+    setLoadingPaymentInfo(true);
+    try {
+      const r = await fetch('/api/admin-fee/payment-info', { headers });
+      if (r.ok) {
+        const d = await r.json() as { paymentInfo?: Partial<AdminFeePaymentInfo> };
+        setPaymentInfo({ bankName: d.paymentInfo?.bankName ?? '', accountNumber: d.paymentInfo?.accountNumber ?? '', accountHolder: d.paymentInfo?.accountHolder ?? '' });
+      }
+    } catch { /* biarkan kosong, form tetap bisa diisi ulang */ }
+    setLoadingPaymentInfo(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creds]);
+
+  useEffect(() => { loadPaymentInfo(); }, [loadPaymentInfo]);
+
+  useEffect(() => {
+    fetch('/api/master-banks', { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { banks?: { name: string }[] } | null) => {
+        if (d?.banks) setBankOptions(d.banks.map(b => ({ value: b.name, label: b.name })));
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creds]);
+
+  const savePaymentInfo = async () => {
+    setSavingPaymentInfo(true);
+    try {
+      const r = await fetch('/api/admin-fee/payment-info', { method: 'PUT', headers, body: JSON.stringify(paymentInfo) });
+      if (r.ok) toast.success('Rekening pembayaran berhasil disimpan.');
+      else toast.error('Gagal menyimpan rekening pembayaran.');
+    } catch { toast.error('Gagal menyimpan rekening pembayaran.'); }
+    setSavingPaymentInfo(false);
+  };
 
   useEffect(() => {
     fetch('/api/settings', { headers }).then(async r => {
@@ -170,14 +242,17 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
   useEffect(() => { loadReport(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
 
-  const downloadInvoicePdf = async (inv: { invoiceNo: string; periodFrom: string; periodTo: string; breakdown: ChannelBreakdown[]; totalRevenue: number; totalFee: number; status: string }) => {
+  const downloadInvoicePdf = async (inv: { invoiceNo: string; periodFrom: string; periodTo: string; breakdown: ChannelBreakdown[]; totalRevenue: number; totalFee: number; status: string; note?: string | null; dueDate?: string | null }) => {
     const data: AdminFeeInvoiceData = {
       invoiceNo: inv.invoiceNo,
       clientName,
       periodFrom: inv.periodFrom,
       periodTo: inv.periodTo,
+      dueDate: inv.dueDate,
       generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       status: inv.status,
+      note: inv.note,
+      paymentInfo,
       rows: inv.breakdown.map(b => ({ label: b.label, revenue: b.revenue, transactionCount: b.transactionCount, rateLabel: rateLabel(b.currentRate), feeAmount: b.feeAmount })),
       totalRevenue: inv.totalRevenue,
       totalFee: inv.totalFee,
@@ -195,25 +270,35 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
 
   const generateInvoice = async () => {
     if (!report) return;
-    const ok = await confirm({
-      title: 'Buat Invoice Biaya Admin',
-      message: `Buat invoice untuk periode ${from} – ${to} sebesar ${formatRp(report.totalFee)}? Angka ini akan terkunci dan tidak berubah walau rate diubah kemudian.`,
-      confirmLabel: 'Buat Invoice',
-    });
-    if (!ok) return;
     setGenerating(true);
     try {
-      const r = await fetch('/api/admin-fee/invoices', { method: 'POST', headers, body: JSON.stringify({ from, to }) });
+      const r = await fetch('/api/admin-fee/invoices', { method: 'POST', headers, body: JSON.stringify({ from, to, note, dueDate }) });
       const d = await r.json();
       if (r.ok) {
         toast.success(`Invoice ${d.invoiceNo} berhasil dibuat.`);
-        await downloadInvoicePdf({ invoiceNo: d.invoiceNo, periodFrom: from, periodTo: to, breakdown: report.breakdown, totalRevenue: report.totalRevenue, totalFee: report.totalFee, status: 'draft' });
+        await downloadInvoicePdf({ invoiceNo: d.invoiceNo, periodFrom: from, periodTo: to, breakdown: report.breakdown, totalRevenue: report.totalRevenue, totalFee: report.totalFee, status: 'draft', note, dueDate });
+        setNote('');
+        setShowInvoiceModal(false);
         loadInvoices();
       } else {
         toast.error(d.error ?? 'Gagal membuat invoice.');
       }
     } catch { toast.error('Gagal membuat invoice.'); }
     setGenerating(false);
+  };
+
+  // draft -> invoiced: momen invoice ini benar-benar "ditagihkan" — baru dari sini invoice
+  // muncul & bisa dibayar di halaman Tagihan Biaya Admin milik role admin (lihat filter status
+  // di GET /api/admin-fee/invoices).
+  const sendInvoice = async (inv: InvoiceRecord) => {
+    const ok = await confirm({
+      title: 'Tagihkan ke Admin', message: `Kirim invoice ${inv.invoiceNo} (${formatRp(inv.totalFee)}) agar terlihat dan bisa dibayar di halaman Tagihan Admin?`,
+      confirmLabel: 'Tagihkan',
+    });
+    if (!ok) return;
+    const r = await fetch(`/api/admin-fee/invoices/${inv.id}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'invoiced' }) });
+    if (r.ok) { toast.success('Invoice berhasil ditagihkan ke admin.'); loadInvoices(); }
+    else toast.error('Gagal menagihkan invoice.');
   };
 
   const markPaid = async (inv: InvoiceRecord) => {
@@ -224,11 +309,52 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
     else toast.error('Gagal memperbarui status invoice.');
   };
 
+  // Membatalkan melepas transactionIds invoice ini (lihat getInvoicedTransactionMap di
+  // admin-fee.ts) — transaksinya jadi bisa masuk invoice lain lagi, bukan hilang permanen.
+  const cancelInvoice = async (inv: InvoiceRecord) => {
+    const ok = await confirm({
+      title: 'Batalkan Invoice', danger: true,
+      message: `Batalkan invoice ${inv.invoiceNo} (${formatRp(inv.totalFee)})? ${inv.status === 'invoiced' ? 'Invoice ini akan langsung hilang dari halaman Tagihan admin. ' : ''}Semua transaksi di dalamnya akan bisa ditagihkan ulang lewat invoice baru.`,
+      confirmLabel: 'Batalkan',
+    });
+    if (!ok) return;
+    const r = await fetch(`/api/admin-fee/invoices/${inv.id}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'cancelled' }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { toast.success('Invoice dibatalkan.'); loadInvoices(); }
+    else toast.error(d.error ?? 'Gagal membatalkan invoice.');
+  };
+
   const statusBadge = (status: InvoiceRecord['status']) => {
     if (status === 'paid') return <span className="badge badge-green">Lunas</span>;
     if (status === 'invoiced') return <span className="badge badge-amber">Terkirim</span>;
+    if (status === 'cancelled') return <span className="badge badge-red">Dibatalkan</span>;
     return <span className="badge badge-gray">Draft</span>;
   };
+
+  // Dipakai baik di tampilan kartu maupun tabel Riwayat Invoice, supaya tombol aksi tidak
+  // dobel-tulis dan selalu konsisten antara kedua tampilan.
+  const invoiceActions = (inv: InvoiceRecord) => (
+    <>
+      <button onClick={() => downloadInvoicePdf(inv)} className="btn-ghost h-8 px-2.5 text-xs flex items-center gap-1.5">
+        <FileDown size={13} /> PDF
+      </button>
+      {inv.status === 'draft' && (
+        <button onClick={() => sendInvoice(inv)} className="btn-primary h-8 px-2.5 text-xs flex items-center gap-1.5">
+          <Send size={13} /> Tagihkan
+        </button>
+      )}
+      {inv.status === 'invoiced' && (
+        <button onClick={() => markPaid(inv)} className="btn-ghost h-8 px-2.5 text-xs flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
+          <CheckCircle2 size={13} /> Tandai Lunas
+        </button>
+      )}
+      {(inv.status === 'draft' || inv.status === 'invoiced') && (
+        <button onClick={() => cancelInvoice(inv)} className="btn-ghost h-8 px-2.5 text-xs flex items-center gap-1.5" style={{ color: 'var(--danger)' }}>
+          <XCircle size={13} /> Batal
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div className="p-4 lg:p-6 space-y-5">
@@ -250,7 +376,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
 
       {/* Sub-tabs */}
       <div className="flex items-center gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--surface-2)' }}>
-        {([['laporan', 'Laporan & Invoice'], ['pengaturan', 'Pengaturan Rate']] as const).map(([id, label]) => (
+        {([['laporan', 'Laporan & Invoice'], ['pengaturan', 'Pengaturan Rate'], ['rekening', 'Rekening Pembayaran']] as const).map(([id, label]) => (
           <button key={id} onClick={() => setSubTab(id)}
             className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors"
             style={{
@@ -267,7 +393,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
         <div className="space-y-4">
           {CHANNELS.map(channel => {
             const current = currentRateOf(channel);
-            const history = rates[channel] ?? [];
+            const history = dedupeHistoryByDay(rates[channel] ?? []);
             return (
               <div key={channel} className="card overflow-hidden">
                 <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3" style={{ borderBottom: '1px solid var(--border-2)' }}>
@@ -328,13 +454,24 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat rate.</p>
                     ) : (
                       <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
-                        {history.slice().sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)).map(r => (
-                          <div key={r.id} className="px-4 py-2.5 flex items-center justify-between text-xs" style={{ borderTop: '1px solid var(--border-2)' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>Efektif {fmtDate(r.effectiveFrom)}</span>
-                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{r.type === 'percent' ? `${r.value}%` : formatRp(r.value)}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>oleh {r.createdBy}</span>
-                          </div>
-                        ))}
+                        {history.slice().sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0)).map(r => {
+                          const isCurrent = current?.id === r.id;
+                          return (
+                            <div key={r.id} className="px-4 py-2.5 grid items-center text-xs" style={{
+                              gridTemplateColumns: '1fr 90px 1fr',
+                              columnGap: 12,
+                              borderTop: '1px solid var(--border-2)',
+                              background: isCurrent ? 'var(--accent-bg)' : undefined,
+                            }}>
+                              <span className="flex items-center gap-2" style={{ color: isCurrent ? 'var(--accent)' : 'var(--text-muted)' }}>
+                                {isCurrent && <span className="badge badge-green">Aktif</span>}
+                                {isCurrent ? 'Efektif' : 'Sebelumnya'} {fmtDate(r.effectiveFrom)} · {fmtTime(r.createdAt)}
+                              </span>
+                              <span className="font-bold text-center" style={{ color: isCurrent ? 'var(--accent)' : 'var(--text-primary)' }}>{r.type === 'percent' ? `${r.value}%` : formatRp(r.value)}</span>
+                              <span className="text-right" style={{ color: 'var(--text-muted)' }}>oleh {r.createdBy}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -345,94 +482,267 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
         </div>
       )}
 
+      {subTab === 'rekening' && (
+        <div className="card p-5 space-y-4" style={{ maxWidth: 480 }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+              <Building2 size={16} />
+            </div>
+            <div>
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rekening Tujuan Pembayaran</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rekening RMedia Solutions sendiri — tempat admin transfer Biaya Admin. Tampil di halaman Tagihan admin & di PDF invoice.</p>
+            </div>
+          </div>
+          {loadingPaymentInfo ? (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Memuat…</p>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nama Bank</label>
+                <SearchableSelect
+                  value={paymentInfo.bankName}
+                  onChange={v => setPaymentInfo(p => ({ ...p, bankName: v }))}
+                  options={bankOptions}
+                  placeholder="Pilih Bank"
+                  searchPlaceholder="Cari bank…"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nomor Rekening</label>
+                <input value={paymentInfo.accountNumber} onChange={e => setPaymentInfo(p => ({ ...p, accountNumber: e.target.value }))}
+                  placeholder="cth. 1234567890" className="input w-full" style={{ height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Atas Nama</label>
+                <input value={paymentInfo.accountHolder} onChange={e => setPaymentInfo(p => ({ ...p, accountHolder: e.target.value }))}
+                  placeholder="cth. PT. Eleven Digital Indonesia" className="input w-full" style={{ height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+              </div>
+              <button onClick={savePaymentInfo} disabled={savingPaymentInfo} className="btn-primary px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
+                {savingPaymentInfo ? <Loader2 size={14} className="animate-spin" /> : 'Simpan Rekening'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {subTab === 'laporan' && (
         <div className="space-y-4">
-          <div className="card p-4 flex items-end gap-3 flex-wrap">
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Dari</label>
-              <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="input" style={{ width: 160, height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+          <div className="card p-4 space-y-3">
+            <div className="flex items-end gap-3 flex-wrap">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Dari</label>
+                <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="input" style={{ width: 160, height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Sampai</label>
+                <input type="date" value={to} onChange={e => setTo(e.target.value)} className="input" style={{ width: 160, height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+              </div>
+              <button onClick={loadReport} disabled={loadingReport} className="btn-ghost px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
+                {loadingReport ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Tampilkan
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowInvoiceModal(true)} disabled={generating || !report || report.totalFee <= 0} className="btn-primary px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
+                {generating ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} Buat Invoice
+              </button>
             </div>
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Sampai</label>
-              <input type="date" value={to} onChange={e => setTo(e.target.value)} className="input" style={{ width: 160, height: FORM_CTRL_H, boxSizing: 'border-box' }} />
-            </div>
-            <button onClick={loadReport} disabled={loadingReport} className="btn-ghost px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
-              {loadingReport ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Tampilkan
-            </button>
-            <div className="flex-1" />
-            <button onClick={generateInvoice} disabled={generating || !report || report.totalFee <= 0} className="btn-primary px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
-              {generating ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} Buat Invoice
-            </button>
           </div>
 
           {report && (
-            <div className="card overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr style={{ background: 'var(--surface-2)' }}>
-                      <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Channel</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
-                      <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Transaksi</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Rate</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
-                      <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.breakdown.map(b => (
-                      <tr key={b.channel} style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>{b.label}</td>
-                        <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(b.revenue)}</td>
-                        <td className="px-4 py-3 text-center tabular" style={{ color: 'var(--text-muted)' }}>{b.transactionCount}</td>
-                        <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-muted)' }}>{rateLabel(b.currentRate)}</td>
-                        <td className="px-4 py-3 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(b.feeAmount)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <button onClick={() => setTxnModalChannel(b.channel)} disabled={b.transactionCount === 0}
-                            className="btn-ghost h-7 px-2.5 text-xs flex items-center gap-1.5 mx-auto" style={{ opacity: b.transactionCount === 0 ? 0.4 : 1 }}>
-                            <ListChecks size={12} /> Detail
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    <tr style={{ borderTop: '2px solid var(--accent)', background: 'var(--accent-bg)' }}>
-                      <td className="px-4 py-3 font-extrabold" style={{ color: 'var(--text-primary)' }} colSpan={4}>TOTAL BIAYA ADMIN</td>
-                      <td className="px-4 py-3 text-right tabular font-extrabold" style={{ color: 'var(--accent)' }}>{formatRp(report.totalFee)}</td>
-                      <td />
-                    </tr>
-                  </tbody>
-                </table>
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="card p-4">
+                  <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Total Omzet</p>
+                  <p className="text-xl font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(report.totalRevenue)}</p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Total Transaksi</p>
+                  <p className="text-xl font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>
+                    {report.breakdown.reduce((s, b) => s + b.transactionCount, 0)}
+                  </p>
+                </div>
+                <div className="card p-4" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent)' }}>
+                  <p className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>Total Biaya Admin</p>
+                  <p className="text-xl font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>{formatRp(report.totalFee)}</p>
+                </div>
               </div>
-            </div>
+
+              <div className="flex items-center justify-end px-1">
+                <ViewToggle mode={channelView} onChange={setChannelView} height={FORM_CTRL_H} />
+              </div>
+
+              {channelView === 'table' ? (
+                <div className="card overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)' }}>
+                          <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Channel</th>
+                          <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
+                          <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Transaksi</th>
+                          <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Rate</th>
+                          <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
+                          <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.breakdown.map(b => (
+                          <tr key={b.channel} style={{ borderTop: '1px solid var(--border-2)' }}>
+                            <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>{b.label}</td>
+                            <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(b.revenue)}</td>
+                            <td className="px-4 py-3 text-center tabular" style={{ color: 'var(--text-muted)' }}>{b.transactionCount}</td>
+                            <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-muted)' }}>{rateLabel(b.currentRate)}</td>
+                            <td className="px-4 py-3 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(b.feeAmount)}</td>
+                            <td className="px-4 py-3 text-center">
+                              <button onClick={() => setTxnModalChannel(b.channel)} disabled={b.transactionCount === 0}
+                                className="btn-ghost h-7 px-2.5 text-xs flex items-center gap-1.5 mx-auto" style={{ opacity: b.transactionCount === 0 ? 0.4 : 1 }}>
+                                <ListChecks size={12} /> Detail
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {report.breakdown.map(b => (
+                    <div key={b.channel} className="card p-4 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{b.label}</p>
+                        <span className="text-xs font-semibold tabular" style={{ color: 'var(--text-muted)' }}>{b.transactionCount} transaksi</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Omzet</p>
+                          <p className="text-sm font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(b.revenue)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rate</p>
+                          <p className="text-sm font-bold tabular" style={{ color: 'var(--text-primary)' }}>{rateLabel(b.currentRate)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Biaya Admin</p>
+                        <p className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(b.feeAmount)}</p>
+                      </div>
+                      <button onClick={() => setTxnModalChannel(b.channel)} disabled={b.transactionCount === 0}
+                        className="btn-ghost h-8 px-2.5 text-xs flex items-center gap-1.5 w-full justify-center"
+                        style={{ opacity: b.transactionCount === 0 ? 0.4 : 1, borderTop: '1px solid var(--border-2)', marginTop: 4, paddingTop: 10 }}>
+                        <ListChecks size={12} /> Detail Transaksi
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          <div className="card overflow-hidden">
-            <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
-              <Receipt size={15} style={{ color: 'var(--accent)' }} />
-              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Riwayat Invoice</p>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Receipt size={15} style={{ color: 'var(--accent)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Riwayat Invoice</p>
+              </div>
+              {invoices.length > 0 && <ViewToggle mode={invoiceView} onChange={setInvoiceView} height={FORM_CTRL_H} />}
             </div>
             {invoices.length === 0 ? (
-              <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                {loadingInvoices ? 'Memuat…' : 'Belum ada invoice dibuat.'}
-              </p>
+              <div className="card">
+                <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {loadingInvoices ? 'Memuat…' : 'Belum ada invoice dibuat.'}
+                </p>
+              </div>
+            ) : invoiceView === 'table' ? (
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ background: 'var(--surface-2)' }}>
+                        <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Invoice</th>
+                        <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Periode</th>
+                        <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Keterangan</th>
+                        <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Status</th>
+                        <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total</th>
+                        <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoices.map(inv => (
+                        <tr key={inv.id} style={{ borderTop: '1px solid var(--border-2)', opacity: inv.status === 'cancelled' ? 0.65 : 1 }}>
+                          <td className="px-4 py-3 font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{inv.invoiceNo}</td>
+                          <td className="px-4 py-3 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{inv.periodFrom} – {inv.periodTo}</td>
+                          <td className="px-4 py-3" style={{ color: 'var(--text-muted)', maxWidth: 220 }}>
+                            {inv.dueDate && inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                              <p className="text-xs font-semibold" style={{ color: inv.dueDate < todayIso ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                Jatuh tempo {fmtDate({ seconds: new Date(inv.dueDate).getTime() / 1000 })}{inv.dueDate < todayIso ? ' — Terlambat' : ''}
+                              </p>
+                            )}
+                            {inv.status === 'paid' && inv.paidAt && (
+                              <p className="text-xs" style={{ color: 'var(--success)' }}>
+                                Dibayar {new Date(inv.paidAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}{inv.paidBy ? ` oleh ${inv.paidBy}` : ''}
+                              </p>
+                            )}
+                            {inv.status === 'cancelled' && inv.cancelledAt && (
+                              <p className="text-xs" style={{ color: 'var(--danger)' }}>
+                                Dibatalkan {new Date(inv.cancelledAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}{inv.cancelledBy ? ` oleh ${inv.cancelledBy}` : ''}
+                              </p>
+                            )}
+                            {inv.note && <p className="text-xs italic truncate" title={inv.note}>“{inv.note}”</p>}
+                          </td>
+                          <td className="px-4 py-3 text-center">{statusBadge(inv.status)}</td>
+                          <td className="px-4 py-3 text-right tabular font-extrabold" style={{ color: 'var(--accent)' }}>{formatRp(inv.totalFee)}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                              {invoiceActions(inv)}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : (
-              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {invoices.map(inv => (
-                  <div key={inv.id} className="px-5 py-3.5 flex items-center gap-3 flex-wrap">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{inv.invoiceNo}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{inv.periodFrom} – {inv.periodTo}</p>
+                  <div key={inv.id} className="card p-4 space-y-2.5" style={{ opacity: inv.status === 'cancelled' ? 0.65 : 1 }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{inv.invoiceNo}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{inv.periodFrom} – {inv.periodTo}</p>
+                      </div>
+                      {statusBadge(inv.status)}
                     </div>
-                    {statusBadge(inv.status)}
-                    <span className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(inv.totalFee)}</span>
-                    <button onClick={() => downloadInvoicePdf(inv)} className="btn-ghost h-8 px-3 text-xs flex items-center gap-1.5">
-                      <FileDown size={13} /> PDF
-                    </button>
-                    {inv.status !== 'paid' && (
-                      <button onClick={() => markPaid(inv)} className="btn-ghost h-8 px-3 text-xs flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
-                        <CheckCircle2 size={13} /> Tandai Lunas
-                      </button>
+
+                    <p className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(inv.totalFee)}</p>
+
+                    {inv.dueDate && inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                      <p className="text-xs font-semibold" style={{ color: inv.dueDate < todayIso ? 'var(--danger)' : 'var(--text-muted)' }}>
+                        Jatuh tempo {fmtDate({ seconds: new Date(inv.dueDate).getTime() / 1000 })}
+                        {inv.dueDate < todayIso ? ' — Terlambat' : ''}
+                      </p>
                     )}
+                    {inv.status === 'paid' && inv.paidAt && (
+                      <p className="text-xs" style={{ color: 'var(--success)' }}>
+                        Dibayar {new Date(inv.paidAt.seconds * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {inv.paidBy ? ` oleh ${inv.paidBy}` : ''}
+                      </p>
+                    )}
+                    {inv.status === 'cancelled' && inv.cancelledAt && (
+                      <p className="text-xs" style={{ color: 'var(--danger)' }}>
+                        Dibatalkan {new Date(inv.cancelledAt.seconds * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {inv.cancelledBy ? ` oleh ${inv.cancelledBy}` : ''}
+                      </p>
+                    )}
+                    {inv.note && (
+                      <p className="text-xs italic truncate" style={{ color: 'var(--text-muted)' }} title={inv.note}>
+                        “{inv.note}”
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1" style={{ borderTop: '1px solid var(--border-2)', marginTop: 4, paddingTop: 10 }}>
+                      {invoiceActions(inv)}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -501,6 +811,51 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
           </div>
         );
       })()}
+
+      {showInvoiceModal && report && (
+        <div className="modal-overlay" onClick={() => !generating && setShowInvoiceModal(false)}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><FileDown size={17} /></div>
+                <div>
+                  <p className="modal-title">Buat Invoice Biaya Admin</p>
+                  <p className="modal-subtitle">{from} – {to} · {formatRp(report.totalFee)}</p>
+                </div>
+              </div>
+              <button onClick={() => !generating && setShowInvoiceModal(false)} className="modal-close"><X size={14} /></button>
+            </div>
+            <div className="modal-body space-y-3">
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                Angka ini akan terkunci dan tidak berubah walau rate diubah kemudian.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Jatuh Tempo</label>
+                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="input" style={{ width: 160, height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Catatan untuk Admin (opsional)</label>
+                <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                  placeholder="cth. Ada penyesuaian rate konsinyasi bulan ini, silakan hubungi kami jika ada pertanyaan."
+                  className="input w-full" style={{ resize: 'vertical', boxSizing: 'border-box' }} />
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Catatan ini ikut tersimpan di invoice, tampil di halaman Tagihan admin, dan tercetak di PDF.
+                </p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowInvoiceModal(false)} disabled={generating} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: generating ? 0.5 : 1 }}>
+                Batal
+              </button>
+              <button onClick={generateInvoice} disabled={generating} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: generating ? 0.75 : 1 }}>
+                {generating ? <Loader2 size={15} className="animate-spin" /> : 'Buat Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

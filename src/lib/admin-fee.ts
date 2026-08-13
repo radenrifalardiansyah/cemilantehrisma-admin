@@ -117,6 +117,9 @@ async function getInvoicedTransactionMap(db: Firestore): Promise<Map<string, { i
   const map = new Map<string, { invoiceId: string; invoiceNo: string }>();
   snap.docs.forEach(d => {
     const data = d.data();
+    // Invoice yang dibatalkan tidak menahan transaksinya — harus bisa masuk invoice
+    // baru lagi, itulah gunanya membatalkan.
+    if (data.status === 'cancelled') return;
     const invoiceNo = (data.invoiceNo as string) ?? d.id;
     ((data.transactionIds as string[] | undefined) ?? []).forEach(id => {
       if (!map.has(id)) map.set(id, { invoiceId: d.id, invoiceNo });
@@ -164,12 +167,18 @@ export async function computeReport(db: Firestore, from: string, to: string): Pr
       };
     });
 
-    const revenue = transactions.reduce((s, t) => s + t.revenue, 0);
-    const feeAmount = transactions.reduce((s, t) => s + t.feeAmount, 0);
+    // `transactions` keeps every transaksi in range (termasuk yang sudah masuk invoice lain)
+    // supaya modal detail tetap menunjukkan status "Sudah Ditagihkan" apa adanya — tapi total
+    // omzet/biaya yang dipakai untuk invoice BARU cuma dihitung dari yang belum diklaim invoice
+    // manapun (`billable`). Tanpa filter ini, dua laporan dengan rentang tanggal yang tumpang
+    // tindih akan menagih ulang transaksi yang sama.
+    const billable = transactions.filter(t => !t.invoiceId);
+    const revenue = billable.reduce((s, t) => s + t.revenue, 0);
+    const feeAmount = billable.reduce((s, t) => s + t.feeAmount, 0);
 
     return {
       channel, label: ADMIN_FEE_CHANNEL_LABELS[channel],
-      revenue, transactionCount: transactions.length, feeAmount,
+      revenue, transactionCount: billable.length, feeAmount,
       currentRate: currentRate ? { type: currentRate.type, value: currentRate.value } : null,
       transactions,
     };
@@ -182,7 +191,9 @@ export async function computeReport(db: Firestore, from: string, to: string): Pr
 }
 
 // Semua id transaksi (order/rekap) yang tercakup di suatu laporan — dipersist ke invoice saat
-// dibuat, supaya laporan berikutnya bisa menandai transaksi ini "sudah ditagihkan".
+// dibuat, supaya laporan berikutnya bisa menandai transaksi ini "sudah ditagihkan". Filter
+// `!t.invoiceId` supaya transaksi yang sudah masuk invoice lain (apapun statusnya — draft,
+// terkirim, atau lunas) tidak ikut ke-double-claim ke invoice baru ini.
 export function collectTransactionIds(report: AdminFeeReport): string[] {
-  return report.breakdown.flatMap(b => b.transactions.map(t => t.id));
+  return report.breakdown.flatMap(b => b.transactions.filter(t => !t.invoiceId).map(t => t.id));
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, X } from 'lucide-react';
 import ChatPanel from './ChatPanel';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
 interface Props {
   username: string;
@@ -11,7 +12,9 @@ interface Props {
 }
 
 const HEARTBEAT_MS = 25_000;
-const UNREAD_POLL_MS = 20_000;
+// Was 20s — /api/chat/unread does an N+1 read (all users + 2 doc reads per other user) on
+// every call, so this poll's frequency directly multiplies Firestore read volume.
+const UNREAD_POLL_MS = 45_000;
 const CLOSE_ANIM_MS = 160; // matches .animate-scale-out duration in globals.css
 
 export default function ChatWidget({ username, creds, avatar }: Props) {
@@ -40,18 +43,12 @@ export default function ChatWidget({ username, creds, avatar }: Props) {
       .catch(() => {});
   }, [creds]);
 
-  useEffect(() => {
-    const heartbeat = () => fetch('/api/chat/heartbeat', { method: 'POST', headers: { 'x-admin-auth': creds } }).catch(() => {});
-    heartbeat();
-    const id = setInterval(heartbeat, HEARTBEAT_MS);
-    return () => clearInterval(id);
+  const heartbeat = useCallback(() => {
+    fetch('/api/chat/heartbeat', { method: 'POST', headers: { 'x-admin-auth': creds } }).catch(() => {});
   }, [creds]);
 
-  useEffect(() => {
-    fetchUnread();
-    const id = setInterval(fetchUnread, UNREAD_POLL_MS);
-    return () => clearInterval(id);
-  }, [fetchUnread]);
+  useVisiblePolling(heartbeat, HEARTBEAT_MS, [heartbeat]);
+  useVisiblePolling(fetchUnread, UNREAD_POLL_MS, [fetchUnread]);
 
   const unreadCount = unreadRoomIds.length;
 

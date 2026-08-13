@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
-import { getDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { uploadToCloudinary, cloudinaryConfigured } from '@/lib/cloudinary';
 
 // Browser compresses before sending (max ~1200px, quality 0.82) so typical upload is 80–200 KB.
 // 900 KB is a hard guard in case someone uploads without the client-side compress path.
@@ -9,6 +8,13 @@ const MAX_BYTES = 900_000;
 
 export async function POST(req: NextRequest) {
   if (!validateAdminAuth(req)) return unauthorized();
+
+  if (!cloudinaryConfigured()) {
+    return Response.json(
+      { error: 'Cloudinary belum dikonfigurasi. Tambahkan CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, dan CLOUDINARY_API_SECRET ke environment variables.' },
+      { status: 500 },
+    );
+  }
 
   const form = await req.formData();
   const file = form.get('file') as File | null;
@@ -23,18 +29,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const db = getDb();
-  const ref = await db.collection('images').add({
-    data:         buffer,
-    contentType:  file.type || 'image/jpeg',
-    originalName: file.name,
-    size:         buffer.byteLength,
-    createdAt:    FieldValue.serverTimestamp(),
-  });
-
-  // Fixed production origin — NOT req.nextUrl.origin. That previously baked in whatever
-  // host the upload request happened to come from (localhost, a Vercel preview URL, etc.),
-  // producing bannerUrls that were unreachable for real users on the live consumer app.
-  const origin = process.env.NEXT_PUBLIC_ADMIN_URL ?? 'https://cemilantehrisma-admin.vercel.app';
-  return Response.json({ url: `${origin}/api/img/${ref.id}` });
+  try {
+    const url = await uploadToCloudinary(buffer, file.name, 'uploads', file.type || 'image/jpeg');
+    return Response.json({ url });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Upload ke Cloudinary gagal.' }, { status: 502 });
+  }
 }
