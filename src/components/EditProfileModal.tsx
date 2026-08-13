@@ -15,6 +15,25 @@ function formatLoginTime(ts: SerializedTimestamp | null | undefined) {
   return new Date(ts.seconds * 1000).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function describeUserAgent(ua: string | null | undefined) {
+  if (!ua) return null;
+  const os =
+    /iPhone/i.test(ua) ? 'iPhone' :
+    /iPad/i.test(ua) ? 'iPad' :
+    /Android/i.test(ua) ? 'Android' :
+    /Windows/i.test(ua) ? 'Windows' :
+    /Macintosh|Mac OS X/i.test(ua) ? 'Mac' :
+    /Linux/i.test(ua) ? 'Linux' : 'Perangkat lain';
+  const browser =
+    /Edg\//i.test(ua) ? 'Edge' :
+    /OPR\//i.test(ua) || /Opera/i.test(ua) ? 'Opera' :
+    /CriOS/i.test(ua) ? 'Chrome' :
+    /Chrome\//i.test(ua) ? 'Chrome' :
+    /FxiOS/i.test(ua) || /Firefox\//i.test(ua) ? 'Firefox' :
+    /Safari\//i.test(ua) ? 'Safari' : 'Browser lain';
+  return `${browser} · ${os}`;
+}
+
 interface Props {
   creds: string;
   username: string;
@@ -223,9 +242,14 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
                       <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Belum ada riwayat login 7 hari terakhir.</p>
                     )}
                     {loginHistory?.history.map(h => (
-                      <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-                        <span>{formatLoginTime(h.createdAt)}</span>
-                        <span style={{ color: 'var(--text-muted)' }}>{h.ip ?? '-'}</span>
+                      <div key={h.id} style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <span>{formatLoginTime(h.createdAt)}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{h.ip ?? '-'}</span>
+                        </div>
+                        {describeUserAgent(h.userAgent) && (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{describeUserAgent(h.userAgent)}</span>
+                        )}
                       </div>
                     ))}
                   </div>
