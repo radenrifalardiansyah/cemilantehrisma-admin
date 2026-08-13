@@ -56,15 +56,24 @@ export async function notify(db: Firestore, opts: NotificationOpts): Promise<voi
 // Fan-out ke semua device yang sudah "Aktifkan notifikasi HP" (koleksi `fcmTokens`, lihat
 // /api/notifications/register-device). Token yang sudah tidak valid (uninstall/permission dicabut)
 // dibersihkan otomatis dari error response — tidak butuh cron terpisah untuk itu.
-export async function sendPush(db: Firestore, payload: PushPayload): Promise<void> {
+//
+// `usernames`, kalau diisi, membatasi pengiriman ke device milik user-user tsb saja (dipakai
+// chat, yang harus japri — bukan broadcast ke semua admin seperti notifikasi order/stok).
+// `data` diteruskan ke payload FCM data (string map) supaya sw.js bisa deep-link saat diklik.
+export async function sendPush(db: Firestore, payload: PushPayload, opts?: { usernames?: string[]; data?: Record<string, string> }): Promise<void> {
   const snap = await db.collection('fcmTokens').get();
   if (snap.empty) return;
-  const tokens = snap.docs.map(d => d.id);
+  const docs = opts?.usernames
+    ? snap.docs.filter(d => opts.usernames!.includes((d.data() as { username?: string }).username ?? ''))
+    : snap.docs;
+  if (docs.length === 0) return;
+  const tokens = docs.map(d => d.id);
 
   const res = await getFirebaseMessaging().sendEachForMulticast({
     tokens,
     notification: { title: payload.title, body: payload.message },
     webpush: { notification: { icon: '/icon-192.png' } },
+    data: opts?.data,
   });
 
   const stale: string[] = [];

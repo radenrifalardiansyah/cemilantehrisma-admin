@@ -1,40 +1,39 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { MessageCircle, X } from 'lucide-react';
 import ChatRoomList, { Contact } from './ChatRoomList';
 import ChatThread from './ChatThread';
 import { TEAM_ROOM_ID, directRoomId, SerializedTimestamp } from '@/lib/chat';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
+type Account = { username: string; role: string; avatar: string | null; lastLoginAt: SerializedTimestamp | null };
+
+export type ActiveRoom = { kind: 'team' } | { kind: 'direct'; contact: Contact };
+
 interface Props {
   username: string;
   avatar: string | null;
   creds: string;
+  accounts: Account[];
+  initialActiveRoom: ActiveRoom | null;
   unreadRoomIds: string[];
   onRefreshUnread: () => void;
   closing: boolean;
   onClose: () => void;
 }
 
-type ActiveRoom = { kind: 'team' } | { kind: 'direct'; contact: Contact };
-
 // Was 10s — this scans the entire `users` collection on every call, so it's the poll
 // most sensitive to team size. Panel is also only mounted while the widget is open.
 const PRESENCE_POLL_MS = 20_000;
 
-export default function ChatPanel({ username, avatar, creds, unreadRoomIds, onRefreshUnread, closing, onClose }: Props) {
-  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
-  const [accounts, setAccounts] = useState<{ username: string; role: string; avatar: string | null; lastLoginAt: SerializedTimestamp | null }[]>([]);
+export default function ChatPanel({ username, avatar, creds, accounts, initialActiveRoom, unreadRoomIds, onRefreshUnread, closing, onClose }: Props) {
+  // Seeded once from a resolved deep link (push notification click, see ChatWidget.tsx) —
+  // ChatPanel only mounts once that resolution is already done, so a lazy initializer is
+  // enough here; no effect needed to react to it arriving later.
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(() => initialActiveRoom);
   const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
   const [onlineCount, setOnlineCount] = useState(0);
-
-  useEffect(() => {
-    fetch('/api/chat/accounts', { headers: { 'x-admin-auth': creds } })
-      .then(r => r.json())
-      .then((data: { accounts: { username: string; role: string; avatar: string | null; lastLoginAt: SerializedTimestamp | null }[] }) => setAccounts(data.accounts))
-      .catch(() => {});
-  }, [creds]);
 
   const fetchPresence = useCallback(() => {
     fetch('/api/chat/presence', { headers: { 'x-admin-auth': creds } })

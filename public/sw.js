@@ -20,12 +20,27 @@ messaging.onBackgroundMessage((payload) => {
     body: payload.notification?.body ?? '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
+    data: payload.data ?? {},
   });
 });
 
+// Notifikasi chat bawa `chatRoomId` di data payload (lihat src/lib/notifications.ts sendPush) —
+// arahkan langsung ke room itu lewat query string, dibaca oleh ChatWidget.tsx saat mount.
+// Fokus tab admin yang sudah terbuka kalau ada, daripada selalu buka tab baru.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(self.clients.openWindow('/'));
+  const roomId = event.notification.data?.chatRoomId;
+  const url = roomId ? `/?chatRoom=${encodeURIComponent(roomId)}` : '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
+      for (const client of clientsArr) {
+        if ('focus' in client && 'navigate' in client) {
+          return client.navigate(url).then((c) => c.focus());
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
 });
 
 const CACHE_NAME = 'ctr-admin-v1';

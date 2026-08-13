@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { getDb } from '@/lib/firebase-admin';
+import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 
 const HISTORY_DAYS = 7;
 
@@ -23,10 +23,10 @@ export async function GET(req: NextRequest) {
       .get(),
   ]);
 
-  const lastLoginAt = userDoc.data()?.lastLoginAt ?? null;
+  const lastLoginAt = serializeTimestamp(userDoc.data()?.lastLoginAt ?? null);
   const history = historySnap.docs.map(d => {
     const data = d.data() as { ip?: string; userAgent?: string; createdAt?: Timestamp };
-    return { id: d.id, ip: data.ip ?? null, userAgent: data.userAgent ?? null, createdAt: data.createdAt ?? null };
+    return { id: d.id, ip: data.ip ?? null, userAgent: data.userAgent ?? null, createdAt: serializeTimestamp(data.createdAt) };
   });
 
   return Response.json({ lastLoginAt, history });

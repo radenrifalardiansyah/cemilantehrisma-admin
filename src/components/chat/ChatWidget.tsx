@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, X } from 'lucide-react';
-import ChatPanel from './ChatPanel';
+import ChatPanel, { ActiveRoom } from './ChatPanel';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
+import { SerializedTimestamp, TEAM_ROOM_ID } from '@/lib/chat';
 
 interface Props {
   username: string;
@@ -17,11 +18,48 @@ const HEARTBEAT_MS = 25_000;
 const UNREAD_POLL_MS = 45_000;
 const CLOSE_ANIM_MS = 160; // matches .animate-scale-out duration in globals.css
 
+type Account = { username: string; role: string; avatar: string | null; lastLoginAt: SerializedTimestamp | null };
+
+// Resolves a `chatRoom` deep-link query param (set by public/sw.js on a push notification
+// click) into the ActiveRoom shape ChatPanel expects, once the account list is in hand.
+function resolveDeepLinkRoom(roomId: string, accounts: Account[], username: string): ActiveRoom | null {
+  if (roomId === TEAM_ROOM_ID) return { kind: 'team' };
+  if (!roomId.startsWith('dm_')) return null;
+  const otherUsername = roomId.slice(3).split('~').find(u => u !== username);
+  const account = accounts.find(a => a.username === otherUsername);
+  if (!account) return null;
+  return { kind: 'direct', contact: { username: account.username, role: account.role, avatar: account.avatar, online: false, lastLoginAt: account.lastLoginAt } };
+}
+
 export default function ChatWidget({ username, creds, avatar }: Props) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMounted, setPanelMounted] = useState(false);
   const [unreadRoomIds, setUnreadRoomIds] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [initialActiveRoom, setInitialActiveRoom] = useState<ActiveRoom | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetched here (on widget mount, i.e. page load) rather than in ChatPanel (on panel open) so
+  // the "Semua Akun" list is already warm by the time the user clicks the chat icon — avoids
+  // the popup opening onto an empty list while the fetch is still in flight. Also resolves any
+  // pending chat deep link (push notification click, see public/sw.js) in the same callback,
+  // once accounts are actually available, and opens straight into that room.
+  useEffect(() => {
+    const pendingRoomId = new URLSearchParams(window.location.search).get('chatRoom');
+    fetch('/api/chat/accounts', { headers: { 'x-admin-auth': creds } })
+      .then(r => r.json())
+      .then((data: { accounts: Account[] }) => {
+        setAccounts(data.accounts);
+        if (!pendingRoomId) return;
+        window.history.replaceState({}, '', window.location.pathname);
+        const resolved = resolveDeepLinkRoom(pendingRoomId, data.accounts, username);
+        if (!resolved) return;
+        setInitialActiveRoom(resolved);
+        setPanelMounted(true);
+        setPanelOpen(true);
+      })
+      .catch(() => {});
+  }, [creds, username]);
 
   const openPanel = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -31,7 +69,7 @@ export default function ChatWidget({ username, creds, avatar }: Props) {
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
-    closeTimer.current = setTimeout(() => setPanelMounted(false), CLOSE_ANIM_MS);
+    closeTimer.current = setTimeout(() => { setPanelMounted(false); setInitialActiveRoom(null); }, CLOSE_ANIM_MS);
   }, []);
 
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
@@ -89,6 +127,8 @@ export default function ChatWidget({ username, creds, avatar }: Props) {
           username={username}
           avatar={avatar}
           creds={creds}
+          accounts={accounts}
+          initialActiveRoom={initialActiveRoom}
           unreadRoomIds={unreadRoomIds}
           onRefreshUnread={fetchUnread}
           closing={!panelOpen}

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { getDb } from '@/lib/firebase-admin';
+import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 
 export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const snap = await getDb().collection('users').get();
   const accounts = snap.docs.map(d => {
     const data = d.data() as { role?: string; avatar?: string | null; lastLoginAt?: Timestamp };
-    return { username: d.id, role: data.role ?? '', avatar: data.avatar ?? null, lastLoginAt: data.lastLoginAt ?? null };
+    return { username: d.id, role: data.role ?? '', avatar: data.avatar ?? null, lastLoginAt: serializeTimestamp(data.lastLoginAt) };
   });
   return Response.json({ accounts });
 }

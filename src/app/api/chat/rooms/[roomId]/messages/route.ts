@@ -4,6 +4,7 @@ import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { getDb } from '@/lib/firebase-admin';
 import { canAccessRoom, TEAM_ROOM_ID } from '@/lib/chat';
 import { getRoomRecipients } from '@/lib/chat-server';
+import { sendPush } from '@/lib/notifications';
 
 type Ctx = { params: Promise<{ roomId: string }> };
 
@@ -85,6 +86,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       createdAt: FieldValue.serverTimestamp(),
     });
   });
+
+  // Push HARUS setelah commit (bukan di dalam transaksi) — sama seperti writeNotification,
+  // supaya retry transaksi karena write conflict tidak mengirim push dobel.
+  const recipients = await getRoomRecipients(roomId, authUser.username);
+  const preview = trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed;
+  await sendPush(
+    db,
+    { title: roomId === TEAM_ROOM_ID ? 'Chat Tim' : authUser.username, message: roomId === TEAM_ROOM_ID ? `${authUser.username}: ${preview}` : preview },
+    { usernames: recipients, data: { chatRoomId: roomId } },
+  ).catch(err => console.error('Failed to send push for chat message', err));
 
   return Response.json({ id: messageRef.id });
 }
