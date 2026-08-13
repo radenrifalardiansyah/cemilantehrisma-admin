@@ -483,45 +483,69 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
       )}
 
       {subTab === 'rekening' && (
-        <div className="card p-5 space-y-4" style={{ maxWidth: 480 }}>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-              <Building2 size={16} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                <Building2 size={16} />
+              </div>
+              <div>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rekening Tujuan Pembayaran</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rekening RMedia Solutions sendiri — tempat admin transfer Biaya Admin. Tampil di halaman Tagihan admin & di PDF invoice.</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Rekening Tujuan Pembayaran</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rekening RMedia Solutions sendiri — tempat admin transfer Biaya Admin. Tampil di halaman Tagihan admin & di PDF invoice.</p>
-            </div>
+            {loadingPaymentInfo ? (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Memuat…</p>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nama Bank</label>
+                  <SearchableSelect
+                    value={paymentInfo.bankName}
+                    onChange={v => setPaymentInfo(p => ({ ...p, bankName: v }))}
+                    options={bankOptions}
+                    placeholder="Pilih Bank"
+                    searchPlaceholder="Cari bank…"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nomor Rekening</label>
+                  <input value={paymentInfo.accountNumber} onChange={e => setPaymentInfo(p => ({ ...p, accountNumber: e.target.value }))}
+                    placeholder="cth. 1234567890" className="input w-full" style={{ height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Atas Nama</label>
+                  <input value={paymentInfo.accountHolder} onChange={e => setPaymentInfo(p => ({ ...p, accountHolder: e.target.value }))}
+                    placeholder="cth. PT. Eleven Digital Indonesia" className="input w-full" style={{ height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+                </div>
+                <button onClick={savePaymentInfo} disabled={savingPaymentInfo} className="btn-primary px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
+                  {savingPaymentInfo ? <Loader2 size={14} className="animate-spin" /> : 'Simpan Rekening'}
+                </button>
+              </>
+            )}
           </div>
-          {loadingPaymentInfo ? (
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Memuat…</p>
-          ) : (
-            <>
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nama Bank</label>
-                <SearchableSelect
-                  value={paymentInfo.bankName}
-                  onChange={v => setPaymentInfo(p => ({ ...p, bankName: v }))}
-                  options={bankOptions}
-                  placeholder="Pilih Bank"
-                  searchPlaceholder="Cari bank…"
-                />
+
+          <div className="card p-5 space-y-3">
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Pratinjau tampilan untuk Admin</p>
+            {paymentInfo.bankName || paymentInfo.accountNumber ? (
+              <div className="p-4 rounded-xl flex items-center gap-3 flex-wrap" style={{ border: '1px solid var(--success)' }}>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                  <Building2 size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold mb-0.5" style={{ color: 'var(--text-muted)' }}>Transfer Biaya Admin ke</p>
+                  <p className="text-sm font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>
+                    {paymentInfo.bankName || '–'} — {paymentInfo.accountNumber || '–'} <span className="font-semibold" style={{ color: 'var(--text-muted)' }}>a.n. {paymentInfo.accountHolder || '–'}</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nomor Rekening</label>
-                <input value={paymentInfo.accountNumber} onChange={e => setPaymentInfo(p => ({ ...p, accountNumber: e.target.value }))}
-                  placeholder="cth. 1234567890" className="input w-full" style={{ height: FORM_CTRL_H, boxSizing: 'border-box' }} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Atas Nama</label>
-                <input value={paymentInfo.accountHolder} onChange={e => setPaymentInfo(p => ({ ...p, accountHolder: e.target.value }))}
-                  placeholder="cth. PT. Eleven Digital Indonesia" className="input w-full" style={{ height: FORM_CTRL_H, boxSizing: 'border-box' }} />
-              </div>
-              <button onClick={savePaymentInfo} disabled={savingPaymentInfo} className="btn-primary px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
-                {savingPaymentInfo ? <Loader2 size={14} className="animate-spin" /> : 'Simpan Rekening'}
-              </button>
-            </>
-          )}
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Isi rekening di sebelah kiri untuk melihat pratinjaunya di sini.</p>
+            )}
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Begini rekening ini akan muncul di halaman Tagihan Biaya Admin milik Admin, dan pada bagian pembayaran di PDF invoice.
+            </p>
+          </div>
         </div>
       )}
 
