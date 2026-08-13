@@ -6,16 +6,34 @@ export function forbidden() {
   return Response.json({ error: 'Anda tidak memiliki akses untuk aksi ini.' }, { status: 403 });
 }
 
+type PermissionsMap = Record<string, Partial<Record<Action, boolean>>>;
+
 export async function hasPermission(
   user: AuthUser,
   featureKey: string | string[],
   action: Action,
 ): Promise<boolean> {
   if (user.role === 'super-admin') return true;
-  const keys = Array.isArray(featureKey) ? featureKey : [featureKey];
-  const doc = await getDb().collection('role_permissions').doc(user.role).get();
-  const permissions = doc.data()?.permissions as Record<string, Partial<Record<Action, boolean>>> | undefined;
+  const permissions = await getRolePermissionsMap(user.role);
+  return checkPermission(permissions, featureKey, action);
+}
+
+// Split out of hasPermission for callers that need to check MANY featureKeys for the same
+// role in one request (e.g. GET /api/menus filtering the whole menu tree) — fetching the
+// role_permissions doc once and checking in-memory instead of once per featureKey turns an
+// N-item sequential Firestore round trip into a single read.
+export async function getRolePermissionsMap(role: string): Promise<PermissionsMap | null> {
+  const doc = await getDb().collection('role_permissions').doc(role).get();
+  return (doc.data()?.permissions as PermissionsMap | undefined) ?? null;
+}
+
+export function checkPermission(
+  permissions: PermissionsMap | null,
+  featureKey: string | string[],
+  action: Action,
+): boolean {
   if (!permissions) return false;
+  const keys = Array.isArray(featureKey) ? featureKey : [featureKey];
   return keys.some(k => permissions[k]?.[action] === true);
 }
 

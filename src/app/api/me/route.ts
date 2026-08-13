@@ -11,15 +11,15 @@ export async function GET(req: NextRequest) {
   if (!authUser) return unauthorized();
 
   const superAdmin = authUser.role === 'super-admin';
-  let permissions: Record<string, Partial<Record<Action, boolean>>>;
-  if (superAdmin) {
-    permissions = fullAccessPermissions();
-  } else {
-    const doc = await getDb().collection('role_permissions').doc(authUser.role).get();
-    permissions = (doc.data()?.permissions as Record<string, Partial<Record<Action, boolean>>>) ?? {};
-  }
+  const db = getDb();
+  const [permsDoc, userDoc] = await Promise.all([
+    superAdmin ? null : db.collection('role_permissions').doc(authUser.role).get(),
+    db.collection('users').doc(authUser.username).get(),
+  ]);
+  const permissions: Record<string, Partial<Record<Action, boolean>>> = superAdmin
+    ? fullAccessPermissions()
+    : (permsDoc!.data()?.permissions as Record<string, Partial<Record<Action, boolean>>>) ?? {};
 
-  const userDoc = await getDb().collection('users').doc(authUser.username).get();
   const userData = userDoc.data() as { email?: string | null; avatar?: string | null } | undefined;
   const user = { ...authUser, email: userData?.email ?? null, avatar: userData?.avatar ?? null };
 

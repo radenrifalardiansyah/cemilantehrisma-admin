@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { hasPermission } from '@/lib/rbac';
+import { hasPermission, getRolePermissionsMap, checkPermission } from '@/lib/rbac';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -40,11 +40,14 @@ export async function GET(req: NextRequest) {
   }
 
   menus = menus.filter(m => m.isActive);
-  const visible: typeof menus = [];
-  for (const m of menus) {
-    if (await hasPermission(user, m.featureKey, 'view')) visible.push(m);
+  // One role_permissions read for the whole list instead of one per menu item (was a
+  // sequential N+1 — the biggest contributor to sidebar load time right after login).
+  if (user.role === 'super-admin') {
+    // menus already unfiltered — super-admin sees everything.
+  } else {
+    const permissions = await getRolePermissionsMap(user.role);
+    menus = menus.filter(m => checkPermission(permissions, m.featureKey, 'view'));
   }
-  menus = visible;
   const usedModuleIds = new Set(menus.map(m => m.moduleId));
   modules = modules.filter(m => m.isActive && usedModuleIds.has(m.id));
 
