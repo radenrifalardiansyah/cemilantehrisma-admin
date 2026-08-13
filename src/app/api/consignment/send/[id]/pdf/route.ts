@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { getDb } from '@/lib/firebase-admin';
@@ -26,15 +27,15 @@ async function resolveLogoDataUri(db: ReturnType<typeof getDb>, logoUrl?: string
   return `data:${contentType || 'image/jpeg'};base64,${Buffer.from(data).toString('base64')}`;
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { id } = await params;
+// Public link opened repeatedly from WhatsApp — a shipment's items/date never change once
+// created, so re-reading Firestore + re-rendering the PDF on every open is wasted work.
+// Cached per shipment id for an hour; store settings (logo/signature/address) can still
+// change, but don't need to reflect within seconds on an already-sent delivery note.
+const renderShipmentPdf = unstable_cache(
+  async (id: string): Promise<string | null> => {
     const db = getDb();
     const shipDoc = await db.collection('consignmentShipments').doc(id).get();
-    if (!shipDoc.exists) return new NextResponse('Nota tidak ditemukan.', { status: 404 });
+    if (!shipDoc.exists) return null;
     const shipment = shipDoc.data()!;
 
     const [locationDoc, settingsDoc] = await Promise.all([
@@ -79,13 +80,29 @@ export async function GET(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       React.createElement(ShipmentNotePDF, { data, store }) as any,
     );
+    // unstable_cache serializes the return value through JSON — a raw Buffer doesn't
+    // round-trip cleanly, so it's stored as base64 and decoded back below.
+    return buffer.toString('base64');
+  },
+  ['consignment-shipment-pdf'],
+  { revalidate: 3600 },
+);
 
-    return new NextResponse(new Uint8Array(buffer), {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const base64 = await renderShipmentPdf(id);
+    if (base64 === null) return new NextResponse('Nota tidak ditemukan.', { status: 404 });
+
+    return new NextResponse(new Uint8Array(Buffer.from(base64, 'base64')), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="nota-kirim-${id}.pdf"`,
-        'Cache-Control': 'public, max-age=300',
+        'Cache-Control': 'public, max-age=3600',
       },
     });
   } catch (err) {
