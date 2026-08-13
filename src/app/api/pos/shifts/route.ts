@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { notify } from '@/lib/notifications';
 
 export async function GET(req: NextRequest) {
   const user = await requirePermission(req, 'pos', 'view');
@@ -50,6 +51,18 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('Failed to write history for pos shift create', err);
+  }
+  try {
+    await notify(db, {
+      type: 'pos_shift_open',
+      title: 'Shift kasir dibuka',
+      message: `${user.username} membuka sesi kasir dengan modal awal Rp${(Number(openingBalance) || 0).toLocaleString('id-ID')}.`,
+      link: 'pos',
+      entityCollection: 'cashierShifts', entityId: ref.id,
+      actor: user,
+    });
+  } catch (err) {
+    console.error('Failed to write notification for pos shift open', err);
   }
   return Response.json({ shift: { id: ref.id, ...shiftData } });
 }

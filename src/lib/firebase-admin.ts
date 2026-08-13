@@ -1,6 +1,7 @@
 import { getApps, initializeApp, cert, App } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
+import { getAuth } from 'firebase-admin/auth';
 
 let app: App;
 
@@ -21,4 +22,8 @@ export function getDb() {
 
 export function getBucket() {
   return getStorage(getApp()).bucket();
+}
+
+export function getFirebaseAuth() {
+  return getAuth(getApp());
 }

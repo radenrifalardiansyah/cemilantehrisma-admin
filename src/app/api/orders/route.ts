@@ -5,6 +5,7 @@ import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/fires
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
+import { writeNotification } from '@/lib/notifications';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'view');
@@ -82,6 +83,14 @@ export async function POST(req: NextRequest) {
       writeHistoryEntry(tx, db, {
         entity: 'orders', entityId: ref.id, entityLabel: `Pesanan ${data.invoiceNo ?? ref.id}`,
         action: 'create', actor: guard, after: orderData,
+      });
+      writeNotification(tx, db, {
+        type: 'order_new',
+        title: 'Pesanan baru',
+        message: `Pesanan ${data.invoiceNo ?? ref.id} senilai Rp${(Number(data.total) || 0).toLocaleString('id-ID')} — oleh ${guard.username}.`,
+        link: 'orders',
+        entityCollection: 'orders', entityId: ref.id,
+        actor: guard,
       });
 
       for (const [productId, delta] of deltas) {

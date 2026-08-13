@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Bell notifikasi (lihat src/lib/firebase-client.ts + NotificationBell.tsx) butuh baca
+    // realtime dari browser. Semua penulisan tetap lewat Admin SDK di server (bypass rules),
+    // jadi write dari client selalu ditolak di sini.
+    match /notifications/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Semua koleksi lain tetap server-only seperti sebelumnya — tidak ada client Firestore
+    // access untuk data bisnis, hanya lewat API route (Admin SDK).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

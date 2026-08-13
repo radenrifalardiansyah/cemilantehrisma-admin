@@ -135,7 +135,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas';
-    warehouseId?: string; warehouseName?: string; date?: string;
+    warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
   };
   const newItems = (data.items ?? [])
     .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
@@ -315,6 +315,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
         ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
+        dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate)) : null,
+        overdueNotifiedAt: null, // reset flag idempoten — biar bisa dinotifikasi ulang kalau dueDate/status berubah
         updatedAt: FieldValue.serverTimestamp(),
       };
       tx.update(recapRef, updatePayload);

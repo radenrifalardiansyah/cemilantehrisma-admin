@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
+import { writeNotification } from '@/lib/notifications';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -106,6 +107,16 @@ export async function POST(req: NextRequest) {
         createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
       };
       tx.set(shipmentRef, shipmentDoc);
+
+      const totalQty = itemsWithSubtotal.reduce((s, it) => s + it.qty, 0);
+      writeNotification(tx, db, {
+        type: 'consignment_send',
+        title: 'Kirim stok konsinyasi',
+        message: `${totalQty} pcs dikirim ke ${data.locationName} — oleh ${guard.username}.`,
+        link: 'consignment',
+        entityCollection: 'consignmentShipments', entityId: shipmentRef.id,
+        actor: guard,
+      });
 
       writeHistoryEntry(tx, db, {
         entity: 'consignment',

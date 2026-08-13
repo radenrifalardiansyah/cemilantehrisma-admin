@@ -11,6 +11,7 @@ import Tooltip from '@/components/Tooltip';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
 import ChatWidget from '@/components/chat/ChatWidget';
+import NotificationBell from '@/components/NotificationBell';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
@@ -539,6 +540,7 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-2">
             <div id="topbar-slot" className="flex items-center gap-2" />
+            <NotificationBell creds={creds} username={username} onNavigate={go} />
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"
               title="Lihat Toko"

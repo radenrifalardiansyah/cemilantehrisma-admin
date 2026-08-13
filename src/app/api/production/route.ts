@@ -3,6 +3,8 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
+import { writeNotification } from '@/lib/notifications';
+import { isMaterialLowStock } from '@/lib/stock-helpers';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
@@ -133,8 +135,24 @@ export async function POST(req: NextRequest) {
       const costPerPcs = totalCost / totalYieldQty;
 
       materialsUsed.forEach((m, i) => {
-        const stockQty = Number(materialSnaps[i].data()!.stockQty) || 0;
-        tx.update(materialRefs[i], { stockQty: stockQty - m.qty, updatedAt: FieldValue.serverTimestamp() });
+        const material = materialSnaps[i].data()!;
+        const oldQty = Number(material.stockQty) || 0;
+        const newQty = oldQty - m.qty;
+        const minStock = Number(material.minStock) || 0;
+        tx.update(materialRefs[i], { stockQty: newQty, updatedAt: FieldValue.serverTimestamp() });
+
+        // Notifikasi hanya saat baru MELEWATI ambang minimum, bukan tiap kali produksi jalan
+        // selagi stoknya sudah rendah — supaya tidak spam.
+        if (!isMaterialLowStock({ stockQty: oldQty, minStock }) && isMaterialLowStock({ stockQty: newQty, minStock })) {
+          writeNotification(tx, db, {
+            type: 'stock_low',
+            title: 'Stok bahan baku menipis',
+            message: `${m.materialName} tersisa ${newQty} ${m.unit} (batas minimum ${minStock} ${m.unit}) — dari produksi oleh ${guard.username}.`,
+            link: 'materials',
+            entityCollection: 'rawMaterials', entityId: materialRefs[i].id,
+            actor: guard,
+          });
+        }
       });
 
       const outputsWithCost = outputs.map((o, i) => {

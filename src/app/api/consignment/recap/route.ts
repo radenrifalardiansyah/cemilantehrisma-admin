@@ -5,6 +5,7 @@ import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
+import { notify, writeNotification } from '@/lib/notifications';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -29,6 +30,28 @@ export async function GET(req: NextRequest) {
   }
 
   const snap = await query.get();
+
+  // Lazy overdue check — dijalankan tiap daftar rekap dibuka, bukan lewat cron (tidak ada infra
+  // scheduler saat ini). `overdueNotifiedAt` jadi flag idempoten supaya notifikasi cuma ditulis
+  // sekali per rekap, bukan berulang setiap kali endpoint ini dipanggil.
+  const now = Timestamp.now();
+  await Promise.all(snap.docs.map(async d => {
+    const data = d.data();
+    if (data.paymentStatus !== 'belum_lunas' || !data.dueDate || data.overdueNotifiedAt) return;
+    if ((data.dueDate as Timestamp).toMillis() > now.toMillis()) return;
+    await notify(db, {
+      type: 'consignment_overdue',
+      title: 'Konsinyasi jatuh tempo',
+      message: `Rekap konsinyasi ${data.locationName ?? d.id} senilai Rp${(data.totalRevenue ?? 0).toLocaleString('id-ID')} sudah lewat tenggat pembayaran.`,
+      link: 'consignment',
+      entityCollection: 'consignmentRecaps', entityId: d.id,
+      // Bukan aksi si pembuka halaman — ini terdeteksi otomatis oleh waktu yang lewat, jadi
+      // actor-nya "system", bukan `guard` (yang cuma kebetulan sedang membuka daftar rekap).
+      actor: { username: 'system', role: 'system' },
+    });
+    await d.ref.update({ overdueNotifiedAt: FieldValue.serverTimestamp() });
+  }));
+
   const recaps = snap.docs.map(d => {
     const data = d.data();
     const createdAt = data.createdAt as Timestamp | undefined;
@@ -43,7 +66,7 @@ export async function POST(req: NextRequest) {
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas';
-    warehouseId?: string; warehouseName?: string; date?: string;
+    warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
   };
   const items = (data.items ?? [])
     .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
@@ -149,8 +172,18 @@ export async function POST(req: NextRequest) {
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
         createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
+        dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate)) : null,
       };
       tx.set(recapRef, recapDoc);
+
+      writeNotification(tx, db, {
+        type: 'consignment_recap',
+        title: 'Rekap konsinyasi baru',
+        message: `Rekap ${data.locationName} senilai Rp${totalRevenue.toLocaleString('id-ID')} (${paymentStatus === 'lunas' ? 'lunas' : 'belum lunas'}) — oleh ${guard.username}.`,
+        link: 'consignment',
+        entityCollection: 'consignmentRecaps', entityId: recapRef.id,
+        actor: guard,
+      });
 
       writeHistoryEntry(tx, db, {
         entity: 'consignment',

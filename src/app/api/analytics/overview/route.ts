@@ -4,6 +4,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { Timestamp } from 'firebase-admin/firestore';
+import { isMaterialLowStock } from '@/lib/stock-helpers';
 
 interface OrderDoc {
   total?: number; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas';
@@ -22,8 +23,6 @@ interface MaterialDoc { id: string; name?: string; unit?: string; stockQty?: num
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi sudah masuk HPP saat barangnya
 // terjual — sama seperti FinanceReportTab, jangan dihitung lagi di Beban Operasional (dobel).
 const isCogsSourcedExpense = (e: ExpenseDoc) => e.sourceType === 'material-purchase' || e.sourceType === 'production';
-// Menipis = stok masih ada tapi sudah di batas minimum — sama seperti isLowStock di MaterialsTab.
-const isMaterialLowStock = (m: MaterialDoc) => (m.minStock ?? 0) > 0 && (m.stockQty ?? 0) > 0 && (m.stockQty ?? 0) <= (m.minStock ?? 0);
 
 // Raw Firestore reads untuk satu rentang tanggal — cached 60s karena endpoint ini dipanggil tiap
 // dashboard dibuka & tiap ganti periode, dan tidak butuh data second-fresh untuk sebuah ringkasan
