@@ -45,6 +45,11 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Jangan campur tangan request cross-origin (terutama koneksi realtime Firestore ke
+  // firestore.googleapis.com, dipakai NotificationBell) — Firestore pakai streaming/long-polling
+  // khusus yang rusak kalau lewat respondWith() service worker. Cache offline cukup untuk aset
+  // same-origin milik app ini sendiri.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request))
   );
