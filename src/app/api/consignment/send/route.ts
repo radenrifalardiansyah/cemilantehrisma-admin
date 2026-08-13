@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
-import { writeNotification } from '@/lib/notifications';
+import { writeNotification, sendPush } from '@/lib/notifications';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const shipmentRef = db.collection('consignmentShipments').doc();
 
+  let pushPayload: { title: string; message: string } | null = null;
   try {
     await db.runTransaction(async tx => {
       const productRefs = items.map(it => db.collection('products').doc(it.productId));
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
       tx.set(shipmentRef, shipmentDoc);
 
       const totalQty = itemsWithSubtotal.reduce((s, it) => s + it.qty, 0);
-      writeNotification(tx, db, {
+      pushPayload = writeNotification(tx, db, {
         type: 'consignment_send',
         title: 'Kirim stok konsinyasi',
         message: `${totalQty} pcs dikirim ke ${data.locationName} — oleh ${guard.username}.`,
@@ -131,6 +132,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pengiriman.' }, { status: 400 });
   }
+
+  if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for consignment send', err));
 
   return Response.json({ id: shipmentRef.id });
 }

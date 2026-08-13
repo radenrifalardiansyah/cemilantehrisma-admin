@@ -3,7 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
-import { writeNotification } from '@/lib/notifications';
+import { writeNotification, sendPush } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
   const stockLogRefs = outputs.map(() => db.collection('stock').doc());
   const expenseRef  = db.collection('expenses').doc();
 
+  const pushPayloads: { title: string; message: string }[] = [];
   try {
     await db.runTransaction(async tx => {
       const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
@@ -144,14 +145,14 @@ export async function POST(req: NextRequest) {
         // Notifikasi hanya saat baru MELEWATI ambang minimum, bukan tiap kali produksi jalan
         // selagi stoknya sudah rendah — supaya tidak spam.
         if (!isMaterialLowStock({ stockQty: oldQty, minStock }) && isMaterialLowStock({ stockQty: newQty, minStock })) {
-          writeNotification(tx, db, {
+          pushPayloads.push(writeNotification(tx, db, {
             type: 'stock_low',
             title: 'Stok bahan baku menipis',
             message: `${m.materialName} tersisa ${newQty} ${m.unit} (batas minimum ${minStock} ${m.unit}) — dari produksi oleh ${guard.username}.`,
             link: 'materials',
             entityCollection: 'rawMaterials', entityId: materialRefs[i].id,
             actor: guard,
-          });
+          }));
         }
       });
 
@@ -225,6 +226,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan produksi.' }, { status: 400 });
   }
+
+  await Promise.all(pushPayloads.map(p => sendPush(db, p))).catch(err => console.error('Failed to send push for low stock', err));
 
   return Response.json({ id: batchRef.id });
 }

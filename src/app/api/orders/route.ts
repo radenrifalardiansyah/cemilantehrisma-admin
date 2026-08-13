@@ -5,7 +5,7 @@ import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/fires
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
-import { writeNotification } from '@/lib/notifications';
+import { writeNotification, sendPush } from '@/lib/notifications';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'view');
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   let orderId = '';
+  let pushPayload: { title: string; message: string } | null = null;
   try {
     await db.runTransaction(async tx => {
       const { products, shortages } = await readProductsForDeltas(tx, db, deltas);
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
         entity: 'orders', entityId: ref.id, entityLabel: `Pesanan ${data.invoiceNo ?? ref.id}`,
         action: 'create', actor: guard, after: orderData,
       });
-      writeNotification(tx, db, {
+      pushPayload = writeNotification(tx, db, {
         type: 'order_new',
         title: 'Pesanan baru',
         message: `Pesanan ${data.invoiceNo ?? ref.id} senilai Rp${(Number(data.total) || 0).toLocaleString('id-ID')} — oleh ${guard.username}.`,
@@ -106,6 +107,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan transaksi.' }, { status: 400 });
   }
+
+  if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for new order', err));
 
   return Response.json({ id: orderId });
 }

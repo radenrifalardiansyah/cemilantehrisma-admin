@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, orderBy, query, limit, Timestamp } from 'firebase/firestore';
+import { getToken } from 'firebase/messaging';
 import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Truck, ClipboardList } from 'lucide-react';
-import { getClientAuth, getClientDb, isFirebaseClientConfigured } from '@/lib/firebase-client';
+import { getClientAuth, getClientDb, getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
+import { usePwaInstall } from '@/lib/usePwaInstall';
 import type { TabId } from '@/components/AppShell';
 
 interface NotificationDoc {
@@ -43,11 +45,45 @@ interface NotificationBellProps {
   onNavigate: (tab: TabId) => void;
 }
 
+type PushStatus = 'idle' | 'enabling' | 'granted' | 'denied';
+
 export default function NotificationBell({ creds, username, onNavigate }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<NotificationDoc[]>([]);
   const [open, setOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [pushStatus, setPushStatus] = useState<PushStatus>(() =>
+    typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'granted' : 'idle'
+  );
   const rootRef = useRef<HTMLDivElement>(null);
+  const { isIOS, installed } = usePwaInstall();
+
+  const enablePush = async () => {
+    setPushStatus('enabling');
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') { setPushStatus('denied'); return; }
+
+      const messaging = await getClientMessaging();
+      if (!messaging) { setPushStatus('denied'); return; }
+
+      const registration = await navigator.serviceWorker.ready;
+      const token = await getToken(messaging, {
+        vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: registration,
+      });
+      if (!token) { setPushStatus('denied'); return; }
+
+      await fetch('/api/notifications/register-device', {
+        method: 'POST',
+        headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      setPushStatus('granted');
+    } catch (err) {
+      console.error('Gagal aktifkan notifikasi HP', err);
+      setPushStatus('denied');
+    }
+  };
 
   useEffect(() => {
     if (!isFirebaseClientConfigured) return; // env NEXT_PUBLIC_FIREBASE_* belum diisi — fitur nonaktif dulu
@@ -163,6 +199,28 @@ export default function NotificationBell({ creds, username, onNavigate }: Notifi
               );
             })}
           </div>
+          {isFirebaseClientConfigured && (
+            <div className="px-3.5 py-2.5 text-center" style={{ borderTop: '1px solid var(--border)' }}>
+              {isIOS && !installed ? (
+                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Install ke Home Screen dulu untuk notifikasi HP
+                </span>
+              ) : pushStatus === 'granted' ? (
+                <span className="text-[11px] font-semibold" style={{ color: 'var(--success)' }}>
+                  Notifikasi HP aktif
+                </span>
+              ) : (
+                <button
+                  onClick={enablePush}
+                  disabled={pushStatus === 'enabling'}
+                  className="text-[11px] font-semibold disabled:opacity-60"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  {pushStatus === 'enabling' ? 'Mengaktifkan…' : pushStatus === 'denied' ? 'Izin ditolak — coba lagi' : 'Aktifkan notifikasi HP'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

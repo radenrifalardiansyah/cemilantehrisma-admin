@@ -2,6 +2,7 @@ import { getApps, initializeApp, cert, App } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { getAuth } from 'firebase-admin/auth';
+import { getMessaging } from 'firebase-admin/messaging';
 
 let app: App;
 
@@ -26,4 +27,8 @@ export function getBucket() {
 
 export function getFirebaseAuth() {
   return getAuth(getApp());
+}
+
+export function getFirebaseMessaging() {
+  return getMessaging(getApp());
 }

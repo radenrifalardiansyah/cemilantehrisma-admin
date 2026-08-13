@@ -3,6 +3,7 @@
 import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getAuth, type Auth } from 'firebase/auth';
+import { getMessaging, isSupported, type Messaging } from 'firebase/messaging';
 
 // Firebase client SDK dipakai HANYA untuk mendengarkan koleksi `notifications` secara realtime
 // (lihat NotificationBell.tsx) — semua data bisnis lain tetap lewat Admin SDK di server seperti
@@ -40,4 +41,15 @@ export function getClientDb(): Firestore {
 export function getClientAuth(): Auth {
   if (!auth) auth = getAuth(getClientApp());
   return auth;
+}
+
+let messaging: Messaging | null = null;
+
+// Async & bisa null — beberapa browser (Safari desktop lama, Firefox private mode, dst) tidak
+// dukung Push API sama sekali; isSupported() dari SDK adalah cara resmi mengeceknya sebelum init.
+export async function getClientMessaging(): Promise<Messaging | null> {
+  if (messaging) return messaging;
+  if (!(await isSupported())) return null;
+  messaging = getMessaging(getClientApp());
+  return messaging;
 }

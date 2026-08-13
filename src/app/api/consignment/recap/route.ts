@@ -5,7 +5,7 @@ import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
-import { notify, writeNotification } from '@/lib/notifications';
+import { notify, writeNotification, sendPush } from '@/lib/notifications';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const recapRef = db.collection('consignmentRecaps').doc();
 
+  let pushPayload: { title: string; message: string } | null = null;
   try {
     await db.runTransaction(async tx => {
       const stockRefs = items.map(it => db.collection('consignmentStock').doc(`${data.locationId}_${it.productId}`));
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
       };
       tx.set(recapRef, recapDoc);
 
-      writeNotification(tx, db, {
+      pushPayload = writeNotification(tx, db, {
         type: 'consignment_recap',
         title: 'Rekap konsinyasi baru',
         message: `Rekap ${data.locationName} senilai Rp${totalRevenue.toLocaleString('id-ID')} (${paymentStatus === 'lunas' ? 'lunas' : 'belum lunas'}) — oleh ${guard.username}.`,
@@ -198,6 +199,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan rekap.' }, { status: 400 });
   }
+
+  if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for consignment recap', err));
 
   return Response.json({ id: recapRef.id });
 }
