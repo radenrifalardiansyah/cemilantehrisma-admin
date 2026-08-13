@@ -5,7 +5,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Upload,
-  History, Warehouse, Ban, MessageCircle,
+  History, Warehouse, Ban, MessageCircle, PackageCheck,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
@@ -244,9 +244,9 @@ function LocationStatTiles({ stockQty, stockValue, stats, dense = false }: { sto
         <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Dikirim</p>
         <p className={tileValueCls} style={{ color: 'var(--text-primary)' }}>{formatRp(stats.totalKirim)}</p>
       </div>
-      <div className="flex flex-col justify-between px-3 py-2 rounded-lg min-h-[52px] min-w-0" style={{ background: 'var(--success-bg)' }}>
+      <div className="flex flex-col justify-between px-3 py-2 rounded-lg min-h-[52px] min-w-0" style={{ background: stats.totalRevenue > 0 ? 'var(--success-bg)' : 'var(--surface-2)' }}>
         <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Pendapatan</p>
-        <p className={tileValueCls} style={{ color: 'var(--success)' }}>{formatRp(stats.totalRevenue)}</p>
+        <p className={tileValueCls} style={{ color: stats.totalRevenue > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{formatRp(stats.totalRevenue)}</p>
       </div>
       <div className="flex flex-col justify-between px-3 py-2 rounded-lg min-h-[52px] min-w-0" style={{ background: 'var(--surface-2)' }}>
         <p className={tileLabelCls} style={{ color: 'var(--text-muted)' }}>Selisih</p>
@@ -348,6 +348,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   const [locationView, setLocationView] = useViewMode('consignment-locations', 'card');
 
   const [locationSearch,   setLocationSearch]   = useState('');
+  const [locationOnlyInStock, setLocationOnlyInStock] = useState(false);
   const [locationPeriod,     setLocationPeriod]     = useState<LocationPeriodKey>('month');
   const [locationCustomFrom, setLocationCustomFrom] = useState('');
   const [locationCustomTo,   setLocationCustomTo]   = useState('');
@@ -691,6 +692,7 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   };
 
   const filteredLocations = locations.filter(l => {
+    if (locationOnlyInStock && locationStockTotals(l.id).qty <= 0) return false;
     if (!locationSearch) return true;
     const q = locationSearch.toLowerCase();
     return l.name.toLowerCase().includes(q)
@@ -758,6 +760,10 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
     setEditingShipment(null); setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
     setSendDate(toLocalDateTimeInput(new Date()));
     setShowSendForm(true);
+  };
+  const openSendForLocation = (l: ConsignmentLocation) => {
+    openCreateSend();
+    setSendLocationId(l.id);
   };
   const openEditSend = (s: Shipment) => {
     setEditingShipment(s);
@@ -1098,6 +1104,11 @@ _${storeHeader.name}_`.trim();
     setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
     setRecapDate(toLocalDateTimeInput(new Date()));
     setShowRecapForm(true);
+  };
+  const openRecapForLocation = (l: ConsignmentLocation) => {
+    openCreateRecap();
+    setRecapLocationId(l.id);
+    loadRecapStock(l.id);
   };
   const openEditRecap = async (r: Recap) => {
     setEditingRecap(r);
@@ -1674,6 +1685,19 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
+              {locations.length > 0 && (
+                <button
+                  onClick={() => { setLocationOnlyInStock(v => !v); resetLocationPage(); }}
+                  className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+                  style={{
+                    height: HEADER_BTN_H,
+                    background: locationOnlyInStock ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+                    color: locationOnlyInStock ? 'white' : 'var(--text-muted)',
+                  }}
+                >
+                  <PackageCheck size={14} /> <span className="hidden sm:inline">Ada Stok</span>
+                </button>
+              )}
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
                   <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
@@ -1773,6 +1797,16 @@ _${storeHeader.name}_`.trim();
                             </div>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
+                            <Tooltip label="Kirim Stok">
+                              <button onClick={() => openSendForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
+                                <Send size={12} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Rekap Harian">
+                              <button onClick={() => openRecapForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
+                                <ClipboardList size={12} />
+                              </button>
+                            </Tooltip>
                             <Tooltip label="Riwayat">
                               <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
                                 <History size={12} />
@@ -1813,6 +1847,16 @@ _${storeHeader.name}_`.trim();
                               <Store size={20} style={{ color: 'var(--accent)' }} />
                             </div>
                             <div className="flex items-center gap-1">
+                              <Tooltip label="Kirim Stok">
+                                <button onClick={() => openSendForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
+                                  <Send size={12} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Rekap Harian">
+                                <button onClick={() => openRecapForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
+                                  <ClipboardList size={12} />
+                                </button>
+                              </Tooltip>
                               <Tooltip label="Riwayat">
                                 <button onClick={() => openLocationHistory(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Riwayat">
                                   <History size={12} />
