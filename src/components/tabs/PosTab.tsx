@@ -24,7 +24,7 @@ import {
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
 
-const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
+const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.eleven-digital.id';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type CartEntry     = { productId: string; qty: number };
