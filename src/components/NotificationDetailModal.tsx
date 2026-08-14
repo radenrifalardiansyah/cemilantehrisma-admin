@@ -3,7 +3,7 @@
 import { X } from 'lucide-react';
 import { TYPE_ICON, type NotificationDoc } from '@/components/NotificationBell';
 
-const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
+export const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   order_new: 'Pesanan',
   stock_low: 'Bahan Baku',
   pos_shift_open: 'Shift Kasir',
@@ -12,7 +12,7 @@ const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   consignment_send: 'Pengiriman Konsinyasi',
 };
 
-function fullTime(n: NotificationDoc): string {
+export function fullTime(n: NotificationDoc): string {
   if (!n.createdAt) return '';
   return n.createdAt.toDate().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 }

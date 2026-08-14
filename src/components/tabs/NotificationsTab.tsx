@@ -10,7 +10,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
-import NotificationDetailModal from '@/components/NotificationDetailModal';
+import { TYPE_LABEL, fullTime } from '@/components/NotificationDetailModal';
 import { TYPE_ICON, timeAgo, type NotificationDoc } from '@/components/NotificationBell';
 
 const HEADER_BTN_H = 34;
@@ -30,7 +30,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
   const signedIn = useFirebaseSignIn(creds);
   const [notifications, setNotifications] = useState<NotificationDoc[]>([]);
   const [loading, setLoading] = useState(true);
-  const [detail, setDetail] = useState<NotificationDoc | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [view, setView] = useViewMode('notifications');
   const [page, setPage] = useState(1);
@@ -67,7 +67,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
 
   const handleClick = (n: NotificationDoc) => {
     if (!n.readBy?.includes(username)) markRead(n.id);
-    setDetail(n);
+    setExpandedId(cur => (cur === n.id ? null : n.id));
   };
 
   return (
@@ -126,26 +126,35 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
                 const Icon = TYPE_ICON[n.type] ?? Bell;
                 const isRead = n.readBy?.includes(username);
                 const rowNum = (safePage - 1) * pageSize + idx + 1;
+                const expanded = expandedId === n.id;
                 return (
-                  <button
-                    key={n.id}
-                    onClick={() => handleClick(n)}
-                    className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors"
-                    style={{ background: isRead ? 'transparent' : 'var(--accent-bg)' }}
-                  >
-                    <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-2" style={{ color: 'var(--text-muted)' }}>
-                      {rowNum}
-                    </span>
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
-                      <Icon size={16} />
+                  <div key={n.id}>
+                    <div
+                      className="flex items-start gap-3 px-4 py-3"
+                      style={{ background: isRead ? 'transparent' : 'var(--accent-bg)' }}
+                    >
+                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-2" style={{ color: 'var(--text-muted)' }}>
+                        {rowNum}
+                      </span>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
+                        <Icon size={16} />
+                      </div>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-bold leading-snug" style={{ color: 'var(--text-primary)' }}>{n.title}</span>
+                        <span className="block text-xs leading-snug mt-0.5" style={{ color: 'var(--text-secondary)' }}>{n.message}</span>
+                        <span className="block text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{timeAgo(n.createdAt)}</span>
+                      </span>
+                      <div className="flex items-center gap-1 flex-shrink-0 pt-1">
+                        {!isRead && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />}
+                        <Tooltip label={expanded ? 'Tutup detail' : 'Lihat detail'}>
+                          <button onClick={() => handleClick(n)} className="btn-ghost p-2">
+                            <ChevronRight size={13} style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                          </button>
+                        </Tooltip>
+                      </div>
                     </div>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-bold leading-snug" style={{ color: 'var(--text-primary)' }}>{n.title}</span>
-                      <span className="block text-xs leading-snug mt-0.5" style={{ color: 'var(--text-secondary)' }}>{n.message}</span>
-                      <span className="block text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{timeAgo(n.createdAt)}</span>
-                    </span>
-                    {!isRead && <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--accent)' }} />}
-                  </button>
+                    {expanded && <NotificationRowDetail n={n} onOpen={onOpenNotification} />}
+                  </div>
                 );
               })}
             </div>
@@ -154,23 +163,28 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
               {paginated.map(n => {
                 const Icon = TYPE_ICON[n.type] ?? Bell;
                 const isRead = n.readBy?.includes(username);
+                const expanded = expandedId === n.id;
                 return (
-                  <button
-                    key={n.id}
-                    onClick={() => handleClick(n)}
-                    className="card overflow-hidden relative p-4 text-left flex flex-col gap-2"
-                    style={{ background: isRead ? undefined : 'var(--accent-bg)' }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
-                        <Icon size={16} />
+                  <div key={n.id} className="card overflow-hidden" style={{ background: isRead ? undefined : 'var(--accent-bg)' }}>
+                    <div className="p-4 flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
+                          <Icon size={16} />
+                        </div>
+                        <span className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{n.title}</span>
+                        {!isRead && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />}
                       </div>
-                      <span className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{n.title}</span>
-                      {!isRead && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />}
+                      <p className="text-xs leading-snug" style={{ color: 'var(--text-secondary)' }}>{n.message}</p>
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{timeAgo(n.createdAt)}</p>
                     </div>
-                    <p className="text-xs leading-snug" style={{ color: 'var(--text-secondary)' }}>{n.message}</p>
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{timeAgo(n.createdAt)}</p>
-                  </button>
+                    <div className="flex items-center justify-end px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                      <button onClick={() => handleClick(n)}
+                        className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
+                        Detail <ChevronRight size={12} style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                      </button>
+                    </div>
+                    {expanded && <NotificationRowDetail n={n} onOpen={onOpenNotification} />}
+                  </div>
                 );
               })}
             </div>
@@ -218,12 +232,25 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
           )}
         </div>
       </div>
+    </div>
+  );
+}
 
-      <NotificationDetailModal
-        notification={detail}
-        onClose={() => setDetail(null)}
-        onOpen={n => { onOpenNotification(n); setDetail(null); }}
-      />
+function NotificationRowDetail({ n, onOpen }: { n: NotificationDoc; onOpen: (n: NotificationDoc) => void }) {
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{n.message}</p>
+      <div className="grid grid-cols-2 gap-y-1 gap-x-3">
+        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Dibuat oleh</p>
+        <p className="text-[11px] font-semibold text-right" style={{ color: 'var(--text-primary)' }}>{n.actorUsername} ({n.actorRole})</p>
+        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Waktu</p>
+        <p className="text-[11px] font-semibold text-right" style={{ color: 'var(--text-primary)' }}>{fullTime(n)}</p>
+      </div>
+      {n.link && (
+        <button onClick={() => onOpen(n)} className="btn-primary text-xs h-8 px-3">
+          Lihat {TYPE_LABEL[n.type] ?? ''}
+        </button>
+      )}
     </div>
   );
 }
