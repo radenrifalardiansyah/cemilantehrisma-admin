@@ -516,7 +516,8 @@ export default function AppShell({
         <header
           className="flex-shrink-0 flex items-center justify-between px-4 lg:px-6"
           style={{
-            height: 60,
+            height: 'calc(60px + env(safe-area-inset-top))',
+            paddingTop: 'env(safe-area-inset-top)',
             background: '#FFFFFF',
             borderBottom: '1px solid var(--border)',
             boxShadow: '0 1px 0 var(--border-2)',
