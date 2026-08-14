@@ -1,25 +1,29 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, orderBy, query, limit, Timestamp } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
 import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Truck, ClipboardList } from 'lucide-react';
-import { getClientAuth, getClientDb, getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
+import { getClientDb, getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
 import { usePwaInstall } from '@/lib/usePwaInstall';
-import type { TabId } from '@/components/AppShell';
+import { useFirebaseSignIn } from '@/lib/useFirebaseSignIn';
+import NotificationDetailModal from '@/components/NotificationDetailModal';
 
-interface NotificationDoc {
+export interface NotificationDoc {
   id: string;
   type: 'order_new' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send';
   title: string;
   message: string;
   link: string | null;
+  entityCollection: string | null;
+  entityId: string | null;
+  actorUsername: string;
+  actorRole: string;
   readBy: string[];
   createdAt: Timestamp | null;
 }
 
-const TYPE_ICON: Record<NotificationDoc['type'], typeof Bell> = {
+export const TYPE_ICON: Record<NotificationDoc['type'], typeof Bell> = {
   order_new: ShoppingCart,
   stock_low: PackageX,
   pos_shift_open: Wallet,
@@ -28,7 +32,7 @@ const TYPE_ICON: Record<NotificationDoc['type'], typeof Bell> = {
   consignment_send: Truck,
 };
 
-function timeAgo(ts: Timestamp | null): string {
+export function timeAgo(ts: Timestamp | null): string {
   if (!ts) return '';
   const diffMs = Date.now() - ts.toMillis();
   const min = Math.floor(diffMs / 60000);
@@ -42,15 +46,17 @@ function timeAgo(ts: Timestamp | null): string {
 interface NotificationBellProps {
   creds: string;
   username: string;
-  onNavigate: (tab: TabId) => void;
+  onOpen: (n: NotificationDoc) => void;
+  onViewAll: () => void;
 }
 
 type PushStatus = 'idle' | 'enabling' | 'granted' | 'denied';
 
-export default function NotificationBell({ creds, username, onNavigate }: NotificationBellProps) {
+export default function NotificationBell({ creds, username, onOpen, onViewAll }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<NotificationDoc[]>([]);
   const [open, setOpen] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
+  const [detail, setDetail] = useState<NotificationDoc | null>(null);
+  const signedIn = useFirebaseSignIn(creds);
   const [pushStatus, setPushStatus] = useState<PushStatus>(() =>
     typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'granted' : 'idle'
   );
@@ -86,24 +92,6 @@ export default function NotificationBell({ creds, username, onNavigate }: Notifi
   };
 
   useEffect(() => {
-    if (!isFirebaseClientConfigured) return; // env NEXT_PUBLIC_FIREBASE_* belum diisi — fitur nonaktif dulu
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/auth/firebase-token', { headers: { 'x-admin-auth': creds } });
-        if (!res.ok) return;
-        const { token } = await res.json();
-        if (cancelled) return;
-        await signInWithCustomToken(getClientAuth(), token);
-        if (!cancelled) setSignedIn(true);
-      } catch (err) {
-        console.error('Gagal sign-in Firebase untuk notifikasi', err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [creds]);
-
-  useEffect(() => {
     if (!signedIn) return;
     const q = query(collection(getClientDb(), 'notifications'), orderBy('createdAt', 'desc'), limit(50));
     const unsub = onSnapshot(q, snap => {
@@ -134,7 +122,7 @@ export default function NotificationBell({ creds, username, onNavigate }: Notifi
   const handleClick = (n: NotificationDoc) => {
     if (!n.readBy?.includes(username)) markRead(n.id);
     setOpen(false);
-    if (n.link) onNavigate(n.link as TabId);
+    setDetail(n);
   };
 
   return (
@@ -221,8 +209,23 @@ export default function NotificationBell({ creds, username, onNavigate }: Notifi
               )}
             </div>
           )}
+          <div className="px-3.5 py-2.5 text-center" style={{ borderTop: '1px solid var(--border)' }}>
+            <button
+              onClick={() => { setOpen(false); onViewAll(); }}
+              className="text-[11px] font-semibold"
+              style={{ color: 'var(--accent)' }}
+            >
+              Lihat semua notifikasi
+            </button>
+          </div>
         </div>
       )}
+
+      <NotificationDetailModal
+        notification={detail}
+        onClose={() => setDetail(null)}
+        onOpen={n => { onOpen(n); setDetail(null); }}
+      />
     </div>
   );
 }

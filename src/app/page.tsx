@@ -10,6 +10,7 @@ import {
   LayoutDashboard, PieChart,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
+import type { NotificationDoc } from '@/components/NotificationBell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
@@ -38,6 +39,7 @@ import RolePermissionsTab from '@/components/tabs/RolePermissionsTab';
 import HistoryTab from '@/components/tabs/HistoryTab';
 import AdminFeeTab from '@/components/tabs/AdminFeeTab';
 import AdminFeeBillingTab from '@/components/tabs/AdminFeeBillingTab';
+import NotificationsTab from '@/components/tabs/NotificationsTab';
 import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer } from '@/lib/pos-types';
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 import TopListChart from '@/components/dashboard/TopListChart';
@@ -286,6 +288,23 @@ export default function AdminPage() {
   // ── Tab ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
+  const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
+  const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(null);
+  const [highlightShipmentId, setHighlightShipmentId] = useState<string | null>(null);
+  const [highlightRecapId, setHighlightRecapId] = useState<string | null>(null);
+
+  // Klik "Lihat" di modal detail notifikasi (NotificationBell) — pindah tab & sorot item terkait.
+  // pos_shift_open sengaja tidak punya highlight: tab POS belum punya list riwayat shift untuk disorot.
+  const handleOpenNotification = (n: NotificationDoc) => {
+    switch (n.type) {
+      case 'order_new': setHighlightOrderId(n.entityId); break;
+      case 'stock_low': setHighlightMaterialId(n.entityId); break;
+      case 'consignment_overdue':
+      case 'consignment_recap': setHighlightRecapId(n.entityId); break;
+      case 'consignment_send': setHighlightShipmentId(n.entityId); break;
+    }
+    if (n.link) setActiveTab(n.link as TabId);
+  };
 
   // ── Analytics ────────────────────────────────────────────
   // Sub-view di dalam tab Analitik — dipisah supaya tidak jadi satu halaman yang kepanjangan ke
@@ -1153,6 +1172,7 @@ export default function AdminPage() {
       modules={modules}
       menus={menus}
       badges={{ orders: newOrdersCount }}
+      onOpenNotification={handleOpenNotification}
     >
       {activeTab === 'dashboard'  && dashboardContent}
       <PosTab
@@ -1172,8 +1192,8 @@ export default function AdminPage() {
       {activeTab === 'products'   && <ProductsTab   creds={creds} />}
       {activeTab === 'categories' && <CategoriesTab creds={creds} />}
       {activeTab === 'orders'     && (
-        <OrdersTab creds={creds} highlightInvoice={highlightInvoice}
-          onHighlightHandled={() => setHighlightInvoice(null)}
+        <OrdersTab creds={creds} highlightInvoice={highlightInvoice} highlightOrderId={highlightOrderId}
+          onHighlightHandled={() => { setHighlightInvoice(null); setHighlightOrderId(null); }}
           onNewOrdersCountChange={setNewOrdersCount} />
       )}
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
@@ -1181,9 +1201,16 @@ export default function AdminPage() {
       {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'stock-report' && <StockReportTab creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
-      {activeTab === 'materials'  && <MaterialsTab  creds={creds} />}
+      {activeTab === 'materials'  && (
+        <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
+          onHighlightHandled={() => setHighlightMaterialId(null)} />
+      )}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
-      {activeTab === 'consignment' && <ConsignmentTab creds={creds} products={posProducts} />}
+      {activeTab === 'consignment' && (
+        <ConsignmentTab creds={creds} products={posProducts}
+          highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
+          onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
+      )}
       {activeTab === 'income'     && <IncomeTab     creds={creds} />}
       {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
       {activeTab === 'capital'    && <CapitalTab    creds={creds} />}
@@ -1200,6 +1227,9 @@ export default function AdminPage() {
       {activeTab === 'history'    && <HistoryTab   creds={creds} />}
       {activeTab === 'admin-fee' && superAdmin && <AdminFeeTab creds={creds} />}
       {activeTab === 'tagihan-admin-fee' && authUser?.role === 'admin' && <AdminFeeBillingTab creds={creds} />}
+      {activeTab === 'notifications' && (
+        <NotificationsTab creds={creds} username={adminUsername} onOpenNotification={handleOpenNotification} />
+      )}
     </AppShell>
   );
 }

@@ -264,7 +264,10 @@ function LocationStatTiles({ stockQty, stockValue, stats, dense = false }: { sto
   );
 }
 
-export default function ConsignmentTab({ creds, products }: { creds: string; products: PosProduct[] }) {
+export default function ConsignmentTab({ creds, products, highlightShipmentId, highlightRecapId, onHighlightHandled }: {
+  creds: string; products: PosProduct[];
+  highlightShipmentId?: string | null; highlightRecapId?: string | null; onHighlightHandled?: () => void;
+}) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
@@ -276,6 +279,12 @@ export default function ConsignmentTab({ creds, products }: { creds: string; pro
   // ini adalah audit trail siapa membuat/mengubah/menghapus record itu sendiri (collapse inline).
   const [auditHistoryId, setAuditHistoryId] = useState<string | null>(null);
   const toggleAuditHistory = (id: string) => setAuditHistoryId(cur => cur === id ? null : id);
+
+  // Datang dari klik "Lihat" di modal detail notifikasi (consignment_send / consignment_overdue/recap).
+  const [highlightedShipmentId, setHighlightedShipmentId] = useState<string | null>(null);
+  const [highlightedRecapId, setHighlightedRecapId] = useState<string | null>(null);
+  const shipmentRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const recapRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // ── Gudang (untuk tujuan retur/reject di Rekap Harian) ────────
   const [warehouses, setWarehouses] = useState<ConsignmentWarehouse[]>([]);
@@ -1028,6 +1037,20 @@ _${storeHeader.name}_`.trim();
   const goShipmentPage     = (p: number) => setShipmentPage(Math.max(1, Math.min(p, totalShipmentPages)));
   const resetShipmentPage  = () => setShipmentPage(1);
 
+  useEffect(() => {
+    if (!highlightShipmentId || shipments.length === 0) return;
+    const idx = shipments.findIndex(s => s.id === highlightShipmentId);
+    if (idx === -1) { onHighlightHandled?.(); return; }
+    setSubTab('kirim');
+    setShipmentSearch('');
+    setShipmentPage(Math.floor(idx / shipmentPageSize) + 1);
+    setHighlightedShipmentId(highlightShipmentId);
+    requestAnimationFrame(() => shipmentRowRefs.current[highlightShipmentId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    onHighlightHandled?.();
+    const t = setTimeout(() => setHighlightedShipmentId(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightShipmentId, shipments]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const togglePageAllShipments = () => {
     const pageIds     = paginatedShipments.map(s => s.id);
     const allSelected = pageIds.every(id => selectedShipments.has(id));
@@ -1375,6 +1398,20 @@ _${storeHeader.name}_`.trim();
   const paginatedRecaps = filteredRecaps.slice((safeRecapPage - 1) * recapPageSize, safeRecapPage * recapPageSize);
   const goRecapPage     = (p: number) => setRecapPage(Math.max(1, Math.min(p, totalRecapPages)));
   const resetRecapPage  = () => setRecapPage(1);
+
+  useEffect(() => {
+    if (!highlightRecapId || recaps.length === 0) return;
+    const idx = recaps.findIndex(r => r.id === highlightRecapId);
+    if (idx === -1) { onHighlightHandled?.(); return; }
+    setSubTab('rekap');
+    setRecapSearch('');
+    setRecapPage(Math.floor(idx / recapPageSize) + 1);
+    setHighlightedRecapId(highlightRecapId);
+    requestAnimationFrame(() => recapRowRefs.current[highlightRecapId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    onHighlightHandled?.();
+    const t = setTimeout(() => setHighlightedRecapId(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightRecapId, recaps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const togglePageAllRecaps = () => {
     const pageIds     = paginatedRecaps.map(r => r.id);
@@ -1989,8 +2026,9 @@ _${storeHeader.name}_`.trim();
                         const isSelected = selectedShipments.has(s.id);
                         const num = (safeShipmentPage - 1) * shipmentPageSize + i + 1;
                         return (
-                          <div key={s.id}>
-                          <div className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <div key={s.id} ref={el => { shipmentRowRefs.current[s.id] = el; }}>
+                          <div className="flex items-start gap-3 px-4 py-3"
+                            style={{ transition: 'background-color 0.6s ease', background: highlightedShipmentId === s.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                             <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} /></div>
                             <div className="flex-1 min-w-0">
@@ -2050,9 +2088,9 @@ _${storeHeader.name}_`.trim();
                       {paginatedShipments.map((s) => {
                         const isSelected = selectedShipments.has(s.id);
                         return (
-                          <div key={s.id}>
+                          <div key={s.id} ref={el => { shipmentRowRefs.current[s.id] = el; }}>
                           <div className="card overflow-hidden p-4 relative"
-                            style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                            style={{ transition: 'background-color 0.6s ease', background: highlightedShipmentId === s.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
                             </div>
@@ -2185,8 +2223,9 @@ _${storeHeader.name}_`.trim();
                         const isSelected = selectedRecaps.has(r.id);
                         const num = (safeRecapPage - 1) * recapPageSize + i + 1;
                         return (
-                          <div key={r.id}>
-                          <div className="flex items-start gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <div key={r.id} ref={el => { recapRowRefs.current[r.id] = el; }}>
+                          <div className="flex items-start gap-3 px-4 py-3"
+                            style={{ transition: 'background-color 0.6s ease', background: highlightedRecapId === r.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                             <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
                             <div className="flex-1 min-w-0">
@@ -2252,9 +2291,9 @@ _${storeHeader.name}_`.trim();
                       {paginatedRecaps.map((r) => {
                         const isSelected = selectedRecaps.has(r.id);
                         return (
-                          <div key={r.id}>
+                          <div key={r.id} ref={el => { recapRowRefs.current[r.id] = el; }}>
                           <div className="card overflow-hidden p-4 relative"
-                            style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                            style={{ transition: 'background-color 0.6s ease', background: highlightedRecapId === r.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
                             </div>

@@ -101,6 +101,7 @@ const MENUS: { id: string; moduleId: string; parentId: string | null; featureKey
   { id: 'role-permissions', moduleId: 'app-management', parentId: null, featureKey: 'role-permissions', label: 'Hak Akses Role',  icon: 'Lock',      order: 2 },
   { id: 'modules',          moduleId: 'app-management', parentId: null, featureKey: 'modules',          label: 'Modul',           icon: 'Blocks',    order: 3 },
   { id: 'history',          moduleId: 'app-management', parentId: null, featureKey: 'history',          label: 'Riwayat',         icon: 'History',   order: 4 },
+  { id: 'notifications',    moduleId: 'app-management', parentId: null, featureKey: 'notifications',    label: 'Notifikasi',      icon: 'Bell',       order: 5 },
 ];
 
 export async function POST(req: NextRequest) {
@@ -124,13 +125,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // FEATURE_KEYS additions (like `history`) never retroactively land on an
-  // already-seeded role_permissions doc — the `!exists` guard above skips it
-  // entirely. Full-access roles should always pick up new keys automatically,
-  // so merge `history:view` into them here regardless of prior seed state.
+  // FEATURE_KEYS additions (like `history`, `notifications`) never
+  // retroactively land on an already-seeded role_permissions doc — the
+  // `!exists` guard above skips it entirely. Full-access roles should always
+  // pick up new keys automatically, so merge them in here regardless of
+  // prior seed state.
   for (const roleId of ['super-admin', 'admin']) {
     await db.collection('role_permissions').doc(roleId).set(
-      { permissions: { history: cell(['view']) }, updatedAt: now },
+      { permissions: { history: cell(['view']), notifications: cell(['view']) }, updatedAt: now },
       { merge: true },
     );
   }

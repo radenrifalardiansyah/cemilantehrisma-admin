@@ -123,12 +123,16 @@ function detectPurchaseColumn(header: string): PurchaseTemplateKey | null {
   return null;
 }
 
-export default function MaterialsTab({ creds }: { creds: string }) {
+export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled }: {
+  creds: string; highlightMaterialId?: string | null; onHighlightHandled?: () => void;
+}) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
 
   const [subTab, setSubTab] = useState<SubTab>('stok');
+  const [highlightedMaterialId, setHighlightedMaterialId] = useState<string | null>(null);
+  const materialRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // ── Master bahan baku ──────────────────────────────────────
   const [materials,        setMaterials]        = useState<RawMaterial[]>([]);
@@ -502,6 +506,24 @@ export default function MaterialsTab({ creds }: { creds: string }) {
   const paginatedMaterials = filteredMaterials.slice((materialSafePage - 1) * materialPageSize, materialSafePage * materialPageSize);
   const goMaterialPage    = (p: number) => setMaterialPage(Math.max(1, Math.min(p, materialTotalPages)));
   const resetMaterialPage = () => setMaterialPage(1);
+
+  // Datang dari klik "Lihat" di modal detail notifikasi (stock_low) — buka & sorot bahan baku itu.
+  useEffect(() => {
+    if (!highlightMaterialId || materials.length === 0) return;
+    if (!materials.some(m => m.id === highlightMaterialId)) { onHighlightHandled?.(); return; }
+    setSubTab('stok');
+    setMaterialSearch('');
+    const idx = [...materials]
+      .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }))
+      .findIndex(m => m.id === highlightMaterialId);
+    if (idx === -1) { onHighlightHandled?.(); return; }
+    setMaterialPage(Math.floor(idx / materialPageSize) + 1);
+    setHighlightedMaterialId(highlightMaterialId);
+    requestAnimationFrame(() => materialRowRefs.current[highlightMaterialId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    onHighlightHandled?.();
+    const t = setTimeout(() => setHighlightedMaterialId(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightMaterialId, materials]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleMaterialPageAll = () => {
     const pageIds     = paginatedMaterials.map(m => m.id);
@@ -1034,7 +1056,8 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                       const isSelected = selectedMaterials.has(m.id);
                       const rowNum = (materialSafePage - 1) * materialPageSize + idx + 1;
                       return (
-                        <div key={m.id} className="px-4 py-3 flex items-center gap-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                        <div key={m.id} ref={el => { materialRowRefs.current[m.id] = el; }} className="px-4 py-3 flex items-center gap-3"
+                          style={{ transition: 'background-color 0.6s ease', background: highlightedMaterialId === m.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                           <Checkbox checked={isSelected} onChange={() => toggleSelectMaterial(m.id)} />
                           <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
                             {rowNum}
@@ -1084,7 +1107,8 @@ export default function MaterialsTab({ creds }: { creds: string }) {
                     {paginatedMaterials.map(m => {
                       const isSelected = selectedMaterials.has(m.id);
                       return (
-                        <div key={m.id} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                        <div key={m.id} ref={el => { materialRowRefs.current[m.id] = el; }} className="card overflow-hidden relative"
+                          style={{ transition: 'background-color 0.6s ease', background: highlightedMaterialId === m.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                           <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
                             <Checkbox checked={isSelected} onChange={() => toggleSelectMaterial(m.id)} />
                           </div>

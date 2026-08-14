@@ -127,8 +127,8 @@ function detectOrderColumn(header: string): OrderTemplateKey | null {
   return null;
 }
 
-export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled, onNewOrdersCountChange }: {
-  creds: string; highlightInvoice?: string | null; onHighlightHandled?: () => void;
+export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, onHighlightHandled, onNewOrdersCountChange }: {
+  creds: string; highlightInvoice?: string | null; highlightOrderId?: string | null; onHighlightHandled?: () => void;
   onNewOrdersCountChange?: (count: number) => void;
 }) {
   const toast = useToast();
@@ -202,6 +202,20 @@ export default function OrdersTab({ creds, highlightInvoice, onHighlightHandled,
     const t = setTimeout(() => setHighlightedId(null), 2500);
     return () => clearTimeout(t);
   }, [highlightInvoice, orders]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Datang dari klik "Lihat" di modal detail notifikasi (order_new) — sama seperti di atas, tapi
+  // notifikasi menyimpan doc id (entityId), bukan invoiceNo.
+  useEffect(() => {
+    if (!highlightOrderId || orders.length === 0) return;
+    const target = orders.find(o => o.id === highlightOrderId);
+    if (!target) { onHighlightHandled?.(); return; }
+    setExpandedId(target.id);
+    setHighlightedId(target.id);
+    requestAnimationFrame(() => rowRefs.current[target.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    onHighlightHandled?.();
+    const t = setTimeout(() => setHighlightedId(null), 2500);
+    return () => clearTimeout(t);
+  }, [highlightOrderId, orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const del = async (id: string) => {
     if (!await confirm({ message: 'Hapus pesanan ini? Stok yang sudah terpotong akan dikembalikan ke gudang. Tindakan ini tidak bisa diurungkan.', danger: true })) return;

@@ -11,7 +11,7 @@ import Tooltip from '@/components/Tooltip';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
 import ChatWidget from '@/components/chat/ChatWidget';
-import NotificationBell from '@/components/NotificationBell';
+import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
@@ -24,12 +24,14 @@ import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 // Menu / Hak Akses Role entirely so it can never be granted to any other role.
 // 'tagihan-admin-fee' is the mirror image for `role === 'admin'`: the read/pay side of the same
 // Biaya Admin invoices, also hardcoded (not a MenuDoc) so it can't be granted to staff/kasir/finance.
+// 'notifications' is a normal feature like the rest — register a MenuDoc for it via Struktur Menu
+// so it appears in the sidebar, and grant roles access to it via Hak Akses Role like any other tab.
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
   | 'finance-report' | 'capital' | 'settings'
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
-  | 'admin-fee' | 'tagihan-admin-fee';
+  | 'admin-fee' | 'tagihan-admin-fee' | 'notifications';
 
 interface NavTab { id: TabId; label: string; Icon: LucideIcon; children?: NavTab[] }
 interface NavGroup { id: string; label: string; Icon: LucideIcon; tabs: NavTab[] }
@@ -96,13 +98,14 @@ interface AppShellProps {
   modules: ModuleDoc[];
   menus: MenuDoc[];
   badges?: Partial<Record<TabId, number>>;
+  onOpenNotification: (n: NotificationDoc) => void;
 }
 
 export default function AppShell({
   activeTab, setActiveTab, onLogout,
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
-  onProfileUpdated, modules, menus, badges = {},
+  onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [aboutOpen,  setAboutOpen]  = useState(false);
@@ -540,7 +543,7 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-2">
             <div id="topbar-slot" className="flex items-center gap-2" />
-            <NotificationBell creds={creds} username={username} onNavigate={go} />
+            <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"
               title="Lihat Toko"
