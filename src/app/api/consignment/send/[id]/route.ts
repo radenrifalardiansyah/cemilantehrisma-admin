@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
+import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface ShipmentItem { productId: string; productName: string; qty: number }
@@ -79,6 +81,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat kirim.' }, { status: 400 });
   }
 
+  revalidateTag(shipmentPdfTag(id), 'max');
   return Response.json({ ok: true });
 }
 
@@ -258,5 +261,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah pengiriman.' }, { status: 400 });
   }
 
+  revalidateTag(shipmentPdfTag(id), 'max');
   return Response.json({ ok: true });
 }

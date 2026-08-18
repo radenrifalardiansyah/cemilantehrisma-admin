@@ -7,7 +7,7 @@ import {
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
   MousePointerClick, Tag, ShoppingCart, Download, Share, AlertTriangle,
-  LayoutDashboard, PieChart,
+  LayoutDashboard, PieChart, Store,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
 import type { NotificationDoc } from '@/components/NotificationBell';
@@ -44,6 +44,7 @@ import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer }
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 import TopListChart from '@/components/dashboard/TopListChart';
 import BusinessAnalyticsSection, { type BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
+import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import { type PeriodKey, periodRange } from '@/lib/period';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
@@ -309,7 +310,7 @@ export default function AdminPage() {
   // ── Analytics ────────────────────────────────────────────
   // Sub-view di dalam tab Analitik — dipisah supaya tidak jadi satu halaman yang kepanjangan ke
   // bawah (pola sama seperti subView di FinanceReportTab / stokView di StockTab).
-  const [dashSubView, setDashSubView] = useState<'ringkasan' | 'analitik-bisnis' | 'analitik-web'>('ringkasan');
+  const [dashSubView, setDashSubView] = useState<'ringkasan' | 'analitik-bisnis' | 'analitik-mitra' | 'analitik-web'>('ringkasan');
   const [dashData, setDashData] = useState<DashData | null>(null);
   const [loading,  setLoading]  = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
@@ -322,6 +323,13 @@ export default function AdminPage() {
   const [bizCustomTo, setBizCustomTo] = useState('');
   const [bizData, setBizData] = useState<BusinessAnalyticsData | null>(null);
   const [bizLoading, setBizLoading] = useState(false);
+
+  // ── Analitik Mitra (kirim/pendapatan/pelunasan per lokasi konsinyasi) — agregasi server-side ──
+  const [mitraPeriod, setMitraPeriod] = useState<PeriodKey>('30d');
+  const [mitraCustomFrom, setMitraCustomFrom] = useState('');
+  const [mitraCustomTo, setMitraCustomTo] = useState('');
+  const [mitraData, setMitraData] = useState<ConsignmentAnalyticsData | null>(null);
+  const [mitraLoading, setMitraLoading] = useState(false);
 
   // ── POS (shared data — PosTab owns cart/checkout state itself) ─────
   const [posProducts,    setPosProducts]    = useState<PosProduct[]>([]);
@@ -472,6 +480,25 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bizPeriod, bizCustomFrom, bizCustomTo]);
 
+  // ── Analitik Mitra — agregasi kirim/rekap per lokasi konsinyasi dari endpoint server-side ──
+  const fetchConsignmentAnalytics = useCallback(async (authHeader?: string) => {
+    const token = authHeader ?? creds;
+    if (!token) return;
+    setMitraLoading(true);
+    try {
+      const { from, to } = periodRange(mitraPeriod, mitraCustomFrom, mitraCustomTo);
+      const res = await fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token } });
+      if (res.ok) setMitraData(await res.json() as ConsignmentAnalyticsData);
+    } catch {}
+    setMitraLoading(false);
+  }, [creds, mitraPeriod, mitraCustomFrom, mitraCustomTo]);
+
+  useEffect(() => {
+    if (!authed) return;
+    fetchConsignmentAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mitraPeriod, mitraCustomFrom, mitraCustomTo]);
+
   // ── Dynamic sidebar data — Struktur Menu / Modul drive the real nav ──
   const fetchNav = useCallback(async (token: string) => {
     try {
@@ -509,9 +536,9 @@ export default function AdminPage() {
       superAdmin: boolean;
     };
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
-    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token);
+    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
     return true;
-  }, [fetchDash, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics]);
+  }, [fetchDash, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics, fetchConsignmentAnalytics]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -718,7 +745,7 @@ export default function AdminPage() {
 
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => { fetchDash(); fetchNewOrdersCount(); fetchBusinessAnalytics(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+          <button onClick={() => { fetchDash(); fetchNewOrdersCount(); fetchBusinessAnalytics(); fetchConsignmentAnalytics(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
@@ -729,6 +756,7 @@ export default function AdminPage() {
         {([
           { id: 'ringkasan' as const, label: 'Ringkasan', Icon: LayoutDashboard },
           { id: 'analitik-bisnis' as const, label: 'Analitik Bisnis', Icon: PieChart },
+          { id: 'analitik-mitra' as const, label: 'Analitik Mitra', Icon: Store },
           { id: 'analitik-web' as const, label: 'Analitik Web', Icon: Globe },
         ]).map(t => (
           <button key={t.id} onClick={() => setDashSubView(t.id)}
@@ -1141,6 +1169,20 @@ export default function AdminPage() {
           onCustomFromChange={setBizCustomFrom}
           onCustomToChange={setBizCustomTo}
           onNavigateFinance={() => setActiveTab('finance-report')}
+        />
+      )}
+
+      {dashSubView === 'analitik-mitra' && (
+        <ConsignmentAnalyticsSection
+          data={mitraData}
+          loading={mitraLoading}
+          period={mitraPeriod}
+          customFrom={mitraCustomFrom}
+          customTo={mitraCustomTo}
+          onPeriodChange={setMitraPeriod}
+          onCustomFromChange={setMitraCustomFrom}
+          onCustomToChange={setMitraCustomTo}
+          onNavigateLocation={() => setActiveTab('consignment')}
         />
       )}
 

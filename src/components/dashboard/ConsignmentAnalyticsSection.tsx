@@ -1,0 +1,408 @@
+'use client';
+
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
+} from 'recharts';
+import {
+  Loader2, Store, Wallet, Package, ArrowDownCircle, ArrowUpCircle,
+  PieChart as PieIcon, TrendingUp, Boxes, Receipt, ChevronRight,
+} from 'lucide-react';
+import TopListChart from './TopListChart';
+import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
+
+export interface ConsignmentAnalyticsData {
+  period: { from: string; to: string };
+  summary: {
+    totalPartners: number;
+    totalKirim: number; totalPendapatan: number; totalSelisih: number;
+    sellThroughPct: number;
+    stockValue: number; stockCount: number;
+    lunas: { count: number; amount: number };
+    belumLunas: { count: number; amount: number };
+  };
+  topLocations: {
+    id: string; name: string; code?: string;
+    kirim: number; pendapatan: number; selisih: number; sellThroughPct: number;
+    jual: number; retur: number; reject: number;
+    stockValue: number; lunasAmount: number; belumLunasAmount: number;
+  }[];
+  topProducts: { productId: string; productName: string; qtySold: number; revenue: number }[];
+  paymentStatus: { status: 'lunas' | 'belum_lunas'; label: string; count: number; amount: number }[];
+  dailyTrend: { date: string; kirim: number; pendapatan: number }[];
+}
+
+const formatRp = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+function compactRp(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}jt`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(0)}rb`;
+  return `${n}`;
+}
+
+function shortDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+const PAYMENT_STATUS_COLORS: Record<string, string> = { lunas: '#059669', belum_lunas: '#DC2626' };
+const PRODUCT_COLORS = ['#D4691E', '#0284C7', '#7C3AED', '#059669', '#DB2777', '#B45309', '#0891B2', '#65A30D'];
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span style={{ width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block', flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+}
+
+function ChartTooltip({ active, payload, label }: {
+  active?: boolean; label?: string; payload?: { name?: string; value?: number; color?: string }[];
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div style={{
+      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+    }}>
+      {label && <div style={{ opacity: 0.65, marginBottom: 4, fontWeight: 700 }}>{shortDate(label)}</div>}
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+          <span style={{ opacity: 0.75 }}>{p.name}:</span>
+          <span style={{ fontWeight: 800 }}>{formatRp(p.value ?? 0)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LocationTooltip({ active, payload }: {
+  active?: boolean; payload?: { payload?: { name?: string; pendapatan?: number } }[];
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0].payload;
+  if (!d) return null;
+  return (
+    <div style={{
+      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.name}</div>
+      <div style={{ fontWeight: 800 }}>{formatRp(d.pendapatan ?? 0)}</div>
+    </div>
+  );
+}
+
+function ProductTooltip({ active, payload }: {
+  active?: boolean; payload?: { payload?: { productName?: string; revenue?: number; qtySold?: number } }[];
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0].payload;
+  if (!d) return null;
+  return (
+    <div style={{
+      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.productName}</div>
+      <div style={{ fontWeight: 800 }}>{formatRp(d.revenue ?? 0)}</div>
+      <div style={{ opacity: 0.65 }}>{d.qtySold} pcs terjual</div>
+    </div>
+  );
+}
+
+function PaymentStatusTooltip({ active, payload }: {
+  active?: boolean; payload?: { payload?: { label?: string; amount?: number; count?: number } }[];
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0].payload;
+  if (!d) return null;
+  return (
+    <div style={{
+      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.label}</div>
+      <div style={{ fontWeight: 800 }}>{formatRp(d.amount ?? 0)}</div>
+      <div style={{ opacity: 0.65 }}>{d.count} rekap</div>
+    </div>
+  );
+}
+
+interface Props {
+  data: ConsignmentAnalyticsData | null;
+  loading: boolean;
+  period: PeriodKey;
+  customFrom: string;
+  customTo: string;
+  onPeriodChange: (p: PeriodKey) => void;
+  onCustomFromChange: (v: string) => void;
+  onCustomToChange: (v: string) => void;
+  onNavigateLocation?: (locationId: string) => void;
+}
+
+export default function ConsignmentAnalyticsSection({
+  data, loading, period, customFrom, customTo,
+  onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateLocation,
+}: Props) {
+  return (
+    <div className="space-y-5">
+      {/* Header + pemilih periode */}
+      <div className="flex items-center justify-between gap-2.5 pt-2 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+            <Store size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-extrabold" style={{ color: 'var(--text-primary)' }}>Analitik Mitra</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Performa lokasi konsinyasi — kirim, penjualan &amp; pelunasan</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {PERIOD_OPTIONS.map(p => (
+            <button key={p.id} onClick={() => onPeriodChange(p.id)} disabled={loading}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+              style={period === p.id
+                ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' }
+                : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {period === 'custom' && (
+        <div className="flex items-center gap-2">
+          <input type="date" value={customFrom} onChange={e => onCustomFromChange(e.target.value)} className="input" style={{ height: 36 }} />
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+          <input type="date" value={customTo} onChange={e => onCustomToChange(e.target.value)} className="input" style={{ height: 36 }} />
+        </div>
+      )}
+
+      {loading && !data && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
+        </div>
+      )}
+
+      {data && (
+        <div className="space-y-5" style={{ opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { icon: <Store size={16} />, label: 'Total Mitra', val: data.summary.totalPartners.toString(), color: '#7C3AED', bg: '#F5F3FF', isRp: false },
+              { icon: <ArrowUpCircle size={16} />, label: 'Nilai Dikirim', val: formatRp(data.summary.totalKirim), color: '#0284C7', bg: '#EFF6FF', isRp: true },
+              { icon: <Wallet size={16} />, label: 'Pendapatan', val: formatRp(data.summary.totalPendapatan), color: 'var(--success)', bg: 'var(--success-bg)', isRp: true },
+              { icon: <TrendingUp size={16} />, label: 'Tingkat Terjual', val: `${data.summary.sellThroughPct}%`, color: '#D4691E', bg: 'var(--accent-bg)', isRp: false },
+            ].map((c, i) => (
+              <div key={i} className="card relative p-4 overflow-hidden">
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: c.bg, color: c.color, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                  {c.icon}
+                </div>
+                <p className="tabular" style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', lineHeight: 1.15, marginBottom: 4 }}>
+                  {c.val}
+                </p>
+                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>{c.label}</p>
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, borderRadius: '0 0 12px 12px', background: `linear-gradient(90deg, ${c.color}, ${c.color}88)` }} />
+              </div>
+            ))}
+          </div>
+
+          {/* Tren nilai dikirim vs pendapatan */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Kirim vs Pendapatan</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Nilai stok titip dikirim dibanding yang benar-benar terjual</p>
+              </div>
+              <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <LegendDot color="#0284C7" label="Dikirim" />
+                <LegendDot color="#059669" label="Pendapatan" />
+              </div>
+            </div>
+            {data.dailyTrend.every(d => d.kirim + d.pendapatan === 0) ? (
+              <div className="py-8 text-center">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada aktivitas mitra di periode ini</p>
+              </div>
+            ) : (
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <AreaChart data={data.dailyTrend} margin={{ top: 6, right: 4, left: -18, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="var(--border-2)" />
+                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-2)' }} tickLine={false} />
+                    <YAxis tickFormatter={compactRp} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
+                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 3' }} />
+                    <Area type="monotone" dataKey="kirim" name="Dikirim" stroke="#0284C7" fill="#0284C7" fillOpacity={0.16} strokeWidth={2} />
+                    <Area type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#059669" fill="#059669" fillOpacity={0.16} strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Top lokasi (bar) + Status pembayaran (pie) */}
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div className="card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Boxes size={15} style={{ color: 'var(--accent)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Mitra Teratas (Pendapatan)</p>
+              </div>
+              {data.topLocations.length === 0 ? (
+                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
+              ) : (
+                <div style={{ width: '100%', height: Math.max(120, data.topLocations.slice(0, 8).length * 34) }}>
+                  <ResponsiveContainer>
+                    <BarChart data={data.topLocations.slice(0, 8)} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barCategoryGap={10}>
+                      <XAxis type="number" hide />
+                      <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<LocationTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+                      <Bar dataKey="pendapatan" radius={[0, 4, 4, 0]} barSize={18}>
+                        {data.topLocations.slice(0, 8).map((entry, i) => (
+                          <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div className="card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <PieIcon size={15} style={{ color: 'var(--accent)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Status Pelunasan Rekap</p>
+              </div>
+              {data.summary.lunas.count + data.summary.belumLunas.count === 0 ? (
+                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada rekap di periode ini.</p>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <div style={{ width: 140, height: 140, flexShrink: 0 }}>
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie data={data.paymentStatus} dataKey="amount" nameKey="label" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2} strokeWidth={0}>
+                          {data.paymentStatus.map((entry, i) => (
+                            <Cell key={i} fill={PAYMENT_STATUS_COLORS[entry.status]} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<PaymentStatusTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex-1 space-y-3 min-w-0">
+                    {data.paymentStatus.map((s, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-xs font-semibold truncate" style={{ color: 'var(--text-secondary)' }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 4, background: PAYMENT_STATUS_COLORS[s.status], flexShrink: 0 }} />
+                          {s.label}
+                        </span>
+                        <span className="text-xs font-bold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
+                          {formatRp(s.amount)} <span className="font-medium opacity-60">· {s.count}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Produk terlaris di seluruh mitra */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Package size={15} style={{ color: 'var(--accent)' }} />
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Produk Terlaris di Mitra</p>
+            </div>
+            {data.topProducts.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada produk terjual di periode ini.</p>
+            ) : (
+              <div style={{ width: '100%', height: Math.max(120, data.topProducts.length * 34) }}>
+                <ResponsiveContainer>
+                  <BarChart data={data.topProducts} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barCategoryGap={10}>
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="productName" width={110} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ProductTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+                    <Bar dataKey="revenue" radius={[0, 4, 4, 0]} barSize={18}>
+                      {data.topProducts.map((entry, i) => (
+                        <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Ringkasan per lokasi */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 flex items-center gap-2 flex-wrap" style={{ borderBottom: '1px solid var(--border-2)' }}>
+              <Receipt size={15} style={{ color: 'var(--accent)' }} />
+              <p className="text-sm font-bold flex-1" style={{ color: 'var(--text-primary)' }}>Rincian per Lokasi Mitra</p>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Stok titip saat ini: <strong style={{ color: 'var(--text-primary)' }}>{formatRp(data.summary.stockValue)}</strong>
+              </span>
+            </div>
+            {data.topLocations.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
+            ) : (
+              <div>
+                {data.topLocations.map((l, idx) => (
+                  <button key={l.id} onClick={() => onNavigateLocation?.(l.id)}
+                    disabled={!onNavigateLocation}
+                    className="w-full text-left px-5 py-3.5 flex items-center gap-3 transition-colors disabled:cursor-default"
+                    style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}
+                    onMouseEnter={e => { if (onNavigateLocation) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <div className="w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-xs"
+                      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                      {l.code || l.name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                        Terjual {l.jual} · Retur {l.retur} · Reject {l.reject} · {l.sellThroughPct}% terjual
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-extrabold tabular" style={{ color: 'var(--success)' }}>{formatRp(l.pendapatan)}</p>
+                      {l.belumLunasAmount > 0 && (
+                        <p className="text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>
+                          {formatRp(l.belumLunasAmount)} belum lunas
+                        </p>
+                      )}
+                    </div>
+                    {onNavigateLocation && <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Selisih kirim vs pendapatan (belum terealisasi) */}
+          {(() => {
+            const unrealized = data.topLocations
+              .map(l => ({ label: l.name, value: l.selisih }))
+              .filter(i => i.value > 0)
+              .sort((a, b) => b.value - a.value)
+              .slice(0, 8);
+            if (unrealized.length === 0) return null;
+            return (
+              <div className="card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <ArrowDownCircle size={15} style={{ color: 'var(--danger)' }} />
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Nilai Belum Terealisasi per Lokasi</p>
+                </div>
+                <TopListChart color="var(--danger)" formatValue={formatRp} items={unrealized} />
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}

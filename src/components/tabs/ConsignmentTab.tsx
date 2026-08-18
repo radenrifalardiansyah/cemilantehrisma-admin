@@ -5,8 +5,10 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Upload,
-  History, Warehouse, Ban, MessageCircle, PackageCheck,
+  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart,
 } from 'lucide-react';
+import { type PeriodKey, periodRange } from '@/lib/period';
+import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -74,11 +76,12 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
-type SubTab = 'lokasi' | 'kirim' | 'rekap';
+type SubTab = 'lokasi' | 'kirim' | 'rekap' | 'analitik';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'lokasi', label: 'Lokasi',      Icon: Store },
   { id: 'kirim',  label: 'Kirim Stok',  Icon: Send },
   { id: 'rekap',  label: 'Rekap Harian', Icon: ClipboardList },
+  { id: 'analitik', label: 'Analitik',  Icon: PieChart },
 ];
 
 interface ConsignmentLocation {
@@ -273,6 +276,28 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const headers = { 'x-admin-auth': creds };
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
+
+  // ── Analitik Mitra (kirim/pendapatan/pelunasan lintas lokasi) — agregasi server-side ──
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<PeriodKey>('30d');
+  const [analyticsCustomFrom, setAnalyticsCustomFrom] = useState('');
+  const [analyticsCustomTo, setAnalyticsCustomTo] = useState('');
+  const [analyticsData, setAnalyticsData] = useState<ConsignmentAnalyticsData | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const { from, to } = periodRange(analyticsPeriod, analyticsCustomFrom, analyticsCustomTo);
+      const r = await fetch(`${API}/api/analytics/consignment?from=${from}&to=${to}`, { headers });
+      if (r.ok) setAnalyticsData(await r.json() as ConsignmentAnalyticsData);
+    } catch {}
+    setAnalyticsLoading(false);
+  };
+  useEffect(() => {
+    if (subTab !== 'analitik') return;
+    fetchAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subTab, analyticsPeriod, analyticsCustomFrom, analyticsCustomTo]);
 
   // ── Riwayat audit per record (generic, dipakai di 3 list: lokasi/kirim/rekap) ──
   // Beda dengan `historyLocation` di bawah (riwayat bisnis kirim/rekap per lokasi, modal) —
@@ -1668,7 +1693,7 @@ _${storeHeader.name}_`.trim();
     <div className="flex flex-col h-full">
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => { loadLocations(); loadShipments(); loadRecaps(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+          <button onClick={() => { loadLocations(); loadShipments(); loadRecaps(); if (subTab === 'analitik') fetchAnalytics(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
             <RefreshCw size={14} className={locationsLoading || shipmentsLoading || recapsLoading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
@@ -2667,6 +2692,23 @@ _${storeHeader.name}_`.trim();
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ════ ANALITIK ═══════════════════════════════════════ */}
+      {subTab === 'analitik' && (
+        <div className="p-4 lg:p-6 animate-fade-up">
+          <ConsignmentAnalyticsSection
+            data={analyticsData}
+            loading={analyticsLoading}
+            period={analyticsPeriod}
+            customFrom={analyticsCustomFrom}
+            customTo={analyticsCustomTo}
+            onPeriodChange={setAnalyticsPeriod}
+            onCustomFromChange={setAnalyticsCustomFrom}
+            onCustomToChange={setAnalyticsCustomTo}
+            onNavigateLocation={() => setSubTab('lokasi')}
+          />
         </div>
       )}
 
