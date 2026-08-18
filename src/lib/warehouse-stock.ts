@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/firebase-admin';
 import { FieldValue, Firestore } from 'firebase-admin/firestore';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 // Kosongkan stok satu produk di satu gudang ke 0 — dipakai baik untuk clear per-produk
 // maupun clear-semua-produk (dipanggil per produk dari daftar warehouse_stock gudang tsb).
@@ -28,4 +29,5 @@ export async function clearWarehouseProductStock(warehouseId: string, productId:
       extra: { productName: product.data.name ?? '' },
     });
   });
+  await revalidateStorefront('products');
 }

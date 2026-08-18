@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { getAuthUser } from '@/lib/admin-auth';
 import { requirePermission } from '@/lib/rbac';
@@ -51,7 +51,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     ...data,
     updatedAt: FieldValue.serverTimestamp(),
   });
-  await revalidateStorefront('products');
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
 
@@ -60,6 +60,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   await getDb().collection('products').doc(id).delete();
-  await revalidateStorefront('products');
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

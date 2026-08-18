@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { revalidateStorefront } from '@/lib/revalidate';
@@ -14,6 +14,6 @@ export async function POST(req: NextRequest) {
   const batch = db.batch();
   for (const id of ids) batch.delete(db.collection('products').doc(id));
   await batch.commit();
-  await revalidateStorefront('products');
+  after(() => revalidateStorefront('products'));
   return Response.json({ deleted: ids.length });
 }

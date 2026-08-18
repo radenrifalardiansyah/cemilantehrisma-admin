@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -93,6 +93,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (created > 0) await revalidateStorefront('products');
+  if (created > 0) after(() => revalidateStorefront('products'));
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

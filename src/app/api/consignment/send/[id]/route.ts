@@ -1,10 +1,11 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface ShipmentItem { productId: string; productName: string; qty: number }
@@ -82,6 +83,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   revalidateTag(shipmentPdfTag(id), 'max');
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
 
@@ -262,5 +264,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   revalidateTag(shipmentPdfTag(id), 'max');
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

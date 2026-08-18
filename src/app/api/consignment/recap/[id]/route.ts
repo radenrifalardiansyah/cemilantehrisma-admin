@@ -1,8 +1,9 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry, logHistory } from '@/lib/history';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number }
@@ -47,6 +48,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const recapRef = db.collection('consignmentRecaps').doc(id);
 
+  let stockTouched = false;
   try {
     await db.runTransaction(async tx => {
       const recapSnap = await tx.get(recapRef);
@@ -55,6 +57,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const recap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
       const items = recap.items ?? [];
       const returItems = items.filter(it => it.qtyRetur > 0);
+      stockTouched = returItems.length > 0;
 
       const stockRefs   = items.map(it => db.collection('consignmentStock').doc(`${recap.locationId}_${it.productId}`));
       const productRefs = returItems.map(it => db.collection('products').doc(it.productId));
@@ -122,6 +125,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
   }
 
+  if (stockTouched) after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
 
@@ -150,6 +154,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const recapRef = db.collection('consignmentRecaps').doc(id);
 
+  let stockTouched = false;
   try {
     await db.runTransaction(async tx => {
       const recapSnap = await tx.get(recapRef);
@@ -161,6 +166,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const newReturItems = newItems.filter(it => it.qtyRetur > 0);
 
       const productIds = [...new Set([...oldReturItems.map(it => it.productId), ...newReturItems.map(it => it.productId)])];
+      stockTouched = productIds.length > 0;
 
       const stockMeta = new Map<string, { locationId: string; productId: string; productName: string }>();
       oldItems.forEach(it => {
@@ -336,5 +342,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah rekap.' }, { status: 400 });
   }
 
+  if (stockTouched) after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

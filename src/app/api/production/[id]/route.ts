@@ -1,8 +1,9 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -273,6 +274,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan perubahan.' }, { status: 400 });
   }
 
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
 
@@ -370,5 +372,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus batch produksi.' }, { status: 400 });
   }
 
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

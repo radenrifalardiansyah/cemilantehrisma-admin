@@ -1,10 +1,11 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
 import { writeNotification, sendPush } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
@@ -228,6 +229,7 @@ export async function POST(req: NextRequest) {
   }
 
   await Promise.all(pushPayloads.map(p => sendPush(db, p))).catch(err => console.error('Failed to send push for low stock', err));
+  after(() => revalidateStorefront('products'));
 
   return Response.json({ id: batchRef.id });
 }

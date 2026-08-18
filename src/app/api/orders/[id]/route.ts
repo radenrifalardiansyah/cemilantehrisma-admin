@@ -1,10 +1,11 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { restoreOrderStockInTx, RestorableOrder } from '@/lib/order-stock';
 import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
 import { writeHistoryEntry } from '@/lib/history';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -104,11 +105,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     } catch (err) {
       return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui pesanan.' }, { status: 400 });
     }
+    after(() => revalidateStorefront('products'));
     return Response.json({ ok: true });
   }
 
   // Update status/paymentStatus saja (batalkan, tandai selesai, tandai lunas)
   const { status, paymentStatus } = body;
+  let stockTouched = false;
   try {
     await db.runTransaction(async tx => {
       const snap = await tx.get(ref);
@@ -154,6 +157,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
               note: `Penjualan Online - ${order.invoiceNo ?? ''}`,
             });
           }
+          stockTouched = true;
         }
 
         update.stockCut = true;
@@ -164,6 +168,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (status === 'dibatalkan') {
         await restoreOrderStockInTx(tx, db, order);
         update.stockRestored = true;
+        stockTouched = true;
       }
 
       tx.update(ref, update);
@@ -176,6 +181,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui pesanan.' }, { status: 400 });
   }
 
+  if (stockTouched) after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
 
@@ -202,5 +208,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     }
   });
 
+  after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

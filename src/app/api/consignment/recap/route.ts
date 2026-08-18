@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
@@ -6,6 +6,7 @@ import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/fires
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
 import { notify, writeNotification, sendPush } from '@/lib/notifications';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -201,6 +202,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for consignment recap', err));
+  if (items.some(it => it.qtyRetur > 0)) after(() => revalidateStorefront('products'));
 
   return Response.json({ id: recapRef.id });
 }

@@ -1,10 +1,11 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
 import { writeNotification, sendPush } from '@/lib/notifications';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -134,6 +135,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for consignment send', err));
+  after(() => revalidateStorefront('products'));
 
   return Response.json({ id: shipmentRef.id });
 }
