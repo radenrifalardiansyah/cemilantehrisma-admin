@@ -2,11 +2,11 @@
 
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
+  Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LabelList,
 } from 'recharts';
 import {
   Loader2, Store, Wallet, Package, ArrowDownCircle, ArrowUpCircle,
-  PieChart as PieIcon, TrendingUp, Boxes, Receipt, ChevronRight,
+  PieChart as PieIcon, TrendingUp, Boxes, Receipt, ChevronRight, BarChart3,
 } from 'lucide-react';
 import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
@@ -50,6 +50,12 @@ function shortDate(dateStr: string): string {
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = { lunas: '#059669', belum_lunas: '#DC2626' };
 const PRODUCT_COLORS = ['#D4691E', '#0284C7', '#7C3AED', '#059669', '#DB2777', '#B45309', '#0891B2', '#65A30D'];
+
+function sellThroughColor(pct: number): string {
+  if (pct >= 70) return '#059669';
+  if (pct >= 40) return '#D97706';
+  return '#DC2626';
+}
 
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
@@ -95,6 +101,24 @@ function ProductTooltip({ active, payload }: {
       <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.productName}</div>
       <div style={{ fontWeight: 800 }}>{formatRp(d.revenue ?? 0)}</div>
       <div style={{ opacity: 0.65 }}>{d.qtySold} pcs terjual</div>
+    </div>
+  );
+}
+
+function SellThroughTooltip({ active, payload }: {
+  active?: boolean; payload?: { payload?: { name?: string; sellThroughPct?: number; jual?: number; retur?: number; reject?: number } }[];
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const d = payload[0].payload;
+  if (!d) return null;
+  return (
+    <div style={{
+      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.name}</div>
+      <div style={{ fontWeight: 800 }}>{d.sellThroughPct}% terealisasi</div>
+      <div style={{ opacity: 0.65 }}>Terjual {d.jual} · Retur {d.retur} · Reject {d.reject}</div>
     </div>
   );
 }
@@ -246,6 +270,39 @@ export default function ConsignmentAnalyticsSection({
             )}
           </div>
 
+          {/* Persentase terealisasi per mitra (bar) */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 size={15} style={{ color: 'var(--accent)' }} />
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>% Terealisasi per Mitra</p>
+            </div>
+            {data.topLocations.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
+            ) : (() => {
+              const bySellThrough = [...data.topLocations]
+                .sort((a, b) => b.sellThroughPct - a.sellThroughPct)
+                .slice(0, 10);
+              return (
+                <div style={{ width: '100%', height: Math.max(120, bySellThrough.length * 34) }}>
+                  <ResponsiveContainer>
+                    <BarChart data={bySellThrough} layout="vertical" margin={{ top: 0, right: 36, left: 0, bottom: 0 }} barCategoryGap={10}>
+                      <XAxis type="number" domain={[0, 100]} hide />
+                      <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<SellThroughTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+                      <Bar dataKey="sellThroughPct" radius={[0, 4, 4, 0]} barSize={18}>
+                        {bySellThrough.map((entry, i) => (
+                          <Cell key={i} fill={sellThroughColor(entry.sellThroughPct)} />
+                        ))}
+                        <LabelList dataKey="sellThroughPct" position="right" formatter={(v: React.ReactNode) => `${v}%`}
+                          style={{ fontSize: 11, fontWeight: 700, fill: 'var(--text-primary)' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Status pembayaran (pie) */}
           <div className="card p-5">
             <div className="flex items-center gap-2 mb-4">
@@ -344,7 +401,7 @@ export default function ConsignmentAnalyticsSection({
                     <div className="flex-1 flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-xs"
                         style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                        {l.code || l.name.slice(0, 2).toUpperCase()}
+                        {l.name.slice(0, 2).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
