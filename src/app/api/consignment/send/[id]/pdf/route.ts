@@ -85,7 +85,7 @@ const renderShipmentPdf = unstable_cache(
     return buffer.toString('base64');
   },
   ['consignment-shipment-pdf'],
-  { revalidate: 3600 },
+  { revalidate: 3600, tags: ['settings'] },
 );
 
 export async function GET(

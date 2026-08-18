@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -20,5 +21,8 @@ export async function PUT(req: NextRequest) {
     { ...data, updatedAt: FieldValue.serverTimestamp() },
     { merge: true }
   );
+  // Nota kirim ke mitra (via WA) di-cache 1 jam per shipment — invalidasi begitu
+  // ada perubahan settings (logo/alamat/ttd/dll) supaya tidak menampilkan data basi.
+  revalidateTag('settings', 'max');
   return Response.json({ ok: true });
 }
