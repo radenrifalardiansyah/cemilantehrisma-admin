@@ -19,6 +19,8 @@ import CategoriesTab from '@/components/tabs/CategoriesTab';
 import OrdersTab    from '@/components/tabs/OrdersTab';
 import ResellersTab from '@/components/tabs/ResellersTab';
 import CustomersTab from '@/components/tabs/CustomersTab';
+import StorefrontCustomersTab from '@/components/tabs/StorefrontCustomersTab';
+import ReviewsTab from '@/components/tabs/ReviewsTab';
 import StockTab     from '@/components/tabs/StockTab';
 import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
@@ -1240,6 +1242,8 @@ export default function AdminPage() {
       )}
       {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
       {activeTab === 'customers'  && <CustomersTab creds={creds} />}
+      {activeTab === 'storefront-customers' && <StorefrontCustomersTab creds={creds} />}
+      {activeTab === 'reviews'    && <ReviewsTab creds={creds} />}
       {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'stock-report' && <StockReportTab creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}

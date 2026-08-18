@@ -15,9 +15,9 @@ import NotificationBell, { type NotificationDoc } from '@/components/Notificatio
 import { resolveIcon } from '@/lib/icon-registry';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
-// The 24 fixed screens the app actually has code for (18 original tabs + 5
-// RBAC-management tabs + Riwayat). Struktur Menu / Modul only control label,
-// icon, order, nesting, and active-state for the sidebar — not which screens
+// The 26 fixed screens the app actually has code for (18 original tabs + 5
+// RBAC-management tabs + Riwayat + Akun Storefront + Ulasan). Struktur Menu / Modul only
+// control label, icon, order, nesting, and active-state for the sidebar — not which screens
 // exist — so this stays a closed union, just a bigger one than before.
 // 'admin-fee' is intentionally NOT driven by ModuleDoc/MenuDoc like the rest — it's RMedia's own
 // internal billing tool, hardcoded to render only for `superAdmin` below, bypassing Struktur
@@ -26,8 +26,11 @@ import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 // Biaya Admin invoices, also hardcoded (not a MenuDoc) so it can't be granted to staff/kasir/finance.
 // 'notifications' is a normal feature like the rest — register a MenuDoc for it via Struktur Menu
 // so it appears in the sidebar, and grant roles access to it via Hak Akses Role like any other tab.
+// 'storefront-customers'/'reviews' read the STOREFRONT app's own Firestore collections
+// (storefront_customers, reviews) — separate from this app's 'customers' (manual CRM contacts).
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
+  | 'storefront-customers' | 'reviews'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
   | 'finance-report' | 'capital' | 'settings'
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'

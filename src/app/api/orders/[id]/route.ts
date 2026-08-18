@@ -182,6 +182,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   if (stockTouched) after(() => revalidateStorefront('products'));
+  // "Terjual" di beranda storefront dihitung dari qty pesanan berstatus 'selesai' — status
+  // apapun yang berubah di sini bisa menggeser hitungan itu (jadi/lepas dari 'selesai').
+  if (status !== undefined) after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
 }
 

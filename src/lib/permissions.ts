@@ -19,6 +19,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'categories',       label: 'Kategori',           actions: CRUD },
   { key: 'resellers',        label: 'Reseller',           actions: CRUD },
   { key: 'customers',        label: 'Pelanggan',          actions: CRUD },
+  { key: 'storefront-customers', label: 'Akun Storefront', actions: ['view', 'delete'] },
+  { key: 'reviews',          label: 'Ulasan',             actions: ['view', 'edit', 'delete'] },
   { key: 'consignment',      label: 'Mitra',              actions: CRUD },
   { key: 'income',           label: 'Pemasukan',          actions: CRUD },
   { key: 'expenses',         label: 'Pengeluaran',        actions: CRUD },

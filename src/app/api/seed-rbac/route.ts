@@ -28,6 +28,8 @@ const STARTER_PERMISSIONS: Record<string, Record<string, PermCell>> = {
     orders: cell(['view', 'create', 'edit']),
     resellers: cell(['view', 'create', 'edit']),
     customers: cell(['view', 'create', 'edit']),
+    'storefront-customers': cell(['view']),
+    reviews: cell(['view', 'edit']),
     consignment: cell(['view', 'create', 'edit']),
     stock: cell(['view', 'edit']),
     materials: cell(['view', 'create', 'edit']),
@@ -80,7 +82,9 @@ const MENUS: { id: string; moduleId: string; parentId: string | null; featureKey
   { id: 'categories',  moduleId: 'manajemen', parentId: 'products', featureKey: 'categories',  label: 'Kategori',  icon: 'Tag',      order: 0 },
   { id: 'resellers',   moduleId: 'manajemen', parentId: null,       featureKey: 'resellers',   label: 'Reseller',  icon: 'Users',    order: 1 },
   { id: 'customers',   moduleId: 'manajemen', parentId: null,       featureKey: 'customers',   label: 'Pelanggan', icon: 'Contact',  order: 2 },
-  { id: 'consignment', moduleId: 'manajemen', parentId: null,       featureKey: 'consignment', label: 'Mitra',     icon: 'Store',    order: 3 },
+  { id: 'storefront-customers', moduleId: 'manajemen', parentId: 'customers', featureKey: 'storefront-customers', label: 'Akun Storefront', icon: 'Smartphone', order: 0 },
+  { id: 'reviews',     moduleId: 'manajemen', parentId: null,       featureKey: 'reviews',     label: 'Ulasan',    icon: 'Star',     order: 4 },
+  { id: 'consignment', moduleId: 'manajemen', parentId: null,       featureKey: 'consignment', label: 'Mitra',     icon: 'Store',    order: 5 },
 
   { id: 'income',          moduleId: 'keuangan', parentId: null, featureKey: 'income',          label: 'Pemasukan',        icon: 'Coins',     order: 0 },
   { id: 'expenses',        moduleId: 'keuangan', parentId: null, featureKey: 'expenses',        label: 'Pengeluaran',      icon: 'Banknote',  order: 1 },
@@ -132,7 +136,13 @@ export async function POST(req: NextRequest) {
   // prior seed state.
   for (const roleId of ['super-admin', 'admin']) {
     await db.collection('role_permissions').doc(roleId).set(
-      { permissions: { history: cell(['view']), notifications: cell(['view']) }, updatedAt: now },
+      {
+        permissions: {
+          history: cell(['view']), notifications: cell(['view']),
+          'storefront-customers': cell(['view', 'delete']), reviews: cell(['view', 'edit', 'delete']),
+        },
+        updatedAt: now,
+      },
       { merge: true },
     );
   }
