@@ -106,7 +106,13 @@ export async function GET(
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="nota-kirim-${id}.pdf"`,
-        'Cache-Control': 'public, max-age=3600',
+        // 'public, max-age=3600' bikin Vercel Edge CDN cache seluruh response HTTP ini dan
+        // melayani permintaan berikutnya tanpa pernah memanggil fungsi lagi — jadi
+        // revalidateTag() di unstable_cache (server-side) tidak pernah kepakai karena
+        // fungsinya tidak ke-invoke sama sekali. 'no-store' memaksa tiap request balik ke
+        // fungsi; caching kerja beratnya (render + fetch Firestore) tetap ditangani
+        // unstable_cache di atas.
+        'Cache-Control': 'no-store',
       },
     });
   } catch (err) {
