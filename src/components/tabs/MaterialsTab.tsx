@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Boxes, ShoppingBag, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban, FileSpreadsheet, Upload,
+  ChevronLeft, ChevronRight, Wrench, Ban, Upload,
 } from 'lucide-react';
+import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
@@ -996,7 +997,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
                   <button onClick={downloadMaterialTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                    <FileSpreadsheet size={14} />
+                    <ExcelIcon size={14} />
                   </button>
                 </Tooltip>
                 <Tooltip label={importingMaterials ? 'Mengimpor…' : 'Upload Excel'}>
@@ -1010,7 +1011,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportMaterialsExcel(filteredMaterials, 'sesuai filter')} disabled={exportingMaterials} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      {exportingMaterials ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      {exportingMaterials ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -1234,7 +1235,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                     <Tooltip label="Unduh Template">
                       <button onClick={downloadPurchaseTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                        <FileSpreadsheet size={14} />
+                        <ExcelIcon size={14} />
                       </button>
                     </Tooltip>
                     <Tooltip label={importingPurchases ? 'Mengimpor…' : 'Upload Excel'}>
@@ -1248,7 +1249,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                       <Tooltip label="Export Excel">
                         <button onClick={() => exportPurchasesExcel(filteredPurchases, 'sesuai filter')} disabled={exportingPurchases} aria-label="Export Excel"
                           className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                          {exportingPurchases ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                          {exportingPurchases ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                         </button>
                       </Tooltip>
                     )}

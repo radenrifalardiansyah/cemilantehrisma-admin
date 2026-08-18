@@ -198,7 +198,7 @@ export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteDat
           </View>
         </View>
 
-        <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name}</Text>
+        <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name} · https://cemilantehrisma.eleven-digital.id</Text>
       </Page>
     </Document>
   );

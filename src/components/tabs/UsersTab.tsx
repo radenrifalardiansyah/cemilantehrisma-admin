@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import {
   ShieldCheck, Plus, Pencil, Trash2, X, Check, Loader2, Eye, EyeOff, Search,
-  ChevronLeft, ChevronRight, FileSpreadsheet,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -318,7 +319,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
             <Tooltip label="Export Excel">
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -512,7 +513,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
             <button onClick={() => exportExcel(users.filter(u => selected.has(u.username)), 'terpilih')} disabled={exporting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}

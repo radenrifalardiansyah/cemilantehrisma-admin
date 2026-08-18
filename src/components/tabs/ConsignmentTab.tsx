@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
-  Search, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Upload,
+  Search, ChevronLeft, ChevronRight, Upload,
   History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart,
 } from 'lucide-react';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { type PeriodKey, periodRange } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import ExcelJS from 'exceljs';
@@ -1763,7 +1764,7 @@ _${storeHeader.name}_`.trim();
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
                   <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                    <FileSpreadsheet size={14} />
+                    <ExcelIcon size={14} />
                   </button>
                 </Tooltip>
                 <Tooltip label={importingLocations ? 'Mengimpor…' : 'Upload Excel'}>
@@ -1777,7 +1778,7 @@ _${storeHeader.name}_`.trim();
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportLocationsExcel(filteredLocations, 'sesuai filter')} disabled={exportingLocations} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      {exportingLocations ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      {exportingLocations ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -2007,7 +2008,7 @@ _${storeHeader.name}_`.trim();
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportShipmentsExcel(filteredShipments, 'sesuai filter')} disabled={exportingShipments} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      {exportingShipments ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      {exportingShipments ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -2087,7 +2088,7 @@ _${storeHeader.name}_`.trim();
                               </Tooltip>
                               <Tooltip label="Cetak Nota PDF">
                                 <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
-                                  {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                  {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                                 </button>
                               </Tooltip>
                               <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
@@ -2138,7 +2139,7 @@ _${storeHeader.name}_`.trim();
                                 </Tooltip>
                                 <Tooltip label="Cetak Nota PDF">
                                   <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
-                                    {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                    {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                                   </button>
                                 </Tooltip>
                                 <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
@@ -2204,7 +2205,7 @@ _${storeHeader.name}_`.trim();
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -2290,7 +2291,7 @@ _${storeHeader.name}_`.trim();
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <Tooltip label="Cetak Rekap PDF">
                                 <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
-                                  {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                  {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                                 </button>
                               </Tooltip>
                               <RecordHistoryButton open={auditHistoryId === r.id} onToggle={() => toggleAuditHistory(r.id)} />
@@ -2337,7 +2338,7 @@ _${storeHeader.name}_`.trim();
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 <Tooltip label="Cetak Rekap PDF">
                                   <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
-                                    {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+                                    {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                                   </button>
                                 </Tooltip>
                                 <RecordHistoryButton open={auditHistoryId === r.id} onToggle={() => toggleAuditHistory(r.id)} />
@@ -2730,12 +2731,12 @@ _${storeHeader.name}_`.trim();
               <div className="flex items-center gap-1.5">
                 <Tooltip label="Export Excel">
                   <button onClick={exportHistoryExcel} disabled={exportingHistoryExcel || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                    {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                    {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
                   </button>
                 </Tooltip>
                 <Tooltip label="Export PDF">
                   <button onClick={exportHistoryPdf} disabled={exportingHistoryPdf || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                    {exportingHistoryPdf ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                    {exportingHistoryPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                   </button>
                 </Tooltip>
                 <Tooltip label="Tutup">
@@ -2845,7 +2846,7 @@ _${storeHeader.name}_`.trim();
             <button onClick={() => exportLocationsExcel(locations.filter(l => selectedLocations.has(l.id)), 'terpilih')} disabled={exportingLocations}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingLocations ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              {exportingLocations ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
             <button onClick={bulkDeleteLocations} disabled={bulkDeletingLocations}
@@ -2871,7 +2872,7 @@ _${storeHeader.name}_`.trim();
             <button onClick={() => exportShipmentsExcel(shipments.filter(s => selectedShipments.has(s.id)), 'terpilih')} disabled={exportingShipments}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingShipments ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              {exportingShipments ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
             <button onClick={bulkDeleteShipments} disabled={bulkDeletingShipments}
@@ -2897,7 +2898,7 @@ _${storeHeader.name}_`.trim();
             <button onClick={() => exportRecapsExcel(recaps.filter(r => selectedRecaps.has(r.id)), 'terpilih')} disabled={exportingRecaps}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingRecaps ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+              {exportingRecaps ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
             <button onClick={bulkDeleteRecaps} disabled={bulkDeletingRecaps}

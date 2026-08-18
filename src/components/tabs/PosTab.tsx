@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
   ShoppingCart, Plus, Minus, ChevronLeft, CheckCircle2, Loader2, User, Phone,
-  Trash2, Tag, Send, Search, Wallet, X, Banknote, Printer, FileText,
+  Trash2, Tag, Send, Search, Wallet, X, Banknote, Printer,
   MessageCircle, Receipt, ArrowRight, Camera, PauseCircle, BarChart2, TrendingUp, Award, CalendarClock,
   RefreshCw,
 } from 'lucide-react';
+import { PdfIcon } from '@/components/FileTypeIcons';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import TopbarPortal from '@/components/TopbarPortal';
 import ScrollChips from '@/components/ScrollChips';
@@ -1069,7 +1070,7 @@ export default function PosTab({
         {lastReceipt?.pdfUrl ? (
           <a href={lastReceipt.pdfUrl} target="_blank" rel="noopener noreferrer"
             className="btn-ghost justify-center gap-2 py-3 text-sm font-semibold">
-            <FileText size={15} /> Lihat Invoice
+            <PdfIcon size={15} /> Lihat Invoice
           </a>
         ) : <span />}
       </div>

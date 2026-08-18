@@ -198,7 +198,7 @@ export default function AdminFeeInvoicePDF({ data }: { data: AdminFeeInvoiceData
           </View>
         )}
 
-        <Text style={s.footer}>Dicetak {data.generatedAt} — Dokumen internal RMedia Solutions</Text>
+        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem RMedia Solutions — Dicetak {data.generatedAt}</Text>
       </Page>
     </Document>
   );

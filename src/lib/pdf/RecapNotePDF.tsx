@@ -229,7 +229,7 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
           </View>
         </View>
 
-        <Text style={s.footer}>Dokumen internal — {store.name}</Text>
+        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · https://cemilantehrisma.eleven-digital.id</Text>
       </Page>
     </Document>
   );

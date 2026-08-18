@@ -45,15 +45,16 @@ const s = StyleSheet.create({
 
   topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  logo: { width: 52, height: 52, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white, flexShrink: 0 },
+  storeInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
   storeName: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.dark },
   storeTagline: { fontSize: 8.5, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8.5, color: C.muted, marginTop: 2 },
-  headerRight: { alignItems: 'flex-end' },
-  docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
-  docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
+  headerRight: { alignItems: 'flex-end', width: '40%', flexShrink: 0 },
+  docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5, textAlign: 'right' },
+  docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' },
   docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 4 },
   docMetaLabel: { fontSize: 8.5, color: C.muted },
   docMetaValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark },
@@ -65,12 +66,12 @@ const s = StyleSheet.create({
   infoValue: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', color: C.dark },
   infoSub: { fontSize: 9, color: C.muted, marginTop: 2 },
 
-  statsRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  statBox: { flex: 1, backgroundColor: C.accentBg, borderRadius: 6, padding: 8 },
-  statBoxGreen: { flex: 1, backgroundColor: C.greenBg, borderRadius: 6, padding: 8 },
-  statLabel: { fontSize: 7, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 3 },
-  statValue: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', color: C.dark },
-  statValueGreen: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', color: C.green },
+  statsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  statBox: { flex: 1, borderRadius: 6, borderWidth: 1, borderColor: C.border, padding: 9 },
+  statBoxGreen: { flex: 1, borderRadius: 6, borderWidth: 1, borderColor: C.green, backgroundColor: C.greenBg, padding: 9 },
+  statLabel: { fontSize: 7.5, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 3 },
+  statValue: { fontSize: 12.5, fontFamily: 'Helvetica-Bold', color: C.dark },
+  statValueGreen: { fontSize: 12.5, fontFamily: 'Helvetica-Bold', color: C.green },
 
   sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.dark, marginTop: 18, marginBottom: 8 },
 
@@ -89,6 +90,7 @@ const s = StyleSheet.create({
   badge: { alignSelf: 'flex-start', borderRadius: 4, paddingVertical: 2, paddingHorizontal: 5, fontSize: 7, fontFamily: 'Helvetica-Bold' },
 
   footer: { position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'center', fontSize: 7.5, color: C.muted },
+  pageNo: { position: 'absolute', bottom: 24, right: 40, fontSize: 7.5, color: C.muted },
 });
 
 export default function LocationHistoryPDF({ data, store }: { data: LocationHistoryData; store: StoreHeader }) {
@@ -100,7 +102,7 @@ export default function LocationHistoryPDF({ data, store }: { data: LocationHist
         <View style={s.headerRow}>
           <View style={s.headerLeft}>
             {store.logo && <Image src={store.logo} style={s.logo} />}
-            <View>
+            <View style={s.storeInfo}>
               <Text style={s.storeName}>{store.name}</Text>
               {store.tagline && <Text style={s.storeTagline}>{store.tagline}</Text>}
               {store.address && <Text style={s.storeMeta}>{store.address}</Text>}
@@ -176,7 +178,8 @@ export default function LocationHistoryPDF({ data, store }: { data: LocationHist
           ))}
         </View>
 
-        <Text style={s.footer}>Dokumen internal — {store.name}</Text>
+        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · https://cemilantehrisma.eleven-digital.id</Text>
+        <Text style={s.pageNo} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </Page>
     </Document>
   );

@@ -11,7 +11,9 @@ export const runtime = 'nodejs';
 
 function formatDate(seconds?: number) {
   if (!seconds) return '–';
-  return new Date(seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  return new Date(seconds * 1000).toLocaleDateString('id-ID', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 }
 
 // Logo tersimpan sebagai URL ke /api/img/{id} (bytes di Firestore). Server-side render
@@ -33,6 +35,8 @@ async function resolveLogoDataUri(db: ReturnType<typeof getDb>, logoUrl?: string
 // Cached per shipment id for an hour; dibuat ulang tiap request (bukan module-scope) supaya
 // tag-nya bisa disisipi id — revalidateTag(shipmentPdfTag(id)) dipanggil saat shipment
 // diedit/dihapus, dan revalidateTag('settings') saat pengaturan toko (logo/ttd/alamat) berubah.
+// printedAt jadi ikut ke-cache — nunjukkin kapan PDF ini terakhir di-render, bukan kapan
+// linknya dibuka — sama seperti nota yang didownload manual dari tab konsinyasi.
 function renderShipmentPdf(id: string) {
   return unstable_cache(
     async (): Promise<string | null> => {
@@ -73,6 +77,7 @@ function renderShipmentPdf(id: string) {
         address: location?.address || undefined,
         warehouseName: shipment.warehouseName || undefined,
         date: formatDate(createdAt?.seconds),
+        printedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         docNo: `KRM-${id.slice(-6).toUpperCase()}`,
         note: shipment.note || undefined,
         items,

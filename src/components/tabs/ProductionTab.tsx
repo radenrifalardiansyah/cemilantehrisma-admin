@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import ExcelJS from 'exceljs';
 import {
   Factory, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, AlertTriangle,
-  Search, ChevronLeft, ChevronRight, FileSpreadsheet, Upload,
+  Search, ChevronLeft, ChevronRight, Upload,
 } from 'lucide-react';
+import { ExcelIcon } from '@/components/FileTypeIcons';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -554,7 +555,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
         <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           <Tooltip label="Unduh Template">
             <button onClick={downloadProductionTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-              <FileSpreadsheet size={14} />
+              <ExcelIcon size={14} />
             </button>
           </Tooltip>
           <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
@@ -567,7 +568,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
           {batches.length > 0 && (
             <Tooltip label="Export Excel">
               <button onClick={() => exportProductionExcel(filteredBatches, 'sesuai filter')} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
               </button>
             </Tooltip>
           )}

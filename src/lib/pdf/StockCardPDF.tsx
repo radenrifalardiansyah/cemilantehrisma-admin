@@ -183,7 +183,7 @@ export default function StockCardPDF({ data, store }: { data: StockCardPDFData; 
           </View>
         </View>
 
-        <Text style={s.footer}>Dokumen internal — {store.name}</Text>
+        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · https://cemilantehrisma.eleven-digital.id</Text>
         <Text style={s.pageNo} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </Page>
     </Document>

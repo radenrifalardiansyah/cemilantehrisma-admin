@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import {
   Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store, Coins,
-  ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark, FileSpreadsheet,
+  ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark,
   Info, Package, Receipt, ChevronDown, ChevronUp, AlertTriangle, Calculator,
 } from 'lucide-react';
+import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
@@ -465,7 +466,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         </Tooltip>
         <Tooltip label="Export Excel">
           <button onClick={exportExcel} disabled={exporting || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
-            {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
           </button>
         </Tooltip>
         <Tooltip label="Refresh">

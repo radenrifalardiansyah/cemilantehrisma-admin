@@ -81,23 +81,6 @@ function ChartTooltip({ active, payload, label }: {
   );
 }
 
-function LocationTooltip({ active, payload }: {
-  active?: boolean; payload?: { payload?: { name?: string; pendapatan?: number } }[];
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const d = payload[0].payload;
-  if (!d) return null;
-  return (
-    <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
-    }}>
-      <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.name}</div>
-      <div style={{ fontWeight: 800 }}>{formatRp(d.pendapatan ?? 0)}</div>
-    </div>
-  );
-}
-
 function ProductTooltip({ active, payload }: {
   active?: boolean; payload?: { payload?: { productName?: string; revenue?: number; qtySold?: number } }[];
 }) {
@@ -246,43 +229,39 @@ export default function ConsignmentAnalyticsSection({
             )}
           </div>
 
-          {/* Top lokasi (bar) + Status pembayaran (pie) */}
-          <div className="grid lg:grid-cols-2 gap-4">
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Boxes size={15} style={{ color: 'var(--accent)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Mitra Teratas (Pendapatan)</p>
-              </div>
-              {data.topLocations.length === 0 ? (
-                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
-              ) : (
-                <div style={{ width: '100%', height: Math.max(120, data.topLocations.slice(0, 8).length * 34) }}>
-                  <ResponsiveContainer>
-                    <BarChart data={data.topLocations.slice(0, 8)} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barCategoryGap={10}>
-                      <XAxis type="number" hide />
-                      <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<LocationTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                      <Bar dataKey="pendapatan" radius={[0, 4, 4, 0]} barSize={18}>
-                        {data.topLocations.slice(0, 8).map((entry, i) => (
-                          <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+          {/* Mitra teratas (ranked list, full width) */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Boxes size={15} style={{ color: 'var(--accent)' }} />
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Mitra Teratas (Pendapatan)</p>
             </div>
+            {data.topLocations.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
+            ) : (
+              <TopListChart
+                color="var(--accent)"
+                formatValue={formatRp}
+                items={data.topLocations.slice(0, 8).map(l => ({ label: l.name, value: l.pendapatan }))}
+              />
+            )}
+          </div>
 
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <PieIcon size={15} style={{ color: 'var(--accent)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Status Pelunasan Rekap</p>
-              </div>
-              {data.summary.lunas.count + data.summary.belumLunas.count === 0 ? (
-                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada rekap di periode ini.</p>
-              ) : (
+          {/* Status pembayaran (pie) */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <PieIcon size={15} style={{ color: 'var(--accent)' }} />
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Status Pelunasan Rekap</p>
+            </div>
+            {data.summary.lunas.count + data.summary.belumLunas.count === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada rekap di periode ini.</p>
+            ) : (() => {
+              const totalAmount = data.paymentStatus.reduce((sum, s) => sum + s.amount, 0);
+              const pctOf = (amount: number) => totalAmount > 0 ? Math.round((amount / totalAmount) * 100) : 0;
+              const lunas = data.paymentStatus.find(s => s.status === 'lunas');
+              const lunasPct = lunas ? pctOf(lunas.amount) : 0;
+              return (
                 <div className="flex items-center gap-4">
-                  <div style={{ width: 140, height: 140, flexShrink: 0 }}>
+                  <div style={{ width: 140, height: 140, flexShrink: 0, position: 'relative' }}>
                     <ResponsiveContainer>
                       <PieChart>
                         <Pie data={data.paymentStatus} dataKey="amount" nameKey="label" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2} strokeWidth={0}>
@@ -293,6 +272,10 @@ export default function ConsignmentAnalyticsSection({
                         <Tooltip content={<PaymentStatusTooltip />} />
                       </PieChart>
                     </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ pointerEvents: 'none' }}>
+                      <span className="text-base font-extrabold tabular" style={{ color: PAYMENT_STATUS_COLORS.lunas }}>{lunasPct}%</span>
+                      <span className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>Lunas</span>
+                    </div>
                   </div>
                   <div className="flex-1 space-y-3 min-w-0">
                     {data.paymentStatus.map((s, i) => (
@@ -302,14 +285,14 @@ export default function ConsignmentAnalyticsSection({
                           {s.label}
                         </span>
                         <span className="text-xs font-bold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
-                          {formatRp(s.amount)} <span className="font-medium opacity-60">· {s.count}</span>
+                          {formatRp(s.amount)} <span className="font-medium opacity-60">· {s.count} · {pctOf(s.amount)}%</span>
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           {/* Produk terlaris di seluruh mitra */}
@@ -354,29 +337,33 @@ export default function ConsignmentAnalyticsSection({
                 {data.topLocations.map((l, idx) => (
                   <button key={l.id} onClick={() => onNavigateLocation?.(l.id)}
                     disabled={!onNavigateLocation}
-                    className="w-full text-left px-5 py-3.5 flex items-center gap-3 transition-colors disabled:cursor-default"
+                    className="w-full text-left px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 transition-colors disabled:cursor-default"
                     style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}
                     onMouseEnter={e => { if (onNavigateLocation) e.currentTarget.style.background = 'var(--surface-2)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
-                    <div className="w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-xs"
-                      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                      {l.code || l.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
-                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                        Terjual {l.jual} · Retur {l.retur} · Reject {l.reject} · {l.sellThroughPct}% terjual
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-extrabold tabular" style={{ color: 'var(--success)' }}>{formatRp(l.pendapatan)}</p>
-                      {l.belumLunasAmount > 0 && (
-                        <p className="text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>
-                          {formatRp(l.belumLunasAmount)} belum lunas
+                    <div className="flex-1 flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-xs"
+                        style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                        {l.code || l.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                        <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                          Terjual {l.jual} · Retur {l.retur} · Reject {l.reject} · {l.sellThroughPct}% terjual
                         </p>
-                      )}
+                      </div>
                     </div>
-                    {onNavigateLocation && <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                    <div className="flex items-center justify-between sm:contents pl-12 sm:pl-0">
+                      <div className="text-left sm:text-right flex-shrink-0">
+                        <p className="text-sm font-extrabold tabular" style={{ color: 'var(--success)' }}>{formatRp(l.pendapatan)}</p>
+                        {l.belumLunasAmount > 0 && (
+                          <p className="text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>
+                            {formatRp(l.belumLunasAmount)} belum lunas
+                          </p>
+                        )}
+                      </div>
+                      {onNavigateLocation && <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                    </div>
                   </button>
                 ))}
               </div>
