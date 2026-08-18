@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -14,6 +15,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     ...data,
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await revalidateStorefront('categories');
   return Response.json({ ok: true });
 }
 
@@ -32,5 +34,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   await db.collection('categories').doc(id).delete();
+  await revalidateStorefront('categories');
   return Response.json({ ok: true });
 }

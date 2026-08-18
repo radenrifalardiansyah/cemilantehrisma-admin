@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { productUrl } from '@/lib/site';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 interface ImportRow {
   code?: string; name: string; category: string;
@@ -92,5 +93,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (created > 0) await revalidateStorefront('products');
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

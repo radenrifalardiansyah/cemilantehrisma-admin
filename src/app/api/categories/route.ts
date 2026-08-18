@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 const getCachedCategories = unstable_cache(
   async () => {
@@ -40,5 +41,6 @@ export async function POST(req: NextRequest) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await revalidateStorefront('categories');
   return Response.json({ id: slug });
 }

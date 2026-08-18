@@ -4,6 +4,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { productUrl } from '@/lib/site';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 // Short cache so bursts of near-simultaneous reads (dashboard load, POS stock
 // refresh, multiple staff/tabs) collapse into one Firestore read instead of one
@@ -37,5 +38,6 @@ export async function POST(req: NextRequest) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await revalidateStorefront('products');
   return Response.json({ id: ref.id, qrUrl });
 }

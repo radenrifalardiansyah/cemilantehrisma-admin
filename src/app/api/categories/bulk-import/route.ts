@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { revalidateStorefront } from '@/lib/revalidate';
 
 interface ImportRow {
   slug?: string; name: string; emoji?: string; description?: string;
@@ -57,5 +58,6 @@ export async function POST(req: NextRequest) {
   }
   if (opsInBatch > 0) await batch.commit();
 
+  if (created > 0) await revalidateStorefront('categories');
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }
