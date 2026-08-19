@@ -57,8 +57,8 @@ const GLOSSARY_LABA_RUGI: { term: string; desc: string }[] = [
   { term: 'Beban Operasional', desc: 'Biaya menjalankan usaha di luar HPP: sewa, gaji, listrik & air, transportasi, perlengkapan, dan lainnya. Beban Bahan Baku/Produksi tidak dihitung di sini lagi karena sudah masuk HPP saat barangnya laku (supaya tidak dihitung dua kali).' },
   { term: 'Laba / Rugi Bersih', desc: 'Laba Kotor dikurangi Beban Operasional. Ini angka untung/rugi usaha yang sebenarnya di periode ini.' },
   { term: 'Modal & Prive', desc: 'Uang masuk (Modal) atau keluar (Prive) dari pemilik usaha secara pribadi — tidak dihitung sebagai hasil operasional usaha, jadi tidak masuk Laba Rugi.' },
-  { term: 'Ringkasan Kas (versi sebelumnya)', desc: 'Total Pendapatan dikurangi Total Beban kas (termasuk beli bahan baku & produksi langsung dihitung sebagai beban saat itu juga). Cara hitung lama ini tetap ditampilkan di bawah untuk perbandingan, tapi angkanya bisa beda dari Laba Bersih di atas karena tidak menunggu barangnya laku dulu.' },
-  { term: 'Basis Akrual', desc: '"Akrual" (bukan "aktual") artinya biaya & pendapatan dicatat sesuai waktu transaksinya terjadi secara ekonomis — misalnya HPP dihitung saat barang laku, bukan saat bahan baku dibeli. Ini beda dengan "Ringkasan Kas" di bawah yang mencatat semua biaya begitu uang keluar. Basis akrual dianggap lebih akurat menggambarkan untung/rugi usaha di periode ini.' },
+  { term: 'Pendapatan − Pengeluaran (Kas)', desc: 'Total Pendapatan dikurangi Total Beban kas (termasuk beli bahan baku & produksi langsung dihitung sebagai beban saat itu juga, bukan menunggu barangnya laku). Cara hitung paling sederhana — jawaban langsung ke "pendapatan dikurangi pengeluaran jadi berapa" — tapi angkanya bisa beda dari Laba Bersih akrual di atas.' },
+  { term: 'Basis Akrual', desc: '"Akrual" (bukan "aktual") artinya biaya & pendapatan dicatat sesuai waktu transaksinya terjadi secara ekonomis — misalnya HPP dihitung saat barang laku, bukan saat bahan baku dibeli. Ini beda dengan "Pendapatan − Pengeluaran (Kas)" di bawah yang mencatat semua biaya begitu uang keluar. Basis akrual dianggap lebih akurat menggambarkan untung/rugi usaha di periode ini.' },
 ];
 const GLOSSARY_JURNAL: { term: string; desc: string }[] = [
   { term: 'Jurnal Kas', desc: 'Catatan pergerakan uang kas secara berurutan — ini pergerakan KAS RIIL, beda dari Laba Rugi. Uang keluar beli stok tetap tercatat di sini sebagai Kredit meski barangnya belum tentu laku (belum jadi HPP).' },
@@ -181,6 +181,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [customTo,   setCustomTo]   = useState('');
   const [subView,    setSubView]    = useState<'laba-rugi' | 'jurnal'>('laba-rugi');
   const [showGlossary, setShowGlossary] = useState(false);
+  const [showRekonsiliasi, setShowRekonsiliasi] = useState(false);
 
   const [loading,  setLoading]  = useState(true);
   const [orders,   setOrders]   = useState<OrderRecord[]>([]);
@@ -672,53 +673,67 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             </div>
           </div>
 
-          {/* Rekonsiliasi Kas vs Laba — menjembatani kenapa Laba Bersih beda dari perubahan Saldo Kas */}
-          <div className="card p-5">
-            <p className="text-sm font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Rekonsiliasi: Laba Bersih vs Perubahan Saldo Kas</p>
-            <p className="text-[11px] mb-4" style={{ color: 'var(--text-muted)' }}>
-              Laba Bersih bukan saldo kas — ini menunjukkan kenapa keduanya beda di periode ini. Saldo kas RIIL sekarang ada di kartu &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
-            </p>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span style={{ color: 'var(--text-secondary)' }}>Laba Bersih (Akrual)</span>
-                <span className="font-bold tabular">{formatRp(labaBersih)}</span>
+          {/* Rekonsiliasi Kas vs Laba — disembunyikan default, cuma buat yang penasaran kenapa Laba
+              Bersih beda dari Saldo Kas. Jawaban "uang saya berapa" sudah ada di kartu Saldo Kas Saat
+              Ini di atas; jawaban "pendapatan dikurangi pengeluaran" ada di panel di bawah ini yang
+              tetap selalu terlihat, jadi panel ini murni penjelasan tambahan yang boleh diabaikan. */}
+          <div className="card overflow-hidden">
+            <button type="button" onClick={() => setShowRekonsiliasi(v => !v)}
+              className="w-full flex items-center gap-2 px-4 py-3 text-xs font-bold"
+              style={{ color: 'var(--accent)' }}>
+              <Info size={14} />
+              <span className="flex-1 text-left">Kenapa Laba Bersih Beda dari Saldo Kas? — Lihat Rekonsiliasi</span>
+              {showRekonsiliasi ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showRekonsiliasi && (
+              <div className="px-5 pb-5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                <p className="text-[11px] my-3" style={{ color: 'var(--text-muted)' }}>
+                  Laba Bersih bukan saldo kas — ini menunjukkan kenapa keduanya beda di periode ini. Saldo kas RIIL sekarang ada di kartu &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
+                </p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-secondary)' }}>Laba Bersih (Akrual)</span>
+                    <span className="font-bold tabular">{formatRp(labaBersih)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-secondary)' }}>(+) Modal Masuk</span>
+                    <span className="font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(totalModalMasuk)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-secondary)' }}>(−) Prive</span>
+                    <span className="font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(totalPrive)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {selisihWaktuPersediaan >= 0 ? '(+) ' : '(−) '}Selisih Waktu Bahan Baku/Produksi
+                    </span>
+                    <span className="font-bold tabular" style={{ color: selisihWaktuPersediaan >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      {formatRp(selisihWaktuPersediaan)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                    <span className="font-bold" style={{ color: 'var(--text-primary)' }}>= Perubahan Saldo Kas (Periode Ini)</span>
+                    <span className="font-extrabold tabular" style={{ color: perubahanSaldoKasPeriode >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      {formatRp(perubahanSaldoKasPeriode)}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[11px] mt-3" style={{ color: 'var(--text-muted)' }}>
+                  {selisihWaktuPersediaan < 0
+                    ? `Sedang menumpuk stok/produksi: belanja Bahan Baku & Produksi (${formatRp(totalBebanCogsSourced)}) periode ini lebih besar dari HPP barang yang terjual (${formatRp(hpp)}) — kas keluar lebih dulu dari yang diakui sebagai biaya.`
+                    : selisihWaktuPersediaan > 0
+                    ? `Menjual dari stok lama: HPP barang yang terjual (${formatRp(hpp)}) periode ini lebih besar dari belanja Bahan Baku & Produksi (${formatRp(totalBebanCogsSourced)}) — biaya yang diakui lebih besar dari kas yang keluar.`
+                    : 'Belanja Bahan Baku/Produksi periode ini sama persis dengan HPP barang yang terjual.'}
+                </p>
               </div>
-              <div className="flex items-center justify-between">
-                <span style={{ color: 'var(--text-secondary)' }}>(+) Modal Masuk</span>
-                <span className="font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(totalModalMasuk)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span style={{ color: 'var(--text-secondary)' }}>(−) Prive</span>
-                <span className="font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(totalPrive)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span style={{ color: 'var(--text-secondary)' }}>
-                  {selisihWaktuPersediaan >= 0 ? '(+) ' : '(−) '}Selisih Waktu Bahan Baku/Produksi
-                </span>
-                <span className="font-bold tabular" style={{ color: selisihWaktuPersediaan >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                  {formatRp(selisihWaktuPersediaan)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>= Perubahan Saldo Kas (Periode Ini)</span>
-                <span className="font-extrabold tabular" style={{ color: perubahanSaldoKasPeriode >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                  {formatRp(perubahanSaldoKasPeriode)}
-                </span>
-              </div>
-            </div>
-            <p className="text-[11px] mt-3" style={{ color: 'var(--text-muted)' }}>
-              {selisihWaktuPersediaan < 0
-                ? `Sedang menumpuk stok/produksi: belanja Bahan Baku & Produksi (${formatRp(totalBebanCogsSourced)}) periode ini lebih besar dari HPP barang yang terjual (${formatRp(hpp)}) — kas keluar lebih dulu dari yang diakui sebagai biaya.`
-                : selisihWaktuPersediaan > 0
-                ? `Menjual dari stok lama: HPP barang yang terjual (${formatRp(hpp)}) periode ini lebih besar dari belanja Bahan Baku & Produksi (${formatRp(totalBebanCogsSourced)}) — biaya yang diakui lebih besar dari kas yang keluar.`
-                : 'Belanja Bahan Baku/Produksi periode ini sama persis dengan HPP barang yang terjual.'}
-            </p>
+            )}
           </div>
 
-          {/* Ringkasan kas — versi sebelumnya, dipisah supaya tidak ketuker dengan ringkasan akrual di atas */}
+          {/* Pendapatan − Pengeluaran (kas) — jawaban langsung ke pertanyaan paling umum, selalu
+              terlihat (tidak di-collapse) supaya tidak perlu buka panel apa pun buat lihat ini. */}
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wide flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-              Ringkasan Kas (Tampilan Sebelumnya) <InfoTip label={GLOSSARY_LABA_RUGI[6].desc} />
+              Pendapatan − Pengeluaran (Kas) <InfoTip label={GLOSSARY_LABA_RUGI[6].desc} />
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--surface-2)' }}>
