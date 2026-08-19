@@ -12,13 +12,12 @@ import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
+import { SALDO_AWAL_KEY } from '@/lib/finance';
 
 const API = '';
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
-
-const SALDO_AWAL_KEY = 'finance_report_saldo_awal';
 
 // ─── Tipe data ────────────────────────────────────────────────────────────────
 interface OrderRecord {

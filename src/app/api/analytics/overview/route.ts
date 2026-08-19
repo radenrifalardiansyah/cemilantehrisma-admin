@@ -19,6 +19,7 @@ interface RecapDoc {
 interface IncomeDoc { category?: string; amount?: number; date?: string }
 interface ExpenseDoc { category?: string; amount?: number; date?: string; sourceType?: string }
 interface MaterialDoc { id: string; name?: string; unit?: string; stockQty?: number; avgCost?: number; minStock?: number }
+interface CapitalDoc { type?: 'modal' | 'prive'; amount?: number }
 
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi sudah masuk HPP saat barangnya
 // terjual — sama seperti FinanceReportTab, jangan dihitung lagi di Beban Operasional (dobel).
@@ -60,6 +61,34 @@ const getRawAnalytics = unstable_cache(
     };
   },
   ['admin-analytics-overview'],
+  { revalidate: 60 }
+);
+
+interface OrderCashDoc { total?: number; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas' }
+interface RecapCashDoc { totalRevenue?: number; paymentStatus?: 'lunas' | 'belum_lunas' }
+
+// Saldo kas riil sejak awal pencatatan — independen dari filter periode di atas, sama seperti
+// "Saldo Kas Saat Ini" di FinanceReportTab. Query terpisah (bukan ikut getRawAnalytics) karena
+// tidak butuh direfetch tiap ganti periode dashboard, cukup di-cache sendiri per 60 detik.
+const getAllTimeCash = unstable_cache(
+  async () => {
+    const db = getDb();
+    const [orderSnap, recapSnap, incomeSnap, expenseSnap, capitalSnap] = await Promise.all([
+      db.collection('orders').get(),
+      db.collection('consignmentRecaps').get(),
+      db.collection('income').get(),
+      db.collection('expenses').get(),
+      db.collection('capitalEntries').get(),
+    ]);
+    return {
+      orders: orderSnap.docs.map(d => d.data() as OrderCashDoc),
+      recaps: recapSnap.docs.map(d => d.data() as RecapCashDoc),
+      income: incomeSnap.docs.map(d => d.data() as IncomeDoc),
+      expenses: expenseSnap.docs.map(d => d.data() as ExpenseDoc),
+      capital: capitalSnap.docs.map(d => d.data() as CapitalDoc),
+    };
+  },
+  ['admin-analytics-alltime-cash'],
   { revalidate: 60 }
 );
 
@@ -114,6 +143,19 @@ export async function GET(req: NextRequest) {
     incomeByCategoryMap.set(cat, (incomeByCategoryMap.get(cat) ?? 0) + (i.amount ?? 0));
   });
 
+  // ── Saldo kas — snapshot sejak awal pencatatan (bukan per-periode), sama rumusnya dengan
+  // loadAllTimeSaldo di FinanceReportTab ──
+  const allTime = await getAllTimeCash();
+  const allTimeCountedOrders = allTime.orders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  const allTimeCountedRecaps = allTime.recaps.filter(r => r.paymentStatus !== 'belum_lunas');
+  const allTimeTxSaldo =
+    allTimeCountedOrders.reduce((s, o) => s + (o.total ?? 0), 0) +
+    allTimeCountedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0) +
+    allTime.income.reduce((s, i) => s + (i.amount ?? 0), 0) +
+    allTime.capital.filter(c => c.type === 'modal').reduce((s, c) => s + (c.amount ?? 0), 0) -
+    allTime.expenses.reduce((s, e) => s + (e.amount ?? 0), 0) -
+    allTime.capital.filter(c => c.type === 'prive').reduce((s, c) => s + (c.amount ?? 0), 0);
+
   // ── Bahan baku — snapshot kondisi saat ini (bukan per-periode) ──
   const materialsWithValue = materials.map(m => ({
     id: m.id, name: m.name ?? '', unit: m.unit ?? '',
@@ -152,6 +194,7 @@ export async function GET(req: NextRequest) {
     period: { from, to },
     channels: { online: onlineRevenue, pos: posRevenue, consignment: consignmentRevenue, incomeLain, total: totalPendapatan },
     finance: { pendapatan: totalPendapatan, hpp, labaKotor, bebanOperasional: totalBebanOperasional, labaBersih },
+    cash: { allTimeTx: allTimeTxSaldo },
     expenseByCategory: [...expenseByCategoryMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     incomeByCategory: [...incomeByCategoryMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     materials: { totalValue: totalMaterialValue, count: materials.length, lowStockCount, topByValue },

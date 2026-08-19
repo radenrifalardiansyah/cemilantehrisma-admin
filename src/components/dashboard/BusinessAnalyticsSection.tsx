@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell,
@@ -10,11 +11,13 @@ import {
 } from 'lucide-react';
 import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
+import { SALDO_AWAL_KEY } from '@/lib/finance';
 
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };
   channels: { online: number; pos: number; consignment: number; incomeLain: number; total: number };
   finance: { pendapatan: number; hpp: number; labaKotor: number; bebanOperasional: number; labaBersih: number };
+  cash: { allTimeTx: number };
   expenseByCategory: { category: string; amount: number }[];
   incomeByCategory: { category: string; amount: number }[];
   materials: {
@@ -114,8 +117,37 @@ export default function BusinessAnalyticsSection({
   data, loading, period, customFrom, customTo,
   onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateFinance,
 }: Props) {
+  // "Saldo Awal" (kas sebelum mulai pakai aplikasi ini) diisi manual di tab Jurnal Kas Laporan
+  // Keuangan, disimpan di localStorage browser yang sama — dibaca ulang di sini supaya "Saldo Kas
+  // Saat Ini" konsisten persis dengan yang ada di Laporan Keuangan, bukan cuma sebagian (allTimeTx).
+  const [saldoAwal, setSaldoAwal] = useState(0);
+  useEffect(() => {
+    const saved = localStorage.getItem(SALDO_AWAL_KEY);
+    if (saved) setSaldoAwal(parseFloat(saved) || 0);
+  }, []);
+
   return (
     <div className="space-y-5">
+      {data && (
+        <div className="card p-5 flex items-center justify-between gap-4 flex-wrap" style={{ background: 'linear-gradient(135deg, var(--accent-bg), var(--surface-2))' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(212,105,30,0.15)', color: 'var(--accent)' }}>
+              <Wallet size={20} />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Saldo Kas Saat Ini</p>
+              <p className="text-2xl font-extrabold tabular leading-tight" style={{ color: (saldoAwal + data.cash.allTimeTx) >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
+                {formatRp(saldoAwal + data.cash.allTimeTx)}
+              </p>
+            </div>
+          </div>
+          <button onClick={onNavigateFinance}
+            className="flex items-center gap-1 text-xs font-bold flex-shrink-0"
+            style={{ color: 'var(--accent)' }}>
+            Lihat Laporan Keuangan <ChevronRight size={13} />
+          </button>
+        </div>
+      )}
       {/* Header + pemilih periode — satu baris filter yang menaungi semua chart di bawahnya */}
       <div className="flex items-center justify-between gap-2.5 pt-2 flex-wrap">
         <div className="flex items-center gap-2.5">
