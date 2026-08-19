@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -19,6 +19,10 @@ interface StoreSettings {
   freeShippingMin?: number; resellerDiscount?: number;
   announcementBanner?: string; announcementActive?: boolean;
   posWarehouseId?: string; posWarehouseName?: string;
+  // Rekening & QRIS toko sendiri — tempat customer transfer saat checkout online
+  // (beda dari rekening reseller/adminFeeSettings, lihat komentar di api/settings/route.ts).
+  storeBankName?: string; storeBankAccountNumber?: string; storeBankAccountHolder?: string;
+  storeQrisImageUrl?: string;
 }
 
 interface SettingsWarehouse { id: string; name: string }
@@ -41,6 +45,14 @@ const FIELD_GROUPS = [
       { key: 'whatsapp',      label: 'WhatsApp',   type: 'text', placeholder: '628xxx' },
       { key: 'instagramUrl',  label: 'Instagram',  type: 'text', placeholder: 'https://instagram.com/...' },
       { key: 'tiktokUrl',     label: 'TikTok',     type: 'text', placeholder: 'https://tiktok.com/...' },
+    ],
+  },
+  {
+    id: 'payment', icon: <Wallet size={15}/>, label: 'Rekening Pembayaran',
+    fields: [
+      { key: 'storeBankName',           label: 'Nama Bank',              type: 'text', placeholder: 'BCA' },
+      { key: 'storeBankAccountNumber',  label: 'Nomor Rekening',         type: 'text', placeholder: '1234567890' },
+      { key: 'storeBankAccountHolder',  label: 'Nama Pemilik Rekening',  type: 'text', placeholder: 'Nama sesuai buku tabungan' },
     ],
   },
   {
@@ -79,6 +91,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [logoUploading, setLogoUploading] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
+  const [qrisUploading, setQrisUploading] = useState(false);
   const [warehouses, setWarehouses] = useState<SettingsWarehouse[]>([]);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
@@ -159,7 +172,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
 
   const uploadImage = async (
     file: File | undefined,
-    key: 'logo' | 'ownerSignature' | 'ownerStamp',
+    key: 'logo' | 'ownerSignature' | 'ownerStamp' | 'storeQrisImageUrl',
     compress: (f: File) => Promise<File>,
     setUploading: (v: boolean) => void,
     errorLabel: string,
@@ -184,6 +197,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const uploadLogo      = (file?: File) => uploadImage(file, 'logo', compressLogo, setLogoUploading, 'logo');
   const uploadSignature = (file?: File) => uploadImage(file, 'ownerSignature', f => compressImage(f, 800, true), setSignatureUploading, 'tanda tangan');
   const uploadStamp     = (file?: File) => uploadImage(file, 'ownerStamp', f => compressImage(f, 800, true), setStampUploading, 'cap/stempel');
+  const uploadQris      = (file?: File) => uploadImage(file, 'storeQrisImageUrl', compressLogo, setQrisUploading, 'QRIS');
 
   if (loading) return (
     <div className="flex items-center justify-center py-24">
@@ -326,6 +340,26 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                     Setiap transaksi kasir akan mengurangi stok gudang ini juga (selain stok toko). Kosongkan kalau kasir belum diambil dari gudang tertentu.
+                  </p>
+                </div>
+              )}
+              {activeGrp === 'payment' && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Gambar QRIS
+                  </label>
+                  <ImageUploadBox
+                    src={settings.storeQrisImageUrl}
+                    alt="QRIS toko"
+                    uploading={qrisUploading}
+                    onSelect={f => uploadQris(f)}
+                    onRemove={() => set('storeQrisImageUrl', '')}
+                    fit="contain"
+                    size={140}
+                    emptyText="Upload QRIS"
+                  />
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Ditampilkan ke customer di halaman pembayaran checkout online.
                   </p>
                 </div>
               )}

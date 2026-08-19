@@ -300,7 +300,8 @@ export default function AdminPage() {
   // pos_shift_open sengaja tidak punya highlight: tab POS belum punya list riwayat shift untuk disorot.
   const handleOpenNotification = (n: NotificationDoc) => {
     switch (n.type) {
-      case 'order_new': setHighlightOrderId(n.entityId); break;
+      case 'order_new':
+      case 'payment_proof': setHighlightOrderId(n.entityId); break;
       case 'stock_low': setHighlightMaterialId(n.entityId); break;
       case 'consignment_overdue':
       case 'consignment_recap': setHighlightRecapId(n.entityId); break;

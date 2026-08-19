@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, onSnapshot, orderBy, query, limit, Timestamp } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
-import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Truck, ClipboardList } from 'lucide-react';
+import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Receipt, Truck, ClipboardList } from 'lucide-react';
 import { getClientDb, getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import { useFirebaseSignIn } from '@/lib/useFirebaseSignIn';
@@ -11,7 +11,7 @@ import NotificationDetailModal from '@/components/NotificationDetailModal';
 
 export interface NotificationDoc {
   id: string;
-  type: 'order_new' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send';
+  type: 'order_new' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send';
   title: string;
   message: string;
   link: string | null;
@@ -25,6 +25,7 @@ export interface NotificationDoc {
 
 export const TYPE_ICON: Record<NotificationDoc['type'], typeof Bell> = {
   order_new: ShoppingCart,
+  payment_proof: Receipt,
   stock_low: PackageX,
   pos_shift_open: Wallet,
   consignment_overdue: ReceiptText,

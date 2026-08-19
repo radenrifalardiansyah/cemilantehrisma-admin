@@ -5,6 +5,7 @@ import { TYPE_ICON, type NotificationDoc } from '@/components/NotificationBell';
 
 export const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   order_new: 'Pesanan',
+  payment_proof: 'Bukti Pembayaran',
   stock_low: 'Bahan Baku',
   pos_shift_open: 'Shift Kasir',
   consignment_overdue: 'Rekap Konsinyasi',
