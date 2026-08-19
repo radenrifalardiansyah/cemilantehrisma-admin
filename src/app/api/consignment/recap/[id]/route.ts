@@ -126,6 +126,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   if (stockTouched) after(() => revalidateStorefront('products'));
+  // Menghapus rekap mengubah total totalSold yang dijumlah di beranda storefront.
+  after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
 }
 
@@ -343,5 +345,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   if (stockTouched) after(() => revalidateStorefront('products'));
+  // Edit rekap menghitung ulang totalSold yang dijumlah di beranda storefront.
+  after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
 }

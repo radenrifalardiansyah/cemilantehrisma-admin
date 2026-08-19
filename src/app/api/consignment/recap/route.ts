@@ -203,6 +203,8 @@ export async function POST(req: NextRequest) {
 
   if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for consignment recap', err));
   if (items.some(it => it.qtyRetur > 0)) after(() => revalidateStorefront('products'));
+  // "Terjual" di beranda storefront juga menghitung totalSold dari consignmentRecaps.
+  after(() => revalidateStorefront('stats'));
 
   return Response.json({ id: recapRef.id });
 }
