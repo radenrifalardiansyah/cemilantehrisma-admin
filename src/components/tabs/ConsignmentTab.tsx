@@ -1013,10 +1013,10 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     const itemLines = s.items
       .map((it, i) => `${i + 1}. ${it.productName}\n   ${it.qty} pcs x ${formatRp(it.hargaTitip)} = *${formatRp(it.subtotal)}*`)
       .join('\n');
-    const message = `*${storeHeader.name.toUpperCase()}* 📦
-${storeHeader.address ? `${storeHeader.address}\n` : ''}${storeHeader.phone ? `📞 ${storeHeader.phone}\n` : ''}${SEP}
+    const message = `*${storeHeader.name.toUpperCase()}*
+${storeHeader.address ? `${storeHeader.address}\n` : ''}${storeHeader.phone ? `${storeHeader.phone}\n` : ''}${SEP}
 
-Halo *${location?.contactName || s.locationName}*! 👋
+Halo *${location?.contactName || s.locationName}*!
 Berikut nota kirim stok titip untuk *${s.locationName}*:
 
 Tanggal : ${formatDate(s.createdAt?.seconds)}
@@ -1025,10 +1025,10 @@ ${itemLines}
 ${SEP}
 *Total Nilai Titip : ${formatRp(total)}*
 ${SEP}
-${s.note ? `Catatan : ${s.note}\n${SEP}\n` : ''}📄 Nota PDF:
+${s.note ? `Catatan : ${s.note}\n${SEP}\n` : ''}Nota PDF:
 ${pdfUrl}
 
-Terima kasih! 🙏
+Terima kasih!
 _${storeHeader.name}_`.trim();
 
     window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');

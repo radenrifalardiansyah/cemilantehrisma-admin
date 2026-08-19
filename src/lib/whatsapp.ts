@@ -29,7 +29,7 @@ export const formatWhatsAppMessage = (
 
   const noteLine = customer.note ? `\nCatatan : ${customer.note}` : '';
 
-  return `*PESANAN CEMILAN TEH RISMA* 🛒
+  return `*PESANAN CEMILAN TEH RISMA*
 ${SEP}
 
 *Detail Pesanan:*
@@ -46,7 +46,7 @@ Nama    : ${customer.name}
 No. HP  : ${customer.phone}
 Metode  : ${alamatLine}${noteLine}
 
-_Mohon dikonfirmasi ya Teh, terima kasih!_ 🙏`.trim();
+_Mohon dikonfirmasi ya Teh, terima kasih!_`.trim();
 };
 
 export interface ResellerInfo {
@@ -78,7 +78,7 @@ Paket     : ${paketLine}
 Platform  : ${platformLine}
 Pengalaman: ${pengalamanLine}
 
-Saya ingin *secure slot* reseller Mie Kremes Teh Risma. Mohon info lebih lanjut ya Teh, terima kasih! 🙏`.trim();
+Saya ingin *secure slot* reseller Mie Kremes Teh Risma. Mohon info lebih lanjut ya Teh, terima kasih!`.trim();
 };
 
 export const openResellerWhatsApp = (data: ResellerInfo): void => {

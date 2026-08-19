@@ -109,13 +109,13 @@ function formatWAMessage(receipt: ReceiptData, store: { name: string; address: s
     : receipt.paymentMethod === 'kredit'
     ? `Status  : *BELUM LUNAS (KREDIT)*`
     : `Transfer ${receipt.transferBank ?? ''} : ${formatCurrency(receipt.transferAmount ?? 0)}`;
-  const pdfLines = receipt.pdfUrl ? `\n📄 Invoice PDF:\n${receipt.pdfUrl}\n${SEP}\n` : '';
+  const pdfLines = receipt.pdfUrl ? `\nInvoice PDF:\n${receipt.pdfUrl}\n${SEP}\n` : '';
 
-  return `*${store.name.toUpperCase()}* 🧾
-${store.address ? `${store.address}\n` : ''}📞 ${store.phone}
+  return `*${store.name.toUpperCase()}*
+${store.address ? `${store.address}\n` : ''}${store.phone}
 ${SEP}
 
-Halo *${receipt.customerName}*! 👋
+Halo *${receipt.customerName}*!
 Berikut struk pesanan Anda:
 
 No. Invoice : *${receipt.invoiceNo}*
@@ -127,7 +127,7 @@ Subtotal : ${formatCurrency(receipt.subtotal)}
 ${discountLine}*Total    : ${formatCurrency(receipt.total)}*
 ${paymentLines}
 ${SEP}
-${pdfLines}Terima kasih telah berbelanja! 🙏
+${pdfLines}Terima kasih telah berbelanja!
 _${store.name}_`.trim();
 }
 
