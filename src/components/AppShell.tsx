@@ -551,7 +551,7 @@ export default function AppShell({
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"
               title="Lihat Toko"
-              className="flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg text-xs font-semibold transition-colors"
+              className="hidden sm:flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg text-xs font-semibold transition-colors"
               style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
             >
               <Home size={14} style={{ flexShrink: 0 }} />
