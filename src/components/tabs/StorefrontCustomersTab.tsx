@@ -14,6 +14,7 @@ interface StorefrontCustomer {
   id: string;
   name?: string;
   phone?: string;
+  email?: string;
   authProvider?: 'google';
   createdAt?: { seconds: number };
 }
@@ -62,7 +63,10 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
   };
 
   const filtered = customers.filter(c =>
-    !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search)
+    !search
+    || c.name?.toLowerCase().includes(search.toLowerCase())
+    || c.phone?.includes(search)
+    || c.email?.toLowerCase().includes(search.toLowerCase())
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -94,7 +98,7 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
                 onChange={e => { setSearch(e.target.value); resetPage(); }}
                 className="input text-sm w-full"
                 style={{ paddingLeft: 38, height: 34 }}
-                placeholder="Cari nama atau nomor HP…"
+                placeholder="Cari nama, nomor HP, atau email…"
               />
             </div>
             <ViewToggle mode={view} onChange={setView} height={34} />
@@ -119,7 +123,7 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{c.name || '(tanpa nama)'}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{c.phone}</p>
+                    <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{c.phone}{c.email ? ` · ${c.email}` : ''}</p>
                   </div>
                   <span className="text-[11px] hidden sm:block flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                     {c.authProvider === 'google' ? 'Google' : 'HP + Password'} · {formatDate(c)}
@@ -142,7 +146,7 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{c.name || '(tanpa nama)'}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{c.phone}</p>
+                      <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{c.phone}{c.email ? ` · ${c.email}` : ''}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
