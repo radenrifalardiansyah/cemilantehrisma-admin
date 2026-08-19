@@ -197,6 +197,48 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   }, []);
   const saldoAwal = parseFloat(saldoAwalRaw) || 0;
 
+  // ── Saldo Kas Saat Ini ───────────────────────────────────────
+  // Independen dari filter periode di atas: tarik SEMUA transaksi sejak awal pencatatan (bukan cuma
+  // periode yang dipilih) supaya saldo real-time ini akurat walau periode laporan diganti-ganti.
+  // Kirim `from` eksplisit (bukan dikosongkan) karena /api/orders & /api/consignment/recap membatasi
+  // hasil ke 50 dokumen terbaru kalau from/to tidak dikirim sama sekali.
+  const [allTimeLoading, setAllTimeLoading] = useState(true);
+  const [allTimeTxSaldo, setAllTimeTxSaldo] = useState<number | null>(null);
+  const loadAllTimeSaldo = async () => {
+    setAllTimeLoading(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const qs = `from=2000-01-01&to=${today}`;
+      const [oRes, rRes, iRes, eRes, cRes] = await Promise.all([
+        fetch(`${API}/api/orders?${qs}`, { headers }),
+        fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
+        fetch(`${API}/api/income?${qs}`, { headers }),
+        fetch(`${API}/api/expenses?${qs}`, { headers }),
+        fetch(`${API}/api/capital?${qs}`, { headers }),
+      ]);
+      const allOrders = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
+      const allRecaps = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
+      const allIncome = iRes.ok ? (await iRes.json() as { income: IncomeRecord[] }).income : [];
+      const allExpenses = eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : [];
+      const allCapital = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
+
+      const countedAllOrders = allOrders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+      const countedAllRecaps = allRecaps.filter(r => r.paymentStatus !== 'belum_lunas');
+
+      const saldo =
+        countedAllOrders.reduce((s, o) => s + (o.total ?? 0), 0) +
+        countedAllRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0) +
+        allIncome.reduce((s, i) => s + i.amount, 0) +
+        allCapital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0) -
+        allExpenses.reduce((s, e) => s + e.amount, 0) -
+        allCapital.filter(c => c.type === 'prive').reduce((s, c) => s + c.amount, 0);
+
+      setAllTimeTxSaldo(saldo);
+    } finally { setAllTimeLoading(false); }
+  };
+  useEffect(() => { loadAllTimeSaldo(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const saldoSaatIni = saldoAwal + (allTimeTxSaldo ?? 0);
+
   const { from, to } = periodRange(period, customFrom, customTo);
 
   const load = async () => {
@@ -298,6 +340,18 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // Modal & Prive TIDAK ikut Laba Rugi operasional — cuma info terpisah + masuk Jurnal Kas.
   const totalModalMasuk = capital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0);
   const totalPrive       = capital.filter(c => c.type === 'prive').reduce((s, c) => s + c.amount, 0);
+
+  // ── Rekonsiliasi Kas vs Laba ─────────────────────────────────
+  // Menjembatani kenapa Laba Bersih (akrual) beda dari perubahan Saldo Kas riil periode ini:
+  // (1) Modal Masuk/Prive mempengaruhi kas tapi bukan hasil operasional, jadi tidak masuk Laba Rugi.
+  // (2) Kas keluar untuk Bahan Baku/Produksi dicatat saat DIBAYAR, sedangkan HPP diakui saat
+  // barangnya TERJUAL — kalau lagi numpuk stok, kas keluar lebih besar dari HPP yang diakui
+  // (dan sebaliknya kalau jual dari stok lama). Rumus ini murni menyusun ulang variabel yang
+  // sudah dihitung di atas (totalBeban = totalBebanOperasional + bagian Bahan Baku/Produksi),
+  // jadi selalu identik dengan hasil penjumlahan Jurnal Kas periode yang sama — bukan angka baru.
+  const totalBebanCogsSourced = totalBeban - totalBebanOperasional;
+  const selisihWaktuPersediaan = hpp - totalBebanCogsSourced;
+  const perubahanSaldoKasPeriode = labaBersih + totalModalMasuk - totalPrive + selisihWaktuPersediaan;
 
   // ── Jurnal Kas ───────────────────────────────────────────────
   const journal: JournalEntry[] = [
@@ -470,11 +524,32 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           </button>
         </Tooltip>
         <Tooltip label="Refresh">
-          <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+          <button onClick={() => { load(); loadAllTimeSaldo(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
       </TopbarPortal>
+
+      {/* Saldo Kas Saat Ini — dihitung dari SELURUH transaksi sejak awal pencatatan, tidak
+          terpengaruh filter periode di bawah, supaya selalu menjawab "saldo sekarang berapa". */}
+      <div className="card p-5 flex items-center justify-between gap-4 flex-wrap" style={{ background: 'linear-gradient(135deg, var(--accent-bg), var(--surface-2))' }}>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(212,105,30,0.15)', color: 'var(--accent)' }}>
+            <Wallet size={20} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Saldo Kas Saat Ini</p>
+            {allTimeLoading ? (
+              <Loader2 size={18} className="animate-spin mt-1" style={{ color: 'var(--accent)' }} />
+            ) : (
+              <p className="text-2xl font-extrabold tabular leading-tight" style={{ color: saldoSaatIni >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>{formatRp(saldoSaatIni)}</p>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] max-w-xs" style={{ color: 'var(--text-muted)' }}>
+          Dihitung otomatis dari seluruh transaksi tersimpan sejak awal pencatatan + Saldo Awal (di tab Jurnal Kas) — tidak tergantung filter periode di bawah.
+        </p>
+      </div>
 
       {/* Pemilih periode */}
       <div className="flex flex-wrap items-center gap-2">
@@ -595,6 +670,49 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Rekonsiliasi Kas vs Laba — menjembatani kenapa Laba Bersih beda dari perubahan Saldo Kas */}
+          <div className="card p-5">
+            <p className="text-sm font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Rekonsiliasi: Laba Bersih vs Perubahan Saldo Kas</p>
+            <p className="text-[11px] mb-4" style={{ color: 'var(--text-muted)' }}>
+              Laba Bersih bukan saldo kas — ini menunjukkan kenapa keduanya beda di periode ini. Saldo kas RIIL sekarang ada di kartu &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
+            </p>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span style={{ color: 'var(--text-secondary)' }}>Laba Bersih (Akrual)</span>
+                <span className="font-bold tabular">{formatRp(labaBersih)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: 'var(--text-secondary)' }}>(+) Modal Masuk</span>
+                <span className="font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(totalModalMasuk)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: 'var(--text-secondary)' }}>(−) Prive</span>
+                <span className="font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(totalPrive)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {selisihWaktuPersediaan >= 0 ? '(+) ' : '(−) '}Selisih Waktu Bahan Baku/Produksi
+                </span>
+                <span className="font-bold tabular" style={{ color: selisihWaktuPersediaan >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                  {formatRp(selisihWaktuPersediaan)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>= Perubahan Saldo Kas (Periode Ini)</span>
+                <span className="font-extrabold tabular" style={{ color: perubahanSaldoKasPeriode >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                  {formatRp(perubahanSaldoKasPeriode)}
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] mt-3" style={{ color: 'var(--text-muted)' }}>
+              {selisihWaktuPersediaan < 0
+                ? `Sedang menumpuk stok/produksi: belanja Bahan Baku & Produksi (${formatRp(totalBebanCogsSourced)}) periode ini lebih besar dari HPP barang yang terjual (${formatRp(hpp)}) — kas keluar lebih dulu dari yang diakui sebagai biaya.`
+                : selisihWaktuPersediaan > 0
+                ? `Menjual dari stok lama: HPP barang yang terjual (${formatRp(hpp)}) periode ini lebih besar dari belanja Bahan Baku & Produksi (${formatRp(totalBebanCogsSourced)}) — biaya yang diakui lebih besar dari kas yang keluar.`
+                : 'Belanja Bahan Baku/Produksi periode ini sama persis dengan HPP barang yang terjual.'}
+            </p>
           </div>
 
           {/* Ringkasan kas — versi sebelumnya, dipisah supaya tidak ketuker dengan ringkasan akrual di atas */}
@@ -730,7 +848,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
               onChange={raw => { setSaldoAwalRaw(raw); localStorage.setItem(SALDO_AWAL_KEY, raw); }}
               style={{ width: 180, height: 36 }} placeholder="0" />
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              Saldo kas nyata sebelum periode ini dimulai (disimpan di browser ini saja, bukan data akuntansi baku).
+              Saldo kas nyata sebelum mulai pencatatan di aplikasi ini (disimpan di browser ini saja, bukan data akuntansi baku). Dipakai juga sebagai dasar &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
             </p>
           </div>
 

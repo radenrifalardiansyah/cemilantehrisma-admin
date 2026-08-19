@@ -150,6 +150,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [products,    setProducts]    = useState<FireProduct[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [saving,      setSaving]      = useState(false);
+  const [recalculatingHpp, setRecalculatingHpp] = useState(false);
   const [seeding,     setSeeding]     = useState(false);
   const [editing,     setEditing]     = useState<FireProduct | null>(null);
   const [isNew,       setIsNew]       = useState(false);
@@ -422,6 +423,35 @@ export default function ProductsTab({ creds }: { creds: string }) {
       toast.error(error ?? 'Gagal menyimpan produk.');
     }
     setSaving(false);
+  };
+
+  // Timpa HPP (costPrice) di SEMUA order & rekap konsinyasi lama produk ini dengan Harga Modal
+  // yang tersimpan sekarang — dipakai saat HPP lama diketahui salah input dan perlu dikoreksi
+  // retroaktif. Beda dari "Hitung Ulang HPP" di Laporan Keuangan (cuma isi transaksi yang HPP-nya
+  // kosong), ini betul-betul menulis ulang costPrice transaksi lama secara permanen di database.
+  const recalculateHpp = async (id: string, name: string, costPrice: number) => {
+    if (!await confirm({
+      message: `Timpa HPP di SEMUA transaksi lama "${name}" (order & rekap konsinyasi) dengan Harga Modal ${formatRp(costPrice)}? Laba/rugi periode-periode lalu di Laporan Keuangan akan ikut berubah. Tindakan ini tidak bisa dibatalkan.`,
+      danger: true,
+    })) return;
+    setRecalculatingHpp(true);
+    try {
+      // Simpan dulu Harga Modal dari form (kalau belum di-klik "Simpan") supaya endpoint di bawah
+      // menimpa transaksi lama pakai angka yang sama persis dengan yang terlihat di form ini —
+      // bukan angka lama yang masih tersimpan di database.
+      await fetch(`${API}/api/products/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ costPrice }) });
+      const r = await fetch(`${API}/api/products/${id}/recalculate-hpp`, { method: 'POST', headers });
+      if (r.ok) {
+        const d = await r.json() as { updatedOrders: number; updatedRecaps: number };
+        await load();
+        toast.success(`HPP "${name}" ditimpa di ${d.updatedOrders} order & ${d.updatedRecaps} rekap konsinyasi.`);
+      } else {
+        const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(error ?? 'Gagal menghitung ulang HPP.');
+      }
+    } finally {
+      setRecalculatingHpp(false);
+    }
   };
 
   const del = async (id: string, name: string) => {
@@ -1233,6 +1263,19 @@ export default function ProductsTab({ creds }: { creds: string }) {
                       <p style={{ fontSize: 10.5, marginTop: -8, color: 'var(--text-muted)' }}>
                         Margin: {formatRp(editing.price - editing.costPrice)} / pcs ({Math.round(((editing.price - editing.costPrice) / editing.price) * 100)}%)
                       </p>
+                    )}
+                    {!isNew && (
+                      <div>
+                        <button type="button" onClick={() => recalculateHpp(editing.id, editing.name, editing.costPrice ?? 0)}
+                          disabled={recalculatingHpp} className="btn-ghost text-xs font-semibold"
+                          style={{ height: 32, padding: '0 10px' }}>
+                          {recalculatingHpp ? <Loader2 size={13} className="animate-spin" /> : null}
+                          Timpa HPP ke Semua Transaksi Lama
+                        </button>
+                        <p style={{ fontSize: 10, marginTop: 4, color: 'var(--text-muted)' }}>
+                          Pakai kalau Harga Modal di atas adalah koreksi HPP yang salah tersimpan sejak dulu — semua order & rekap konsinyasi lama produk ini akan ditimpa dengan angka ini (bukan cuma yang belum terisi).
+                        </p>
+                      </div>
                     )}
 
                     {/* Selects */}
