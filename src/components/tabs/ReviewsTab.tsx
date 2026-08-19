@@ -7,6 +7,8 @@ import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import PageSizeSelect from '@/components/PageSizeSelect';
+import { useViewMode } from '@/lib/useViewMode';
+import ViewToggle from '@/components/ViewToggle';
 
 interface StorefrontReview {
   id: string;
@@ -48,6 +50,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [view, setView] = useViewMode('reviews');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -139,6 +142,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
                 </button>
               ))}
             </div>
+            <ViewToggle mode={view} onChange={setView} height={34} />
           </div>
 
           {loading ? (
@@ -150,6 +154,62 @@ export default function ReviewsTab({ creds }: { creds: string }) {
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 {reviews.length === 0 ? 'Belum ada ulasan masuk.' : 'Tidak ada ulasan yang cocok.'}
               </p>
+            </div>
+          ) : view === 'table' ? (
+            <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+              {paginated.map((r, idx) => {
+                const actionButtons = (
+                  <>
+                    {r.approved ? (
+                      <button onClick={() => setApproved(r, false)} className="btn-ghost h-8 px-3 text-xs font-semibold flex items-center gap-1.5">
+                        <X size={13} /> Sembunyikan
+                      </button>
+                    ) : (
+                      <button onClick={() => setApproved(r, true)} className="btn-primary h-8 px-3 text-xs font-semibold flex items-center gap-1.5">
+                        <Check size={13} /> Setujui
+                      </button>
+                    )}
+                    <Tooltip label="Hapus ulasan">
+                      <button onClick={() => handleDelete(r)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </Tooltip>
+                  </>
+                );
+                return (
+                  <div key={r.id} className="flex flex-col gap-2 px-4 py-3.5">
+                    <div className="flex items-start gap-3">
+                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {(safePage - 1) * pageSize + idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.customerName || '(tanpa nama)'}</p>
+                          <Stars rating={r.rating ?? 0} />
+                        </div>
+                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatDate(r)}</span>
+                        {r.comment && (
+                          <p className="text-xs leading-relaxed mt-1 truncate" style={{ color: 'var(--text-secondary)' }}>{r.comment}</p>
+                        )}
+                      </div>
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[11px] font-semibold flex-shrink-0"
+                        style={r.approved
+                          ? { background: 'var(--success-bg, #DCFCE7)', color: 'var(--success, #16A34A)' }
+                          : { background: 'var(--warning-bg, #FEF3C7)', color: 'var(--warning, #D97706)' }}
+                      >
+                        {r.approved ? 'Disetujui' : 'Menunggu'}
+                      </span>
+                      <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
+                        {actionButtons}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 pl-8 sm:hidden">
+                      {actionButtons}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="space-y-3">
