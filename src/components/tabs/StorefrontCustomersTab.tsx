@@ -84,7 +84,6 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up space-y-4">
           <div>
-            <h2 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Akun Storefront</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               Akun yang customer buat sendiri di website untuk checkout — {customers.length} akun terdaftar.
             </p>

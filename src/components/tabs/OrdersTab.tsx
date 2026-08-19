@@ -805,82 +805,99 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
         <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
           {filtered.map((o, idx) => {
             const isSelected = selected.has(o.id);
+            const actionButtons = (
+              <>
+                {o.source === 'portal' && o.status === 'baru' && (
+                  <Tooltip label="Tandai Selesai">
+                    <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
+                      className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Tandai Selesai">
+                      {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {o.paymentStatus === 'belum_lunas' && (
+                  <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
+                    className="btn-ghost px-2 py-2 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
+                    {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Tandai Lunas'}
+                  </button>
+                )}
+                {o.status !== 'dibatalkan' && (
+                  <Tooltip label="Batalkan Pesanan">
+                    <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
+                      className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
+                      {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip label="Cetak Ulang Struk">
+                  <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
+                    <Printer size={13} />
+                  </button>
+                </Tooltip>
+                {o.status !== 'dibatalkan' && (
+                  <Tooltip label="Edit">
+                    <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
+                      <Pencil size={13} />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip label="Hapus">
+                  <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
+                    <Trash2 size={13} />
+                  </button>
+                </Tooltip>
+                <RecordHistoryButton open={historyId === o.id} onToggle={() => toggleHistory(o.id)} />
+                <Tooltip label="Lihat Detail">
+                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
+                    <ChevronRight size={13} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                  </button>
+                </Tooltip>
+              </>
+            );
             return (
             <div key={o.id} ref={el => { rowRefs.current[o.id] = el; }}
               style={{ transition: 'background-color 0.6s ease', backgroundColor: highlightedId === o.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
-              <div className="flex items-center gap-3 px-4 py-3.5">
-                <Checkbox checked={isSelected} onChange={() => toggleSelect(o.id)} />
-                <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
-                  {idx + 1}
-                </span>
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'var(--accent-bg)' }}>
-                  <Receipt size={17} style={{ color: 'var(--accent)' }} />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
-                    <SourceBadge source={o.source} />
-                    <StatusBadge source={o.source} status={o.status} />
-                    <PaymentStatusBadge paymentStatus={o.paymentStatus} />
+              <div className="flex flex-col gap-2 px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <Checkbox checked={isSelected} onChange={() => toggleSelect(o.id)} />
+                  <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
+                    {idx + 1}
+                  </span>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'var(--accent-bg)' }}>
+                    <Receipt size={17} style={{ color: 'var(--accent)' }} />
                   </div>
-                  <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
-                    {o.invoiceNo} · {formatDate(o)}
-                  </p>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
+                      <SourceBadge source={o.source} />
+                      <StatusBadge source={o.source} status={o.status} />
+                      <PaymentStatusBadge paymentStatus={o.paymentStatus} />
+                    </div>
+                    <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
+                      {o.invoiceNo} · {formatDate(o)}
+                    </p>
+                  </div>
+
+                  <div className="text-right flex-shrink-0 hidden sm:block">
+                    <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(o.total)}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
+                  </div>
+
+                  <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
+                    {actionButtons}
+                  </div>
                 </div>
 
-                <div className="text-right flex-shrink-0">
-                  <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(o.total)}</p>
-                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
-                </div>
-
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {o.source === 'portal' && o.status === 'baru' && (
-                    <Tooltip label="Tandai Selesai">
-                      <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
-                        className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Tandai Selesai">
-                        {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  {o.paymentStatus === 'belum_lunas' && (
-                    <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
-                      className="btn-ghost px-2 py-2 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
-                      {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Tandai Lunas'}
-                    </button>
-                  )}
-                  {o.status !== 'dibatalkan' && (
-                    <Tooltip label="Batalkan Pesanan">
-                      <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
-                        className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
-                        {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  <Tooltip label="Cetak Ulang Struk">
-                    <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
-                      <Printer size={13} />
-                    </button>
-                  </Tooltip>
-                  {o.status !== 'dibatalkan' && (
-                    <Tooltip label="Edit">
-                      <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
-                        <Pencil size={13} />
-                      </button>
-                    </Tooltip>
-                  )}
-                  <Tooltip label="Hapus">
-                    <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
-                      <Trash2 size={13} />
-                    </button>
-                  </Tooltip>
-                  <RecordHistoryButton open={historyId === o.id} onToggle={() => toggleHistory(o.id)} />
-                  <Tooltip label="Lihat Detail">
-                    <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
-                      <ChevronRight size={13} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
-                    </button>
-                  </Tooltip>
+                <div className="flex items-center justify-between gap-2 sm:hidden">
+                  <div>
+                    <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(o.total)}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0 flex-wrap justify-end">
+                    {actionButtons}
+                  </div>
                 </div>
               </div>
 

@@ -111,7 +111,6 @@ export default function ReviewsTab({ creds }: { creds: string }) {
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up space-y-4">
           <div>
-            <h2 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Ulasan</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {pendingCount > 0 ? `${pendingCount} ulasan menunggu persetujuan` : 'Semua ulasan sudah ditinjau'}
             </p>
