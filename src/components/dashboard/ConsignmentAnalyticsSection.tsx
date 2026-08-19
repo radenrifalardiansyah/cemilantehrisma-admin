@@ -260,88 +260,6 @@ export default function ConsignmentAnalyticsSection({
             ))}
           </div>
 
-          {/* Ringkasan pcs terkirim, retur, reject */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Package size={15} style={{ color: 'var(--accent)' }} />
-              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan Pcs Mitra</p>
-            </div>
-            {(() => {
-              const kirimQty = data.summary.totalKirimQty ?? 0;
-              const retur = data.summary.totalRetur ?? 0;
-              const reject = data.summary.totalReject ?? 0;
-              const totalAll = kirimQty + retur + reject;
-              if (totalAll === 0) {
-                return <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada aktivitas mitra di periode ini.</p>;
-              }
-              const pcsSummary = [
-                { name: 'Terkirim', value: kirimQty, color: '#0284C7' },
-                { name: 'Retur', value: retur, color: '#D97706' },
-                { name: 'Reject', value: reject, color: '#DC2626' },
-                { name: 'Total', value: totalAll, color: '#7C3AED' },
-              ];
-              return (
-                <div style={{ width: '100%', height: 200 }}>
-                  <ResponsiveContainer>
-                    <BarChart data={pcsSummary} margin={{ top: 20, right: 8, left: -18, bottom: 0 }} barCategoryGap={24}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
-                      <Tooltip content={<PcsSummaryTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={48}>
-                        {pcsSummary.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                        <LabelList dataKey="value" position="top" formatter={(v: React.ReactNode) => Number(v).toLocaleString('id-ID')}
-                          style={{ fontSize: 12, fontWeight: 800, fill: 'var(--text-primary)' }} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Breakdown pcs terkirim vs retur vs reject per lokasi mitra */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <Package size={15} style={{ color: 'var(--accent)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pcs Terkirim vs Retur vs Reject per Mitra</p>
-              </div>
-              <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                <LegendDot color="#0284C7" label="Terkirim" />
-                <LegendDot color="#D97706" label="Retur" />
-                <LegendDot color="#DC2626" label="Reject" />
-              </div>
-            </div>
-            {data.topLocations.length === 0 ? (
-              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
-            ) : (() => {
-              const byQty = [...data.topLocations]
-                .sort((a, b) => (b.kirimQty + b.retur + b.reject) - (a.kirimQty + a.retur + a.reject))
-                .filter(l => l.kirimQty + l.retur + l.reject > 0)
-                .slice(0, 10);
-              if (byQty.length === 0) {
-                return <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada aktivitas mitra di periode ini.</p>;
-              }
-              return (
-                <div style={{ width: '100%', height: Math.max(140, byQty.length * 48) }}>
-                  <ResponsiveContainer>
-                    <BarChart data={byQty} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barCategoryGap={14} barGap={2}>
-                      <XAxis type="number" hide />
-                      <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<PcsLocationTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                      <Bar dataKey="kirimQty" name="Terkirim" fill="#0284C7" radius={[0, 4, 4, 0]} barSize={12} />
-                      <Bar dataKey="retur" name="Retur" fill="#D97706" radius={[0, 4, 4, 0]} barSize={12} />
-                      <Bar dataKey="reject" name="Reject" fill="#DC2626" radius={[0, 4, 4, 0]} barSize={12} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              );
-            })()}
-          </div>
-
           {/* Tren nilai dikirim vs pendapatan */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -417,6 +335,88 @@ export default function ConsignmentAnalyticsSection({
                         <LabelList dataKey="sellThroughPct" position="right" formatter={(v: React.ReactNode) => `${v}%`}
                           style={{ fontSize: 11, fontWeight: 700, fill: 'var(--text-primary)' }} />
                       </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Ringkasan pcs terkirim, retur, reject */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Package size={15} style={{ color: 'var(--accent)' }} />
+              <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan Pcs Mitra</p>
+            </div>
+            {(() => {
+              const kirimQty = data.summary.totalKirimQty ?? 0;
+              const retur = data.summary.totalRetur ?? 0;
+              const reject = data.summary.totalReject ?? 0;
+              const totalAll = kirimQty + retur + reject;
+              if (totalAll === 0) {
+                return <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada aktivitas mitra di periode ini.</p>;
+              }
+              const pcsSummary = [
+                { name: 'Terkirim', value: kirimQty, color: '#0284C7' },
+                { name: 'Retur', value: retur, color: '#D97706' },
+                { name: 'Reject', value: reject, color: '#DC2626' },
+                { name: 'Total', value: totalAll, color: '#7C3AED' },
+              ];
+              return (
+                <div style={{ width: '100%', height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={pcsSummary} margin={{ top: 20, right: 8, left: -18, bottom: 0 }} barCategoryGap={24}>
+                      <CartesianGrid vertical={false} stroke="var(--border-2)" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
+                      <Tooltip content={<PcsSummaryTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={48}>
+                        {pcsSummary.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                        <LabelList dataKey="value" position="top" formatter={(v: React.ReactNode) => Number(v).toLocaleString('id-ID')}
+                          style={{ fontSize: 12, fontWeight: 800, fill: 'var(--text-primary)' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Breakdown pcs terkirim vs retur vs reject per lokasi mitra */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Package size={15} style={{ color: 'var(--accent)' }} />
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pcs Terkirim vs Retur vs Reject per Mitra</p>
+              </div>
+              <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <LegendDot color="#0284C7" label="Terkirim" />
+                <LegendDot color="#D97706" label="Retur" />
+                <LegendDot color="#DC2626" label="Reject" />
+              </div>
+            </div>
+            {data.topLocations.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada lokasi mitra.</p>
+            ) : (() => {
+              const byQty = [...data.topLocations]
+                .sort((a, b) => (b.kirimQty + b.retur + b.reject) - (a.kirimQty + a.retur + a.reject))
+                .filter(l => l.kirimQty + l.retur + l.reject > 0)
+                .slice(0, 10);
+              if (byQty.length === 0) {
+                return <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada aktivitas mitra di periode ini.</p>;
+              }
+              return (
+                <div style={{ width: '100%', height: Math.max(140, byQty.length * 48) }}>
+                  <ResponsiveContainer>
+                    <BarChart data={byQty} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barCategoryGap={14} barGap={2}>
+                      <XAxis type="number" hide />
+                      <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<PcsLocationTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
+                      <Bar dataKey="kirimQty" name="Terkirim" fill="#0284C7" radius={[0, 4, 4, 0]} barSize={12} />
+                      <Bar dataKey="retur" name="Retur" fill="#D97706" radius={[0, 4, 4, 0]} barSize={12} />
+                      <Bar dataKey="reject" name="Reject" fill="#DC2626" radius={[0, 4, 4, 0]} barSize={12} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
