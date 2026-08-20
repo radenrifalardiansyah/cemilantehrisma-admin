@@ -305,8 +305,8 @@ export default function PosTab({
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
   const toast = useToast();
   const wallets = useWallets(creds);
-  const walletOptions = activeWalletOptions(wallets);
   const walletBalances = useWalletBalances(creds, wallets);
+  const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   // ── Info toko (nama, alamat, telepon, logo) — dipakai di struk cetak & pesan WA ──
   useEffect(() => {

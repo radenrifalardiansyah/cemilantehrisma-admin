@@ -23,8 +23,17 @@ export function useWallets(creds: string) {
   return wallets;
 }
 
-export function activeWalletOptions(wallets: WalletDoc[]) {
-  return wallets.filter(w => w.isActive).map(w => ({ value: w.id, label: w.name }));
+const formatRp = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+// `balances` opsional — kalau dioper (dari useWalletBalances), tiap opsi dompet di dropdown
+// ikut menampilkan saldonya (sebagai sublabel SearchSelect) supaya kelihatan langsung saat
+// memilih, tanpa harus pilih dulu baru lihat teks "Saldo saat ini" di bawahnya.
+export function activeWalletOptions(wallets: WalletDoc[], balances?: Record<string, number>) {
+  return wallets.filter(w => w.isActive).map(w => ({
+    value: w.id, label: w.name,
+    sublabel: balances ? formatRp(balances[w.id] ?? 0) : undefined,
+  }));
 }
 
 interface BalanceIncomeRow { amount: number; walletId?: string | null }

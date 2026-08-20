@@ -136,8 +136,8 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const toast = useToast();
   const confirm = useConfirm();
   const wallets = useWallets(creds);
-  const walletOptions = activeWalletOptions(wallets);
   const walletBalances = useWalletBalances(creds, wallets);
+  const walletOptions = activeWalletOptions(wallets, walletBalances);
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);

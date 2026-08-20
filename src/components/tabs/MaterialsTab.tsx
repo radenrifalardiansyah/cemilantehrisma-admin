@@ -551,8 +551,8 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [submittingPurchase, setSubmittingPurchase] = useState(false);
   const [markingPurchaseId, setMarkingPurchaseId] = useState<string | null>(null);
   const wallets = useWallets(creds);
-  const walletOptions = activeWalletOptions(wallets);
   const walletBalances = useWalletBalances(creds, wallets);
+  const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const resetPurchaseForm = () => {
     setEditingPurchase(null); setSupplierId(''); setSupplierName(''); setPurchaseDate(todayISO());

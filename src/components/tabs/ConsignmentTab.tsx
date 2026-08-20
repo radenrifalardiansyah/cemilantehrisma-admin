@@ -278,8 +278,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
-  const walletOptions = activeWalletOptions(wallets);
   const walletBalances = useWalletBalances(creds, wallets);
+  const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
 

@@ -73,8 +73,8 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
-  const walletOptions = activeWalletOptions(wallets);
   const walletBalances = useWalletBalances(creds, wallets);
+  const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const [entries,     setEntries]     = useState<CapitalEntry[]>([]);
   const [loading,     setLoading]     = useState(true);

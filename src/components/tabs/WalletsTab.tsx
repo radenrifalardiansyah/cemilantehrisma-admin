@@ -171,7 +171,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const walletOptions = activeWalletOptions(wallets);
+  const walletOptions = activeWalletOptions(wallets, balances);
   const walletName = (id: string) => wallets.find(w => w.id === id)?.name ?? '(dompet dihapus)';
 
   // ─── Dompet: CRUD ────────────────────────────────────────────────
