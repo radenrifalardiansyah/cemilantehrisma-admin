@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     items: Array.isArray(data.items) ? data.items : [],
     date: data.date,
     note: data.note ?? '',
+    walletId: data.walletId ?? null,
   };
   const ref = await db.collection('income').add({
     ...payload,

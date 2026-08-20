@@ -17,6 +17,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -77,7 +78,7 @@ interface PurchaseItem { materialId: string; materialName: string; unit: string;
 interface Purchase {
   id: string; supplierId?: string | null; supplierName: string; items: PurchaseItem[]; total: number; note?: string;
   date?: string; paymentStatus?: 'lunas' | 'belum_lunas'; expenseId?: string | null; createdAt?: { seconds: number };
-  voided?: boolean; voidNote?: string;
+  voided?: boolean; voidNote?: string; walletId?: string | null;
 }
 
 type MaterialForm = { name: string; unit: string; minStock: string };
@@ -546,12 +547,15 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [rows,         setRows]         = useState<PurchaseRow[]>([{ ...EMPTY_ROW }]);
   const [purchaseNote, setPurchaseNote] = useState('');
   const [purchasePaymentStatus, setPurchasePaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
+  const [purchaseWalletId, setPurchaseWalletId] = useState('');
   const [submittingPurchase, setSubmittingPurchase] = useState(false);
   const [markingPurchaseId, setMarkingPurchaseId] = useState<string | null>(null);
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
 
   const resetPurchaseForm = () => {
     setEditingPurchase(null); setSupplierId(''); setSupplierName(''); setPurchaseDate(todayISO());
-    setRows([{ ...EMPTY_ROW }]); setPurchaseNote(''); setPurchasePaymentStatus('lunas');
+    setRows([{ ...EMPTY_ROW }]); setPurchaseNote(''); setPurchasePaymentStatus('lunas'); setPurchaseWalletId('');
   };
   const openCreatePurchase = () => { resetPurchaseForm(); setShowPurchaseForm(true); };
   const openEditPurchase = (p: Purchase) => {
@@ -562,6 +566,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     setRows(p.items.map(it => ({ materialId: it.materialId, qty: String(it.qty), price: String(it.price) })));
     setPurchaseNote(p.note ?? '');
     setPurchasePaymentStatus(p.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
+    setPurchaseWalletId(p.walletId ?? '');
     setShowPurchaseForm(true);
   };
   const closePurchaseForm = () => { setShowPurchaseForm(false); resetPurchaseForm(); };
@@ -571,7 +576,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const updateRow = (i: number, patch: Partial<PurchaseRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
 
   const purchaseTotal = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
-  const canSubmitPurchase = supplierName.trim() !== '' && !!purchaseDate
+  const canSubmitPurchase = supplierName.trim() !== '' && !!purchaseDate && !!purchaseWalletId
     && rows.some(r => r.materialId && (parseFloat(r.qty) || 0) > 0);
 
   const submitPurchase = async () => {
@@ -586,7 +591,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         });
       const payload = {
         supplierId: supplierId || undefined, supplierName: supplierName.trim(), date: purchaseDate, items, note: purchaseNote,
-        paymentStatus: purchasePaymentStatus,
+        paymentStatus: purchasePaymentStatus, walletId: purchaseWalletId,
       };
       const res = editingPurchase
         ? await fetch(`${API}/api/material-purchases/${editingPurchase.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -1665,6 +1670,12 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   <label style={fieldLabel}>Catatan</label>
                   <input type="text" value={purchaseNote} onChange={e => setPurchaseNote(e.target.value)}
                     placeholder="Catatan tambahan (opsional)" className="input" />
+                </div>
+
+                <div>
+                  <label style={fieldLabel}>Dompet Sumber <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={purchaseWalletId} onChange={setPurchaseWalletId}
+                    options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
                 </div>
 
                 <div>

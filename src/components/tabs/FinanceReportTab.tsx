@@ -13,6 +13,8 @@ import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import { SALDO_AWAL_KEY } from '@/lib/finance';
+import type { WalletDoc } from '@/lib/useWallets';
+import { resolveIcon } from '@/lib/icon-registry';
 
 const API = '';
 
@@ -25,15 +27,17 @@ interface OrderRecord {
   source?: 'kasir' | 'portal'; status: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
   items?: { productId?: string; qty: number; costPrice?: number; name?: string }[];
+  walletId?: string | null;
 }
 
 interface RecapRecord {
   locationName: string; totalRevenue: number; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number };
   items?: { productId?: string; qtySold: number; costPrice?: number; productName?: string }[];
+  walletId?: string | null;
 }
-interface IncomeRecord { category: string; description: string; amount: number; date: string; createdAt?: { seconds: number } }
-interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string; createdAt?: { seconds: number } }
+interface IncomeRecord { category: string; description: string; amount: number; date: string; createdAt?: { seconds: number }; walletId?: string | null }
+interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string; createdAt?: { seconds: number }; walletId?: string | null }
 
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi (punya `sourceType`) tidak
 // dihitung lagi sebagai Beban Operasional di Laba Rugi — biayanya sudah masuk HPP saat barangnya
@@ -53,7 +57,7 @@ const dateWithRealTime = (dateStr: string, createdAt?: { seconds: number }) => {
   }
   return new Date(`${dateStr}T12:00:00`).getTime() / 1000;
 };
-interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string; createdAt?: { seconds: number } }
+interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string; createdAt?: { seconds: number }; walletId?: string | null }
 
 interface JournalEntry { seconds: number; description: string; debit: number; kredit: number; invoiceNo?: string }
 
@@ -218,23 +222,28 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // hasil ke 50 dokumen terbaru kalau from/to tidak dikirim sama sekali.
   const [allTimeLoading, setAllTimeLoading] = useState(true);
   const [allTimeTxSaldo, setAllTimeTxSaldo] = useState<number | null>(null);
+  const [wallets, setWallets] = useState<WalletDoc[]>([]);
+  const [walletBalances, setWalletBalances] = useState<Record<string, number>>({});
+  const [unassignedBalance, setUnassignedBalance] = useState(0);
   const loadAllTimeSaldo = async () => {
     setAllTimeLoading(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
       const qs = `from=2000-01-01&to=${today}`;
-      const [oRes, rRes, iRes, eRes, cRes] = await Promise.all([
+      const [oRes, rRes, iRes, eRes, cRes, wRes] = await Promise.all([
         fetch(`${API}/api/orders?${qs}`, { headers }),
         fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
         fetch(`${API}/api/income?${qs}`, { headers }),
         fetch(`${API}/api/expenses?${qs}`, { headers }),
         fetch(`${API}/api/capital?${qs}`, { headers }),
+        fetch(`${API}/api/wallets`, { headers }),
       ]);
       const allOrders = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
       const allRecaps = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
       const allIncome = iRes.ok ? (await iRes.json() as { income: IncomeRecord[] }).income : [];
       const allExpenses = eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : [];
       const allCapital = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
+      const walletList = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
 
       const countedAllOrders = allOrders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
       const countedAllRecaps = allRecaps.filter(r => r.paymentStatus !== 'belum_lunas');
@@ -248,6 +257,25 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         allCapital.filter(c => c.type === 'prive').reduce((s, c) => s + c.amount, 0);
 
       setAllTimeTxSaldo(saldo);
+
+      // Rincian per dompet — formula sama seperti saldo gabungan di atas, dikelompokkan per
+      // walletId. Entri lama tanpa walletId (dari sebelum fitur Dompet ada) masuk ke "unassigned".
+      const balanceOf = (walletId: string | null) => {
+        const match = (v: { walletId?: string | null }) => (v.walletId ?? null) === walletId;
+        const wallet = walletId ? walletList.find(w => w.id === walletId) : undefined;
+        return (wallet?.initialBalance ?? 0)
+          + allIncome.filter(match).reduce((s, i) => s + i.amount, 0)
+          + countedAllOrders.filter(match).reduce((s, o) => s + (o.total ?? 0), 0)
+          + countedAllRecaps.filter(match).reduce((s, r) => s + (r.totalRevenue ?? 0), 0)
+          - allExpenses.filter(match).reduce((s, e) => s + e.amount, 0)
+          + allCapital.filter(c => match(c) && c.type === 'modal').reduce((s, c) => s + c.amount, 0)
+          - allCapital.filter(c => match(c) && c.type === 'prive').reduce((s, c) => s + c.amount, 0);
+      };
+      const nextBalances: Record<string, number> = {};
+      walletList.forEach(w => { nextBalances[w.id] = balanceOf(w.id); });
+      setWallets(walletList);
+      setWalletBalances(nextBalances);
+      setUnassignedBalance(balanceOf(null));
     } finally { setAllTimeLoading(false); }
   };
   useEffect(() => { loadAllTimeSaldo(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -565,6 +593,41 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           Dihitung otomatis dari seluruh transaksi tersimpan sejak awal pencatatan + Saldo Awal (di tab Jurnal Kas) — tidak tergantung filter periode di bawah.
         </p>
       </div>
+
+      {/* Rincian saldo per dompet — breakdown dari total di atas, dikelompokkan per sumber dana. */}
+      {!allTimeLoading && wallets.length > 0 && (
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Rincian Saldo per Dompet</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {wallets.filter(w => w.isActive).map(w => {
+              const Icon = resolveIcon(w.icon);
+              const balance = walletBalances[w.id] ?? 0;
+              return (
+                <div key={w.id} className="card p-3.5 flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${w.color}22`, color: w.color }}>
+                    <Icon size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold tabular truncate" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>{formatRp(balance)}</p>
+                    <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{w.name}</p>
+                  </div>
+                </div>
+              );
+            })}
+            {unassignedBalance !== 0 && (
+              <div className="card p-3.5 flex items-center gap-2.5" style={{ borderStyle: 'dashed' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                  <Wallet size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold tabular truncate" style={{ color: 'var(--text-secondary)' }}>{formatRp(unassignedBalance)}</p>
+                  <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>Belum Ditentukan</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Pemilih periode */}
       <div className="flex flex-wrap items-center gap-2">

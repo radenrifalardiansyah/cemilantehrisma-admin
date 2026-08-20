@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     amount: Number(data.amount) || 0,
     date: data.date,
     note: data.note ?? '',
+    walletId: data.walletId ?? null,
   };
   const ref = await db.collection('capitalEntries').add({
     ...payload,

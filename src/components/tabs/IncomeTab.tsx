@@ -18,6 +18,7 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -97,16 +98,19 @@ interface Income {
   items?: IncomeItem[];
   createdAt?: { seconds: number };
   auto?: AutoSource;
+  walletId?: string | null;
 }
 
 interface OrderForIncome {
   id: string; invoiceNo?: string; customerName?: string; total?: number;
   source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAt?: { seconds: number } | null;
+  walletId?: string | null;
 }
 interface RecapForIncome {
   id: string; locationName?: string; totalRevenue?: number;
   paymentStatus?: 'lunas' | 'belum_lunas'; createdAt?: { seconds: number } | null;
+  walletId?: string | null;
 }
 
 const AUTO_ICON: Record<AutoSource, typeof ShoppingCart> = { kasir: ShoppingCart, online: Globe, konsinyasi: Store };
@@ -123,13 +127,15 @@ const AUTO_LOCK_MESSAGE: Record<AutoSource, string> = {
 type IncomeItemForm = { description: string; amount: string };
 const emptyItem = (): IncomeItemForm => ({ description: '', amount: '' });
 
-type IncomeForm = { category: string; categoryCustom: string; items: IncomeItemForm[]; date: string; note: string };
-const emptyForm = (): IncomeForm => ({ category: 'Penjualan Lain', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '' });
+type IncomeForm = { category: string; categoryCustom: string; items: IncomeItemForm[]; date: string; note: string; walletId: string };
+const emptyForm = (): IncomeForm => ({ category: 'Penjualan Lain', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '', walletId: '' });
 
 export default function IncomeTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
 
   const [income,      setIncome]      = useState<Income[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -183,6 +189,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       amount: o.total ?? 0, date: dateOf(o.createdAt),
       note: `Otomatis dari pesanan ${o.source === 'portal' ? 'online' : 'kasir'}${o.invoiceNo ? ` (Invoice ${o.invoiceNo})` : ''}${o.customerName ? ` — ${o.customerName}` : ''}.`,
       auto: o.source === 'portal' ? 'online' : 'kasir',
+      walletId: o.walletId ?? null,
     }));
     const fromRecaps: Income[] = countedRecaps.map(r => ({
       id: `recap-${r.id}`,
@@ -191,6 +198,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       amount: r.totalRevenue ?? 0, date: dateOf(r.createdAt),
       note: `Otomatis dari rekap konsinyasi${r.locationName ? ` di ${r.locationName}` : ''}.`,
       auto: 'konsinyasi',
+      walletId: r.walletId ?? null,
     }));
 
     setIncome([...manual, ...fromOrders, ...fromRecaps]);
@@ -207,7 +215,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       : [{ description: i.description, amount: String(i.amount) }];
     setEditing({
       id: i.id, category: known ? i.category : 'Lainnya', categoryCustom: known ? '' : i.category,
-      items, date: i.date, note: i.note,
+      items, date: i.date, note: i.note, walletId: i.walletId ?? '',
     });
     setIsNew(false); setError('');
   };
@@ -225,10 +233,11 @@ export default function IncomeTab({ creds }: { creds: string }) {
     if (items.some(it => !it.description)) { setError('Keterangan tiap item wajib diisi.'); return; }
     if (items.some(it => it.amount <= 0)) { setError('Jumlah tiap item harus lebih dari 0.'); return; }
     if (!editing.date) { setError('Tanggal wajib diisi.'); return; }
+    if (!editing.walletId) { setError('Dompet tujuan wajib dipilih.'); return; }
     setSaving(true); setError('');
     const amountNum   = items.reduce((s, it) => s + it.amount, 0);
     const description = items.map(it => it.description).join(', ');
-    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note };
+    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note, walletId: editing.walletId };
     const r = isNew
       ? await fetch(`${API}/api/income`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/income/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -736,6 +745,12 @@ export default function IncomeTab({ creds }: { creds: string }) {
                       className="input" placeholder="cth: Jual Barang Bekas, Hadiah, dll" />
                   </div>
                 )}
+
+                <div>
+                  <label className="field-label">Dompet Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
+                    options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                </div>
 
                 <div>
                   <label className="field-label">Item / Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>

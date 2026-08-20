@@ -20,12 +20,30 @@ import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { recognizeTransferAmount } from '@/lib/receipt-ocr';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.eleven-digital.id';
+
+// Ingat dompet terakhir dipakai per metode pembayaran (localStorage saja) supaya kasir
+// biasanya tidak perlu pilih ulang tiap transaksi — cukup konfirmasi, bukan wajib mikir.
+const LAST_WALLET_KEY = 'pos_last_wallet_by_method';
+function getLastWallet(method: string): string {
+  try {
+    const map = JSON.parse(localStorage.getItem(LAST_WALLET_KEY) ?? '{}') as Record<string, string>;
+    return map[method] ?? '';
+  } catch { return ''; }
+}
+function setLastWallet(method: string, walletId: string) {
+  try {
+    const map = JSON.parse(localStorage.getItem(LAST_WALLET_KEY) ?? '{}') as Record<string, string>;
+    map[method] = walletId;
+    localStorage.setItem(LAST_WALLET_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type CartEntry     = { productId: string; qty: number };
@@ -254,6 +272,7 @@ export default function PosTab({
   const [discountType, setDiscountType] = useState<'percent' | 'nominal'>('percent');
   const [discountRaw,  setDiscountRaw]  = useState('');
   const [paymentMethod,     setPaymentMethod]     = useState<PaymentMethod>('cash');
+  const [walletId,          setWalletId]          = useState('');
   const [amountPaidRaw,     setAmountPaidRaw]     = useState('');
   const [transferBank,      setTransferBank]      = useState('');
   const [transferAmountRaw, setTransferAmountRaw] = useState('');
@@ -285,6 +304,8 @@ export default function PosTab({
   const [refreshing, setRefreshing] = useState(false);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
   const toast = useToast();
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
 
   // ── Info toko (nama, alamat, telepon, logo) — dipakai di struk cetak & pesan WA ──
   useEffect(() => {
@@ -348,7 +369,8 @@ export default function PosTab({
   const canProcess = hasCart
     && (paymentMethod !== 'cash'     || amountPaidNum >= cartTotal)
     && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= cartTotal))
-    && (paymentMethod !== 'kredit'   || !!selectedReseller);
+    && (paymentMethod !== 'kredit'   || !!selectedReseller)
+    && (paymentMethod === 'kredit'   || !!walletId);
 
   // Kalau reseller dibatalkan saat metode Kredit sedang dipilih, balik ke Tunai (Kredit cuma untuk reseller).
   useEffect(() => {
@@ -381,7 +403,7 @@ export default function PosTab({
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); setQuery(''); clearCart();
     setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
-    setPaymentMethod('cash'); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
+    setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
     setSelectedCustRef(''); setTxDateTime(() => nowLocalInput());
     setProcessing(false); setProcessErr(''); setInvoiceNo(''); setLastReceipt(null); setWaPhoneDraft('');
@@ -486,7 +508,7 @@ export default function PosTab({
       amountPaidRaw, transferBank, transferAmountRaw, transferProofUrl, selectedCustRef,
     }]);
     clearCart(); setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
-    setPaymentMethod('cash'); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
+    setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setOcrStatus('idle'); setSelectedCustRef(''); setProcessErr('');
     setPosView('products');
     toast.success('Transaksi ditahan. Lanjutkan lagi lewat menu "Tertahan".');
@@ -620,7 +642,7 @@ export default function PosTab({
           paymentMethod,
           ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
           ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
-          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas' } : {}),
+          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas' } : { walletId }),
           ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
           ...(currentShift ? { shiftId: currentShift.id } : {}),
@@ -640,6 +662,7 @@ export default function PosTab({
         customerName: finalCustName, customerPhone: custPhone, cashier: username, pdfUrl,
       });
       if (paymentMethod === 'kredit') toast.success(`Transaksi kredit tersimpan — tandai Lunas di menu Pesanan kalau ${finalCustName} sudah bayar.`);
+      else if (walletId) setLastWallet(paymentMethod, walletId);
       setInvoiceNo(invNo);
       setWaPhoneDraft(custPhone);
       setPosView('done');
@@ -900,7 +923,7 @@ export default function PosTab({
               <p className="section-label mb-3 flex items-center gap-1.5"><Banknote size={11} /> Metode Pembayaran</p>
               <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
                 {availablePaymentMethods.map(m => (
-                  <button key={m.id} onClick={() => { setPaymentMethod(m.id); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw(''); }}
+                  <button key={m.id} onClick={() => { setPaymentMethod(m.id); setWalletId(getLastWallet(m.id)); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw(''); }}
                     className="flex-1 px-3.5 py-2.5 transition-all"
                     style={paymentMethod === m.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
                     {m.label}
@@ -911,6 +934,12 @@ export default function PosTab({
                 <p className="text-xs mt-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
                   Transaksi dicatat sebagai <strong>Belum Lunas</strong> — stok tetap berkurang sekarang, tapi belum dihitung sebagai pendapatan di Laporan Keuangan sampai ditandai Lunas di menu Pesanan.
                 </p>
+              )}
+              {paymentMethod !== 'kredit' && (
+                <div className="mt-3">
+                  <SearchSelect value={walletId} onChange={setWalletId}
+                    options={walletOptions} placeholder="– Dompet Tujuan –" searchPlaceholder="Cari dompet…" />
+                </div>
               )}
               {paymentMethod === 'cash' && (
                 <div className="mt-3 space-y-2">

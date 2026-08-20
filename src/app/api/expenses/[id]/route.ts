@@ -35,6 +35,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     items: Array.isArray(data.items) ? data.items : [],
     date: data.date,
     note: data.note ?? '',
+    walletId: data.walletId ?? null,
     updatedAt: FieldValue.serverTimestamp(),
   });
   try {

@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     supplierId?: string; supplierName: string; date?: string; note?: string; items: PurchaseItemInput[];
-    paymentStatus?: 'lunas' | 'belum_lunas';
+    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
   };
   const items = data.items ?? [];
   if (items.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
         paymentStatus,
         expenseId: willCreateExpense ? expenseRef.id : null,
         note: data.note ?? '',
+        walletId: data.walletId ?? null,
         createdAt: FieldValue.serverTimestamp(),
       };
       tx.set(purchaseRef, purchaseData);
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest) {
           note: `Otomatis dari pembelian bahan baku (${itemsWithSubtotal.map(it => it.materialName).join(', ')})`,
           sourceType: 'material-purchase',
           sourceId: purchaseRef.id,
+          walletId: data.walletId ?? null,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });

@@ -23,6 +23,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import type { PosProduct } from '@/lib/pos-types';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
@@ -117,6 +118,7 @@ interface Recap {
   paymentStatus?: 'lunas' | 'belum_lunas';
   warehouseId?: string; warehouseName?: string;
   createdAt?: { seconds: number };
+  walletId?: string | null;
 }
 
 interface ConsignmentWarehouse { id: string; name: string }
@@ -275,6 +277,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
 
@@ -1097,12 +1101,15 @@ _${storeHeader.name}_`.trim();
   const [recapInputs,       setRecapInputs]       = useState<Record<string, { sold: string; retur: string; reject: string }>>({});
   const [recapNote,         setRecapNote]         = useState('');
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
+  const [recapWalletId,     setRecapWalletId]     = useState('');
   const [recapWarehouseId,  setRecapWarehouseId]  = useState('');
   const [recapDate,         setRecapDate]         = useState(() => toLocalDateTimeInput(new Date()));
   const [submittingRecap,   setSubmittingRecap]   = useState(false);
   const [recaps,        setRecaps]        = useState<Recap[]>([]);
   const [recapsLoading, setRecapsLoading] = useState(true);
   const [markingRecapId, setMarkingRecapId] = useState<string | null>(null);
+  const [markLunasRecap, setMarkLunasRecap] = useState<Recap | null>(null);
+  const [markLunasRecapWalletId, setMarkLunasRecapWalletId] = useState('');
   const [recapView, setRecapView] = useViewMode('consignment-recaps', 'table');
 
   const [recapSearch,   setRecapSearch]   = useState('');
@@ -1145,12 +1152,13 @@ _${storeHeader.name}_`.trim();
   const recapHasExceeds   = recapRows.some(r => r.exceeds);
   const recapNeedsWarehouse = recapTotalRetur + recapTotalReject > 0;
   const canSubmitRecap    = !!recapLocationId && recapRows.some(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
-    && !recapHasExceeds && (!recapNeedsWarehouse || !!recapWarehouseId);
+    && !recapHasExceeds && (!recapNeedsWarehouse || !!recapWarehouseId)
+    && (recapPaymentStatus === 'belum_lunas' || !!recapWalletId);
 
   const openCreateRecap = () => {
     setEditingRecap(null);
     setRecapLocationId(''); setRecapStock([]); setRecapInputs({});
-    setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
+    setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
     setRecapDate(toLocalDateTimeInput(new Date()));
     setShowRecapForm(true);
   };
@@ -1163,6 +1171,7 @@ _${storeHeader.name}_`.trim();
     setEditingRecap(r);
     setRecapNote(r.note ?? '');
     setRecapPaymentStatus(r.paymentStatus ?? 'lunas');
+    setRecapWalletId(r.walletId ?? '');
     setRecapWarehouseId(r.warehouseId ?? '');
     setRecapLocationId(r.locationId ?? '');
     setRecapDate(r.createdAt?.seconds ? toLocalDateTimeInput(new Date(r.createdAt.seconds * 1000)) : toLocalDateTimeInput(new Date()));
@@ -1198,6 +1207,7 @@ _${storeHeader.name}_`.trim();
       const body = JSON.stringify({
         locationId: location.id, locationName: location.name, items, note: recapNote,
         paymentStatus: recapPaymentStatus,
+        walletId: recapPaymentStatus === 'lunas' ? recapWalletId : null,
         warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
         warehouseName: recapNeedsWarehouse ? warehouse?.name : undefined,
         date: new Date(recapDate).toISOString(),
@@ -1209,18 +1219,27 @@ _${storeHeader.name}_`.trim();
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan rekap.'); return; }
       toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
       setShowRecapForm(false); setEditingRecap(null);
-      setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWarehouseId('');
+      setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
       setRecapDate(toLocalDateTimeInput(new Date()));
       await Promise.all([loadRecaps(), loadLocations()]);
     } finally { setSubmittingRecap(false); }
   };
 
-  const markRecapLunas = async (id: string) => {
+  const markRecapLunas = async (id: string, walletId: string) => {
     setMarkingRecapId(id);
-    const r = await fetch(`${API}/api/consignment/recap/${id}`, { method: 'PATCH', headers });
+    const r = await fetch(`${API}/api/consignment/recap/${id}`, {
+      method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletId }),
+    });
     if (r.ok) { toast.success('Rekap ditandai lunas.'); await loadRecaps(); }
     else toast.error('Gagal menandai lunas.');
     setMarkingRecapId(null);
+  };
+  const confirmMarkRecapLunas = async () => {
+    if (!markLunasRecap || !markLunasRecapWalletId) return;
+    await markRecapLunas(markLunasRecap.id, markLunasRecapWalletId);
+    setMarkLunasRecap(null);
+    setMarkLunasRecapWalletId('');
   };
 
   const exportRecapsExcel = async (rows: Recap[], label: string) => {
@@ -2270,7 +2289,7 @@ _${storeHeader.name}_`.trim();
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
                                   {r.paymentStatus === 'belum_lunas' && (
-                                    <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
+                                    <button onClick={() => { setMarkLunasRecap(r); setMarkLunasRecapWalletId(r.walletId ?? ''); }} disabled={markingRecapId === r.id}
                                       className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
                                       {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
                                     </button>
@@ -2364,7 +2383,7 @@ _${storeHeader.name}_`.trim();
                             <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
                               <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
                               {r.paymentStatus === 'belum_lunas' && (
-                                <button onClick={() => markRecapLunas(r.id)} disabled={markingRecapId === r.id}
+                                <button onClick={() => { setMarkLunasRecap(r); setMarkLunasRecapWalletId(r.walletId ?? ''); }} disabled={markingRecapId === r.id}
                                   className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
                                   {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
                                 </button>
@@ -2551,6 +2570,40 @@ _${storeHeader.name}_`.trim();
         </div>
       )}
 
+      {markLunasRecap && (
+        <div className="modal-overlay" onClick={() => setMarkLunasRecap(null)}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><PackageCheck size={17} /></div>
+                <div>
+                  <p className="modal-title">Tandai Lunas</p>
+                  <p className="modal-subtitle">Rekap {markLunasRecap.locationName}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setMarkLunasRecap(null)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <SearchSelect value={markLunasRecapWalletId} onChange={setMarkLunasRecapWalletId}
+                options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setMarkLunasRecap(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={confirmMarkRecapLunas} disabled={!markLunasRecapWalletId || markingRecapId === markLunasRecap.id}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {markingRecapId === markLunasRecap.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Tandai Lunas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRecapForm && (
         <div className="modal-overlay" onClick={() => !submittingRecap && setShowRecapForm(false)}>
           <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
@@ -2668,6 +2721,14 @@ _${storeHeader.name}_`.trim();
                     </p>
                   )}
                 </div>
+
+                {recapPaymentStatus === 'lunas' && (
+                  <div>
+                    <label className="field-label">Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <SearchSelect value={recapWalletId} onChange={setRecapWalletId}
+                      options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                  </div>
+                )}
 
                 {recapTotalRevenue > 0 && (
                   <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>

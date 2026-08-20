@@ -21,7 +21,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as {
     supplierId?: string; supplierName: string; date?: string; note?: string;
-    items: PurchaseItem[]; paymentStatus?: 'lunas' | 'belum_lunas';
+    items: PurchaseItem[]; paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
   };
   const newItems = data.items ?? [];
   if (newItems.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
@@ -114,12 +114,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const oldExpenseExists = !!oldExpenseSnap?.exists;
       let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
       const supplierName = data.supplierName ?? purchase.supplierName ?? '';
+      const walletId = data.walletId !== undefined ? data.walletId : (purchase.walletId ?? null);
 
       if (newPaymentStatus === 'lunas') {
         if (oldExpenseExists && oldExpenseId) {
           tx.update(db.collection('expenses').doc(oldExpenseId), {
             description: `Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`,
-            amount: total, date, updatedAt: FieldValue.serverTimestamp(),
+            amount: total, date, walletId, updatedAt: FieldValue.serverTimestamp(),
           });
         } else {
           tx.set(newExpenseRef, {
@@ -129,6 +130,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
             note: `Otomatis dari pembelian bahan baku (${itemsWithSubtotal.map(it => it.materialName).join(', ')})`,
             sourceType: 'material-purchase',
             sourceId: id,
+            walletId,
             createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
           });
           expenseIdToStore = newExpenseRef.id;
@@ -147,6 +149,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         paymentStatus: newPaymentStatus,
         expenseId: expenseIdToStore,
         note: data.note ?? '',
+        walletId,
         updatedAt: FieldValue.serverTimestamp(),
       };
       tx.update(purchaseRef, purchaseUpdate);

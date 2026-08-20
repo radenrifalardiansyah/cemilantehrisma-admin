@@ -12,10 +12,12 @@ import ViewToggle from '@/components/ViewToggle';
 import FilterSelect from '@/components/FilterSelect';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import NumberInput from '@/components/NumberInput';
+import SearchSelect from '@/components/SearchSelect';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -57,15 +59,18 @@ function Checkbox({ checked, indeterminate, onChange }: {
 interface CapitalEntry {
   id: string; type: 'modal' | 'prive'; amount: number; date: string; note: string;
   createdAt?: { seconds: number };
+  walletId?: string | null;
 }
 
-type EntryForm = { type: 'modal' | 'prive'; amount: string; date: string; note: string };
-const emptyForm = (): EntryForm => ({ type: 'modal', amount: '', date: todayISO(), note: '' });
+type EntryForm = { type: 'modal' | 'prive'; amount: string; date: string; note: string; walletId: string };
+const emptyForm = (): EntryForm => ({ type: 'modal', amount: '', date: todayISO(), note: '', walletId: '' });
 
 export default function CapitalTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
 
   const [entries,     setEntries]     = useState<CapitalEntry[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -97,7 +102,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (e: CapitalEntry) => {
-    setEditing({ id: e.id, type: e.type, amount: String(e.amount), date: e.date, note: e.note });
+    setEditing({ id: e.id, type: e.type, amount: String(e.amount), date: e.date, note: e.note, walletId: e.walletId ?? '' });
     setIsNew(false); setError('');
   };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
@@ -107,8 +112,9 @@ export default function CapitalTab({ creds }: { creds: string }) {
     const amountNum = parseFloat(editing.amount) || 0;
     if (amountNum <= 0) { setError('Jumlah harus lebih dari 0.'); return; }
     if (!editing.date) { setError('Tanggal wajib diisi.'); return; }
+    if (!editing.walletId) { setError('Dompet wajib dipilih.'); return; }
     setSaving(true); setError('');
-    const payload = { type: editing.type, amount: amountNum, date: editing.date, note: editing.note };
+    const payload = { type: editing.type, amount: amountNum, date: editing.date, note: editing.note, walletId: editing.walletId };
     const r = isNew
       ? await fetch(`${API}/api/capital`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/capital/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -564,6 +570,12 @@ export default function CapitalTab({ creds }: { creds: string }) {
                 <div>
                   <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <input type="date" value={editing.date} onChange={e => setEditing({ ...editing, date: e.target.value })} className="input" />
+                </div>
+
+                <div>
+                  <label className="field-label">Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
+                    options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
                 </div>
 
                 <div>

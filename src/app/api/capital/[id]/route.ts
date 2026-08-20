@@ -20,6 +20,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     amount: Number(data.amount) || 0,
     date: data.date,
     note: data.note ?? '',
+    walletId: data.walletId ?? null,
     updatedAt: FieldValue.serverTimestamp(),
   });
   try {

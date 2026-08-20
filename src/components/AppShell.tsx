@@ -32,7 +32,7 @@ export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'storefront-customers' | 'reviews'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
-  | 'finance-report' | 'capital' | 'settings'
+  | 'finance-report' | 'capital' | 'wallets' | 'settings'
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
   | 'admin-fee' | 'tagihan-admin-fee' | 'notifications';
 

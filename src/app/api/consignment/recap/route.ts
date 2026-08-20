@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
-    paymentStatus?: 'lunas' | 'belum_lunas';
+    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
     warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
   };
   const items = (data.items ?? [])
@@ -173,6 +173,7 @@ export async function POST(req: NextRequest) {
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
+        walletId: data.walletId ?? null,
         createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
         dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate)) : null,
       };

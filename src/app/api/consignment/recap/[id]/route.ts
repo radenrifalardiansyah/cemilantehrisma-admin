@@ -15,12 +15,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
+  const data = await req.json().catch(() => ({})) as { walletId?: string | null };
   const db = getDb();
   const recapRef = db.collection('consignmentRecaps').doc(id);
   const beforeSnap = await recapRef.get();
   const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
   const payload = {
     paymentStatus: 'lunas',
+    walletId: data.walletId ?? null,
     updatedAt: FieldValue.serverTimestamp(),
   };
   await recapRef.update(payload);
@@ -140,7 +142,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
-    paymentStatus?: 'lunas' | 'belum_lunas';
+    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
     warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
   };
   const newItems = (data.items ?? [])
@@ -322,6 +324,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         paymentStatus,
         warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
         note: data.note ?? '',
+        walletId: data.walletId ?? null,
         ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
         dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate)) : null,
         overdueNotifiedAt: null, // reset flag idempoten — biar bisa dinotifikasi ulang kalau dueDate/status berubah

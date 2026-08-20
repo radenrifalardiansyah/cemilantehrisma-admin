@@ -14,6 +14,7 @@ import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
 import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -30,6 +31,7 @@ interface Order {
   source?: 'kasir' | 'portal';
   deliveryMethod?: 'pickup' | 'delivery'; address?: string; note?: string;
   stockRestored?: boolean;
+  walletId?: string | null;
 }
 
 interface EditItem { productId?: string; name: string; weight: string; qty: number; price: number; }
@@ -133,6 +135,8 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
 }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -263,19 +267,27 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   };
 
   const [markingLunasId, setMarkingLunasId] = useState<string | null>(null);
-  const markLunas = async (id: string) => {
+  const [markLunasOrder, setMarkLunasOrder] = useState<Order | null>(null);
+  const [markLunasWalletId, setMarkLunasWalletId] = useState('');
+  const markLunas = async (id: string, walletId: string) => {
     setMarkingLunasId(id);
     const r = await fetch(`${API}/api/orders/${id}`, {
       method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paymentStatus: 'lunas' }),
+      body: JSON.stringify({ paymentStatus: 'lunas', walletId }),
     });
     if (r.ok) {
-      setOrders(o => o.map(x => x.id === id ? { ...x, paymentStatus: 'lunas' } : x));
+      setOrders(o => o.map(x => x.id === id ? { ...x, paymentStatus: 'lunas', walletId } : x));
       toast.success('Pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.');
     } else {
       toast.error('Gagal menandai lunas.');
     }
     setMarkingLunasId(null);
+  };
+  const confirmMarkLunas = async () => {
+    if (!markLunasOrder || !markLunasWalletId) return;
+    await markLunas(markLunasOrder.id, markLunasWalletId);
+    setMarkLunasOrder(null);
+    setMarkLunasWalletId('');
   };
 
   // ─── Pencarian & seleksi massal ─────────────────────────────────────────────
@@ -329,6 +341,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const [editTransferBank,  setEditTransferBank]  = useState('');
   const [editTransferAmount, setEditTransferAmount] = useState('');
   const [editPaymentStatus, setEditPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
+  const [editWalletId, setEditWalletId] = useState('');
   const [editNote, setEditNote] = useState('');
   const [addProductId, setAddProductId] = useState('');
   const [pickerProducts, setPickerProducts] = useState<PickerProduct[]>([]);
@@ -360,6 +373,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     setEditTransferBank(o.transferBank ?? '');
     setEditTransferAmount(o.transferAmount != null ? String(o.transferAmount) : '');
     setEditPaymentStatus(o.paymentStatus ?? 'lunas');
+    setEditWalletId(o.walletId ?? '');
     setEditNote(o.note ?? '');
     setAddProductId('');
     setEditingOrder(o);
@@ -409,6 +423,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
         ...(editPaymentMethod === 'cash' ? { amountPaid: editAmountPaidNum, changeAmount: editChangeAmount } : {}),
         ...(editPaymentMethod === 'transfer' ? { transferBank: editTransferBank, transferAmount: editTransferAmountNum } : {}),
         ...(editPaymentMethod === 'kredit' ? { paymentStatus: editPaymentStatus } : {}),
+        walletId: editWalletId || null,
         note: editNote.trim() || undefined,
         ...(txDate ? { transactionAt: txDate.toISOString(), date: txDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) } : {}),
       }),
@@ -816,7 +831,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                   </Tooltip>
                 )}
                 {o.paymentStatus === 'belum_lunas' && (
-                  <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
+                  <button onClick={() => { setMarkLunasOrder(o); setMarkLunasWalletId(o.walletId ?? ''); }} disabled={markingLunasId === o.id}
                     className="btn-ghost px-2 py-2 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
                     {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Tandai Lunas'}
                   </button>
@@ -979,7 +994,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                       </Tooltip>
                     )}
                     {o.paymentStatus === 'belum_lunas' && (
-                      <button onClick={() => markLunas(o.id)} disabled={markingLunasId === o.id}
+                      <button onClick={() => { setMarkLunasOrder(o); setMarkLunasWalletId(o.walletId ?? ''); }} disabled={markingLunasId === o.id}
                         className="btn-ghost px-2 py-1.5 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
                         {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Lunas'}
                       </button>
@@ -1024,6 +1039,40 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
             <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
               Batal
             </button>
+          </div>
+        </div>
+      )}
+
+      {markLunasOrder && (
+        <div className="modal-overlay" onClick={() => setMarkLunasOrder(null)}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><CheckCircle2 size={17} /></div>
+                <div>
+                  <p className="modal-title">Tandai Lunas</p>
+                  <p className="modal-subtitle">Pesanan {markLunasOrder.invoiceNo}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setMarkLunasOrder(null)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <SearchSelect value={markLunasWalletId} onChange={setMarkLunasWalletId}
+                options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setMarkLunasOrder(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={confirmMarkLunas} disabled={!markLunasWalletId || markingLunasId === markLunasOrder.id}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {markingLunasId === markLunasOrder.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Tandai Lunas
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1165,6 +1214,14 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {(editPaymentMethod !== 'kredit' || editPaymentStatus === 'lunas') && (
+                  <div>
+                    <label className="field-label">Dompet</label>
+                    <SearchSelect value={editWalletId} onChange={setEditWalletId}
+                      options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
                   </div>
                 )}
 

@@ -31,6 +31,7 @@ import IncomeTab      from '@/components/tabs/IncomeTab';
 import ExpensesTab   from '@/components/tabs/ExpensesTab';
 import FinanceReportTab from '@/components/tabs/FinanceReportTab';
 import CapitalTab from '@/components/tabs/CapitalTab';
+import WalletsTab from '@/components/tabs/WalletsTab';
 import SettingsTab  from '@/components/tabs/SettingsTab';
 import PosTab from '@/components/tabs/PosTab';
 import UsersTab from '@/components/tabs/UsersTab';
@@ -1261,6 +1262,7 @@ export default function AdminPage() {
       {activeTab === 'income'     && <IncomeTab     creds={creds} />}
       {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
       {activeTab === 'capital'    && <CapitalTab    creds={creds} />}
+      {activeTab === 'wallets'    && <WalletsTab    creds={creds} />}
       {activeTab === 'finance-report' && (
         <FinanceReportTab creds={creds}
           onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />

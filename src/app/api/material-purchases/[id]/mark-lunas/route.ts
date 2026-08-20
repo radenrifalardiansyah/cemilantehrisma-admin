@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           note: `Otomatis dari pembelian bahan baku (${items.map(it => it.materialName).join(', ')}) — ditandai lunas`,
           sourceType: 'material-purchase',
           sourceId: id,
+          walletId: purchase.walletId ?? null,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });

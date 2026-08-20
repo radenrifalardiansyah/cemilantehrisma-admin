@@ -17,6 +17,7 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { useWallets, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -90,6 +91,7 @@ interface Expense {
   id: string; category: string; description: string; amount: number; date: string; note: string;
   items?: ExpenseItem[];
   sourceType?: string; createdAt?: { seconds: number };
+  walletId?: string | null;
 }
 
 const SOURCE_LOCK_MESSAGE: Record<string, string> = {
@@ -99,13 +101,15 @@ const SOURCE_LOCK_MESSAGE: Record<string, string> = {
 type ExpenseItemForm = { description: string; amount: string };
 const emptyItem = (): ExpenseItemForm => ({ description: '', amount: '' });
 
-type ExpenseForm = { category: string; categoryCustom: string; items: ExpenseItemForm[]; date: string; note: string };
-const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '' });
+type ExpenseForm = { category: string; categoryCustom: string; items: ExpenseItemForm[]; date: string; note: string; walletId: string };
+const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '', walletId: '' });
 
 export default function ExpensesTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const wallets = useWallets(creds);
+  const walletOptions = activeWalletOptions(wallets);
 
   const [expenses,    setExpenses]    = useState<Expense[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -149,7 +153,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       : [{ description: e.description, amount: String(e.amount) }];
     setEditing({
       id: e.id, category: known ? e.category : 'Lainnya', categoryCustom: known ? '' : e.category,
-      items, date: e.date, note: e.note,
+      items, date: e.date, note: e.note, walletId: e.walletId ?? '',
     });
     setIsNew(false); setError('');
   };
@@ -167,10 +171,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     if (items.some(it => !it.description)) { setError('Keterangan tiap item wajib diisi.'); return; }
     if (items.some(it => it.amount <= 0)) { setError('Jumlah tiap item harus lebih dari 0.'); return; }
     if (!editing.date) { setError('Tanggal wajib diisi.'); return; }
+    if (!editing.walletId) { setError('Dompet sumber wajib dipilih.'); return; }
     setSaving(true); setError('');
     const amountNum   = items.reduce((s, it) => s + it.amount, 0);
     const description = items.map(it => it.description).join(', ');
-    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note };
+    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note, walletId: editing.walletId };
     const r = isNew
       ? await fetch(`${API}/api/expenses`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -673,6 +678,12 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                       className="input" placeholder="cth: Kemasan, Ongkir, dll" />
                   </div>
                 )}
+
+                <div>
+                  <label className="field-label">Dompet Sumber <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
+                    options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                </div>
 
                 <div>
                   <label className="field-label">Item / Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>

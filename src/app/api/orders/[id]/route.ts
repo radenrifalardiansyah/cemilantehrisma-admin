@@ -17,7 +17,7 @@ interface OrderEditInput {
   amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   paymentStatus?: 'lunas' | 'belum_lunas'; note?: string;
-  date?: string; transactionAt?: string;
+  date?: string; transactionAt?: string; walletId?: string | null;
 }
 
 function qtyByProduct(items: OrderItemInput[]): Map<string, number> {
@@ -33,7 +33,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'orders', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const body = await req.json() as { status?: string; paymentStatus?: string; items?: OrderItemInput[] } & Partial<OrderEditInput>;
+  const body = await req.json() as { status?: string; paymentStatus?: string; walletId?: string | null; items?: OrderItemInput[] } & Partial<OrderEditInput>;
   const db = getDb();
   const ref = db.collection('orders').doc(id);
 
@@ -88,7 +88,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           subtotal: data.subtotal, discount: data.discount, total: data.total,
           paymentMethod: data.paymentMethod, amountPaid: data.amountPaid, changeAmount: data.changeAmount,
           transferBank: data.transferBank, transferAmount: data.transferAmount, transferProofUrl: data.transferProofUrl,
-          paymentStatus: data.paymentStatus, note: data.note,
+          paymentStatus: data.paymentStatus, note: data.note, walletId: data.walletId,
           // Kasir bisa mengedit tanggal & jam transaksi (mis. salah input awal) — dipakai buat urutan
           // & filter periode di Pesanan/Laporan Keuangan, sama seperti saat pesanan dibuat.
           date: data.date,
@@ -110,7 +110,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   // Update status/paymentStatus saja (batalkan, tandai selesai, tandai lunas)
-  const { status, paymentStatus } = body;
+  const { status, paymentStatus, walletId } = body;
   let stockTouched = false;
   try {
     await db.runTransaction(async tx => {
@@ -121,6 +121,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
       if (status !== undefined) update.status = status;
       if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
+      if (walletId !== undefined) update.walletId = walletId;
 
       // Pesanan online ditandai selesai → baru sekarang stoknya dipotong (pesanan 'baru' yang
       // belum dikonfirmasi tidak pernah mengunci stok). Dipotong dari gudang yang sama dengan
