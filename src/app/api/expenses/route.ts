@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
   if (to)   query = query.where('date', '<=', to);
 
   const snap = await query.get();
-  const expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const expenses = snap.docs.map(d => {
+    const data = d.data();
+    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
+  });
   return Response.json({ expenses });
 }
 

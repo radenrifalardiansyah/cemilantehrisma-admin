@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
   const snap = await getDb().collection('materialPurchases').orderBy('createdAt', 'desc').limit(limit).get();
-  const purchases = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const purchases = snap.docs.map(d => {
+    const data = d.data();
+    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
+  });
   return Response.json({ purchases });
 }
 
