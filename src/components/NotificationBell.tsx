@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, onSnapshot, orderBy, query, limit, Timestamp } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
-import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Receipt, Truck, ClipboardList } from 'lucide-react';
+import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Receipt, Truck, ClipboardList, TrendingUp, TrendingDown, Landmark } from 'lucide-react';
 import { getClientDb, getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import { useFirebaseSignIn } from '@/lib/useFirebaseSignIn';
@@ -11,7 +11,8 @@ import NotificationDetailModal from '@/components/NotificationDetailModal';
 
 export interface NotificationDoc {
   id: string;
-  type: 'order_new' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send';
+  type: 'order_new' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send'
+    | 'income_new' | 'expense_new' | 'capital_new';
   title: string;
   message: string;
   link: string | null;
@@ -31,6 +32,9 @@ export const TYPE_ICON: Record<NotificationDoc['type'], typeof Bell> = {
   consignment_overdue: ReceiptText,
   consignment_recap: ClipboardList,
   consignment_send: Truck,
+  income_new: TrendingUp,
+  expense_new: TrendingDown,
+  capital_new: Landmark,
 };
 
 export function timeAgo(ts: Timestamp | null): string {

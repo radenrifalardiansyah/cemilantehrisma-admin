@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { notify } from '@/lib/notifications';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'capital', 'view');
@@ -36,8 +37,8 @@ export async function POST(req: NextRequest) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  const typeLabel = payload.type === 'prive' ? 'Modal Keluar' : 'Modal Masuk';
   try {
-    const typeLabel = payload.type === 'prive' ? 'Modal Keluar' : 'Modal Masuk';
     await logHistory(db, {
       entity: 'capital',
       entityId: ref.id,
@@ -48,6 +49,18 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('Failed to write history for capital create', err);
+  }
+  try {
+    await notify(db, {
+      type: 'capital_new',
+      title: `${typeLabel} baru`,
+      message: `${guard.username} mencatat ${typeLabel.toLowerCase()} Rp${(payload.amount ?? 0).toLocaleString('id-ID')}.`,
+      link: 'capital',
+      entityCollection: 'capitalEntries', entityId: ref.id,
+      actor: guard,
+    });
+  } catch (err) {
+    console.error('Failed to write notification for capital create', err);
   }
   return Response.json({ id: ref.id });
 }

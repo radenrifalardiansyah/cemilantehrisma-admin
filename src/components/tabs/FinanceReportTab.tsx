@@ -32,14 +32,28 @@ interface RecapRecord {
   createdAt?: { seconds: number };
   items?: { productId?: string; qtySold: number; costPrice?: number; productName?: string }[];
 }
-interface IncomeRecord { category: string; description: string; amount: number; date: string }
-interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string }
+interface IncomeRecord { category: string; description: string; amount: number; date: string; createdAt?: { seconds: number } }
+interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string; createdAt?: { seconds: number } }
 
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi (punya `sourceType`) tidak
 // dihitung lagi sebagai Beban Operasional di Laba Rugi — biayanya sudah masuk HPP saat barangnya
 // terjual. Kalau dihitung dua-duanya, laba jadi kelihatan lebih kecil dari yang sebenarnya.
 const isCogsSourcedExpense = (e: ExpenseRecord) => e.sourceType === 'material-purchase' || e.sourceType === 'production';
-interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string }
+
+// Pemasukan/Pengeluaran/Modal hanya punya field `date` (tanggal transaksi, bisa diisi mundur),
+// tapi `createdAt` (waktu dokumen dibuat) sudah tersimpan sejak awal — pakai jam dari situ supaya
+// Jurnal Kas menunjukkan jam sebenarnya, tanpa mengubah tanggal transaksi yang dipilih user.
+const dateWithRealTime = (dateStr: string, createdAt?: { seconds: number }) => {
+  if (createdAt?.seconds) {
+    const c = new Date(createdAt.seconds * 1000);
+    const hh = String(c.getHours()).padStart(2, '0');
+    const mm = String(c.getMinutes()).padStart(2, '0');
+    const ss = String(c.getSeconds()).padStart(2, '0');
+    return new Date(`${dateStr}T${hh}:${mm}:${ss}`).getTime() / 1000;
+  }
+  return new Date(`${dateStr}T12:00:00`).getTime() / 1000;
+};
+interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string; createdAt?: { seconds: number } }
 
 interface JournalEntry { seconds: number; description: string; debit: number; kredit: number; invoiceNo?: string }
 
@@ -367,17 +381,17 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       debit: r.totalRevenue ?? 0, kredit: 0,
     })),
     ...income.map(i => ({
-      seconds: new Date(`${i.date}T12:00:00`).getTime() / 1000,
+      seconds: dateWithRealTime(i.date, i.createdAt),
       description: `${i.category} - ${i.description}`,
       debit: i.amount, kredit: 0,
     })),
     ...expenses.map(e => ({
-      seconds: new Date(`${e.date}T12:00:00`).getTime() / 1000,
+      seconds: dateWithRealTime(e.date, e.createdAt),
       description: `${e.category} - ${e.description}`,
       debit: 0, kredit: e.amount,
     })),
     ...capital.map(c => ({
-      seconds: new Date(`${c.date}T12:00:00`).getTime() / 1000,
+      seconds: dateWithRealTime(c.date, c.createdAt),
       description: c.type === 'modal' ? `Modal Masuk${c.note ? ` - ${c.note}` : ''}` : `Prive Pemilik${c.note ? ` - ${c.note}` : ''}`,
       debit: c.type === 'modal' ? c.amount : 0, kredit: c.type === 'prive' ? c.amount : 0,
     })),
@@ -482,18 +496,19 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
 
       // ── Sheet 2: Jurnal Kas ──
       const wsJK = wb.addWorksheet('Jurnal Kas');
-      wsJK.columns = [{ key: 'tgl', width: 14 }, { key: 'ket', width: 42 }, { key: 'debit', width: 18 }, { key: 'kredit', width: 18 }, { key: 'saldo', width: 18 }];
-      styleTitle(wsJK, 'JURNAL KAS — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to}) · Saldo Awal: ${formatRp(saldoAwal)}`, 5);
-      styleHeader(wsJK, 3, ['Tanggal', 'Keterangan', 'Debit', 'Kredit', 'Saldo']);
+      wsJK.columns = [{ key: 'tgl', width: 14 }, { key: 'jam', width: 10 }, { key: 'ket', width: 42 }, { key: 'debit', width: 18 }, { key: 'kredit', width: 18 }, { key: 'saldo', width: 18 }];
+      styleTitle(wsJK, 'JURNAL KAS — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to}) · Saldo Awal: ${formatRp(saldoAwal)}`, 6);
+      styleHeader(wsJK, 3, ['Tanggal', 'Jam', 'Keterangan', 'Debit', 'Kredit', 'Saldo']);
       journalWithSaldo.forEach((j, i) => {
         const rowNum = 4 + i;
         const row = wsJK.getRow(rowNum);
         row.getCell(1).value = j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
-        row.getCell(2).value = j.description;
-        row.getCell(3).value = j.debit || null;
-        row.getCell(4).value = j.kredit || null;
-        row.getCell(5).value = j.saldo;
-        [3, 4, 5].forEach(c => { row.getCell(c).numFmt = '"Rp"#,##0'; });
+        row.getCell(2).value = j.seconds ? new Date(j.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
+        row.getCell(3).value = j.description;
+        row.getCell(4).value = j.debit || null;
+        row.getCell(5).value = j.kredit || null;
+        row.getCell(6).value = j.saldo;
+        [4, 5, 6].forEach(c => { row.getCell(c).numFmt = '"Rp"#,##0'; });
         zebra(wsJK, rowNum, i);
       });
 
@@ -873,7 +888,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           ) : (
             <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
               <div className="hidden lg:flex px-4 py-2.5 items-center gap-3" style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
-                <span className="text-[10px] font-bold uppercase tracking-wide flex-shrink-0 w-20" style={{ color: 'var(--text-muted)' }}>Tanggal</span>
+                <span className="text-[10px] font-bold uppercase tracking-wide flex-shrink-0 w-24" style={{ color: 'var(--text-muted)' }}>Tanggal</span>
                 <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Keterangan</span>
                 <span className="text-[10px] font-bold uppercase tracking-wide w-28 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Debit</span>
                 <span className="text-[10px] font-bold uppercase tracking-wide w-28 text-right flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Kredit</span>
@@ -883,8 +898,9 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
               {journalDisplay.map((j, i) => (
                 <div key={i} className="px-4 py-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
                   <div className="flex items-center gap-3 lg:contents">
-                    <span className="text-xs tabular flex-shrink-0 w-16 lg:w-20" style={{ color: 'var(--text-muted)' }}>
-                      {j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : '–'}
+                    <span className="text-xs tabular flex-shrink-0 w-24 flex flex-col leading-tight" style={{ color: 'var(--text-muted)' }}>
+                      <span>{j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : '–'}</span>
+                      {j.seconds ? <span className="text-[10px] opacity-70">{new Date(j.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span> : null}
                     </span>
                     {j.invoiceNo ? (
                       <button type="button" onClick={() => onOpenOrder?.(j.invoiceNo!)}

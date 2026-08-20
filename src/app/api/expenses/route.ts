@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { notify } from '@/lib/notifications';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'expenses', 'view');
@@ -49,6 +50,18 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('Failed to write history for expenses create', err);
+  }
+  try {
+    await notify(db, {
+      type: 'expense_new',
+      title: 'Pengeluaran baru',
+      message: `${guard.username} mencatat pengeluaran ${payload.description || payload.category || ''} Rp${(payload.amount ?? 0).toLocaleString('id-ID')}.`,
+      link: 'expenses',
+      entityCollection: 'expenses', entityId: ref.id,
+      actor: guard,
+    });
+  } catch (err) {
+    console.error('Failed to write notification for expenses create', err);
   }
   return Response.json({ id: ref.id });
 }

@@ -8,7 +8,8 @@ import { getFirebaseMessaging } from '@/lib/firebase-admin';
 // route yang tidak membuka transaksi sendiri.
 
 export type NotificationType =
-  | 'order_new' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send';
+  | 'order_new' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send'
+  | 'income_new' | 'expense_new' | 'capital_new';
 
 interface NotificationOpts {
   type: NotificationType;

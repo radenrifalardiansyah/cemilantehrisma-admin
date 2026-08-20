@@ -946,7 +946,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     });
   };
 
-  const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: m.unit }));
+  const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${m.stockQty} ${m.unit}` }));
   const supplierOptions = [
     { value: '', label: '– Supplier lain / tidak tercatat –' },
     ...suppliers.map(s => ({ value: s.id, label: s.name })),
@@ -1641,6 +1641,12 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                               <X size={14} />
                             </button>
                           </Tooltip>
+                          {material && (
+                            <p className="text-xs tabular" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', marginTop: -4 }}>
+                              Stok saat ini: {material.stockQty} {material.unit}
+                              {qty > 0 && ` · Setelah pembelian: ${material.stockQty + qty} ${material.unit}`}
+                            </p>
+                          )}
                           {qty > 0 && price > 0 && (
                             <p className="text-xs tabular" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', marginTop: -4 }}>
                               Subtotal: {formatRp(qty * price)}

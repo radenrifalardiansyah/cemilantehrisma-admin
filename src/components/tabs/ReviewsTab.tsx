@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Trash2, Star, Check, X, RefreshCw } from 'lucide-react';
+import { Search, Trash2, Star, Check, X, RefreshCw, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
@@ -38,6 +38,27 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
+function Checkbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate?: boolean; onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{
+        background:  checked || indeterminate ? 'var(--accent)' : 'transparent',
+        borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked
+          ? <Check size={11} color="#fff" strokeWidth={3} />
+          : null}
+    </button>
+  );
+}
+
 // Ulasan bintang dari akun storefront (halaman /pesanan) — hanya customer dengan
 // pesanan "selesai" yang bisa mengirim. Baru dihitung ke rating publik di beranda
 // storefront setelah di-approve di sini (lihat storefront's /api/stats/public).
@@ -51,6 +72,8 @@ export default function ReviewsTab({ creds }: { creds: string }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [view, setView] = useViewMode('reviews');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -102,6 +125,36 @@ export default function ReviewsTab({ creds }: { creds: string }) {
   const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const resetPage = () => setPage(1);
   const pendingCount = reviews.filter(r => !r.approved).length;
+
+  const toggleSelect = (id: string) =>
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const togglePageAll = () => {
+    const pageIds     = paginated.map(r => r.id);
+    const allSelected = pageIds.every(id => selected.has(id));
+    setSelected(s => {
+      const n = new Set(s);
+      if (allSelected) pageIds.forEach(id => n.delete(id));
+      else             pageIds.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selected.size} ulasan yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    setBulkDeleting(true);
+    const count = selected.size;
+    const results = await Promise.all([...selected].map(id =>
+      fetch(`/api/reviews/${id}`, { method: 'DELETE', headers: { 'x-admin-auth': creds } })
+    ));
+    const failed = results.filter(r => !r.ok).length;
+    setSelected(new Set());
+    setBulkDeleting(false);
+    load();
+    if (failed === 0) toast.success(`${count} ulasan berhasil dihapus.`);
+    else toast.error(`${count - failed} ulasan terhapus, ${failed} gagal.`);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -156,8 +209,20 @@ export default function ReviewsTab({ creds }: { creds: string }) {
               </p>
             </div>
           ) : view === 'table' ? (
-            <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+                <Checkbox
+                  checked={paginated.every(r => selected.has(r.id))}
+                  indeterminate={paginated.some(r => selected.has(r.id)) && !paginated.every(r => selected.has(r.id))}
+                  onChange={togglePageAll}
+                />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                  {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} ulasan di halaman ini`}
+                </span>
+              </div>
+              <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
               {paginated.map((r, idx) => {
+                const isSelected = selected.has(r.id);
                 const actionButtons = (
                   <>
                     {r.approved ? (
@@ -177,8 +242,9 @@ export default function ReviewsTab({ creds }: { creds: string }) {
                   </>
                 );
                 return (
-                  <div key={r.id} className="flex flex-col gap-2 px-4 py-3.5">
+                  <div key={r.id} className="flex flex-col gap-2 px-4 py-3.5" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                     <div className="flex items-start gap-3">
+                      <Checkbox checked={isSelected} onChange={() => toggleSelect(r.id)} />
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>
                         {(safePage - 1) * pageSize + idx + 1}
                       </span>
@@ -210,6 +276,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
                   </div>
                 );
               })}
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -268,6 +335,26 @@ export default function ReviewsTab({ creds }: { creds: string }) {
           )}
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={bulkDelete} disabled={bulkDeleting}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
+            </button>
+            <button onClick={() => setSelected(new Set())}
+              className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { notify } from '@/lib/notifications';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'income', 'view');
@@ -49,6 +50,18 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('Failed to write history for income create', err);
+  }
+  try {
+    await notify(db, {
+      type: 'income_new',
+      title: 'Pemasukan baru',
+      message: `${guard.username} mencatat pemasukan ${payload.description || payload.category || ''} Rp${(payload.amount ?? 0).toLocaleString('id-ID')}.`,
+      link: 'income',
+      entityCollection: 'income', entityId: ref.id,
+      actor: guard,
+    });
+  } catch (err) {
+    console.error('Failed to write notification for income create', err);
   }
   return Response.json({ id: ref.id });
 }

@@ -11,6 +11,9 @@ export const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   consignment_overdue: 'Rekap Konsinyasi',
   consignment_recap: 'Rekap Konsinyasi',
   consignment_send: 'Pengiriman Konsinyasi',
+  income_new: 'Pemasukan',
+  expense_new: 'Pengeluaran',
+  capital_new: 'Modal & Prive',
 };
 
 export function fullTime(n: NotificationDoc): string {
