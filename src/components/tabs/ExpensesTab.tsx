@@ -17,7 +17,7 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
-import { useWallets, activeWalletOptions } from '@/lib/useWallets';
+import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -110,6 +110,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
   const walletOptions = activeWalletOptions(wallets);
+  const walletBalances = useWalletBalances(creds, wallets);
 
   const [expenses,    setExpenses]    = useState<Expense[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -683,6 +684,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   <label className="field-label">Dompet Sumber <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
                     options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                  {editing.walletId && (
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Saldo saat ini: {formatRp(walletBalances[editing.walletId] ?? 0)}
+                    </p>
+                  )}
                 </div>
 
                 <div>

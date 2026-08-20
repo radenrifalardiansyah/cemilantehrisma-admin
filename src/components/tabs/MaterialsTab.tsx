@@ -17,7 +17,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
-import { useWallets, activeWalletOptions } from '@/lib/useWallets';
+import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -552,6 +552,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [markingPurchaseId, setMarkingPurchaseId] = useState<string | null>(null);
   const wallets = useWallets(creds);
   const walletOptions = activeWalletOptions(wallets);
+  const walletBalances = useWalletBalances(creds, wallets);
 
   const resetPurchaseForm = () => {
     setEditingPurchase(null); setSupplierId(''); setSupplierName(''); setPurchaseDate(todayISO());
@@ -1676,6 +1677,11 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   <label style={fieldLabel}>Dompet Sumber <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <SearchSelect value={purchaseWalletId} onChange={setPurchaseWalletId}
                     options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                  {purchaseWalletId && (
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Saldo saat ini: {formatRp(walletBalances[purchaseWalletId] ?? 0)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
