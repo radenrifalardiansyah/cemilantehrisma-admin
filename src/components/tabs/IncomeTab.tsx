@@ -60,9 +60,12 @@ function periodRange(period: PeriodKey, customFrom: string, customTo: string): {
   }
 }
 
-function formatDateDisplay(iso: string) {
+function formatDateDisplay(iso: string, createdAt?: { seconds: number } | null) {
   if (!iso) return '–';
-  return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateStr = new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!createdAt?.seconds) return dateStr;
+  const timeStr = new Date(createdAt.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  return `${dateStr}, ${timeStr}`;
 }
 
 function Checkbox({ checked, indeterminate, onChange }: {
@@ -191,6 +194,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       note: `Otomatis dari pesanan ${o.source === 'portal' ? 'online' : 'kasir'}${o.invoiceNo ? ` (Invoice ${o.invoiceNo})` : ''}${o.customerName ? ` — ${o.customerName}` : ''}.`,
       auto: o.source === 'portal' ? 'online' : 'kasir',
       walletId: o.walletId ?? null,
+      createdAt: o.createdAt ?? undefined,
     }));
     const fromRecaps: Income[] = countedRecaps.map(r => ({
       id: `recap-${r.id}`,
@@ -200,6 +204,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       note: `Otomatis dari rekap konsinyasi${r.locationName ? ` di ${r.locationName}` : ''}.`,
       auto: 'konsinyasi',
       walletId: r.walletId ?? null,
+      createdAt: r.createdAt ?? undefined,
     }));
 
     setIncome([...manual, ...fromOrders, ...fromRecaps]);
@@ -538,7 +543,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                           <span className="badge badge-gray text-[10px]">{i.category}</span>
                           {i.auto && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                         </div>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date)}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date, i.createdAt)}</p>
                       </div>
                       <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>+{formatRp(i.amount)}</span>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -598,7 +603,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                         <span className="badge badge-gray text-[10px]">{i.category}</span>
                         {i.auto && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                       </div>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date)}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date, i.createdAt)}</p>
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--success)' }}>+{formatRp(i.amount)}</p>
                     </div>
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>

@@ -59,9 +59,12 @@ function periodRange(period: PeriodKey, customFrom: string, customTo: string): {
   }
 }
 
-function formatDateDisplay(iso: string) {
+function formatDateDisplay(iso: string, createdAt?: { seconds: number } | null) {
   if (!iso) return '–';
-  return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateStr = new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!createdAt?.seconds) return dateStr;
+  const timeStr = new Date(createdAt.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  return `${dateStr}, ${timeStr}`;
 }
 
 function Checkbox({ checked, indeterminate, onChange }: {
@@ -473,7 +476,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                           <span className="badge badge-gray text-[10px]">{e.category}</span>
                           {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                         </div>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date)}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date, e.createdAt)}</p>
                       </div>
                       <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--danger)' }}>−{formatRp(e.amount)}</span>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -531,7 +534,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                         <span className="badge badge-gray text-[10px]">{e.category}</span>
                         {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                       </div>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date)}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date, e.createdAt)}</p>
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--danger)' }}>−{formatRp(e.amount)}</p>
                     </div>
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>

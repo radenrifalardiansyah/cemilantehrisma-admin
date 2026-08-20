@@ -30,9 +30,12 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function formatDateDisplay(iso: string) {
+function formatDateDisplay(iso: string, createdAt?: { seconds: number } | null) {
   if (!iso) return '–';
-  return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateStr = new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!createdAt?.seconds) return dateStr;
+  const timeStr = new Date(createdAt.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  return `${dateStr}, ${timeStr}`;
 }
 
 function Checkbox({ checked, indeterminate, onChange }: {
@@ -377,7 +380,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{isModal ? 'Modal Masuk' : 'Prive Pemilik'}</p>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date)}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date, e.createdAt)}</p>
                       </div>
                       <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: isModal ? 'var(--success)' : 'var(--danger)' }}>
                         {isModal ? '+' : '−'}{formatRp(e.amount)}
@@ -429,7 +432,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
                         {isModal ? <ArrowUpCircle size={20} /> : <ArrowDownCircle size={20} />}
                       </div>
                       <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{isModal ? 'Modal Masuk' : 'Prive Pemilik'}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date)}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date, e.createdAt)}</p>
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: isModal ? 'var(--success)' : 'var(--danger)' }}>
                         {isModal ? '+' : '−'}{formatRp(e.amount)}
                       </p>
