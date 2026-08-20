@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { Reorder } from 'framer-motion';
 import Image from 'next/image';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, ImagePlus,
@@ -1176,18 +1177,27 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
                 {/* Images */}
                 <div>
-                  <p className="section-label" style={{ marginBottom: 10 }}>Foto Produk</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <p className="section-label" style={{ marginBottom: 10 }}>
+                    Foto Produk <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>— geser untuk ubah urutan, foto pertama jadi sampul</span>
+                  </p>
+                  <Reorder.Group as="div" axis="x" values={editing.imageUrls}
+                    onReorder={newOrder => setEditing({ ...editing, imageUrls: newOrder })}
+                    style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {editing.imageUrls.map((u, i) => (
-                      <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group" style={{ background: 'var(--surface-2)' }}>
-                        <Image src={u} alt="" fill className="object-contain" sizes="80px" unoptimized />
+                      <Reorder.Item key={u} value={u} as="div"
+                        className="relative w-20 h-20 rounded-xl overflow-hidden group cursor-grab active:cursor-grabbing"
+                        style={{ background: 'var(--surface-2)' }}>
+                        <Image src={u} alt="" fill className="object-contain pointer-events-none" sizes="80px" unoptimized draggable={false} />
+                        {i === 0 && (
+                          <span className="absolute bottom-1 left-1 badge badge-gray" style={{ fontSize: 9, padding: '1px 6px' }}>Sampul</span>
+                        )}
                         <Tooltip label="Hapus foto">
                           <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
                             className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <X size={11} />
                           </button>
                         </Tooltip>
-                      </div>
+                      </Reorder.Item>
                     ))}
                     <button onClick={() => fileRef.current?.click()} disabled={uploading}
                       className="w-20 h-20 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors"
@@ -1195,7 +1205,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                       {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
                       {uploading ? 'Upload…' : 'Tambah'}
                     </button>
-                  </div>
+                  </Reorder.Group>
                   <input ref={fileRef} type="file" accept="image/*" className="hidden"
                     onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0])} />
                 </div>
