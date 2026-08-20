@@ -569,6 +569,7 @@ export default function StockTab({
   const [loading, setLoading]         = useState(true);
   const [transactions, setTxs]        = useState<TxEntry[]>([]);
   const [txLoading, setTxLoading]     = useState(false);
+  const [activeWarehouseCount, setActiveWarehouseCount] = useState(0);
 
   // Stok view
   const [stokView, setStokView]                     = useState<'warehouses' | 'stock'>('warehouses');
@@ -624,6 +625,14 @@ export default function StockTab({
     if (r.ok) {
       const { warehouses: w } = await r.json() as { warehouses: WarehouseData[] };
       setWarehouses(w);
+      // Gudang "aktif" = punya minimal 1 produk dengan stok > 0 (endpoint sudah filter stockQty > 0)
+      const active = await Promise.all(w.map(async wh => {
+        const rr = await fetch(`${API}/api/warehouses/${wh.id}/stock`, { headers });
+        if (!rr.ok) return false;
+        const { stocks: s } = await rr.json() as { stocks: ProductStock[] };
+        return s.length > 0;
+      }));
+      setActiveWarehouseCount(active.filter(Boolean).length);
     }
     setLoading(false);
   };
@@ -910,7 +919,7 @@ export default function StockTab({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               {[
                 { icon: <Warehouse   size={16} />, label: 'Total Gudang',        val: warehouses.length, color: 'var(--accent)' },
-                { icon: <Package     size={16} />, label: 'Aktif',               val: warehouses.length, color: 'var(--success)' },
+                { icon: <Package     size={16} />, label: 'Aktif',               val: activeWarehouseCount, color: 'var(--success)' },
                 { icon: <TrendingUp  size={16} />, label: 'Total Qty Gudang',    val: totalQtyAll,        color: '#0284C7' },
                 { icon: <Clock       size={16} />, label: 'Item Open PO',        val: poProducts.length,  color: '#A84F10' },
               ].map((c, i) => (
