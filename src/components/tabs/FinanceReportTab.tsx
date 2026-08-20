@@ -58,6 +58,7 @@ const dateWithRealTime = (dateStr: string, createdAt?: { seconds: number }) => {
   return new Date(`${dateStr}T12:00:00`).getTime() / 1000;
 };
 interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string; createdAt?: { seconds: number }; walletId?: string | null }
+interface TransferRecord { fromWalletId: string; toWalletId: string; amount: number }
 
 interface JournalEntry { seconds: number; description: string; debit: number; kredit: number; invoiceNo?: string }
 
@@ -230,13 +231,14 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     try {
       const today = new Date().toISOString().slice(0, 10);
       const qs = `from=2000-01-01&to=${today}`;
-      const [oRes, rRes, iRes, eRes, cRes, wRes] = await Promise.all([
+      const [oRes, rRes, iRes, eRes, cRes, wRes, tRes] = await Promise.all([
         fetch(`${API}/api/orders?${qs}`, { headers }),
         fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
         fetch(`${API}/api/income?${qs}`, { headers }),
         fetch(`${API}/api/expenses?${qs}`, { headers }),
         fetch(`${API}/api/capital?${qs}`, { headers }),
         fetch(`${API}/api/wallets`, { headers }),
+        fetch(`${API}/api/wallet-transfers`, { headers }),
       ]);
       const allOrders = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
       const allRecaps = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
@@ -244,6 +246,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const allExpenses = eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : [];
       const allCapital = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
       const walletList = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
+      const allTransfers = tRes.ok ? (await tRes.json() as { transfers: TransferRecord[] }).transfers : [];
 
       const countedAllOrders = allOrders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
       const countedAllRecaps = allRecaps.filter(r => r.paymentStatus !== 'belum_lunas');
@@ -263,13 +266,17 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const balanceOf = (walletId: string | null) => {
         const match = (v: { walletId?: string | null }) => (v.walletId ?? null) === walletId;
         const wallet = walletId ? walletList.find(w => w.id === walletId) : undefined;
+        const transfersIn = walletId ? allTransfers.filter(t => t.toWalletId === walletId).reduce((s, t) => s + t.amount, 0) : 0;
+        const transfersOut = walletId ? allTransfers.filter(t => t.fromWalletId === walletId).reduce((s, t) => s + t.amount, 0) : 0;
         return (wallet?.initialBalance ?? 0)
           + allIncome.filter(match).reduce((s, i) => s + i.amount, 0)
           + countedAllOrders.filter(match).reduce((s, o) => s + (o.total ?? 0), 0)
           + countedAllRecaps.filter(match).reduce((s, r) => s + (r.totalRevenue ?? 0), 0)
+          + transfersIn
           - allExpenses.filter(match).reduce((s, e) => s + e.amount, 0)
           + allCapital.filter(c => match(c) && c.type === 'modal').reduce((s, c) => s + c.amount, 0)
-          - allCapital.filter(c => match(c) && c.type === 'prive').reduce((s, c) => s + c.amount, 0);
+          - allCapital.filter(c => match(c) && c.type === 'prive').reduce((s, c) => s + c.amount, 0)
+          - transfersOut;
       };
       const nextBalances: Record<string, number> = {};
       walletList.forEach(w => { nextBalances[w.id] = balanceOf(w.id); });

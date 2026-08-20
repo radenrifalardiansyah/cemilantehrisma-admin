@@ -2,21 +2,31 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power,
+  Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power, ArrowRightLeft,
 } from 'lucide-react';
 import IconPicker from '@/components/IconPicker';
 import ColorPicker from '@/components/ColorPicker';
 import NumberInput from '@/components/NumberInput';
+import SearchSelect from '@/components/SearchSelect';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { resolveIcon } from '@/lib/icon-registry';
-import type { WalletDoc } from '@/lib/useWallets';
+import { activeWalletOptions, type WalletDoc } from '@/lib/useWallets';
 
 const API = '';
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function formatDateDisplay(iso: string) {
+  if (!iso) return '–';
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 const WALLET_TYPE_LABEL: Record<string, string> = { cash: 'Tunai', bank: 'Bank', ewallet: 'E-Wallet', other: 'Lainnya' };
 const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other'] as const;
@@ -29,9 +39,13 @@ interface OrderRow {
   paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
 }
 interface RecapRow { totalRevenue?: number; paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null }
+interface Transfer { id: string; fromWalletId: string; toWalletId: string; amount: number; date: string; note?: string }
 
 type WalletForm = { name: string; type: WalletDoc['type']; icon: string; color: string; initialBalance: string };
 const emptyForm = (): WalletForm => ({ name: '', type: 'cash', icon: 'Wallet', color: '#D4691E', initialBalance: '' });
+
+type TransferForm = { fromWalletId: string; toWalletId: string; amount: string; date: string; note: string };
+const emptyTransferForm = (): TransferForm => ({ fromWalletId: '', toWalletId: '', amount: '', date: todayISO(), note: '' });
 
 export default function WalletsTab({ creds }: { creds: string }) {
   const toast = useToast();
@@ -39,6 +53,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const headers = { 'x-admin-auth': creds };
 
   const [wallets, setWallets] = useState<WalletDoc[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [unassigned, setUnassigned] = useState(0);
@@ -50,16 +65,23 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
+  const [transferEditing, setTransferEditing] = useState<({ id: string } & TransferForm) | null>(null);
+  const [transferIsNew, setTransferIsNew] = useState(false);
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferDeletingId, setTransferDeletingId] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState('');
+
   const load = async () => {
     setLoading(true);
     const qs = 'from=2000-01-01';
-    const [wRes, iRes, eRes, cRes, oRes, rRes] = await Promise.all([
+    const [wRes, iRes, eRes, cRes, oRes, rRes, tRes] = await Promise.all([
       fetch(`${API}/api/wallets`, { headers }),
       fetch(`${API}/api/income?${qs}`, { headers }),
       fetch(`${API}/api/expenses?${qs}`, { headers }),
       fetch(`${API}/api/capital?${qs}`, { headers }),
       fetch(`${API}/api/orders?${qs}`, { headers }),
       fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
+      fetch(`${API}/api/wallet-transfers`, { headers }),
     ]);
     const walletList: WalletDoc[] = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
     const income: IncomeRow[] = iRes.ok ? (await iRes.json() as { income: IncomeRow[] }).income : [];
@@ -67,33 +89,108 @@ export default function WalletsTab({ creds }: { creds: string }) {
     const capital: CapitalRow[] = cRes.ok ? (await cRes.json() as { entries: CapitalRow[] }).entries : [];
     const orders: OrderRow[] = oRes.ok ? (await oRes.json() as { orders: OrderRow[] }).orders : [];
     const recaps: RecapRow[] = rRes.ok ? (await rRes.json() as { recaps: RecapRow[] }).recaps : [];
+    const transferList: Transfer[] = tRes.ok ? (await tRes.json() as { transfers: Transfer[] }).transfers : [];
 
     // Sama persis dengan definisi "uang masuk terhitung" di IncomeTab/FinanceReportTab.
     const countedOrders = orders.filter(o =>
       (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
     const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
+    // Transfer antar dompet tidak masuk hitungan "Belum Ditentukan" — selalu antara 2 dompet
+    // nyata, jadi tidak pernah relevan untuk bucket null.
     const balanceOf = (walletId: string | null) => {
       const match = (v: { walletId?: string | null }) => (v.walletId ?? null) === walletId;
       const wallet = walletId ? walletList.find(w => w.id === walletId) : undefined;
+      const transfersIn = walletId ? transferList.filter(t => t.toWalletId === walletId).reduce((s, t) => s + t.amount, 0) : 0;
+      const transfersOut = walletId ? transferList.filter(t => t.fromWalletId === walletId).reduce((s, t) => s + t.amount, 0) : 0;
       return (wallet?.initialBalance ?? 0)
         + income.filter(match).reduce((s, i) => s + i.amount, 0)
         + countedOrders.filter(match).reduce((s, o) => s + (o.total ?? 0), 0)
         + countedRecaps.filter(match).reduce((s, r) => s + (r.totalRevenue ?? 0), 0)
+        + transfersIn
         - expenses.filter(match).reduce((s, e) => s + e.amount, 0)
         + capital.filter(c => match(c) && c.type === 'modal').reduce((s, c) => s + c.amount, 0)
-        - capital.filter(c => match(c) && c.type === 'prive').reduce((s, c) => s + c.amount, 0);
+        - capital.filter(c => match(c) && c.type === 'prive').reduce((s, c) => s + c.amount, 0)
+        - transfersOut;
     };
 
     const nextBalances: Record<string, number> = {};
     walletList.forEach(w => { nextBalances[w.id] = balanceOf(w.id); });
 
     setWallets(walletList);
+    setTransfers(transferList);
     setBalances(nextBalances);
     setUnassigned(balanceOf(null));
     setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const walletOptions = activeWalletOptions(wallets);
+  const walletName = (id: string) => wallets.find(w => w.id === id)?.name ?? '(dompet dihapus)';
+
+  const openNewTransfer = () => { setTransferEditing({ id: '', ...emptyTransferForm() }); setTransferIsNew(true); setTransferError(''); };
+  const openEditTransfer = (t: Transfer) => {
+    setTransferEditing({ id: t.id, fromWalletId: t.fromWalletId, toWalletId: t.toWalletId, amount: String(t.amount), date: t.date, note: t.note ?? '' });
+    setTransferIsNew(false); setTransferError('');
+  };
+  const closeTransferEdit = () => { setTransferEditing(null); setTransferIsNew(false); setTransferError(''); };
+
+  // Saldo dompet asal yang dipakai untuk validasi tombol — saat edit, tambahkan kembali jumlah
+  // transfer lama supaya tidak keblokir oleh kontribusi transfer yang sedang diedit itu sendiri
+  // (server melakukan pengecekan yang sama, definitif, lewat computeWalletBalance).
+  const transferFromAvailable = (() => {
+    if (!transferEditing?.fromWalletId) return 0;
+    const base = balances[transferEditing.fromWalletId] ?? 0;
+    if (!transferIsNew) {
+      const original = transfers.find(t => t.id === transferEditing.id);
+      if (original && original.fromWalletId === transferEditing.fromWalletId) return base + original.amount;
+    }
+    return base;
+  })();
+
+  const saveTransfer = async () => {
+    if (!transferEditing) return;
+    const amountNum = parseFloat(transferEditing.amount) || 0;
+    if (!transferEditing.fromWalletId || !transferEditing.toWalletId) { setTransferError('Dompet asal dan tujuan wajib dipilih.'); return; }
+    if (transferEditing.fromWalletId === transferEditing.toWalletId) { setTransferError('Dompet asal dan tujuan tidak boleh sama.'); return; }
+    if (amountNum <= 0) { setTransferError('Jumlah transfer harus lebih dari 0.'); return; }
+    if (amountNum > transferFromAvailable) { setTransferError(`Saldo "${walletName(transferEditing.fromWalletId)}" tidak cukup (saldo saat ini ${formatRp(transferFromAvailable)}).`); return; }
+    if (!transferEditing.date) { setTransferError('Tanggal wajib diisi.'); return; }
+    setTransferSaving(true); setTransferError('');
+    const payload = {
+      fromWalletId: transferEditing.fromWalletId, toWalletId: transferEditing.toWalletId,
+      amount: amountNum, date: transferEditing.date, note: transferEditing.note,
+    };
+    const r = transferIsNew
+      ? await fetch(`${API}/api/wallet-transfers`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      : await fetch(`${API}/api/wallet-transfers/${transferEditing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (r.ok) {
+      await load();
+      closeTransferEdit();
+      toast.success(transferIsNew ? 'Transfer berhasil dicatat.' : 'Transfer berhasil diperbarui.');
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      setTransferError(d.error ?? 'Gagal menyimpan transfer.');
+      toast.error(d.error ?? 'Gagal menyimpan transfer.');
+    }
+    setTransferSaving(false);
+  };
+
+  const delTransfer = async (t: Transfer) => {
+    if (!await confirm({
+      message: `Hapus transfer ${walletName(t.fromWalletId)} → ${walletName(t.toWalletId)} sebesar ${formatRp(t.amount)}? Tindakan ini tidak bisa dibatalkan.`,
+      danger: true,
+    })) return;
+    setTransferDeletingId(t.id);
+    const r = await fetch(`${API}/api/wallet-transfers/${t.id}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      await load();
+      toast.success('Transfer berhasil dihapus.');
+    } else {
+      toast.error('Gagal menghapus transfer.');
+    }
+    setTransferDeletingId(null);
+  };
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (w: WalletDoc) => {
@@ -187,7 +284,10 @@ export default function WalletsTab({ creds }: { creds: string }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={openNewTransfer} className="btn-ghost text-xs" style={{ height: 34 }} disabled={wallets.filter(w => w.isActive).length < 2}>
+          <ArrowRightLeft size={13} /> Transfer Antar Dompet
+        </button>
         <button onClick={openNew} className="btn-primary text-xs" style={{ height: 34 }}>
           <Plus size={13} /> Tambah Dompet
         </button>
@@ -243,6 +343,117 @@ export default function WalletsTab({ creds }: { creds: string }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Riwayat transfer antar dompet */}
+      {transfers.length > 0 && (
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Riwayat Transfer Antar Dompet</p>
+          <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+            {transfers.map((t, idx) => {
+              const isDeleting = transferDeletingId === t.id;
+              return (
+                <div key={t.id} className="flex items-center gap-2 px-4 py-3.5" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
+                  <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                    <ArrowRightLeft size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>
+                      {walletName(t.fromWalletId)} <ArrowRightLeft size={11} style={{ display: 'inline', verticalAlign: -1, margin: '0 2px', color: 'var(--text-muted)' }} /> {walletName(t.toWalletId)}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(t.date)}{t.note ? ` · ${t.note}` : ''}</p>
+                  </div>
+                  <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{formatRp(t.amount)}</span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Tooltip label="Edit">
+                      <button onClick={() => openEditTransfer(t)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                        <Pencil size={13} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Hapus">
+                      <button onClick={() => delTransfer(t)} disabled={isDeleting} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                        {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                      </button>
+                    </Tooltip>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Transfer modal */}
+      {transferEditing && (
+        <div className="modal-overlay" onClick={closeTransferEdit}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><ArrowRightLeft size={17} /></div>
+                <div>
+                  <p className="modal-title">{transferIsNew ? 'Transfer Antar Dompet' : 'Edit Transfer'}</p>
+                  <p className="modal-subtitle">{transferIsNew ? 'Pindahkan saldo dari satu dompet ke dompet lain' : 'Perbarui catatan transfer'}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={closeTransferEdit} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label className="field-label">Dari Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={transferEditing.fromWalletId} onChange={v => setTransferEditing({ ...transferEditing, fromWalletId: v })}
+                    options={walletOptions} placeholder="– Pilih Dompet Asal –" searchPlaceholder="Cari dompet…" />
+                  {transferEditing.fromWalletId && (
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Saldo tersedia: {formatRp(transferFromAvailable)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="field-label">Ke Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={transferEditing.toWalletId} onChange={v => setTransferEditing({ ...transferEditing, toWalletId: v })}
+                    options={walletOptions.filter(o => o.value !== transferEditing.fromWalletId)} placeholder="– Pilih Dompet Tujuan –" searchPlaceholder="Cari dompet…" />
+                </div>
+
+                <div>
+                  <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input type="date" value={transferEditing.date} onChange={e => setTransferEditing({ ...transferEditing, date: e.target.value })} className="input" />
+                </div>
+
+                <div>
+                  <label className="field-label">Jumlah (Rp) <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <NumberInput value={transferEditing.amount} onChange={raw => setTransferEditing({ ...transferEditing, amount: raw })} placeholder="0" />
+                </div>
+
+                <div>
+                  <label className="field-label">Catatan (opsional)</label>
+                  <textarea value={transferEditing.note} onChange={e => setTransferEditing({ ...transferEditing, note: e.target.value })}
+                    className="input" style={{ resize: 'vertical', minHeight: 60 }} placeholder="cth: Tarik tunai dari BCA" />
+                </div>
+
+                {transferError && (
+                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                    {transferError}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeTransferEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={saveTransfer}
+                disabled={transferSaving || !transferEditing.fromWalletId || !transferEditing.toWalletId || (parseFloat(transferEditing.amount) || 0) > transferFromAvailable}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {transferSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {transferSaving ? 'Menyimpan…' : 'Simpan Transfer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
