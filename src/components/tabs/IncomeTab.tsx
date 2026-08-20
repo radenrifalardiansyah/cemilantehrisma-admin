@@ -317,7 +317,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
         || (i.note ?? '').toLowerCase().includes(search.toLowerCase());
       return matchCat && matchQ;
     })
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
   const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
