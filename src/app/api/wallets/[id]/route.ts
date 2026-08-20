@@ -1,12 +1,11 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
+import { walletHasReferences } from '@/lib/wallet-balance';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
-
-const REFERENCING_COLLECTIONS = ['income', 'expenses', 'capitalEntries', 'materialPurchases', 'orders', 'consignmentRecaps'];
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'wallets', 'edit');
@@ -51,12 +50,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const db = getDb();
 
-  const checks = await Promise.all([
-    ...REFERENCING_COLLECTIONS.map(col => db.collection(col).where('walletId', '==', id).limit(1).get()),
-    db.collection('walletTransfers').where('fromWalletId', '==', id).limit(1).get(),
-    db.collection('walletTransfers').where('toWalletId', '==', id).limit(1).get(),
-  ]);
-  if (checks.some(snap => !snap.empty)) {
+  if (await walletHasReferences(db, id)) {
     return Response.json({ error: 'Dompet ini masih punya riwayat transaksi — nonaktifkan saja, tidak bisa dihapus.' }, { status: 400 });
   }
 

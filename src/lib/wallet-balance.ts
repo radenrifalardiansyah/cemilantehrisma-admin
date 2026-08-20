@@ -1,5 +1,19 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
+const WALLET_ID_COLLECTIONS = ['income', 'expenses', 'capitalEntries', 'materialPurchases', 'orders', 'consignmentRecaps'];
+
+// Dipakai oleh DELETE satuan dan bulk-delete dompet — dompet dengan riwayat transaksi (termasuk
+// jadi asal/tujuan transfer) tidak boleh dihapus permanen, harus dinonaktifkan saja, supaya
+// dokumen lama yang masih menyimpan walletId ini tidak jadi anak yatim.
+export async function walletHasReferences(db: Firestore, walletId: string): Promise<boolean> {
+  const checks = await Promise.all([
+    ...WALLET_ID_COLLECTIONS.map(col => db.collection(col).where('walletId', '==', walletId).limit(1).get()),
+    db.collection('walletTransfers').where('fromWalletId', '==', walletId).limit(1).get(),
+    db.collection('walletTransfers').where('toWalletId', '==', walletId).limit(1).get(),
+  ]);
+  return checks.some(snap => !snap.empty);
+}
+
 // Satu-satunya tempat menghitung saldo dompet di server — dipakai untuk validasi Transfer
 // Antar Dompet (supaya tidak bisa transfer melebihi saldo yang benar-benar ada). Sengaja hanya
 // query `where('walletId', '==', ...)` (single-field, otomatis ter-index Firestore) lalu filter
