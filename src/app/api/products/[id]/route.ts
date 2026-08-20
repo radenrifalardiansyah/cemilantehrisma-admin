@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getAuthUser } from '@/lib/admin-auth';
 import { requirePermission } from '@/lib/rbac';
@@ -51,6 +52,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     ...data,
     updatedAt: FieldValue.serverTimestamp(),
   });
+  revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
@@ -60,6 +62,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   await getDb().collection('products').doc(id).delete();
+  revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

@@ -1,5 +1,5 @@
 import { NextRequest, after } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -8,14 +8,15 @@ import { revalidateStorefront } from '@/lib/revalidate';
 
 // Short cache so bursts of near-simultaneous reads (dashboard load, POS stock
 // refresh, multiple staff/tabs) collapse into one Firestore read instead of one
-// each. 15s keeps admin edits feeling near-instant while still absorbing bursts.
+// each. Tagged so create/update/delete can invalidate it immediately instead of
+// waiting out the 15s TTL.
 const getCachedProducts = unstable_cache(
   async () => {
     const snap = await getDb().collection('products').orderBy('createdAt', 'desc').get();
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
   ['admin-products'],
-  { revalidate: 15 }
+  { revalidate: 15, tags: ['admin-products'] }
 );
 
 export async function GET(req: NextRequest) {
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ id: ref.id, qrUrl });
 }
