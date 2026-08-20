@@ -166,22 +166,22 @@ function WarehouseModal({
 // ── TxModal — add stok masuk / keluar ─────────────────────────────────────────
 function TxModal({
   type, warehouseOptions, productOptions,
-  wId, pId, qty, note, noWarehouse, onWId, onPId, onQty, onNote, onNoWarehouse,
+  wId, pId, qty, note, onWId, onPId, onQty, onNote,
   submitting, onClose, onSubmit,
 }: {
   type: 'in' | 'out';
   warehouseOptions: SearchSelectOption[];
   productOptions: SearchSelectOption[];
-  wId: string; pId: string; qty: string; note: string; noWarehouse: boolean;
+  wId: string; pId: string; qty: string; note: string;
   onWId: (v: string) => void; onPId: (v: string) => void;
-  onQty: (v: string) => void; onNote: (v: string) => void; onNoWarehouse: (v: boolean) => void;
+  onQty: (v: string) => void; onNote: (v: string) => void;
   submitting: boolean;
   onClose: () => void;
   onSubmit: () => void;
 }) {
   if (typeof document === 'undefined') return null;
   const isIn = type === 'in';
-  const canSubmit = (noWarehouse || !!wId) && !!pId && !!qty && Number(qty) > 0;
+  const canSubmit = !!wId && !!pId && !!qty && Number(qty) > 0;
   return createPortal(
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
       <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
@@ -205,24 +205,13 @@ function TxModal({
         </div>
         <div className="modal-body">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {!isIn && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={noWarehouse}
-                  onChange={e => { onNoWarehouse(e.target.checked); if (e.target.checked) onWId(''); }} />
-                <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                  Koreksi stok — tanpa gudang (tidak mengubah stok per gudang)
-                </span>
-              </label>
-            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {!noWarehouse && (
-                <div>
-                  <label className="field-label">Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
-                    placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-                </div>
-              )}
-              <div className={noWarehouse ? 'sm:col-span-2' : undefined}>
+              <div>
+                <label className="field-label">Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
+                  placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+              </div>
+              <div>
                 <label className="field-label">Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
                 <SearchSelect value={pId} onChange={onPId} options={productOptions}
                   placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
@@ -605,7 +594,6 @@ export default function StockTab({
   const [txPId, setTxPId]           = useState('');
   const [txQty, setTxQty]           = useState('');
   const [txNote, setTxNote]         = useState('');
-  const [txNoWarehouse, setTxNoWarehouse] = useState(false);
   const [txSubmitting, setTxSub]    = useState(false);
 
   // Transfer modal
@@ -759,26 +747,20 @@ export default function StockTab({
 
   // ── Submit masuk / keluar ──
   const submitTx = async (type: 'in' | 'out') => {
-    if (!txPId || !txQty || Number(txQty) <= 0) return;
-    if (!txNoWarehouse && !txWId) return;
+    if (!txPId || !txQty || Number(txQty) <= 0 || !txWId) return;
     setTxSub(true);
     const prod = products.find(p => p.id === txPId);
-    const r = txNoWarehouse
-      ? await fetch(`${API}/api/stock/${txPId}`, {
-          method: 'POST', headers,
-          body: JSON.stringify({ productName: prod?.name ?? '', type, qty: Number(txQty), note: txNote }),
-        })
-      : await fetch(`${API}/api/warehouses/${txWId}/stock`, {
-          method: 'POST', headers,
-          body: JSON.stringify({
-            productId: txPId,
-            productName: prod?.name ?? '',
-            warehouseName: warehouses.find(w => w.id === txWId)?.name ?? '',
-            type, qty: Number(txQty), note: txNote,
-          }),
-        });
+    const r = await fetch(`${API}/api/warehouses/${txWId}/stock`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        productId: txPId,
+        productName: prod?.name ?? '',
+        warehouseName: warehouses.find(w => w.id === txWId)?.name ?? '',
+        type, qty: Number(txQty), note: txNote,
+      }),
+    });
     if (r.ok) {
-      setTxWId(''); setTxPId(''); setTxQty(''); setTxNote(''); setTxNoWarehouse(false);
+      setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
       setShowTxModal(null);
       await loadTx();
       toast.success(type === 'in' ? 'Stok masuk berhasil dicatat.' : 'Stok keluar berhasil dicatat.');
@@ -851,7 +833,7 @@ export default function StockTab({
 
   // ── Modal open helpers ──
   const openTxModal = (type: 'in' | 'out') => {
-    setTxWId(''); setTxPId(''); setTxQty(''); setTxNote(''); setTxNoWarehouse(false);
+    setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
     setShowTxModal(type);
   };
   const openTransferModal = () => {
@@ -1428,8 +1410,8 @@ export default function StockTab({
             type={showTxModal}
             warehouseOptions={warehouseOptions}
             productOptions={productOptions}
-            wId={txWId} pId={txPId} qty={txQty} note={txNote} noWarehouse={txNoWarehouse}
-            onWId={setTxWId} onPId={setTxPId} onQty={setTxQty} onNote={setTxNote} onNoWarehouse={setTxNoWarehouse}
+            wId={txWId} pId={txPId} qty={txQty} note={txNote}
+            onWId={setTxWId} onPId={setTxPId} onQty={setTxQty} onNote={setTxNote}
             submitting={txSubmitting}
             onClose={() => setShowTxModal(null)}
             onSubmit={() => submitTx(showTxModal)}
