@@ -14,7 +14,7 @@ import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
 import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
-import { useWallets, activeWalletOptions } from '@/lib/useWallets';
+import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -137,6 +137,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const confirm = useConfirm();
   const wallets = useWallets(creds);
   const walletOptions = activeWalletOptions(wallets);
+  const walletBalances = useWalletBalances(creds, wallets);
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1062,6 +1063,11 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
               <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
               <SearchSelect value={markLunasWalletId} onChange={setMarkLunasWalletId}
                 options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+              {markLunasWalletId && (
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Saldo saat ini: {formatRp(walletBalances[markLunasWalletId] ?? 0)}
+                </p>
+              )}
             </div>
             <div className="modal-footer">
               <button onClick={() => setMarkLunasOrder(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
@@ -1222,6 +1228,11 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     <label className="field-label">Dompet</label>
                     <SearchSelect value={editWalletId} onChange={setEditWalletId}
                       options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                    {editWalletId && (
+                      <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                        Saldo saat ini: {formatRp(walletBalances[editWalletId] ?? 0)}
+                      </p>
+                    )}
                   </div>
                 )}
 

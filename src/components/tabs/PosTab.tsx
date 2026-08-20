@@ -20,7 +20,7 @@ import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { recognizeTransferAmount } from '@/lib/receipt-ocr';
-import { useWallets, activeWalletOptions } from '@/lib/useWallets';
+import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
@@ -306,6 +306,7 @@ export default function PosTab({
   const toast = useToast();
   const wallets = useWallets(creds);
   const walletOptions = activeWalletOptions(wallets);
+  const walletBalances = useWalletBalances(creds, wallets);
 
   // ── Info toko (nama, alamat, telepon, logo) — dipakai di struk cetak & pesan WA ──
   useEffect(() => {
@@ -939,6 +940,11 @@ export default function PosTab({
                 <div className="mt-3">
                   <SearchSelect value={walletId} onChange={setWalletId}
                     options={walletOptions} placeholder="– Dompet Tujuan –" searchPlaceholder="Cari dompet…" />
+                  {walletId && (
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Saldo saat ini: {formatCurrency(walletBalances[walletId] ?? 0)}
+                    </p>
+                  )}
                 </div>
               )}
               {paymentMethod === 'cash' && (

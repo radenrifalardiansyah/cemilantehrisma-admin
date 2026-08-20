@@ -23,7 +23,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import type { PosProduct } from '@/lib/pos-types';
-import { useWallets, activeWalletOptions } from '@/lib/useWallets';
+import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
@@ -279,6 +279,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
   const walletOptions = activeWalletOptions(wallets);
+  const walletBalances = useWalletBalances(creds, wallets);
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
 
@@ -2589,6 +2590,11 @@ _${storeHeader.name}_`.trim();
               <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
               <SearchSelect value={markLunasRecapWalletId} onChange={setMarkLunasRecapWalletId}
                 options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+              {markLunasRecapWalletId && (
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Saldo saat ini: {formatRp(walletBalances[markLunasRecapWalletId] ?? 0)}
+                </p>
+              )}
             </div>
             <div className="modal-footer">
               <button onClick={() => setMarkLunasRecap(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
@@ -2727,6 +2733,11 @@ _${storeHeader.name}_`.trim();
                     <label className="field-label">Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
                     <SearchSelect value={recapWalletId} onChange={setRecapWalletId}
                       options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                    {recapWalletId && (
+                      <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                        Saldo saat ini: {formatRp(walletBalances[recapWalletId] ?? 0)}
+                      </p>
+                    )}
                   </div>
                 )}
 
