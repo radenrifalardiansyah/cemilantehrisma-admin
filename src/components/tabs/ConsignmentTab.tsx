@@ -1114,6 +1114,7 @@ _${storeHeader.name}_`.trim();
   const [recapView, setRecapView] = useViewMode('consignment-recaps', 'table');
 
   const [recapSearch,   setRecapSearch]   = useState('');
+  const [recapOnlyBelumLunas, setRecapOnlyBelumLunas] = useState(false);
   const [recapPage,     setRecapPage]     = useState(1);
   const [recapPageSize, setRecapPageSize] = useState(10);
   const [selectedRecaps, setSelectedRecaps] = useState<Set<string>>(new Set());
@@ -1433,6 +1434,7 @@ _${storeHeader.name}_`.trim();
   };
 
   const filteredRecaps = recaps.filter(r => {
+    if (recapOnlyBelumLunas && r.paymentStatus !== 'belum_lunas') return false;
     if (!recapSearch) return true;
     const q = recapSearch.toLowerCase();
     return r.locationName.toLowerCase().includes(q)
@@ -2219,6 +2221,19 @@ _${storeHeader.name}_`.trim();
                     placeholder="Cari lokasi, produk, atau catatan…"
                   />
                 </div>
+              )}
+              {recaps.length > 0 && (
+                <button
+                  onClick={() => { setRecapOnlyBelumLunas(v => !v); resetRecapPage(); }}
+                  className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+                  style={{
+                    height: HEADER_BTN_H,
+                    background: recapOnlyBelumLunas ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+                    color: recapOnlyBelumLunas ? 'white' : 'var(--text-muted)',
+                  }}
+                >
+                  <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
+                </button>
               )}
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 {recaps.length > 0 && (
