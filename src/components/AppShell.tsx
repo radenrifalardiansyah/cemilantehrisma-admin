@@ -4,12 +4,13 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog, Landmark, Receipt,
+  ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog, Landmark, Receipt, Search,
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
+import MenuSearchModal from '@/components/MenuSearchModal';
 import ChatWidget from '@/components/chat/ChatWidget';
 import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
 import { NotificationsProvider } from '@/components/NotificationsProvider';
@@ -112,6 +113,8 @@ export default function AppShell({
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
+  const [moreQuery,  setMoreQuery]  = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [aboutOpen,  setAboutOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
@@ -132,6 +135,10 @@ export default function AppShell({
   const ADMIN_BILLING_TAB: NavTab | null = role === 'admin' ? { id: 'tagihan-admin-fee', label: 'Tagihan Biaya Admin', Icon: Receipt } : null;
   const PINNED_TAB = SUPER_ADMIN_TAB ?? ADMIN_BILLING_TAB;
   const MORE_TABS_DISPLAY = PINNED_TAB ? [...MORE_TABS, PINNED_TAB] : MORE_TABS;
+  const SEARCHABLE_TABS = PINNED_TAB ? [...ALL_TABS, PINNED_TAB] : ALL_TABS;
+  const filteredMoreTabs = moreQuery.trim()
+    ? MORE_TABS_DISPLAY.filter(t => t.label.toLowerCase().includes(moreQuery.trim().toLowerCase()))
+    : MORE_TABS_DISPLAY;
 
   const handleLogout = async () => {
     if (await confirm({
@@ -175,7 +182,7 @@ export default function AppShell({
   const isMoreActive = MORE_TABS_DISPLAY.some(t => t.id === activeTab);
   const sw           = collapsed ? SIDEBAR_MINI : SIDEBAR_FULL;
 
-  const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); };
+  const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); setMoreQuery(''); };
   const toggleExpanded = (id: TabId) =>
     setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -549,6 +556,15 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-2">
             <div id="topbar-slot" className="flex items-center gap-2" />
+            <button
+              onClick={() => setSearchOpen(true)}
+              title="Cari menu"
+              aria-label="Cari menu"
+              className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+            >
+              <Search size={16} />
+            </button>
             <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"
@@ -666,7 +682,7 @@ export default function AppShell({
           <div
             className="lg:hidden fixed inset-0 z-40"
             style={{ background: 'rgba(30,16,8,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-            onClick={() => setMoreOpen(false)}
+            onClick={() => { setMoreOpen(false); setMoreQuery(''); }}
           />
           <div
             className="lg:hidden fixed left-0 right-0 z-50 animate-slide-up"
@@ -683,11 +699,30 @@ export default function AppShell({
             </div>
 
             <div className="px-5">
+              <div style={{ position: 'relative', marginBottom: 14 }}>
+                <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                <input
+                  value={moreQuery}
+                  onChange={e => setMoreQuery(e.target.value)}
+                  placeholder="Cari menu…"
+                  className="w-full"
+                  style={{
+                    height: 40, paddingLeft: 36, paddingRight: 12, borderRadius: 12,
+                    border: '1.5px solid var(--border)', background: 'var(--surface-2)',
+                    fontSize: 13.5, color: 'var(--text-primary)', outline: 'none',
+                  }}
+                />
+              </div>
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-muted)' }}>
                 Menu Lainnya
               </p>
+              {filteredMoreTabs.length === 0 && (
+                <p className="text-xs text-center" style={{ color: 'var(--text-muted)', padding: '20px 0' }}>
+                  Menu tidak ditemukan
+                </p>
+              )}
               <div className="grid grid-cols-4 gap-3">
-                {MORE_TABS_DISPLAY.map(tab => {
+                {filteredMoreTabs.map(tab => {
                   const isActive = activeTab === tab.id;
                   return (
                     <button
@@ -753,6 +788,13 @@ export default function AppShell({
         </>
       )}
 
+      {searchOpen && (
+        <MenuSearchModal
+          items={SEARCHABLE_TABS}
+          onSelect={id => go(id as TabId)}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {aboutOpen && <AboutModal creds={creds} onClose={() => setAboutOpen(false)} />}
       {profileOpen && (
         <EditProfileModal

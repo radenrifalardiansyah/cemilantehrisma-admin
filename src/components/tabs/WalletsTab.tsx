@@ -561,7 +561,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       </div>
 
       {/* Header: search + actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex flex-row items-center gap-2 sm:gap-3">
         {wallets.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -574,7 +574,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
             />
           </div>
         )}
-        <div className="flex items-center gap-2 sm:justify-end flex-shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           {wallets.length > 0 && (
             <Tooltip label="Export Excel">
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
@@ -794,7 +794,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
         <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Riwayat Transfer Antar Dompet</p>
 
         {transfers.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
+          <div className="flex flex-row items-center gap-2 sm:gap-3 mb-3">
             <div className="relative flex-1 min-w-0">
               <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
               <input
