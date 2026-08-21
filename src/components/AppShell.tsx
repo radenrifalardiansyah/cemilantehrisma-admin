@@ -10,7 +10,6 @@ import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
-import MenuSearchModal from '@/components/MenuSearchModal';
 import ChatWidget from '@/components/chat/ChatWidget';
 import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
 import { NotificationsProvider } from '@/components/NotificationsProvider';
@@ -114,7 +113,6 @@ export default function AppShell({
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarQuery, setSidebarQuery] = useState('');
   const [aboutOpen,  setAboutOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -136,7 +134,6 @@ export default function AppShell({
   const ADMIN_BILLING_TAB: NavTab | null = role === 'admin' ? { id: 'tagihan-admin-fee', label: 'Tagihan Biaya Admin', Icon: Receipt } : null;
   const PINNED_TAB = SUPER_ADMIN_TAB ?? ADMIN_BILLING_TAB;
   const MORE_TABS_DISPLAY = PINNED_TAB ? [...MORE_TABS, PINNED_TAB] : MORE_TABS;
-  const SEARCHABLE_TABS = PINNED_TAB ? [...ALL_TABS, PINNED_TAB] : ALL_TABS;
   const filteredMoreTabs = moreQuery.trim()
     ? MORE_TABS_DISPLAY.filter(t => t.label.toLowerCase().includes(moreQuery.trim().toLowerCase()))
     : MORE_TABS_DISPLAY;
@@ -598,15 +595,6 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-2">
             <div id="topbar-slot" className="flex items-center gap-2" />
-            <button
-              onClick={() => setSearchOpen(true)}
-              title="Cari menu"
-              aria-label="Cari menu"
-              className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
-            >
-              <Search size={16} />
-            </button>
             <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"
@@ -830,13 +818,6 @@ export default function AppShell({
         </>
       )}
 
-      {searchOpen && (
-        <MenuSearchModal
-          items={SEARCHABLE_TABS}
-          onSelect={id => go(id as TabId)}
-          onClose={() => setSearchOpen(false)}
-        />
-      )}
       {aboutOpen && <AboutModal creds={creds} onClose={() => setAboutOpen(false)} />}
       {profileOpen && (
         <EditProfileModal
