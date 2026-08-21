@@ -158,16 +158,16 @@ function RevenueChart({ data }: { data: { date: string; revenue: number; count: 
       >
         <defs>
           <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#D4691E" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#D4691E" stopOpacity="0.01" />
+            <stop offset="0%"   stopColor="var(--accent)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.01" />
           </linearGradient>
         </defs>
 
         {fillPath && <path d={fillPath} fill="url(#rev-fill)" />}
-        {linePath && <path d={linePath} fill="none" stroke="#D4691E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+        {linePath && <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
 
         {/* Single point */}
-        {n === 1 && <circle cx={lastPt.x} cy={lastPt.y} r="5" fill="#D4691E" stroke="white" strokeWidth="2" />}
+        {n === 1 && <circle cx={lastPt.x} cy={lastPt.y} r="5" fill="var(--accent)" stroke="white" strokeWidth="2" />}
 
         {/* Hover dashed vertical */}
         {hPt && (
@@ -176,13 +176,13 @@ function RevenueChart({ data }: { data: { date: string; revenue: number; count: 
         )}
 
         {/* Hover dot */}
-        {hPt && <circle cx={hPt.x} cy={hPt.y} r="5" fill="#D4691E" stroke="white" strokeWidth="2.5" />}
+        {hPt && <circle cx={hPt.x} cy={hPt.y} r="5" fill="var(--accent)" stroke="white" strokeWidth="2.5" />}
 
         {/* Endpoint pulse (hari ini) */}
         {n > 1 && hoverIdx !== n - 1 && (
           <>
-            <circle cx={lastPt.x} cy={lastPt.y} r="10" fill="#D4691E" opacity="0.10" />
-            <circle cx={lastPt.x} cy={lastPt.y} r="4.5" fill="#D4691E" stroke="white" strokeWidth="2" />
+            <circle cx={lastPt.x} cy={lastPt.y} r="10" fill="var(--accent)" opacity="0.10" />
+            <circle cx={lastPt.x} cy={lastPt.y} r="4.5" fill="var(--accent)" stroke="white" strokeWidth="2" />
           </>
         )}
 
@@ -874,7 +874,7 @@ export default function AdminPage() {
           {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { icon: <Receipt    size={16}/>, label: 'Pesanan Hari Ini', val: (dashData.revenueTrend[dashData.revenueTrend.length - 1]?.count ?? 0).toString(),   color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: '#D4691E,#A84F10' },
+              { icon: <Receipt    size={16}/>, label: 'Pesanan Hari Ini', val: (dashData.revenueTrend[dashData.revenueTrend.length - 1]?.count ?? 0).toString(),   color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: 'var(--accent),#A84F10' },
               { icon: <TrendingUp size={16}/>, label: 'Omzet Hari Ini',  val: formatRp(dashData.revenueTrend[dashData.revenueTrend.length - 1]?.revenue ?? 0),      color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
               { icon: <Package    size={16}/>, label: 'Produk Aktif',    val: dashData.productCount.toString(), color: '#0284C7',        iconBg: '#EFF6FF',           bar: '#0284C7,#0369A1' },
               { icon: <Users      size={16}/>, label: 'Total Reseller',  val: dashData.resellerCount.toString(),color: '#7C3AED',        iconBg: '#F5F3FF',           bar: '#7C3AED,#6D28D9' },
@@ -1226,7 +1226,7 @@ export default function AdminPage() {
               <div className="card p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: '#FEF2F2', color: '#D4691E' }}>
+                    style={{ background: '#FEF2F2', color: 'var(--accent)' }}>
                     <ShoppingCart size={15} />
                   </div>
                   <div>
@@ -1235,7 +1235,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <TopListChart
-                  color="#D4691E"
+                  color="var(--accent)"
                   items={ws.topProducts.slice(0, 6).map(p => ({
                     label: p.name,
                     value: p.clicks,

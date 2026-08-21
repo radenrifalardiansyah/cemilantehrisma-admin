@@ -50,7 +50,7 @@ function shortDate(dateStr: string): string {
 }
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = { lunas: '#059669', belum_lunas: '#DC2626' };
-const PRODUCT_COLORS = ['#D4691E', '#0284C7', '#7C3AED', '#059669', '#DB2777', '#B45309', '#0891B2', '#65A30D'];
+const PRODUCT_COLORS = ['var(--accent)', '#0284C7', '#7C3AED', '#059669', '#DB2777', '#B45309', '#0891B2', '#65A30D'];
 
 function sellThroughColor(pct: number): string {
   if (pct >= 70) return '#059669';
@@ -245,7 +245,7 @@ export default function ConsignmentAnalyticsSection({
               { icon: <Store size={16} />, label: 'Total Mitra', val: data.summary.totalPartners.toString(), color: '#7C3AED', bg: '#F5F3FF', isRp: false },
               { icon: <ArrowUpCircle size={16} />, label: 'Nilai Dikirim', val: formatRp(data.summary.totalKirim), color: '#0284C7', bg: '#EFF6FF', isRp: true },
               { icon: <Wallet size={16} />, label: 'Pendapatan', val: formatRp(data.summary.totalPendapatan), color: 'var(--success)', bg: 'var(--success-bg)', isRp: true },
-              { icon: <TrendingUp size={16} />, label: 'Tingkat Terjual', val: `${data.summary.sellThroughPct}%`, color: '#D4691E', bg: 'var(--accent-bg)', isRp: false },
+              { icon: <TrendingUp size={16} />, label: 'Tingkat Terjual', val: `${data.summary.sellThroughPct}%`, color: 'var(--accent)', bg: 'var(--accent-bg)', isRp: false },
             ].map((c, i) => (
               <div key={i} className="card relative p-4 overflow-hidden">
                 <div style={{ width: 34, height: 34, borderRadius: 10, background: c.bg, color: c.color, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>

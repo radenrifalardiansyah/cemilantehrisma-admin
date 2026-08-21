@@ -3,7 +3,7 @@ import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
-import { productUrl } from '@/lib/site';
+import { productUrl } from '@/lib/branding';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 // Short cache so bursts of near-simultaneous reads (dashboard load, POS stock

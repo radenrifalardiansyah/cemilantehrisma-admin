@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { X, Download, RotateCcw, QrCode as QrCodeIcon, Loader2, Check } from 'lucide-react';
-import { productUrl } from '@/lib/site';
+import { productUrl } from '@/lib/branding';
 import { useToast } from '@/components/Toast';
 
 interface Props {

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
 import { FieldValue } from 'firebase-admin/firestore';
-import { productUrl } from '@/lib/site';
+import { productUrl } from '@/lib/branding';
 
 const PRODUCTS = [
   { id: 'mk-ori-150', name: 'Mie Kremes Original', description: 'Mie kremes renyah dengan bumbu original gurih. Perpaduan mie kering & rempah alami yang bikin nagih.', details: ['Bahan: Mie Kering, Minyak Nabati, Kencur, Bawang Putih, Daun Jeruk', 'Bersertifikat HALAL Indonesia', 'NIB: 0403260068412 — Produksi Bogor', 'Tanpa pengawet, tekstur super crispy', 'Cocok untuk camilan sore & menemani santai'], price: 10000, emoji: '🍝', category: 'mie', badge: 'Best Seller', stock: 'open_po', gradient: 'from-orange-700 via-amber-600 to-yellow-400', bgColor: '#C2410C', weight: '150g', imageUrls: [], stockQty: 0 },

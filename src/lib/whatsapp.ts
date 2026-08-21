@@ -1,7 +1,7 @@
 import { CartItem, CustomerInfo } from '@/types';
+import { WHATSAPP_NUMBER } from '@/lib/branding';
 
-// Nomor WhatsApp Cemilan Teh Risma (format internasional: 62 + nomor tanpa 0)
-export const WHATSAPP_NUMBER = '6281212132014';
+export { WHATSAPP_NUMBER };
 
 export const formatCurrency = (amount: number): string =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);

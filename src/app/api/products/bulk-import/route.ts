@@ -2,7 +2,7 @@ import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
-import { productUrl } from '@/lib/site';
+import { productUrl } from '@/lib/branding';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 interface ImportRow {

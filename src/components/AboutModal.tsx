@@ -1,8 +1,10 @@
 'use client';
 
 import { X, Info, ExternalLink } from 'lucide-react';
+import { BRAND_NAME, DEVELOPER } from '@/lib/branding';
 
 const APP_VERSION = '0.1.0';
+const COPYRIGHT_YEAR = new Date().getFullYear();
 
 interface Props {
   onClose: () => void;
@@ -20,7 +22,7 @@ export default function AboutModal({ onClose }: Props) {
             <div className="modal-icon"><Info size={17} /></div>
             <div>
               <p className="modal-title">Tentang Aplikasi</p>
-              <p className="modal-subtitle">Cemilan Teh Risma · Admin</p>
+              <p className="modal-subtitle">{BRAND_NAME} · Admin</p>
             </div>
           </div>
           <button onClick={onClose} className="modal-close"><X size={14} /></button>
@@ -30,7 +32,7 @@ export default function AboutModal({ onClose }: Props) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
               Aplikasi admin untuk mengelola produk, pesanan, stok, keuangan, dan operasional
-              toko Cemilan Teh Risma secara terpusat.
+              toko {BRAND_NAME} secara terpusat.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14, borderRadius: 14, background: 'var(--surface-2)' }}>
@@ -41,22 +43,22 @@ export default function AboutModal({ onClose }: Props) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Diproduksi oleh</span>
                 <a
-                  href="https://www.eleven-digital.id"
+                  href={DEVELOPER.url}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}
                 >
-                  PT. Eleven Digital Indonesia <ExternalLink size={11} />
+                  {DEVELOPER.name} <ExternalLink size={11} />
                 </a>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Didukung oleh</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>RMedia Solutions</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>{DEVELOPER.supportedBy}</span>
               </div>
             </div>
 
             <p style={{ fontSize: 10.5, textAlign: 'center', color: 'var(--text-muted)' }}>
-              © 2026 Cemilan Teh Risma. Semua hak dilindungi.
+              © {COPYRIGHT_YEAR} {BRAND_NAME}. Semua hak dilindungi.
             </p>
           </div>
         </div>

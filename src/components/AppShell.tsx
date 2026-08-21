@@ -455,7 +455,7 @@ export default function AppShell({
                     <div className="relative" style={{ flexShrink: 0 }}>
                       <div style={{
                         width: 30, height: 30, borderRadius: 8, overflow: 'hidden',
-                        background: 'linear-gradient(135deg, #D4691E, #A84F10)',
+                        background: 'linear-gradient(135deg, var(--accent), #A84F10)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 12, fontWeight: 800, color: 'white',
                         boxShadow: '0 2px 6px rgba(212,105,30,0.35)',

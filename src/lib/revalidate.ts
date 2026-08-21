@@ -1,4 +1,4 @@
-import { SITE_URL } from '@/lib/site';
+import { SITE_URL } from '@/lib/branding';
 
 // Tells the storefront to drop its products/categories/stats cache right after we write to
 // Firestore, so admin edits show up immediately instead of waiting out its cache window

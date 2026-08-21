@@ -193,7 +193,7 @@ export default function BusinessAnalyticsSection({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { icon: <Globe size={16} />, label: 'Penjualan Online', val: data.channels.online, color: '#0284C7', bg: '#EFF6FF' },
-              { icon: <ShoppingCart size={16} />, label: 'Penjualan Kasir (POS)', val: data.channels.pos, color: '#D4691E', bg: 'var(--accent-bg)' },
+              { icon: <ShoppingCart size={16} />, label: 'Penjualan Kasir (POS)', val: data.channels.pos, color: 'var(--accent)', bg: 'var(--accent-bg)' },
               { icon: <Store size={16} />, label: 'Konsinyasi', val: data.channels.consignment, color: '#7C3AED', bg: '#F5F3FF' },
               { icon: <Wallet size={16} />, label: 'Total Pendapatan', val: data.channels.total, color: 'var(--success)', bg: 'var(--success-bg)' },
             ].map((c, i) => (
@@ -219,7 +219,7 @@ export default function BusinessAnalyticsSection({
               </div>
               <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 <LegendDot color="#0284C7" label="Online" />
-                <LegendDot color="#D4691E" label="Kasir" />
+                <LegendDot color="var(--accent)" label="Kasir" />
                 <LegendDot color="#7C3AED" label="Konsinyasi" />
               </div>
             </div>
@@ -236,7 +236,7 @@ export default function BusinessAnalyticsSection({
                     <YAxis tickFormatter={compactRp} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
                     <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 3' }} />
                     <Area type="monotone" dataKey="online" name="Online" stackId="ch" stroke="#0284C7" fill="#0284C7" fillOpacity={0.16} strokeWidth={2} />
-                    <Area type="monotone" dataKey="pos" name="Kasir" stackId="ch" stroke="#D4691E" fill="#D4691E" fillOpacity={0.16} strokeWidth={2} />
+                    <Area type="monotone" dataKey="pos" name="Kasir" stackId="ch" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.16} strokeWidth={2} />
                     <Area type="monotone" dataKey="consignment" name="Konsinyasi" stackId="ch" stroke="#7C3AED" fill="#7C3AED" fillOpacity={0.16} strokeWidth={2} />
                   </AreaChart>
                 </ResponsiveContainer>

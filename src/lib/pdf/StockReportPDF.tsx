@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
+import { THEME_COLOR } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
 
 export interface StockReportPDFRow {
@@ -35,7 +36,7 @@ const rp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
 const C = {
-  accent:   '#D4691E',
+  accent:   THEME_COLOR,
   accentBg: '#FDF0E6',
   dark:     '#1E1008',
   muted:    '#A08468',

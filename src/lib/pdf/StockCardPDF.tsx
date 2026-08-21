@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
+import { THEME_COLOR } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
 
 export interface StockCardMovementRow {
@@ -26,7 +27,7 @@ export interface StockCardPDFData {
 }
 
 const C = {
-  accent:   '#D4691E',
+  accent:   THEME_COLOR,
   accentBg: '#FDF0E6',
   dark:     '#1E1008',
   muted:    '#A08468',
