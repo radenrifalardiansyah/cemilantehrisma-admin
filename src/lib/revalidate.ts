@@ -5,7 +5,7 @@ import { SITE_URL } from '@/lib/branding';
 // (5 min for products/categories, 1 hour for stats). Best-effort: if the storefront is
 // unreachable or misconfigured, the admin write must still succeed — the storefront
 // cache just expires on its own schedule instead.
-export async function revalidateStorefront(tag: 'products' | 'categories' | 'stats' | 'payment-info') {
+export async function revalidateStorefront(tag: 'products' | 'categories' | 'stats' | 'payment-info' | 'branding') {
   const secret = process.env.REVALIDATE_SECRET;
   if (!secret) return;
   try {

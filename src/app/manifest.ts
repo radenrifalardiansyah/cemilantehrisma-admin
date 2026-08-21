@@ -1,16 +1,17 @@
 import type { MetadataRoute } from 'next';
-import { ADMIN_APP_NAME, ADMIN_MANIFEST_DESCRIPTION, THEME_COLOR, THEME_BACKGROUND_COLOR } from '@/lib/branding';
+import { getCachedAdminBranding } from '@/lib/server/branding';
 
-export default function manifest(): MetadataRoute.Manifest {
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const branding = await getCachedAdminBranding();
   return {
-    name: ADMIN_APP_NAME,
-    short_name: ADMIN_APP_NAME,
-    description: ADMIN_MANIFEST_DESCRIPTION,
+    name: branding.appName,
+    short_name: branding.appName,
+    description: `Dashboard Admin ${branding.storeName} — kelola produk, pesanan, stok, dan analitik toko.`,
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: THEME_BACKGROUND_COLOR,
-    theme_color: THEME_COLOR,
+    background_color: branding.themeBackgroundColor,
+    theme_color: branding.themeColor,
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },

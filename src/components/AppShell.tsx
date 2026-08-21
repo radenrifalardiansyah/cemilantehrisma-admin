@@ -753,7 +753,7 @@ export default function AppShell({
         </>
       )}
 
-      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+      {aboutOpen && <AboutModal creds={creds} onClose={() => setAboutOpen(false)} />}
       {profileOpen && (
         <EditProfileModal
           creds={creds}

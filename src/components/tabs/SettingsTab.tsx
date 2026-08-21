@@ -1,18 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
+import ColorPicker from '@/components/ColorPicker';
 import { useToast } from '@/components/Toast';
 
 const API = '';
 
 interface StoreSettings {
   storeName?: string; storeTagline?: string; storeDescription?: string; logo?: string;
+  legalName?: string;
   ownerName?: string; ownerSignature?: string; ownerStamp?: string;
-  whatsapp?: string; instagramUrl?: string; tiktokUrl?: string;
+  whatsapp?: string; instagramUrl?: string; tiktokUrl?: string; shopeeUrl?: string; mapsUrl?: string;
   address?: string; city?: string;
   privacyPolicy?: string; termsOfService?: string; returnPolicy?: string;
   minOrderWhatsapp?: string; openHours?: string;
@@ -23,6 +25,9 @@ interface StoreSettings {
   // (beda dari rekening reseller/adminFeeSettings, lihat komentar di api/settings/route.ts).
   storeBankName?: string; storeBankAccountNumber?: string; storeBankAccountHolder?: string;
   storeQrisImageUrl?: string;
+  // Tema visual — storefront (publik) dan dashboard admin ini punya warna sendiri-sendiri.
+  storefrontThemeColor?: string; storefrontThemeBackgroundColor?: string;
+  adminAppName?: string; adminThemeColor?: string; adminThemeBackgroundColor?: string;
 }
 
 interface SettingsWarehouse { id: string; name: string }
@@ -32,6 +37,7 @@ const FIELD_GROUPS = [
     id: 'store', icon: <Store size={15}/>, label: 'Info Toko',
     fields: [
       { key: 'storeName',        label: 'Nama Toko',       type: 'text',     placeholder: 'Cemilan Teh Risma' },
+      { key: 'legalName',        label: 'Nama Usaha (Legal)', type: 'text',  placeholder: 'Warung Teh Risma' },
       { key: 'storeTagline',     label: 'Tagline',         type: 'text',     placeholder: 'Camilan khas rumahan...' },
       { key: 'storeDescription', label: 'Deskripsi Toko',  type: 'textarea', placeholder: 'Tentang toko Anda...' },
       { key: 'ownerName',        label: 'Nama Pemilik',    type: 'text',     placeholder: 'Nama pemilik untuk tanda tangan PDF' },
@@ -45,6 +51,8 @@ const FIELD_GROUPS = [
       { key: 'whatsapp',      label: 'WhatsApp',   type: 'text', placeholder: '628xxx' },
       { key: 'instagramUrl',  label: 'Instagram',  type: 'text', placeholder: 'https://instagram.com/...' },
       { key: 'tiktokUrl',     label: 'TikTok',     type: 'text', placeholder: 'https://tiktok.com/...' },
+      { key: 'shopeeUrl',     label: 'Shopee',     type: 'text', placeholder: 'https://shopee.co.id/...' },
+      { key: 'mapsUrl',       label: 'Google Maps', type: 'text', placeholder: 'https://maps.app.goo.gl/...' },
     ],
   },
   {
@@ -71,6 +79,16 @@ const FIELD_GROUPS = [
       { key: 'privacyPolicy',  label: 'Kebijakan Privasi', type: 'textarea', placeholder: 'Isi kebijakan privasi...' },
       { key: 'termsOfService', label: 'Syarat & Ketentuan', type: 'textarea', placeholder: 'Isi syarat & ketentuan...' },
       { key: 'returnPolicy',   label: 'Kebijakan Pengembalian', type: 'textarea', placeholder: 'Isi kebijakan retur...' },
+    ],
+  },
+  {
+    id: 'branding', icon: <Palette size={15}/>, label: 'Tampilan & Tema',
+    fields: [
+      { key: 'storefrontThemeColor',           label: 'Warna Tema Toko (Storefront)', type: 'color', placeholder: '' },
+      { key: 'storefrontThemeBackgroundColor', label: 'Warna Latar Toko (Storefront)', type: 'color', placeholder: '' },
+      { key: 'adminAppName',                   label: 'Nama Aplikasi Admin',           type: 'text',  placeholder: 'Admin Teh Risma' },
+      { key: 'adminThemeColor',                label: 'Warna Tema Admin',              type: 'color', placeholder: '' },
+      { key: 'adminThemeBackgroundColor',       label: 'Warna Latar Admin',             type: 'color', placeholder: '' },
     ],
   },
   {
@@ -375,6 +393,11 @@ export default function SettingsTab({ creds }: { creds: string }) {
                       value={(settings as Record<string, string>)[f.key] ?? ''}
                       onChange={e => set(f.key, e.target.value)}
                       className="input w-full text-sm resize-none"
+                    />
+                  ) : f.type === 'color' ? (
+                    <ColorPicker
+                      value={(settings as Record<string, string>)[f.key] ?? ''}
+                      onChange={c => set(f.key, c)}
                     />
                   ) : (
                     <input

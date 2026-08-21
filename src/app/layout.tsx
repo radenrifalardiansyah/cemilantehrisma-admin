@@ -4,7 +4,8 @@ import "./globals.css";
 import AdminSplashScreen from "@/components/AdminSplashScreen";
 import ToastProvider from "@/components/Toast";
 import ConfirmProvider from "@/components/Confirm";
-import { ADMIN_APP_TITLE, ADMIN_APP_DESCRIPTION, ADMIN_APP_NAME, THEME_COLOR } from "@/lib/branding";
+import { getCachedAdminBranding } from "@/lib/server/branding";
+import { hexToShades } from "@/lib/color";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -13,32 +14,50 @@ const jakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: ADMIN_APP_TITLE,
-  description: ADMIN_APP_DESCRIPTION,
-  robots: { index: false, follow: false },
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: ADMIN_APP_NAME,
-  },
-  icons: {
-    icon: "/icon-192.png",
-    apple: "/apple-touch-icon.png",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const branding = await getCachedAdminBranding();
+  return {
+    title: `Dashboard Admin — ${branding.storeName}`,
+    description: `Admin dashboard ${branding.storeName}`,
+    robots: { index: false, follow: false },
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: branding.appName,
+    },
+    icons: {
+      icon: "/icon-192.png",
+      apple: "/apple-touch-icon.png",
+    },
+  };
+}
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: THEME_COLOR,
-};
+export async function generateViewport(): Promise<Viewport> {
+  const branding = await getCachedAdminBranding();
+  return {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    themeColor: branding.themeColor,
+  };
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const branding = await getCachedAdminBranding();
+  const shades = hexToShades(branding.themeColor);
+
   return (
-    <html lang="id" className={jakarta.variable}>
+    <html
+      lang="id"
+      className={jakarta.variable}
+      style={{
+        '--accent': shades.accent,
+        '--accent-dark': shades.dark,
+        '--accent-light': shades.light,
+        '--accent-bg': shades.bg,
+      } as React.CSSProperties}
+    >
       <body>
         <AdminSplashScreen />
         <ToastProvider>

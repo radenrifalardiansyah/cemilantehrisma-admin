@@ -25,8 +25,12 @@ export async function PUT(req: NextRequest) {
   // Nota kirim ke mitra (via WA) di-cache 1 jam per shipment — invalidasi begitu
   // ada perubahan settings (logo/alamat/ttd/dll) supaya tidak menampilkan data basi.
   revalidateTag('settings', 'max');
-  // Storefront (app terpisah) cache rekening/QRIS sendiri — beri tahu lewat
-  // endpoint revalidate-nya juga, sama seperti products/categories/stats.
-  after(() => revalidateStorefront('payment-info'));
+  // Storefront (app terpisah) cache rekening/QRIS & branding sendiri — beri tahu lewat
+  // endpoint revalidate-nya juga, sama seperti products/categories/stats. Kita tidak tahu
+  // dari sini field mana yang berubah, jadi invalidasi keduanya sekalian (murah, best-effort).
+  after(() => {
+    revalidateStorefront('payment-info');
+    revalidateStorefront('branding');
+  });
   return Response.json({ ok: true });
 }

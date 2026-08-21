@@ -1,9 +1,6 @@
 export const BRAND_NAME = 'Cemilan Teh Risma';
 
 export const ADMIN_APP_NAME = 'Admin Teh Risma';
-export const ADMIN_APP_TITLE = `Dashboard Admin — ${BRAND_NAME}`;
-export const ADMIN_APP_DESCRIPTION = `Admin dashboard ${BRAND_NAME}`;
-export const ADMIN_MANIFEST_DESCRIPTION = `Dashboard Admin ${BRAND_NAME} — kelola produk, pesanan, stok, dan analitik toko.`;
 
 export const WHATSAPP_NUMBER = '6281212132014';
 
