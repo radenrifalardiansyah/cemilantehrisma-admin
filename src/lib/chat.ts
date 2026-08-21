@@ -1,5 +1,6 @@
 export const TEAM_ROOM_ID = 'team';
-export const PRESENCE_ONLINE_WINDOW_MS = 45_000;
+// Kept at ~1.5x ChatWidget's HEARTBEAT_MS so a user doesn't flicker offline between beats.
+export const PRESENCE_ONLINE_WINDOW_MS = 90_000;
 
 // Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
 export type SerializedTimestamp = { seconds: number; nanoseconds: number };

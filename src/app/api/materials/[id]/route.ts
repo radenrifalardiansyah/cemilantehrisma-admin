@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -18,6 +19,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     minStock: Number(data.minStock) || 0,
     updatedAt: FieldValue.serverTimestamp(),
   });
+  revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -26,5 +28,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   await getDb().collection('rawMaterials').doc(id).delete();
+  revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ ok: true });
 }

@@ -1,15 +1,25 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { WAREHOUSES_LIST_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 
+// Opened whenever the Gudang tab is opened, not on every session — plain TTL is enough.
+const getCachedWarehouses = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('warehouses').orderBy('createdAt', 'asc').get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  ['admin-warehouses'],
+  { revalidate: 20 },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, WAREHOUSES_LIST_VIEW_KEYS, 'view');
   if (guard instanceof Response) return guard;
-  const snap = await getDb().collection('warehouses').orderBy('createdAt', 'asc').get();
-  const warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const warehouses = await getCachedWarehouses();
   return Response.json({ warehouses });
 }
 

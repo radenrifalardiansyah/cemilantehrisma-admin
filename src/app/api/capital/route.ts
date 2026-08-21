@@ -1,9 +1,32 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
+
+// CapitalTab always fetches with no from/to and sums the FULL result client-side for its
+// "Total Modal"/"Total Prive"/"Saldo Modal" cards — unlike orders/income/expenses, this can't
+// just get a `.limit()` fallback without silently corrupting those totals once an account has
+// more entries than the limit. Caching (arguments are part of the key, so from/to variants
+// each get their own cache entry) is the safe lever here: same tradeoff already accepted for
+// analytics/overview and analytics/consignment — still an unbounded scan on a cache miss, but
+// concurrent opens within the TTL window share one Firestore read instead of one each.
+const getCachedCapitalEntries = unstable_cache(
+  async (from: string | null, to: string | null) => {
+    let query: Query<DocumentData> = getDb().collection('capitalEntries').orderBy('date', 'desc');
+    if (from) query = query.where('date', '>=', from);
+    if (to)   query = query.where('date', '<=', to);
+    const snap = await query.get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
+    });
+  },
+  ['admin-capital-entries'],
+  { revalidate: 15, tags: ['admin-capital'] },
+);
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'capital', 'view');
@@ -12,15 +35,7 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from'); // ISO yyyy-mm-dd
   const to   = searchParams.get('to');
 
-  let query: Query<DocumentData> = getDb().collection('capitalEntries').orderBy('date', 'desc');
-  if (from) query = query.where('date', '>=', from);
-  if (to)   query = query.where('date', '<=', to);
-
-  const snap = await query.get();
-  const entries = snap.docs.map(d => {
-    const data = d.data();
-    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-  });
+  const entries = await getCachedCapitalEntries(from, to);
   return Response.json({ entries });
 }
 
@@ -66,5 +81,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write notification for capital create', err);
   }
+  revalidateTag('admin-capital', { expire: 0 });
   return Response.json({ id: ref.id });
 }

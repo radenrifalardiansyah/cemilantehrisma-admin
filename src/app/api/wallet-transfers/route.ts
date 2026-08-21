@@ -1,18 +1,27 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { computeWalletBalance } from '@/lib/wallet-balance';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 
+const getCachedWalletTransfers = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('walletTransfers').orderBy('date', 'desc').get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
+    });
+  },
+  ['admin-wallet-transfers'],
+  { revalidate: 15 },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'wallets', 'view');
   if (guard instanceof Response) return guard;
-  const snap = await getDb().collection('walletTransfers').orderBy('date', 'desc').get();
-  const transfers = snap.docs.map(d => {
-    const data = d.data();
-    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-  });
+  const transfers = await getCachedWalletTransfers();
   return Response.json({ transfers });
 }
 

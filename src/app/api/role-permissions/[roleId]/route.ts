@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, ROLE_PERMISSIONS_TAG } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
 import type { Action } from '@/types/rbac';
@@ -30,5 +31,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     { permissions: cleaned, updatedAt: FieldValue.serverTimestamp() },
     { merge: false },
   );
+  // { expire: 0 } instead of the 'max' stale-while-revalidate default — a revoked permission
+  // must apply on the very next request, not be served stale once more from cache.
+  revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });
   return Response.json({ ok: true });
 }

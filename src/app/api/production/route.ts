@@ -32,7 +32,9 @@ export async function GET(req: NextRequest) {
     (b.outputs ?? []).forEach(o => wsKeys.add(`${b.warehouseId}_${o.productId}`));
   });
   const wsKeyList = [...wsKeys];
-  const wsSnaps = await Promise.all(wsKeyList.map(k => db.collection('warehouse_stock').doc(k).get()));
+  const wsSnaps = wsKeyList.length > 0
+    ? await db.getAll(...wsKeyList.map(k => db.collection('warehouse_stock').doc(k)))
+    : [];
   const wsStock = new Map<string, number>();
   wsKeyList.forEach((k, i) => wsStock.set(k, Number(wsSnaps[i].data()?.stockQty) || 0));
 

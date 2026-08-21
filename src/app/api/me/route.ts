@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { getDb } from '@/lib/firebase-admin';
+import { getRolePermissionsMap } from '@/lib/rbac';
 import { fullAccessPermissions } from '@/lib/permissions';
 import type { Action } from '@/types/rbac';
 
@@ -12,13 +13,15 @@ export async function GET(req: NextRequest) {
 
   const superAdmin = authUser.role === 'super-admin';
   const db = getDb();
-  const [permsDoc, userDoc] = await Promise.all([
-    superAdmin ? null : db.collection('role_permissions').doc(authUser.role).get(),
+  // Was a raw role_permissions read — this route fires on every session restore/refresh
+  // for every logged-in user, so it needs the same cache as requirePermission's checks.
+  const [permsMap, userDoc] = await Promise.all([
+    superAdmin ? null : getRolePermissionsMap(authUser.role),
     db.collection('users').doc(authUser.username).get(),
   ]);
   const permissions: Record<string, Partial<Record<Action, boolean>>> = superAdmin
     ? fullAccessPermissions()
-    : (permsDoc!.data()?.permissions as Record<string, Partial<Record<Action, boolean>>>) ?? {};
+    : (permsMap as Record<string, Partial<Record<Action, boolean>>> | null) ?? {};
 
   const userData = userDoc.data() as { email?: string | null; avatar?: string | null } | undefined;
   const user = { ...authUser, email: userData?.email ?? null, avatar: userData?.avatar ?? null };

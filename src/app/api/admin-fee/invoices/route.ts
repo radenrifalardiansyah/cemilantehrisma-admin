@@ -1,23 +1,34 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { computeReport, collectTransactionIds } from '@/lib/admin-fee';
 
-export async function GET(req: NextRequest) {
-  const guard = requireAdminOrSuperAdmin(req);
-  if (guard instanceof Response) return guard;
-  const snap = await getDb().collection('adminFeeInvoices').orderBy('createdAt', 'desc').get();
-  const invoices = snap.docs
-    // `admin` (pemilik usaha yang ditagih) cuma boleh lihat invoice yang sudah benar-benar
-    // ditagihkan — draft masih internal RMedia Solutions dan belum tentu final, dan yang
-    // dibatalkan bukan lagi tagihan aktif.
-    .filter(d => guard.role === 'super-admin' || !['draft', 'cancelled'].includes(d.data().status))
-    .map(d => {
+// Cached unfiltered — role-based filtering below stays outside the cache (per-request, not
+// baked into the shared cached value) since which rows `admin` may see depends on the caller.
+const getCachedInvoices = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('adminFeeInvoices').orderBy('createdAt', 'desc').get();
+    return snap.docs.map(d => {
       const data = d.data();
       const createdAt = data.createdAt as Timestamp | undefined;
       return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
     });
+  },
+  ['admin-fee-invoices'],
+  { revalidate: 20 },
+);
+
+export async function GET(req: NextRequest) {
+  const guard = requireAdminOrSuperAdmin(req);
+  if (guard instanceof Response) return guard;
+  const all = await getCachedInvoices();
+  const invoices = all
+    // `admin` (pemilik usaha yang ditagih) cuma boleh lihat invoice yang sudah benar-benar
+    // ditagihkan — draft masih internal RMedia Solutions dan belum tentu final, dan yang
+    // dibatalkan bukan lagi tagihan aktif.
+    .filter(d => guard.role === 'super-admin' || !['draft', 'cancelled'].includes((d as { status?: string }).status ?? ''));
   return Response.json({ invoices });
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, ROLE_PERMISSIONS_TAG } from '@/lib/rbac';
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'roles', 'delete');
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
     batch.delete(db.collection('role_permissions').doc(id));
   }
   await batch.commit();
+  if (deletable.length > 0) revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });
 
   return Response.json({ deleted: deletable.length, skippedSystem, skippedInUse });
 }

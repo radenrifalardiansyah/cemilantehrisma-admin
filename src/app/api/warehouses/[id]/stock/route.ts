@@ -21,13 +21,14 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     .map(d => d.data())
     .filter(data => ((data.stockQty as number) ?? 0) > 0);
 
-  // Ambil nama produk terbaru (nama bisa berubah setelah dicatat di warehouse_stock)
-  const productIds = entries.map(e => e.productId as string);
+  // Ambil nama produk terbaru (nama bisa berubah setelah dicatat di warehouse_stock) —
+  // satu batchGet (getAll) alih-alih N .get() terpisah, satu round trip ke Firestore.
+  const productIds = [...new Set(entries.map(e => e.productId as string))];
   const productNames = new Map<string, string>();
-  await Promise.all(productIds.map(async id => {
-    const doc = await db.collection('products').doc(id).get();
-    if (doc.exists) productNames.set(id, doc.data()?.name as string);
-  }));
+  if (productIds.length > 0) {
+    const productDocs = await db.getAll(...productIds.map(id => db.collection('products').doc(id)));
+    productDocs.forEach((doc, i) => { if (doc.exists) productNames.set(productIds[i], doc.data()?.name as string); });
+  }
 
   const stocks = entries
     .map(e => ({

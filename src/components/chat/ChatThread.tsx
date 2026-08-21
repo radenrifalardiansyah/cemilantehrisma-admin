@@ -26,7 +26,9 @@ interface Props {
   onMarkedRead: () => void;
 }
 
-const POLL_MS = 4_000;
+// Was 4s — Firestore bills a minimum of 1 read per query call regardless of whether there
+// are new messages, so an open thread cost ~900 reads/hour just from this poll alone.
+const POLL_MS = 6_000;
 
 export default function ChatThread({
   roomId, title, avatarUsername, avatarUrl, username, creds, onBack, onClose, onMarkedRead,
@@ -35,8 +37,13 @@ export default function ChatThread({
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const lastCreatedAtRef = useRef<string | null>(null);
+  const hasUnreadMineRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const headers = { 'x-admin-auth': creds };
+
+  useEffect(() => {
+    hasUnreadMineRef.current = messages.some(m => m.senderUsername === username && !m.read);
+  }, [messages, username]);
 
   const markRead = useCallback(() => {
     fetch(`/api/chat/rooms/${roomId}/read`, { method: 'POST', headers: { 'x-admin-auth': creds } })
@@ -62,6 +69,10 @@ export default function ChatThread({
   }, [roomId, creds, username, markRead]);
 
   const refreshReadReceipts = useCallback(async () => {
+    // Nothing to reconcile if none of our own messages are showing as unread — skips a
+    // `reads` collection scan on every 4s tick for the (common) case that the other side
+    // is already caught up.
+    if (!hasUnreadMineRef.current) return;
     try {
       const r = await fetch(`/api/chat/rooms/${roomId}/reads`, { headers: { 'x-admin-auth': creds } });
       if (!r.ok) return;

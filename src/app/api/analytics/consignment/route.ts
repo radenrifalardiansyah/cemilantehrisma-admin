@@ -23,7 +23,7 @@ interface StockDoc { locationId?: string; productId?: string; stockQty?: number;
 // CONSIGNMENT_RECAP_VIEW_KEYS di lib/permissions.ts) supaya satu endpoint bisa dipakai kedua tempat.
 const CONSIGNMENT_ANALYTICS_VIEW_KEYS = ['consignment', 'dashboard'];
 
-// Raw Firestore reads untuk satu rentang tanggal — cached 60s, pola sama dengan
+// Raw Firestore reads untuk satu rentang tanggal — cached 3 menit, pola sama dengan
 // getRawAnalytics di /api/analytics/overview.
 const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
@@ -53,7 +53,7 @@ const getRawConsignmentAnalytics = unstable_cache(
     };
   },
   ['admin-analytics-consignment'],
-  { revalidate: 60 }
+  { revalidate: 180 }
 );
 
 export async function GET(req: NextRequest) {

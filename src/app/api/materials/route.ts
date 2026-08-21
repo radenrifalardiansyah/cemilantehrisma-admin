@@ -1,13 +1,24 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
+// Was the one uncached GET in the dashboard's fetch fan-out (products/customers/resellers
+// etc. already use this same pattern) — fires on every session restore.
+const getCachedMaterials = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('rawMaterials').orderBy('createdAt', 'asc').get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  ['admin-materials'],
+  { revalidate: 15, tags: ['admin-materials'] },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'view');
   if (guard instanceof Response) return guard;
-  const snap = await getDb().collection('rawMaterials').orderBy('createdAt', 'asc').get();
-  const materials = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const materials = await getCachedMaterials();
   return Response.json({ materials });
 }
 
@@ -25,5 +36,6 @@ export async function POST(req: NextRequest) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ id: ref.id });
 }

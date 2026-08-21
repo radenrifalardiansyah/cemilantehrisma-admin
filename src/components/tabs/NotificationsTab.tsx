@@ -1,10 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { collection, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
+import { useState } from 'react';
 import { Bell, ChevronLeft, ChevronRight, Search } from 'lucide-react';
-import { getClientDb } from '@/lib/firebase-client';
-import { useFirebaseSignIn } from '@/lib/useFirebaseSignIn';
+import { useNotifications } from '@/components/NotificationsProvider';
 import { useViewMode } from '@/lib/useViewMode';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
@@ -16,10 +14,9 @@ import { TYPE_ICON, timeAgo, type NotificationDoc } from '@/components/Notificat
 const HEADER_BTN_H = 34;
 
 // Riwayat lengkap notifikasi — beda dengan dropdown lonceng (NotificationBell) yang cuma
-// menampilkan 50 terakhir tanpa pagination. Tab ini ambil batch lebih besar + dipaginasi
-// di client, pola yang sama dengan tab-tab lain (Materials, Consignment, dst).
-const FETCH_LIMIT = 500;
-
+// menampilkan 50 terakhir tanpa pagination. Tab ini dipaginasi di client, pola yang sama
+// dengan tab-tab lain (Materials, Consignment, dst). Data dari listener yang sama dengan
+// NotificationBell (lihat NotificationsProvider) — bukan onSnapshot terpisah.
 interface NotificationsTabProps {
   creds: string;
   username: string;
@@ -27,24 +24,12 @@ interface NotificationsTabProps {
 }
 
 export default function NotificationsTab({ creds, username, onOpenNotification }: NotificationsTabProps) {
-  const signedIn = useFirebaseSignIn(creds);
-  const [notifications, setNotifications] = useState<NotificationDoc[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { notifications, loading } = useNotifications();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [view, setView] = useViewMode('notifications');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-
-  useEffect(() => {
-    if (!signedIn) return;
-    const q = query(collection(getClientDb(), 'notifications'), orderBy('createdAt', 'desc'), limit(FETCH_LIMIT));
-    const unsub = onSnapshot(q, snap => {
-      setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() }) as NotificationDoc));
-      setLoading(false);
-    }, err => { console.error('Notifications list error', err); setLoading(false); });
-    return unsub;
-  }, [signedIn]);
 
   const unread = notifications.filter(n => !n.readBy?.includes(username));
 

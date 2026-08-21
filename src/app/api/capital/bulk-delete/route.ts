@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 
@@ -13,5 +14,6 @@ export async function POST(req: NextRequest) {
   const batch = db.batch();
   for (const id of ids) batch.delete(db.collection('capitalEntries').doc(id));
   await batch.commit();
+  revalidateTag('admin-capital', { expire: 0 });
   return Response.json({ deleted: ids.length });
 }

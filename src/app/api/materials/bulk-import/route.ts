@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
     }
   }
   if (opsInBatch > 0) await batch.commit();
+  if (created > 0) revalidateTag('admin-materials', { expire: 0 });
 
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

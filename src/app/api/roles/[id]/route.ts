@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, ROLE_PERMISSIONS_TAG } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -42,5 +43,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   await db.collection('roles').doc(id).delete();
   await db.collection('role_permissions').doc(id).delete();
+  revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });
   return Response.json({ ok: true });
 }

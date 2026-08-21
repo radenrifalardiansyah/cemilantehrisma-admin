@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -39,6 +40,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for capital update', err);
   }
+  revalidateTag('admin-capital', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -64,5 +66,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for capital delete', err);
   }
+  revalidateTag('admin-capital', { expire: 0 });
   return Response.json({ ok: true });
 }

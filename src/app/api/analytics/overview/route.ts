@@ -25,10 +25,11 @@ interface CapitalDoc { type?: 'modal' | 'prive'; amount?: number }
 // terjual — sama seperti FinanceReportTab, jangan dihitung lagi di Beban Operasional (dobel).
 const isCogsSourcedExpense = (e: ExpenseDoc) => e.sourceType === 'material-purchase' || e.sourceType === 'production';
 
-// Raw Firestore reads untuk satu rentang tanggal — cached 60s karena endpoint ini dipanggil tiap
-// dashboard dibuka & tiap ganti periode, dan tidak butuh data second-fresh untuk sebuah ringkasan
-// tren. createdAt dikonversi ke detik (number) di sini, bukan dibiarkan sebagai Timestamp, supaya
-// aman di-serialize oleh unstable_cache dan konsisten dengan pola route lain (orders, consignment).
+// Raw Firestore reads untuk satu rentang tanggal — cached 3 menit karena endpoint ini dipanggil
+// tiap dashboard dibuka & tiap ganti periode, dan tidak butuh data second-fresh untuk sebuah
+// ringkasan tren. createdAt dikonversi ke detik (number) di sini, bukan dibiarkan sebagai
+// Timestamp, supaya aman di-serialize oleh unstable_cache dan konsisten dengan pola route lain
+// (orders, consignment).
 const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
@@ -61,7 +62,7 @@ const getRawAnalytics = unstable_cache(
     };
   },
   ['admin-analytics-overview'],
-  { revalidate: 60 }
+  { revalidate: 180 }
 );
 
 interface OrderCashDoc { total?: number; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas' }
@@ -69,7 +70,13 @@ interface RecapCashDoc { totalRevenue?: number; paymentStatus?: 'lunas' | 'belum
 
 // Saldo kas riil sejak awal pencatatan — independen dari filter periode di atas, sama seperti
 // "Saldo Kas Saat Ini" di FinanceReportTab. Query terpisah (bukan ikut getRawAnalytics) karena
-// tidak butuh direfetch tiap ganti periode dashboard, cukup di-cache sendiri per 60 detik.
+// tidak butuh direfetch tiap ganti periode dashboard, cukup di-cache sendiri.
+//
+// Ini satu-satunya query di app yang scan SELURUH riwayat orders/recaps/income/expenses/capital
+// tanpa batas tanggal — biayanya membesar seiring bertambahnya data dari bulan ke bulan, beda
+// dari getRawAnalytics di atas yang dibatasi rentang from/to. 10 menit (bukan 60 detik) karena
+// ini angka ringkasan dashboard, bukan penghitung real-time — akurasinya tetap 100% sama persis,
+// cuma dihitung ulang lebih jarang.
 const getAllTimeCash = unstable_cache(
   async () => {
     const db = getDb();
@@ -89,7 +96,7 @@ const getAllTimeCash = unstable_cache(
     };
   },
   ['admin-analytics-alltime-cash'],
-  { revalidate: 60 }
+  { revalidate: 600 }
 );
 
 export async function GET(req: NextRequest) {

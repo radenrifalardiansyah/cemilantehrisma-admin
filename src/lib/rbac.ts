@@ -1,6 +1,9 @@
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getAuthUser, unauthorized, type AuthUser } from '@/lib/admin-auth';
 import type { Action } from '@/types/rbac';
+
+export const ROLE_PERMISSIONS_TAG = 'role-permissions';
 
 export function forbidden() {
   return Response.json({ error: 'Anda tidak memiliki akses untuk aksi ini.' }, { status: 403 });
@@ -22,10 +25,20 @@ export async function hasPermission(
 // role in one request (e.g. GET /api/menus filtering the whole menu tree) — fetching the
 // role_permissions doc once and checking in-memory instead of once per featureKey turns an
 // N-item sequential Firestore round trip into a single read.
-export async function getRolePermissionsMap(role: string): Promise<PermissionsMap | null> {
-  const doc = await getDb().collection('role_permissions').doc(role).get();
-  return (doc.data()?.permissions as PermissionsMap | undefined) ?? null;
-}
+//
+// Cached: this runs on nearly every authenticated API call (requirePermission is used across
+// ~150 routes), so an uncached read here roughly doubled the app's total Firestore read volume.
+// Role matrices change rarely, so a short TTL is safe; role-permissions/[roleId] PUT and
+// roles/[id] DELETE call revalidateTag(ROLE_PERMISSIONS_TAG) so edits still apply immediately
+// instead of waiting out the TTL.
+export const getRolePermissionsMap = unstable_cache(
+  async (role: string): Promise<PermissionsMap | null> => {
+    const doc = await getDb().collection('role_permissions').doc(role).get();
+    return (doc.data()?.permissions as PermissionsMap | undefined) ?? null;
+  },
+  ['role-permissions-map'],
+  { revalidate: 30, tags: [ROLE_PERMISSIONS_TAG] },
+);
 
 export function checkPermission(
   permissions: PermissionsMap | null,

@@ -12,6 +12,7 @@ import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
 import ChatWidget from '@/components/chat/ChatWidget';
 import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
+import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
@@ -179,6 +180,7 @@ export default function AppShell({
     setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   return (
+    <NotificationsProvider creds={creds}>
     <div className="flex h-app-screen overflow-hidden" style={{ background: 'var(--ground)' }}>
 
       {/* ═══ Desktop Sidebar ═══════════════════════════════════ */}
@@ -766,5 +768,6 @@ export default function AppShell({
 
       <ChatWidget username={username} creds={creds} avatar={avatar} />
     </div>
+    </NotificationsProvider>
   );
 }

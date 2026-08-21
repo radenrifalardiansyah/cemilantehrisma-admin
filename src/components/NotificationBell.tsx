@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { collection, onSnapshot, orderBy, query, limit, Timestamp } from 'firebase/firestore';
+import type { Timestamp } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
 import { Bell, ShoppingCart, PackageX, Wallet, ReceiptText, Receipt, Truck, ClipboardList, TrendingUp, TrendingDown, Landmark } from 'lucide-react';
-import { getClientDb, getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
+import { getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-client';
 import { usePwaInstall } from '@/lib/usePwaInstall';
-import { useFirebaseSignIn } from '@/lib/useFirebaseSignIn';
+import { useNotifications } from '@/components/NotificationsProvider';
 import NotificationDetailModal from '@/components/NotificationDetailModal';
 
 export interface NotificationDoc {
@@ -58,10 +58,9 @@ interface NotificationBellProps {
 type PushStatus = 'idle' | 'enabling' | 'granted' | 'denied';
 
 export default function NotificationBell({ creds, username, onOpen, onViewAll }: NotificationBellProps) {
-  const [notifications, setNotifications] = useState<NotificationDoc[]>([]);
+  const { notifications } = useNotifications();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<NotificationDoc | null>(null);
-  const signedIn = useFirebaseSignIn(creds);
   const [pushStatus, setPushStatus] = useState<PushStatus>(() =>
     typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'granted' : 'idle'
   );
@@ -97,15 +96,6 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
   };
 
   useEffect(() => {
-    if (!signedIn) return;
-    const q = query(collection(getClientDb(), 'notifications'), orderBy('createdAt', 'desc'), limit(50));
-    const unsub = onSnapshot(q, snap => {
-      setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() }) as NotificationDoc));
-    }, err => console.error('Notification listener error', err));
-    return unsub;
-  }, [signedIn]);
-
-  useEffect(() => {
     if (!open) return;
     const onClickOutside = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
@@ -115,6 +105,9 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
   }, [open]);
 
   const unread = notifications.filter(n => !n.readBy?.includes(username));
+  // Dropdown only ever showed the latest 50 — the shared listener now carries more
+  // (see NotificationsProvider), so trim for display here rather than render all of it.
+  const visible = notifications.slice(0, 50);
 
   const markRead = (id: string) => {
     fetch(`/api/notifications/${id}/read`, { method: 'PATCH', headers: { 'x-admin-auth': creds } }).catch(() => {});
@@ -163,12 +156,12 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
             )}
           </div>
           <div className="max-h-96 overflow-y-auto thin-scrollbar">
-            {notifications.length === 0 && (
+            {visible.length === 0 && (
               <p className="px-3.5 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
                 Belum ada notifikasi.
               </p>
             )}
-            {notifications.map(n => {
+            {visible.map(n => {
               const Icon = TYPE_ICON[n.type] ?? Bell;
               const isRead = n.readBy?.includes(username);
               return (

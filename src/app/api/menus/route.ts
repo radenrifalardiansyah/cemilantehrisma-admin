@@ -1,9 +1,33 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { hasPermission, getRolePermissionsMap, checkPermission } from '@/lib/rbac';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
+
+// Every logged-in session fetches this once on mount (sidebar build) — was two raw
+// collection scans on every session, now collapsed across concurrent sessions for 20s.
+// Struktur Menu/Modul edits are rare and a few seconds of staleness here is cosmetic
+// (permission filtering below is always fresh via getRolePermissionsMap), so a plain
+// TTL is enough — no tag/invalidation wiring needed, same tradeoff as getAllUsernames.
+const getModulesAndMenus = unstable_cache(
+  async () => {
+    const db = getDb();
+    const [modSnap, menuSnap] = await Promise.all([
+      db.collection('modules').orderBy('order', 'asc').get(),
+      db.collection('menus').orderBy('order', 'asc').get(),
+    ]);
+    return {
+      modules: modSnap.docs.map(d => ({ id: d.id, ...d.data() })) as { id: string; isActive: boolean }[],
+      menus: menuSnap.docs.map(d => ({ id: d.id, ...d.data() })) as {
+        id: string; moduleId: string; featureKey: string; isActive: boolean;
+      }[],
+    };
+  },
+  ['modules-and-menus'],
+  { revalidate: 20 },
+);
 
 // Two modes, selected by an explicit `?scope=manage` query param (not by the
 // caller's own permissions — an Admin/Super Admin who can manage menus still
@@ -17,15 +41,7 @@ export async function GET(req: NextRequest) {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
 
-  const db = getDb();
-  const [modSnap, menuSnap] = await Promise.all([
-    db.collection('modules').orderBy('order', 'asc').get(),
-    db.collection('menus').orderBy('order', 'asc').get(),
-  ]);
-  let modules = modSnap.docs.map(d => ({ id: d.id, ...d.data() })) as { id: string; isActive: boolean }[];
-  let menus = menuSnap.docs.map(d => ({ id: d.id, ...d.data() })) as {
-    id: string; moduleId: string; featureKey: string; isActive: boolean;
-  }[];
+  let { modules, menus } = await getModulesAndMenus();
 
   const wantsManage = new URL(req.url).searchParams.get('scope') === 'manage';
   if (wantsManage) {

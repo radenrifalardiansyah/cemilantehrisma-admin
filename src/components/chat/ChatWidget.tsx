@@ -12,7 +12,10 @@ interface Props {
   avatar: string | null;
 }
 
-const HEARTBEAT_MS = 25_000;
+// Was 25s — writes a `presence/status` doc on every beat for every logged-in session
+// regardless of whether the chat panel is open, so this is a direct write-quota multiplier.
+// Paired with PRESENCE_ONLINE_WINDOW_MS in lib/chat.ts (kept at ~1.5x this value).
+const HEARTBEAT_MS = 60_000;
 // Was 20s — /api/chat/unread does an N+1 read (all users + 2 doc reads per other user) on
 // every call, so this poll's frequency directly multiplies Firestore read volume.
 const UNREAD_POLL_MS = 45_000;

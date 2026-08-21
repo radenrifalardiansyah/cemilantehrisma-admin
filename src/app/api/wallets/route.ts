@@ -1,17 +1,28 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 
+// Opened whenever the Dompet tab (or any dropdown showing wallet balances) is opened,
+// not on every session — plain TTL is enough.
+const getCachedWallets = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('wallets').orderBy('order', 'asc').get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
+    });
+  },
+  ['admin-wallets'],
+  { revalidate: 15 },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'wallets', 'view');
   if (guard instanceof Response) return guard;
-  const snap = await getDb().collection('wallets').orderBy('order', 'asc').get();
-  const wallets = snap.docs.map(d => {
-    const data = d.data();
-    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-  });
+  const wallets = await getCachedWallets();
   return Response.json({ wallets });
 }
 

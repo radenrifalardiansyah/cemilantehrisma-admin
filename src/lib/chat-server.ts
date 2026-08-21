@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
-import { getDb } from './firebase-admin';
+import type { Timestamp } from 'firebase-admin/firestore';
+import { getDb, serializeTimestamp } from './firebase-admin';
 import { TEAM_ROOM_ID } from './chat';
 
 // Just the username list, not full account docs — this is what chat's presence/unread/
@@ -12,6 +13,21 @@ export const getAllUsernames = unstable_cache(
     return snap.docs.map(d => d.id);
   },
   ['chat-all-usernames'],
+  { revalidate: 20 },
+);
+
+// Full account docs (role/avatar/lastLoginAt) — used by GET /api/chat/accounts, which fires
+// once per ChatWidget mount, i.e. every session. Was its own raw `users` scan bypassing the
+// cache above; same 20s TTL since it's the same underlying collection.
+export const getAllAccounts = unstable_cache(
+  async () => {
+    const snap = await getDb().collection('users').get();
+    return snap.docs.map(d => {
+      const data = d.data() as { role?: string; avatar?: string | null; lastLoginAt?: Timestamp };
+      return { username: d.id, role: data.role ?? '', avatar: data.avatar ?? null, lastLoginAt: serializeTimestamp(data.lastLoginAt) };
+    });
+  },
+  ['chat-all-accounts'],
   { revalidate: 20 },
 );
 
