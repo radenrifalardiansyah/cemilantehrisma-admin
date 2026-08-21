@@ -826,8 +826,8 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                 {o.source === 'portal' && o.status === 'baru' && (
                   <Tooltip label="Tandai Selesai">
                     <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
-                      className="btn-ghost p-2" style={{ color: 'var(--success)' }} title="Tandai Selesai">
-                      {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Tandai Selesai">
+                      {markingId === o.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
                     </button>
                   </Tooltip>
                 )}
@@ -840,32 +840,32 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                 {o.status !== 'dibatalkan' && (
                   <Tooltip label="Batalkan Pesanan">
                     <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
-                      className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
-                      {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Batalkan Pesanan">
+                      {cancelingId === o.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                     </button>
                   </Tooltip>
                 )}
                 <Tooltip label="Cetak Ulang Struk">
-                  <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
-                    <Printer size={13} />
+                  <button onClick={() => printReceiptFor(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Ulang Struk">
+                    <Printer size={12} />
                   </button>
                 </Tooltip>
                 {o.status !== 'dibatalkan' && (
                   <Tooltip label="Edit">
-                    <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
-                      <Pencil size={13} />
+                    <button onClick={() => openEdit(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit Pesanan">
+                      <Pencil size={12} />
                     </button>
                   </Tooltip>
                 )}
                 <Tooltip label="Hapus">
-                  <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
-                    <Trash2 size={13} />
+                  <button onClick={() => del(o.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus Pesanan">
+                    <Trash2 size={12} />
                   </button>
                 </Tooltip>
                 <RecordHistoryButton open={historyId === o.id} onToggle={() => toggleHistory(o.id)} />
                 <Tooltip label="Lihat Detail">
-                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="btn-ghost p-2">
-                    <ChevronRight size={13} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                  <button onClick={() => setExpandedId(expandedId === o.id ? null : o.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                    <ChevronRight size={12} style={{ transform: expandedId === o.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                   </button>
                 </Tooltip>
               </>
@@ -954,26 +954,26 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     {o.status !== 'dibatalkan' && (
                       <Tooltip label="Batalkan Pesanan">
                         <button onClick={() => cancelOrder(o.id)} disabled={cancelingId === o.id}
-                          className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Batalkan Pesanan">
-                          {cancelingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Batalkan Pesanan">
+                          {cancelingId === o.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                         </button>
                       </Tooltip>
                     )}
                     <Tooltip label="Cetak Ulang Struk">
-                      <button onClick={() => printReceiptFor(o)} className="btn-ghost p-2" title="Cetak Ulang Struk">
-                        <Printer size={13} />
+                      <button onClick={() => printReceiptFor(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Ulang Struk">
+                        <Printer size={12} />
                       </button>
                     </Tooltip>
                     {o.status !== 'dibatalkan' && (
                       <Tooltip label="Edit">
-                        <button onClick={() => openEdit(o)} className="btn-ghost p-2" title="Edit Pesanan">
-                          <Pencil size={13} />
+                        <button onClick={() => openEdit(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit Pesanan">
+                          <Pencil size={12} />
                         </button>
                       </Tooltip>
                     )}
                     <Tooltip label="Hapus">
-                      <button onClick={() => del(o.id)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }} title="Hapus Pesanan">
-                        <Trash2 size={13} />
+                      <button onClick={() => del(o.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus Pesanan">
+                        <Trash2 size={12} />
                       </button>
                     </Tooltip>
                     <RecordHistoryButton open={historyId === o.id} onToggle={() => toggleHistory(o.id)} />
@@ -989,8 +989,8 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     {o.source === 'portal' && o.status === 'baru' && (
                       <Tooltip label="Tandai Selesai">
                         <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
-                          className="btn-ghost p-1.5" style={{ color: 'var(--success)' }} title="Tandai Selesai">
-                          {markingId === o.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Tandai Selesai">
+                          {markingId === o.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
                         </button>
                       </Tooltip>
                     )}

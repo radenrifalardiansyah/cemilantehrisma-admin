@@ -1131,17 +1131,17 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                           </div>
                           <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                             <Tooltip label="Koreksi Stok/Harga">
-                              <button onClick={() => openAdjust(m)} className="btn-ghost p-1.5" style={{ color: 'var(--text-secondary)' }} title="Koreksi Stok/Harga">
+                              <button onClick={() => openAdjust(m)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Koreksi Stok/Harga">
                                 <Wrench size={12} />
                               </button>
                             </Tooltip>
                             <Tooltip label="Edit">
-                              <button onClick={() => openEditM(m)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                              <button onClick={() => openEditM(m)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
                                 <Pencil size={12} />
                               </button>
                             </Tooltip>
                             <Tooltip label="Hapus">
-                              <button onClick={() => deleteMaterial(m)} disabled={deletingMId === m.id} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                              <button onClick={() => deleteMaterial(m)} disabled={deletingMId === m.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
                                 {deletingMId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                               </button>
                             </Tooltip>
@@ -1323,19 +1323,19 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                                             </button>
                                           )}
                                           <Tooltip label="Edit">
-                                            <button onClick={() => openEditPurchase(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
+                                            <button onClick={() => openEditPurchase(p)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Edit">
                                               <Pencil size={12} />
                                             </button>
                                           </Tooltip>
                                           <Tooltip label="Hapus">
                                             <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
-                                              className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
+                                              className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
                                               {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                             </button>
                                           </Tooltip>
                                           <Tooltip label="Batalkan pembelian">
                                             <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
-                                              className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
+                                              className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
                                               {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                                             </button>
                                           </Tooltip>
@@ -1391,19 +1391,19 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                                       </button>
                                     )}
                                     <Tooltip label="Edit">
-                                      <button onClick={() => openEditPurchase(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }} title="Edit">
+                                      <button onClick={() => openEditPurchase(p)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Edit">
                                         <Pencil size={12} />
                                       </button>
                                     </Tooltip>
                                     <Tooltip label="Hapus">
                                       <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
-                                        className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} title="Hapus">
+                                        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
                                         {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                       </button>
                                     </Tooltip>
                                     <Tooltip label="Batalkan pembelian">
                                       <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
-                                        className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
+                                        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
                                         {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                                       </button>
                                     </Tooltip>

@@ -17,8 +17,9 @@ import {
 export function RecordHistoryButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
     <Tooltip label={open ? 'Tutup riwayat perubahan' : 'Riwayat perubahan'}>
-      <button onClick={onToggle} className="btn-ghost p-2 flex-shrink-0" style={open ? { color: 'var(--accent)' } : undefined}>
-        <FileClock size={13} />
+      <button onClick={onToggle} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{ background: 'var(--surface-2)', color: open ? 'var(--accent)' : 'var(--text-secondary)' }}>
+        <FileClock size={12} />
       </button>
     </Tooltip>
   );
