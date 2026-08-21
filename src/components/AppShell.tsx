@@ -115,6 +115,7 @@ export default function AppShell({
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sidebarQuery, setSidebarQuery] = useState('');
   const [aboutOpen,  setAboutOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
@@ -139,6 +140,22 @@ export default function AppShell({
   const filteredMoreTabs = moreQuery.trim()
     ? MORE_TABS_DISPLAY.filter(t => t.label.toLowerCase().includes(moreQuery.trim().toLowerCase()))
     : MORE_TABS_DISPLAY;
+
+  // Desktop sidebar search — filters the nested NAV_GROUPS tree by label, keeping a
+  // parent tab whenever it or any of its children match so results stay navigable.
+  const sq = sidebarQuery.trim().toLowerCase();
+  const isSidebarSearching = sq.length > 0;
+  const filterNavTab = (tab: NavTab): NavTab | null => {
+    if (tab.label.toLowerCase().includes(sq)) return tab;
+    const children = tab.children?.map(filterNavTab).filter((c): c is NavTab => !!c);
+    return children && children.length ? { ...tab, children } : null;
+  };
+  const SIDEBAR_GROUPS = isSidebarSearching
+    ? NAV_GROUPS
+        .map(g => ({ ...g, tabs: g.tabs.map(filterNavTab).filter((t): t is NavTab => !!t) }))
+        .filter(g => g.tabs.length > 0)
+    : NAV_GROUPS;
+  const pinnedVisible = !!PINNED_TAB && (!isSidebarSearching || PINNED_TAB.label.toLowerCase().includes(sq));
 
   const handleLogout = async () => {
     if (await confirm({
@@ -245,10 +262,35 @@ export default function AppShell({
           )}
         </div>
 
+        {/* Sidebar menu search */}
+        {!collapsed && (
+          <div className="px-3 pt-3 pb-1 flex-shrink-0">
+            <div style={{ position: 'relative' }}>
+              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#8A6248', pointerEvents: 'none' }} />
+              <input
+                value={sidebarQuery}
+                onChange={e => setSidebarQuery(e.target.value)}
+                placeholder="Cari menu…"
+                className="w-full"
+                style={{
+                  height: 32, paddingLeft: 28, paddingRight: 8, borderRadius: 8,
+                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)',
+                  fontSize: 12, color: '#EDD9C4', outline: 'none',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Nav */}
         <nav className="flex-1 px-2 py-4 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: 'none' }}>
-          {NAV_GROUPS.map((group, gi) => {
-            const groupCollapsed = !collapsed && collapsedGroups.has(group.label);
+          {isSidebarSearching && SIDEBAR_GROUPS.length === 0 && !pinnedVisible && (
+            <p className="text-center px-3" style={{ fontSize: 11, color: '#8A6248', padding: '20px 0' }}>
+              Menu tidak ditemukan
+            </p>
+          )}
+          {SIDEBAR_GROUPS.map((group, gi) => {
+            const groupCollapsed = !collapsed && !isSidebarSearching && collapsedGroups.has(group.label);
             return (
             <div key={group.id} className={gi > 0 ? 'mt-4' : ''}>
               {!collapsed && (
@@ -283,7 +325,7 @@ export default function AppShell({
                   const isActive     = activeTab === tab.id;
                   const hasChildren  = !!tab.children?.length;
                   const childActive  = tab.children?.some(c => c.id === activeTab) ?? false;
-                  const isExpanded   = !collapsed && (expandedIds.has(tab.id) || childActive);
+                  const isExpanded   = !collapsed && (isSidebarSearching || expandedIds.has(tab.id) || childActive);
                   const navButton = (
                       <button
                         onClick={() => setActiveTab(tab.id)}
@@ -379,7 +421,7 @@ export default function AppShell({
           })}
 
           {/* Super Admin / Tagihan — pinned, not part of Struktur Menu (see TabId comment) */}
-          {PINNED_TAB && (
+          {pinnedVisible && PINNED_TAB && (
             <div className="mt-4">
               {!collapsed && (
                 <div className="px-3 mb-1.5">
