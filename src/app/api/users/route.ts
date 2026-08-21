@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import bcrypt from 'bcryptjs';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
+import { deriveLoginEmail, createFirebaseAuthUser, setFirebaseAuthClaims } from '@/lib/firebase-auth-rest';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'users', 'view');
@@ -41,11 +41,22 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `User "${id}" sudah ada.` }, { status: 409 });
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  // Akun baru dibuat langsung di Firebase Auth (bukan bcrypt+Firestore lagi) — konsisten dengan
+  // akun lama yang sudah dimigrasikan, sekaligus supaya password awal yang diset admin di sini
+  // wajib diganti sendiri oleh pemiliknya (mustChangePassword), sama seperti alur migrasi.
+  const created = await createFirebaseAuthUser(deriveLoginEmail(id), password);
+  if ('error' in created) {
+    return Response.json({ error: `Gagal membuat akun otentikasi: ${created.error}` }, { status: 500 });
+  }
+  const claimsResult = await setFirebaseAuthClaims(created.localId, { role, username: id, mustChangePassword: true });
+  if (!claimsResult.ok) {
+    return Response.json({ error: `Akun dibuat tapi gagal set klaim akses: ${claimsResult.error}` }, { status: 500 });
+  }
+
   await ref.set({
     username: id,
     email: email ? email.trim().toLowerCase() : null,
-    passwordHash,
+    firebaseUid: created.localId,
     role,
     createdAt: FieldValue.serverTimestamp(),
   });

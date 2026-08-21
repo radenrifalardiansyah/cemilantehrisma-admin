@@ -7,7 +7,7 @@ import {
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
   MousePointerClick, Tag, ShoppingCart, Download, Share, AlertTriangle,
-  LayoutDashboard, PieChart, Store,
+  LayoutDashboard, PieChart, Store, KeyRound,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
 import type { NotificationDoc } from '@/components/NotificationBell';
@@ -282,6 +282,14 @@ export default function AdminPage() {
   const [loginErr, setLoginErr] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
+  // Set right after login when the server reports mustChangePassword=true (Firebase Auth
+  // account still on its temporary password) — gates the dashboard behind a forced password
+  // change instead of calling applySession immediately.
+  const [pendingChange, setPendingChange] = useState<{ token: string; tempPassword: string } | null>(null);
+  const [newPass, setNewPass] = useState('');
+  const [newPassConfirm, setNewPassConfirm] = useState('');
+  const [changeErr, setChangeErr] = useState('');
+  const [changing, setChanging] = useState(false);
   const [authUser, setAuthUser] = useState<{ username: string; role: string; email: string | null; avatar: string | null } | null>(null);
   const [permissions, setPermissions] = useState<Record<string, Partial<Record<Action, boolean>>>>({});
   const [superAdmin, setSuperAdmin] = useState(false);
@@ -587,12 +595,45 @@ export default function AdminPage() {
       body: JSON.stringify({ username, password }),
     });
     if (res.ok) {
-      const { token } = await res.json() as { token: string };
+      const { token, mustChangePassword } = await res.json() as { token: string; mustChangePassword?: boolean };
+      if (mustChangePassword) {
+        // Password sementara — jangan buka dashboard dulu, minta ganti password dulu.
+        setPendingChange({ token, tempPassword: password });
+        return;
+      }
       localStorage.setItem('admin_creds', token);
       await applySession(token);
     } else {
       setFieldErrors({ username: ' ', password: ' ' });
       setLoginErr('Username/email atau password salah.');
+    }
+  };
+
+  const submitPasswordChange = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!pendingChange) return;
+    setChangeErr('');
+    if (newPass.length < 6) { setChangeErr('Password baru minimal 6 karakter.'); return; }
+    if (newPass !== newPassConfirm) { setChangeErr('Konfirmasi password tidak cocok.'); return; }
+
+    setChanging(true);
+    try {
+      const res = await fetch('/api/me', {
+        method: 'PATCH',
+        headers: { 'x-admin-auth': pendingChange.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: pendingChange.tempPassword, newPassword: newPass }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({ error: undefined })) as { error?: string };
+        setChangeErr(d.error ?? 'Gagal mengubah password.');
+        return;
+      }
+      const token = pendingChange.token;
+      setPendingChange(null); setNewPass(''); setNewPassConfirm('');
+      localStorage.setItem('admin_creds', token);
+      await applySession(token);
+    } finally {
+      setChanging(false);
     }
   };
 
@@ -608,6 +649,54 @@ export default function AdminPage() {
       <div className="flex flex-col items-center gap-4">
         <div className="w-10 h-10 border-[3px] rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
         <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Memuat dashboard…</p>
+      </div>
+    </div>
+  );
+
+  if (pendingChange) return (
+    <div className="min-h-screen flex items-center justify-center p-4 lg:p-8 relative overflow-hidden" style={{ background: 'var(--ground)' }}>
+      <div className="relative w-full rounded-[28px] overflow-hidden p-8 lg:p-10"
+        style={{ maxWidth: 420, background: 'var(--surface)', boxShadow: '0 24px 70px -20px rgba(30,16,8,0.35), 0 4px 18px rgba(30,16,8,0.08)' }}>
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="flex items-center justify-center rounded-2xl mb-4" style={{ width: 52, height: 52, background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+            <KeyRound size={22} />
+          </div>
+          <h1 className="text-xl font-extrabold mb-1" style={{ color: 'var(--text-primary)' }}>Set Password Baru</h1>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Ini login pertama Anda dengan password sementara — buat password baru sebelum melanjutkan.
+          </p>
+        </div>
+
+        <form onSubmit={submitPasswordChange} className="space-y-4" noValidate>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Password Baru</label>
+            <div className="relative">
+              <input type={showPassword ? 'text' : 'password'} value={newPass}
+                onChange={e => { setNewPass(e.target.value); setChangeErr(''); }}
+                className="input" style={{ paddingRight: 40 }}
+                placeholder="Minimal 6 karakter" autoComplete="new-password" autoFocus />
+              <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Konfirmasi Password Baru</label>
+            <input type={showPassword ? 'text' : 'password'} value={newPassConfirm}
+              onChange={e => { setNewPassConfirm(e.target.value); setChangeErr(''); }}
+              className="input" placeholder="Ulangi password baru" autoComplete="new-password" />
+          </div>
+          {changeErr && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium animate-scale-in"
+              style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+              {changeErr}
+            </div>
+          )}
+          <button type="submit" disabled={changing} className="btn-primary w-full justify-center py-3 text-sm">
+            {changing ? <Loader2 size={16} className="animate-spin" /> : 'Simpan & Lanjutkan'}
+          </button>
+        </form>
       </div>
     </div>
   );

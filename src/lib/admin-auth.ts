@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
 
-export type AuthUser = { username: string; role: string };
+// uid: Firebase Auth localId — only present on tokens issued after the Firebase Auth login
+// migration; used by self-service password change. Optional so older still-valid 7-day tokens
+// issued before this field existed keep working (just without change-password access).
+export type AuthUser = { username: string; role: string; uid?: string };
 
 export function getAuthUser(request: Request): AuthUser | null {
   const token = request.headers.get('x-admin-auth') ?? '';
