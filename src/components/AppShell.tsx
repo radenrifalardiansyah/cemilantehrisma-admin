@@ -620,8 +620,8 @@ export default function AppShell({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div id="topbar-slot" className="flex items-center gap-2" />
+          <div className="flex items-center gap-1 sm:gap-2">
+            <div id="topbar-slot" className="flex items-center gap-1 sm:gap-2" />
             <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"

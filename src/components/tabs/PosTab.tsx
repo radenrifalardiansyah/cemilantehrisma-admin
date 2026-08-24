@@ -1143,27 +1143,41 @@ export default function PosTab({
   // ─── Shift bar (topbar) & modal ────────────────────────────────────────────
   const shiftBar = shiftLoaded && (
     currentShift ? (
-      <button onClick={() => setShiftModal('close')} className="btn-ghost gap-2 text-xs py-2" style={{ color: 'var(--success)' }}>
-        <Wallet size={14} />
-        <span className="hidden sm:inline">Kas {formatCurrency(currentShift.openingBalance)} ·</span> Tutup Kasir
-      </button>
+      <Tooltip label={`Kas ${formatCurrency(currentShift.openingBalance)} · Tutup Kasir`}>
+        <button onClick={() => setShiftModal('close')} title="Tutup Kasir" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5" style={{ color: 'var(--success)' }}>
+          <Wallet size={14} />
+          <span className="hidden sm:inline">Kas {formatCurrency(currentShift.openingBalance)} · Tutup Kasir</span>
+        </button>
+      </Tooltip>
     ) : (
-      <button onClick={() => setShiftModal('open')} className="btn-ghost gap-2 text-xs py-2" style={{ color: 'var(--accent)' }}>
-        <Wallet size={14} /> Buka Kasir
-      </button>
+      <Tooltip label="Buka Kasir">
+        <button onClick={() => setShiftModal('open')} title="Buka Kasir" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5" style={{ color: 'var(--accent)' }}>
+          <Wallet size={14} /> <span className="hidden sm:inline">Buka Kasir</span>
+        </button>
+      </Tooltip>
     )
   );
 
   const heldBar = heldTransactions.length > 0 && (
-    <button onClick={() => setHeldModalOpen(true)} className="btn-ghost gap-2 text-xs py-2" style={{ color: 'var(--warning)' }}>
-      <PauseCircle size={14} /> Tertahan ({heldTransactions.length})
-    </button>
+    <Tooltip label={`Tertahan (${heldTransactions.length})`}>
+      <button onClick={() => setHeldModalOpen(true)} title="Tertahan" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5 relative" style={{ color: 'var(--warning)' }}>
+        <PauseCircle size={14} />
+        <span className="hidden sm:inline">Tertahan ({heldTransactions.length})</span>
+        <span
+          className="sm:hidden absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center"
+        >
+          {heldTransactions.length}
+        </span>
+      </button>
+    </Tooltip>
   );
 
   const reportBar = (
-    <button onClick={() => setReportOpen(true)} className="btn-ghost gap-2 text-xs py-2" style={{ color: '#0284C7' }}>
-      <BarChart2 size={14} /> Laporan
-    </button>
+    <Tooltip label="Laporan">
+      <button onClick={() => setReportOpen(true)} title="Laporan" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5" style={{ color: '#0284C7' }}>
+        <BarChart2 size={14} /> <span className="hidden sm:inline">Laporan</span>
+      </button>
+    </Tooltip>
   );
 
   const refreshBar = (

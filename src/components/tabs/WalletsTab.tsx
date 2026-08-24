@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power, ArrowRightLeft,
-  Search, ChevronLeft, ChevronRight,
+  Search, ChevronLeft, ChevronRight, RefreshCw,
 } from 'lucide-react';
 import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -12,6 +12,7 @@ import ColorPicker from '@/components/ColorPicker';
 import NumberInput from '@/components/NumberInput';
 import SearchSelect from '@/components/SearchSelect';
 import Tooltip from '@/components/Tooltip';
+import TopbarPortal from '@/components/TopbarPortal';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -542,6 +543,14 @@ export default function WalletsTab({ creds }: { creds: string }) {
   );
 
   return (
+    <>
+    <TopbarPortal>
+      <Tooltip label="Refresh">
+        <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </Tooltip>
+    </TopbarPortal>
     <div className="p-4 lg:p-6 space-y-5">
 
       {/* Ringkasan */}
@@ -1133,5 +1142,6 @@ export default function WalletsTab({ creds }: { creds: string }) {
         </div>
       )}
     </div>
+    </>
   );
 }
