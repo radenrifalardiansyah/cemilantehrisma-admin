@@ -226,10 +226,10 @@ function NotificationRowDetail({ n, onOpen }: { n: NotificationDoc; onOpen: (n: 
     <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
       <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{n.message}</p>
       <div className="grid grid-cols-2 gap-y-1 gap-x-3">
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Dibuat oleh</p>
-        <p className="text-[11px] font-semibold text-right" style={{ color: 'var(--text-primary)' }}>{n.actorUsername} ({n.actorRole})</p>
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Waktu</p>
-        <p className="text-[11px] font-semibold text-right" style={{ color: 'var(--text-primary)' }}>{fullTime(n)}</p>
+        <p className="text-[11px] min-w-0" style={{ color: 'var(--text-muted)' }}>Dibuat oleh</p>
+        <p className="text-[11px] font-semibold text-right min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>{n.actorUsername} ({n.actorRole})</p>
+        <p className="text-[11px] min-w-0" style={{ color: 'var(--text-muted)' }}>Waktu</p>
+        <p className="text-[11px] font-semibold text-right min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>{fullTime(n)}</p>
       </div>
       {n.link && (
         <button onClick={() => onOpen(n)} className="btn-primary text-xs h-8 px-3">

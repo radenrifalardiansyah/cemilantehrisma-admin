@@ -1289,7 +1289,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     )}
 
                     {/* Selects */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="field-label">Kategori</label>
                         <SearchSelect value={editing.category}

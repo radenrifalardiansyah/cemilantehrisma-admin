@@ -975,10 +975,10 @@ export default function StockReportTab({
           </button>
         ))}
         {reportPeriod === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={reportCustomFrom} onChange={e => setReportCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <input type="date" value={reportCustomFrom} onChange={e => setReportCustomFrom(e.target.value)} className="input" style={{ height: 36, width: 'auto' }} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={reportCustomTo} onChange={e => setReportCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+            <input type="date" value={reportCustomTo} onChange={e => setReportCustomTo(e.target.value)} className="input" style={{ height: 36, width: 'auto' }} />
           </div>
         )}
       </div>

@@ -627,7 +627,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNumber}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>
                             {batchOutputs(b).map(o => o.productName).join(' & ')}
                           </p>
                           <div className="flex items-center gap-2 flex-shrink-0">

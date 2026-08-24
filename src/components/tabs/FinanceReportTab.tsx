@@ -945,7 +945,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             <label className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Saldo Awal (opsional)</label>
             <NumberInput value={saldoAwalRaw}
               onChange={raw => { setSaldoAwalRaw(raw); localStorage.setItem(SALDO_AWAL_KEY, raw); }}
-              style={{ width: 180, height: 36 }} placeholder="0" />
+              className="input w-full sm:w-[180px]" style={{ height: 36 }} placeholder="0" />
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
               Saldo kas nyata sebelum mulai pencatatan di aplikasi ini (disimpan di browser ini saja, bukan data akuntansi baku). Dipakai juga sebagai dasar &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
             </p>

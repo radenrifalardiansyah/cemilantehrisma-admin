@@ -698,7 +698,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   <label className="field-label">Item / Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {editing.items.map((item, idx) => (
-                      <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: '3fr 1fr auto', alignItems: 'center' }}>
+                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-[3fr_1fr_auto] gap-2 items-center">
                         <input value={item.description} onChange={e => updateItem(idx, { description: e.target.value })}
                           className="input" placeholder="cth: Sewa toko bulan Agustus" autoFocus={idx === 0} />
                         <NumberInput value={item.amount} onChange={raw => updateItem(idx, { amount: raw })} placeholder="Jumlah (Rp)" />

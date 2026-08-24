@@ -751,19 +751,19 @@ function SupplierDetail({ s }: { s: Supplier }) {
           { label: 'Telepon', val: s.phone },
           { label: 'Terdaftar', val: formatDate(s) },
         ].map((f, i) => (
-          <div key={i}>
+          <div key={i} className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>{f.label}</p>
-            <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{f.val || '–'}</p>
+            <p className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{f.val || '–'}</p>
           </div>
         ))}
-        <div className="col-span-2">
+        <div className="col-span-2 min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Alamat</p>
-          <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{s.address || '–'}</p>
+          <p className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{s.address || '–'}</p>
         </div>
         {s.note && (
-          <div className="col-span-2">
+          <div className="col-span-2 min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Catatan</p>
-            <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{s.note}</p>
+            <p className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{s.note}</p>
           </div>
         )}
       </div>

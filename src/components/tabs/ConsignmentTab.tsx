@@ -2536,7 +2536,7 @@ _${storeHeader.name}_`.trim();
                       const harga = parseFloat(row.hargaTitip) || 0;
                       return (
                         <div key={i}>
-                          <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', alignItems: 'center' }}>
+                          <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-center">
                             <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
                               options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
                             <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
@@ -2666,9 +2666,9 @@ _${storeHeader.name}_`.trim();
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {recapRows.map(({ item, sold, sisa, exceeds }) => (
                         <div key={item.productId} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{item.productName}</p>
-                            <span className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <p className="text-sm font-bold flex-1 min-w-0 truncate" style={{ color: 'var(--text-primary)' }}>{item.productName}</p>
+                            <span className="text-xs tabular flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                               Stok di lokasi: {item.stockQty} pcs · {formatRp(item.hargaTitip)}/pcs
                             </span>
                           </div>

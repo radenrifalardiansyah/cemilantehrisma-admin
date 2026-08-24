@@ -305,7 +305,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                 </div>
               )}
               {activeGrp === 'store' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                       Tanda Tangan Elektronik

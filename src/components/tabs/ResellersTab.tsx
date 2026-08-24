@@ -1252,14 +1252,14 @@ function ResellerDetail({ r }: { r: Reseller }) {
           { label: 'Atas Nama', val: r.bankHolder },
           { label: 'Bergabung', val: formatDate(r) },
         ].map((f, i) => (
-          <div key={i}>
+          <div key={i} className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>{f.label}</p>
-            <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{f.val || '–'}</p>
+            <p className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{f.val || '–'}</p>
           </div>
         ))}
-        <div className="col-span-2">
+        <div className="col-span-2 min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>Alamat</p>
-          <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{r.address || '–'}</p>
+          <p className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{r.address || '–'}</p>
         </div>
       </div>
     </div>

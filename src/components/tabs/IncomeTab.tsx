@@ -731,14 +731,14 @@ export default function IncomeTab({ creds }: { creds: string }) {
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: 1 }}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
                     <label className="field-label">Kategori</label>
                     <SearchSelect value={editing.category} onChange={v => setEditing({ ...editing, category: v })}
                       options={INCOME_CATEGORIES.map(c => ({ value: c, label: c }))}
                       searchPlaceholder="Cari kategori…" />
                   </div>
-                  <div style={{ flex: 1 }}>
+                  <div>
                     <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
                     <input type="date" value={editing.date} onChange={e => setEditing({ ...editing, date: e.target.value })} className="input" />
                   </div>

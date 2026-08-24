@@ -1102,7 +1102,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="field-label">Nama Pelanggan <span style={{ color: 'var(--danger)' }}>*</span></label>
                     <input type="text" value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)} className="input" />
@@ -1183,7 +1183,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                 </div>
 
                 {editPaymentMethod === 'cash' && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="field-label">Dibayar</label>
                       <input type="number" min="0" value={editAmountPaid} onChange={e => setEditAmountPaid(e.target.value)} placeholder="0" className="input" />
@@ -1197,7 +1197,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                   </div>
                 )}
                 {editPaymentMethod === 'transfer' && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="field-label">Bank</label>
                       <input type="text" value={editTransferBank} onChange={e => setEditTransferBank(e.target.value)} className="input" />
@@ -1383,11 +1383,11 @@ function OrderDetail({ o }: { o: Order }) {
 
       <div className="space-y-1.5">
         {o.items?.map((item, i) => (
-          <div key={i} className="flex justify-between text-xs">
-            <span style={{ color: 'var(--text-secondary)' }}>
+          <div key={i} className="flex justify-between gap-2 text-xs">
+            <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text-secondary)' }}>
               {item.name} <span style={{ color: 'var(--text-muted)' }}>({item.weight})</span> × {item.qty}
             </span>
-            <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(item.subtotal)}</span>
+            <span className="font-bold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{formatRp(item.subtotal)}</span>
           </div>
         ))}
       </div>

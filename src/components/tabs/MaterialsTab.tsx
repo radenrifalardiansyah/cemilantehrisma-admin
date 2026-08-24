@@ -1307,10 +1307,10 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                                 </span>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
-                                      {p.voided && <span className="badge badge-gray">Dibatalkan</span>}
-                                      {!p.voided && p.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
+                                      {p.voided && <span className="badge badge-gray flex-shrink-0">Dibatalkan</span>}
+                                      {!p.voided && p.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
                                     </div>
                                     <div className="flex items-center gap-2 flex-shrink-0">
                                       <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
@@ -1559,7 +1559,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   Stok sekarang: <strong className="tabular">{adjustingMaterial.stockQty} {adjustingMaterial.unit}</strong>,
                   harga rata-rata: <strong className="tabular">{formatRp(adjustingMaterial.avgCost)}</strong>.
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="field-label">Stok Benar ({adjustingMaterial.unit})</label>
                     <input type="number" min="0" value={adjustStockQty} onChange={e => setAdjustStockQty(e.target.value)} className="input" />
