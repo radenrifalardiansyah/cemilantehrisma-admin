@@ -395,7 +395,10 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     setEditItems(prev => prev.map((it, i) => i === index ? { ...it, qty: Math.max(1, qty) } : it));
 
   const editSubtotal = editItems.reduce((s, i) => s + i.price * i.qty, 0);
-  const editDiscountNum = parseFloat(editDiscountRaw) || 0;
+  // Math.max(0, ...) — kolom diskon persen di form edit adalah <input type="number"> polos yang
+  // tidak menolak tanda minus saat diketik, jadi tanpa clamp di sini editDiscountAmount bisa jadi
+  // negatif dan justru menambah total, bukan menguranginya.
+  const editDiscountNum = Math.max(0, parseFloat(editDiscountRaw) || 0);
   const editDiscountAmount = editDiscountType === 'percent'
     ? Math.min(Math.round(editSubtotal * editDiscountNum / 100), editSubtotal)
     : Math.min(editDiscountNum, editSubtotal);

@@ -681,8 +681,13 @@ export default function StockTab({
     setClearingAll(true);
     const r = await fetch(`${API}/api/warehouses/${selectedWarehouse.id}/stock/clear`, { method: 'POST', headers });
     if (r.ok) {
+      const d = await r.json() as { cleared: number; failed?: { productId: string; error: string }[] };
       await loadStock(selectedWarehouse.id);
-      toast.success('Semua stok di gudang ini berhasil dikosongkan.');
+      if (d.failed && d.failed.length > 0) {
+        toast.error(`${d.cleared} produk berhasil dikosongkan, ${d.failed.length} gagal — coba lagi untuk sisanya.`);
+      } else {
+        toast.success('Semua stok di gudang ini berhasil dikosongkan.');
+      }
     } else {
       toast.error('Gagal mengosongkan stok gudang.');
     }
@@ -750,7 +755,8 @@ export default function StockTab({
       await loadWarehouses();
       toast.success('Gudang berhasil dihapus.');
     } else {
-      toast.error('Gagal menghapus gudang.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus gudang.');
     }
   };
 

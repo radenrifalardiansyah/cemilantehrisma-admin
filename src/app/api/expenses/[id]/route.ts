@@ -28,10 +28,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (lockMsg) return Response.json({ error: lockMsg }, { status: 400 });
 
   const data = await req.json() as Record<string, unknown>;
+  const amount = Number(data.amount) || 0;
+  if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
   await ref.update({
     category: data.category ?? 'Lainnya',
     description: data.description ?? '',
-    amount: Number(data.amount) || 0,
+    amount,
     items: Array.isArray(data.items) ? data.items : [],
     date: data.date,
     note: data.note ?? '',

@@ -12,13 +12,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as Record<string, unknown>;
+  const amount = Number(data.amount) || 0;
+  if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
   const db = getDb();
   const ref = db.collection('capitalEntries').doc(id);
   const existing = await ref.get();
   const before = existing.data();
   await ref.update({
     type: data.type === 'prive' ? 'prive' : 'modal',
-    amount: Number(data.amount) || 0,
+    amount,
     date: data.date,
     note: data.note ?? '',
     walletId: data.walletId ?? null,

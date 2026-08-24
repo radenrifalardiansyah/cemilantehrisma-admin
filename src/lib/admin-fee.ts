@@ -1,4 +1,4 @@
-import { Firestore, Timestamp } from 'firebase-admin/firestore';
+import { Firestore, Query, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 
 // "Efektif Sejak" di UI adalah date-picker (hari, bukan jam) — semua perbandingan effectiveFrom
@@ -69,9 +69,11 @@ export function rateAtTime(history: AdminFeeRate[], when: Timestamp): AdminFeeRa
 }
 
 // fixed = nominal flat per transaksi (order/rekap), bukan per periode.
+// Dibulatkan ke Rupiah utuh — tanpa ini, rate persen menghasilkan pecahan Rupiah (mis. 3086,425)
+// yang ikut tersimpan apa adanya ke invoice.
 export function computeFee(revenue: number, rate: AdminFeeRate | null): number {
   if (!rate) return 0;
-  return rate.type === 'percent' ? revenue * rate.value / 100 : rate.value;
+  return rate.type === 'percent' ? Math.round(revenue * rate.value / 100) : rate.value;
 }
 
 interface OrderDoc {
@@ -112,8 +114,8 @@ export interface AdminFeeReport {
 // belum. Berbasis ID persis, bukan rentang tanggal invoice, supaya transaksi yang baru
 // tercatat belakangan (mis. diinput mundur) di periode yang sudah pernah diinvoice tetap
 // benar ditandai "belum" — karena memang belum masuk invoice manapun.
-async function getInvoicedTransactionMap(db: Firestore): Promise<Map<string, { invoiceId: string; invoiceNo: string }>> {
-  const snap = await db.collection('adminFeeInvoices').get();
+async function getInvoicedTransactionMap(db: Firestore, tx?: Transaction): Promise<Map<string, { invoiceId: string; invoiceNo: string }>> {
+  const snap = tx ? await tx.get(db.collection('adminFeeInvoices')) : await db.collection('adminFeeInvoices').get();
   const map = new Map<string, { invoiceId: string; invoiceNo: string }>();
   snap.docs.forEach(d => {
     const data = d.data();
@@ -130,12 +132,20 @@ async function getInvoicedTransactionMap(db: Firestore): Promise<Map<string, { i
 
 // Dipakai oleh GET /api/admin-fee/report (pratinjau) dan POST /api/admin-fee/invoices
 // (snapshot saat invoice dibuat) — satu implementasi supaya keduanya selalu konsisten.
-export async function computeReport(db: Firestore, from: string, to: string): Promise<AdminFeeReport> {
+//
+// `tx`: POST /api/admin-fee/invoices membungkus computeReport INI dan penulisan invoice-nya
+// dalam satu transaksi Firestore (lewat tx ini) — tanpa itu, "belum ditagih" dihitung dari
+// getInvoicedTransactionMap yang dibaca terpisah dari penulisan invoice, jadi dua invoice dengan
+// periode tumpang-tindih yang dibuat hampir bersamaan bisa sama-sama melihat transaksi yang sama
+// sebagai "belum ditagih" dan sama-sama menagihnya (TOCTOU). Dengan `tx`, Firestore otomatis
+// me-retry salah satu begitu invoice pesaingnya lebih dulu commit.
+export async function computeReport(db: Firestore, from: string, to: string, tx?: Transaction): Promise<AdminFeeReport> {
+  const read = <T>(q: Query<T>) => (tx ? tx.get(q) : q.get());
   const [orderSnap, recapSnap, rateHistories, invoicedMap] = await Promise.all([
-    db.collection('orders').where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-    db.collection('consignmentRecaps').where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+    read(db.collection('orders').where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to))),
+    read(db.collection('consignmentRecaps').where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to))),
     getAllRateHistories(db),
-    getInvoicedTransactionMap(db),
+    getInvoicedTransactionMap(db, tx),
   ]);
 
   const orders = orderSnap.docs.map(d => ({ id: d.id, ...(d.data() as OrderDoc) })).filter(isCountedOrder);

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
+import { getToken } from 'firebase/messaging';
 import {
   ChevronDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, LogOut, Home, Info, UserCog, Landmark, Receipt, Search,
 } from 'lucide-react';
@@ -14,7 +15,27 @@ import ChatWidget from '@/components/chat/ChatWidget';
 import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
 import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
+import { getClientMessaging } from '@/lib/firebase-client';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
+
+// Notification.permission sudah 'granted' berarti device ini pernah getToken() lewat
+// NotificationBell — panggil lagi di sini akan mengembalikan token yang SAMA (deterministik per
+// device/service-worker), bukan minta izin baru, jadi aman dipanggil diam-diam saat logout.
+async function unregisterPushToken(creds: string): Promise<void> {
+  const messaging = await getClientMessaging();
+  if (!messaging) return;
+  const registration = await navigator.serviceWorker.ready;
+  const token = await getToken(messaging, {
+    vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+    serviceWorkerRegistration: registration,
+  });
+  if (!token) return;
+  await fetch('/api/notifications/register-device', {
+    method: 'DELETE',
+    headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+}
 
 // The 26 fixed screens the app actually has code for (18 original tabs + 5
 // RBAC-management tabs + Riwayat + Akun Storefront + Ulasan). Struktur Menu / Modul only
@@ -162,6 +183,12 @@ export default function AppShell({
       confirmLabel: 'Keluar',
       onConfirm: async () => { await new Promise(r => setTimeout(r, 1200)); },
     })) {
+      // Best-effort — kalau device ini pernah "Aktifkan notifikasi HP", cabut token FCM-nya
+      // supaya perangkat (mis. kios/tablet yang dipakai bergantian) berhenti menerima push untuk
+      // akun ini setelah logout. Tidak boleh menunda/menggagalkan logout kalau gagal.
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        unregisterPushToken(creds).catch(() => {});
+      }
       onLogout();
     }
   };

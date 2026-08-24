@@ -10,6 +10,30 @@ import { revalidateStorefront } from '@/lib/revalidate';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
+// Gabungkan baris ganda untuk produk yang sama SEBELUM dipakai di tx.get/tx.update — tanpa ini,
+// tiap baris dibaca & divalidasi dari snapshot stok titip yang sama, lalu tx.update dengan nilai
+// literal per baris (bukan akumulatif), sehingga baris kedua menimpa hasil baris pertama pada
+// `consignmentStock` sementara `totalRevenue` (dipakai langsung Laporan Keuangan) tetap
+// menjumlahkan SEMUA baris termasuk yang duplikat — pendapatan bisa dobel terhitung padahal
+// pengurangan stok cuma sekali. Pola sama seperti mergeItems di consignment/send/route.ts.
+function mergeRecapItems(items: RecapItemInput[]): RecapItemInput[] {
+  const merged = new Map<string, RecapItemInput>();
+  for (const it of items) {
+    const qtySold = Number(it.qtySold) || 0;
+    const qtyRetur = Number(it.qtyRetur) || 0;
+    const qtyReject = Number(it.qtyReject) || 0;
+    const existing = merged.get(it.productId);
+    if (existing) {
+      existing.qtySold += qtySold;
+      existing.qtyRetur += qtyRetur;
+      existing.qtyReject = (existing.qtyReject ?? 0) + qtyReject;
+    } else {
+      merged.set(it.productId, { ...it, qtySold, qtyRetur, qtyReject });
+    }
+  }
+  return [...merged.values()];
+}
+
 // Read by IncomeTab & FinanceReportTab (not just the Konsinyasi tab) to roll
 // consignment revenue into their totals — gate view with OR semantics so a
 // Finance role without `consignment` access doesn't get its totals silently
@@ -69,7 +93,7 @@ export async function POST(req: NextRequest) {
     paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
     warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
   };
-  const items = (data.items ?? [])
+  const items = mergeRecapItems(data.items ?? [])
     .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
     .filter(it => it.qtySold > 0 || it.qtyRetur > 0 || it.qtyReject > 0);
   if (items.length === 0) return Response.json({ error: 'Isi minimal 1 produk dengan qty terjual, retur, atau reject.' }, { status: 400 });

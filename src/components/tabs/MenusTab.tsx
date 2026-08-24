@@ -51,10 +51,16 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
   const featureLabel = (key: string) => FEATURE_KEYS.find(f => f.key === key)?.label ?? key;
 
   // All ids nested under `id`, at any depth — used to keep a menu from being made its own descendant's child.
+  // `result` doubles as the visited-set: a genuine cycle in stale/manually-edited data (parentId
+  // API now rejects creating new ones, but doesn't retroactively fix existing bad data) would
+  // otherwise recurse forever between the cycle's members.
   const descendantIds = (id: string): Set<string> => {
     const result = new Set<string>();
     const walk = (parentId: string) => {
-      menus.filter(m => m.parentId === parentId).forEach(m => { result.add(m.id); walk(m.id); });
+      menus.filter(m => m.parentId === parentId).forEach(m => {
+        if (result.has(m.id)) return;
+        result.add(m.id); walk(m.id);
+      });
     };
     walk(id);
     return result;

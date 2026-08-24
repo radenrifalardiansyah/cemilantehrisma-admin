@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Loader2, RefreshCw, Percent, Coins, History, FileDown, Receipt, CheckCircle2, Landmark, X, ListChecks, Send, Building2, XCircle,
 } from 'lucide-react';
@@ -216,14 +216,20 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Generasi request — cegah respons periode LAMA yang datang belakangan menimpa data periode
+  // BARU yang sudah lebih dulu tampil.
+  const loadReportIdRef = useRef(0);
   const loadReport = useCallback(async () => {
+    const myLoadId = ++loadReportIdRef.current;
     setLoadingReport(true);
     try {
       const r = await fetch(`/api/admin-fee/report?from=${from}&to=${to}`, { headers });
-      if (r.ok) setReport(await r.json());
+      const data = r.ok ? await r.json() : null;
+      if (myLoadId !== loadReportIdRef.current) return;
+      if (data) setReport(data);
       else toast.error('Gagal memuat laporan biaya admin.');
-    } catch { toast.error('Gagal memuat laporan biaya admin.'); }
-    setLoadingReport(false);
+    } catch { if (myLoadId === loadReportIdRef.current) toast.error('Gagal memuat laporan biaya admin.'); }
+    if (myLoadId === loadReportIdRef.current) setLoadingReport(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creds, from, to]);
 

@@ -628,7 +628,10 @@ export default function AdminPage() {
         setChangeErr(d.error ?? 'Gagal mengubah password.');
         return;
       }
-      const token = pendingChange.token;
+      // Server mengeluarkan token baru dengan mustChangePassword=false — token lama tetap
+      // ditolak oleh route yang terproteksi walau passwordnya sudah diganti.
+      const { token: newToken } = await res.json().catch(() => ({ token: undefined })) as { token?: string };
+      const token = newToken ?? pendingChange.token;
       setPendingChange(null); setNewPass(''); setNewPassConfirm('');
       localStorage.setItem('admin_creds', token);
       await applySession(token);

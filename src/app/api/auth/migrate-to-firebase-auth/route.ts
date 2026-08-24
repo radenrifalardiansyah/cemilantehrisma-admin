@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { randomBytes } from 'crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getDb } from '@/lib/firebase-admin';
 import { requireSuperAdmin } from '@/lib/rbac';
@@ -6,17 +7,20 @@ import {
   deriveLoginEmail, createFirebaseAuthUser, setFirebaseAuthClaims,
 } from '@/lib/firebase-auth-rest';
 
-// Satu password sementara yang sama untuk semua akun yang dimigrasikan (permintaan eksplisit
-// pemilik — lebih mudah dibagikan ke tim daripada satu password acak per orang). Tetap aman
-// sebagai password SEMENTARA karena mustChangePassword=true memaksa tiap orang menggantinya
-// sendiri saat login pertama sebelum bisa memakai aplikasi.
-const MIGRATION_TEMP_PASSWORD = '123qwe5566';
+// Password sementara UNIK per akun — sebelumnya satu string hardcoded dipakai untuk semua akun,
+// yang berarti siapa pun dengan akses ke source code bisa menghitung email login (deriveLoginEmail)
+// dan langsung masuk sebagai akun manapun yang sudah dimigrasi tapi belum sempat login ulang
+// (termasuk super-admin). mustChangePassword=true tetap memaksa ganti password di login pertama,
+// tapi itu bukan pengganti yang layak untuk kerahasiaan password sementara itu sendiri.
+function generateTempPassword(): string {
+  return randomBytes(9).toString('base64url'); // 12 char, aman utk password sementara sekali pakai
+}
 
 // One-time (but safe to re-run — idempotent via the `firebaseUid` field) migration: creates a
 // Firebase Auth account for every existing Firestore user that doesn't have one yet, with the
 // shared temp password above and mustChangePassword=true.
 export async function POST(req: NextRequest) {
-  const guard = requireSuperAdmin(req);
+  const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
 
   const db = getDb();
@@ -32,7 +36,7 @@ export async function POST(req: NextRequest) {
     if (data.firebaseUid) { skipped.push(username); continue; }
 
     const email = deriveLoginEmail(username);
-    const tempPassword = MIGRATION_TEMP_PASSWORD;
+    const tempPassword = generateTempPassword();
     const created = await createFirebaseAuthUser(email, tempPassword);
 
     if ('error' in created) {

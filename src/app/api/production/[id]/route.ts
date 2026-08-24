@@ -22,8 +22,17 @@ interface StoredMaterialUsed { materialId: string; materialName: string; unit: s
 // batch ini — makanya hanya diblokir kalau ada batch produksi LAIN yang lebih baru menyentuh produk yang
 // sama; kalau produk sudah terjual/berpindah stok, edit/hapus tetap dijalankan (best-effort) — cek &
 // koreksi manual lewat Edit Produk kalau HPP hasil akhirnya terasa tidak pas.
-async function findLaterProductionProductIds(db: FirebaseFirestore.Firestore, createdAt: FirebaseFirestore.Timestamp) {
-  const snap = await db.collection('productionBatches').where('createdAt', '>', createdAt).get();
+// `tx`: dibaca lewat transaksi yang sama dengan PUT/DELETE di bawah (bukan `.get()` biasa) supaya
+// kalau ada batch produksi baru yang commit TEPAT di celah antara pengecekan ini dan commit
+// transaksi ini, Firestore memaksa retry alih-alih membiarkan reversal HPP di bawah berjalan
+// berdasarkan data yang sudah basi (TOCTOU).
+async function findLaterProductionProductIds(
+  db: FirebaseFirestore.Firestore,
+  createdAt: FirebaseFirestore.Timestamp,
+  tx?: FirebaseFirestore.Transaction,
+) {
+  const query = db.collection('productionBatches').where('createdAt', '>', createdAt);
+  const snap = tx ? await tx.get(query) : await query.get();
   const ids = new Set<string>();
   snap.docs.forEach(d => {
     ((d.data().outputs as StoredOutput[] | undefined) ?? []).forEach(o => ids.add(o.productId));
@@ -36,8 +45,13 @@ async function findLaterProductionProductIds(db: FirebaseFirestore.Firestore, cr
 // akurat karena unit yang mau direvert sudah tidak fungibel lagi dengan sisa stok saat ini (lihat
 // komentar di atas). `stock` adalah ledger append-only yang dipakai SEMUA penulis stok, query tanpa
 // filter tambahan (selain createdAt) biar tidak butuh composite index — sama seperti pola di atas.
-async function findConsumedSinceProductIds(db: FirebaseFirestore.Firestore, createdAt: FirebaseFirestore.Timestamp) {
-  const snap = await db.collection('stock').where('createdAt', '>', createdAt).select('type', 'productId').get();
+async function findConsumedSinceProductIds(
+  db: FirebaseFirestore.Firestore,
+  createdAt: FirebaseFirestore.Timestamp,
+  tx?: FirebaseFirestore.Transaction,
+) {
+  const query = db.collection('stock').where('createdAt', '>', createdAt).select('type', 'productId');
+  const snap = tx ? await tx.get(query) : await query.get();
   const ids = new Set<string>();
   snap.docs.forEach(d => {
     const data = d.data();
@@ -103,8 +117,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const outputsChanged   = outputSignature(oldOutputs) !== outputSignature(newOutputs);
       const warehouseChanged = (oldWarehouseId ?? '') !== newWarehouseId;
       const [laterTouched, consumedSince] = await Promise.all([
-        findLaterProductionProductIds(db, batch.createdAt),
-        (outputsChanged || warehouseChanged) ? findConsumedSinceProductIds(db, batch.createdAt) : Promise.resolve(new Set<string>()),
+        findLaterProductionProductIds(db, batch.createdAt, tx),
+        (outputsChanged || warehouseChanged) ? findConsumedSinceProductIds(db, batch.createdAt, tx) : Promise.resolve(new Set<string>()),
       ]);
       const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
       if (blockedByLaterProduction.length > 0) {
@@ -296,8 +310,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
       const productIds = outputs.map(o => o.productId);
       const [laterTouched, consumedSince] = await Promise.all([
-        findLaterProductionProductIds(db, batch.createdAt),
-        findConsumedSinceProductIds(db, batch.createdAt),
+        findLaterProductionProductIds(db, batch.createdAt, tx),
+        findConsumedSinceProductIds(db, batch.createdAt, tx),
       ]);
       const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
       if (blockedByLaterProduction.length > 0) {

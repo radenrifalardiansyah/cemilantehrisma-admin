@@ -469,8 +469,10 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       setLocations(prev => prev.filter(x => x.id !== l.id));
       setSelectedLocations(s => { const n = new Set(s); n.delete(l.id); return n; });
       toast.success(`"${l.name}" berhasil dihapus.`);
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus lokasi.');
     }
-    else toast.error('Gagal menghapus lokasi.');
     setDeletingLId(null);
   };
 

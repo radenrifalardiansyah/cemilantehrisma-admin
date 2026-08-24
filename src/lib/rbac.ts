@@ -1,12 +1,41 @@
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { getAuthUser, unauthorized, type AuthUser } from '@/lib/admin-auth';
+import { getAuthUser, unauthorized, passwordChangeRequired, type AuthUser } from '@/lib/admin-auth';
 import type { Action } from '@/types/rbac';
 
 export const ROLE_PERMISSIONS_TAG = 'role-permissions';
+export const SESSION_TAG = 'session-invalidated-at';
 
 export function forbidden() {
   return Response.json({ error: 'Anda tidak memiliki akses untuk aksi ini.' }, { status: 403 });
+}
+
+export function sessionExpired() {
+  return Response.json({ error: 'Sesi Anda sudah tidak berlaku (role/password diubah, atau akun dihapus) — silakan login ulang.' }, { status: 401 });
+}
+
+// Cached the same way as getRolePermissionsMap, for the same reason (runs on nearly every
+// authenticated call). `null` means the user doc no longer exists — an already-issued token for
+// a deleted account must be rejected outright, not just treated as "never invalidated".
+//
+// Compared against the token's own `iat` (JWT "issued at", unix seconds) rather than keeping a
+// token blacklist: users/[username] PUT bumps this to "now" whenever role or password changes,
+// and DELETE removes the doc entirely — either way, any token minted BEFORE that moment reads as
+// stale on its very next request, without needing to track individual tokens anywhere.
+export const getSessionInvalidatedAt = unstable_cache(
+  async (username: string): Promise<number | null> => {
+    const doc = await getDb().collection('users').doc(username).get();
+    if (!doc.exists) return null;
+    return Number(doc.data()?.sessionsInvalidatedAt) || 0;
+  },
+  ['session-invalidated-at'],
+  { revalidate: 30, tags: [SESSION_TAG] },
+);
+
+async function isSessionStale(user: AuthUser): Promise<boolean> {
+  const invalidatedAt = await getSessionInvalidatedAt(user.username);
+  if (invalidatedAt === null) return true;
+  return (user.iat ?? 0) < invalidatedAt;
 }
 
 type PermissionsMap = Record<string, Partial<Record<Action, boolean>>>;
@@ -59,6 +88,8 @@ export async function requirePermission(
 ): Promise<AuthUser | Response> {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
+  if (user.mustChangePassword) return passwordChangeRequired();
+  if (await isSessionStale(user)) return sessionExpired();
   if (!(await hasPermission(user, featureKey, action))) return forbidden();
   return user;
 }
@@ -67,9 +98,11 @@ export async function requirePermission(
 // hasPermission/role_permissions entirely, unlike requirePermission. That matrix is editable
 // via the Hak Akses Role UI, so routing this through a featureKey would let `admin` be granted
 // access; this must stay impossible regardless of how the matrix is configured.
-export function requireSuperAdmin(req: Request): AuthUser | Response {
+export async function requireSuperAdmin(req: Request): Promise<AuthUser | Response> {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
+  if (user.mustChangePassword) return passwordChangeRequired();
+  if (await isSessionStale(user)) return sessionExpired();
   if (user.role !== 'super-admin') return forbidden();
   return user;
 }
@@ -78,9 +111,11 @@ export function requireSuperAdmin(req: Request): AuthUser | Response {
 // the Biaya Admin routes that `admin` (the business owner being billed) needs to read/act on:
 // viewing invoices raised against them and marking one paid. Creating invoices and setting rates
 // stays requireSuperAdmin-only.
-export function requireAdminOrSuperAdmin(req: Request): AuthUser | Response {
+export async function requireAdminOrSuperAdmin(req: Request): Promise<AuthUser | Response> {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
+  if (user.mustChangePassword) return passwordChangeRequired();
+  if (await isSessionStale(user)) return sessionExpired();
   if (user.role !== 'super-admin' && user.role !== 'admin') return forbidden();
   return user;
 }

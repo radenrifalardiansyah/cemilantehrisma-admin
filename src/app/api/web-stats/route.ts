@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
+import { wibDateKey } from '@/lib/date';
 
 const PAGE_KEYS: Record<string, string> = {
   home: '/', products: '/products', reseller: '/reseller',
@@ -24,9 +25,12 @@ function addTo(agg: Record<string, number>, source: unknown) {
 const getRawWebStats = unstable_cache(
   async (numDays: number) => {
     const db = getDb();
+    // Bucket harian di koleksi `analytics` (ditulis storefront lewat analyticsService.ts) kini
+    // dikunci per hari kalender WIB, bukan UTC — harus dibaca pakai kunci yang sama persis, atau
+    // pergantian hari UTC (07:00 WIB) membuat kunjungan dini hari salah bucket.
     const days = Array.from({ length: numDays }, (_, i) => {
       const d = new Date(); d.setDate(d.getDate() - i);
-      return d.toISOString().slice(0, 10);
+      return wibDateKey(d);
     });
 
     const [snapshots, prodSnap, catSnap] = await Promise.all([

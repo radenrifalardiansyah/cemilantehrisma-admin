@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
   const existingSnap = await db.collection('categories').get();
   const existingSlugs = new Set(existingSnap.docs.map(d => d.id));
   const seenSlugs = new Set<string>();
-  let nextOrder = existingSnap.size + 1;
+  // max(order)+1, bukan jumlah dokumen — lihat komentar sama di api/categories/route.ts POST.
+  let nextOrder = existingSnap.docs.reduce((max, d) => Math.max(max, Number(d.data().order) || 0), -1) + 1;
 
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
   let batch = db.batch();

@@ -1,9 +1,11 @@
 import { NextRequest } from 'next/server';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { revalidateTag } from 'next/cache';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { getDb } from '@/lib/firebase-admin';
-import { getRolePermissionsMap } from '@/lib/rbac';
+import { getRolePermissionsMap, SESSION_TAG } from '@/lib/rbac';
 import { fullAccessPermissions } from '@/lib/permissions';
 import { deriveLoginEmail, signInWithPassword, adminSetPassword } from '@/lib/firebase-auth-rest';
 import type { Action } from '@/types/rbac';
@@ -93,5 +95,34 @@ export async function PATCH(req: NextRequest) {
   if (Object.keys(patch).length > 0) {
     await ref.update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
   }
-  return Response.json({ ok: true, email: patch.email ?? null, avatar: patch.avatar ?? null });
+
+  // Password berhasil diganti — sesi manapun yang masih dipegang di perangkat LAIN harus mati di
+  // request berikutnya, sama seperti reset password paksa oleh admin (lihat
+  // users/[username]/route.ts). Sesi yang sedang dipakai untuk request INI sendiri tetap hidup
+  // karena token barunya (di bawah) selalu diterbitkan setelah baris ini — iat-nya otomatis ikut
+  // atau lebih baru daripada timestamp ini. Best-effort & terpisah dari `patch` di atas —
+  // password akun Firebase Auth sudah benar-benar berhasil diganti di titik ini, jadi kegagalan
+  // Firestore di sini (mis. quota habis) tidak boleh membuat responsnya jadi error.
+  if (newPassword) {
+    try {
+      await ref.update({ sessionsInvalidatedAt: Math.floor(Date.now() / 1000) });
+      revalidateTag(SESSION_TAG, { expire: 0 });
+    } catch (err) {
+      console.error('Failed to bump sessionsInvalidatedAt after password change', err);
+    }
+  }
+
+  // A password change must invalidate the mustChangePassword flag baked into the CALLER'S own
+  // token, not just the Firebase Auth custom claims — otherwise the old token (still carrying
+  // mustChangePassword=true) keeps getting rejected by requirePermission/requireSuperAdmin on
+  // every request after this one, even though the password was already changed successfully.
+  const newToken = newPassword
+    ? jwt.sign(
+        { username: authUser.username, role: authUser.role, uid: authUser.uid, mustChangePassword: false },
+        process.env.JWT_SECRET!,
+        { expiresIn: '7d' },
+      )
+    : undefined;
+
+  return Response.json({ ok: true, email: patch.email ?? null, avatar: patch.avatar ?? null, token: newToken });
 }

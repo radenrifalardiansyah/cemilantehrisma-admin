@@ -350,7 +350,11 @@ export default function PosTab({
     const p = posProducts.find(pr => pr.id === i.productId);
     return s + (p?.price ?? 0) * i.qty;
   }, 0);
-  const discountNum    = parseFloat(discountRaw) || 0;
+  // Math.max(0, ...) — kolom diskon persen pakai <input type="number"> polos yang tidak menolak
+  // tanda minus saat diketik (atribut min="0" tidak dipaksakan ke keystroke), jadi tanpa clamp di
+  // sini nilai negatif membuat discountAmount ikut negatif dan justru MENAMBAH total, bukan
+  // menguranginya.
+  const discountNum    = Math.max(0, parseFloat(discountRaw) || 0);
   const discountAmount = discountType === 'percent'
     ? Math.min(Math.round(cartSubtotal * discountNum / 100), cartSubtotal)
     : Math.min(discountNum, cartSubtotal);
@@ -490,7 +494,7 @@ export default function PosTab({
       const p = posProducts.find(pr => pr.id === i.productId);
       return s + (p?.price ?? 0) * i.qty;
     }, 0);
-    const discNum = parseFloat(h.discountRaw) || 0;
+    const discNum = Math.max(0, parseFloat(h.discountRaw) || 0);
     const disc = h.discountType === 'percent'
       ? Math.min(Math.round(subtotal * discNum / 100), subtotal)
       : Math.min(discNum, subtotal);

@@ -196,8 +196,10 @@ export default function CategoriesTab({ creds }: { creds: string }) {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // `order` sengaja tidak dikirim — server yang menghitung posisi berikutnya
+          // (max(order)+1) supaya tidak bentrok dengan kategori lain yang masih ada.
           slug, name: editingCat.name, emoji: editingCat.emoji,
-          description: editingCat.description, order: categories.length + 1,
+          description: editingCat.description,
           bannerUrl: editingCat.bannerUrl,
         }),
       });

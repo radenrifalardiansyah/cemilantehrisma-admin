@@ -25,6 +25,10 @@ export async function GET(req: NextRequest) {
   return Response.json({ transfers });
 }
 
+// Kegagalan validasi yang diketahui (saldo kurang, dompet tidak ditemukan, dst) — dilempar dari
+// dalam transaksi supaya bisa dibedakan dari error tak terduga dan diterjemahkan ke respons 400.
+class TransferValidationError extends Error {}
+
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'wallets', 'create');
   if (guard instanceof Response) return guard;
@@ -38,31 +42,50 @@ export async function POST(req: NextRequest) {
   if (fromWalletId === toWalletId) return Response.json({ error: 'Dompet asal dan tujuan tidak boleh sama.' }, { status: 400 });
   if (amount <= 0) return Response.json({ error: 'Jumlah transfer harus lebih dari 0.' }, { status: 400 });
 
-  const fromSnap = await db.collection('wallets').doc(fromWalletId).get();
-  if (!fromSnap.exists) return Response.json({ error: 'Dompet asal tidak ditemukan.' }, { status: 400 });
-  const toSnap = await db.collection('wallets').doc(toWalletId).get();
-  if (!toSnap.exists) return Response.json({ error: 'Dompet tujuan tidak ditemukan.' }, { status: 400 });
-
-  const fromBalance = await computeWalletBalance(db, fromWalletId, Number(fromSnap.data()?.initialBalance) || 0);
-  if (amount > fromBalance) {
-    return Response.json({ error: `Saldo "${fromSnap.data()?.name}" tidak cukup (saldo saat ini Rp${Math.round(fromBalance).toLocaleString('id-ID')}).` }, { status: 400 });
-  }
-
+  const fromRef = db.collection('wallets').doc(fromWalletId);
+  const toRef = db.collection('wallets').doc(toWalletId);
   const payload = {
     fromWalletId, toWalletId, amount,
     date: typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10),
     note: data.note ?? '',
   };
-  const ref = await db.collection('walletTransfers').add({
-    ...payload,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+
+  let fromName = fromWalletId;
+  let toName = toWalletId;
+  let transferId: string;
+  try {
+    // Pengecekan saldo cukup DAN penulisan transfer harus satu transaksi Firestore — kalau
+    // terpisah (baca saldo, lalu tulis), dua transfer keluar dari dompet yang sama yang tiba
+    // hampir bersamaan bisa sama-sama lolos validasi berdasarkan saldo yang sama, lalu sama-sama
+    // commit, membuat saldo dompet minus. Di dalam transaksi, Firestore otomatis me-retry salah
+    // satu begitu yang lain lebih dulu commit, sehingga percobaan berikutnya membaca saldo yang
+    // sudah memperhitungkan transfer pesaing itu.
+    transferId = await db.runTransaction(async tx => {
+      const [fromSnap, toSnap] = await Promise.all([tx.get(fromRef), tx.get(toRef)]);
+      if (!fromSnap.exists) throw new TransferValidationError('Dompet asal tidak ditemukan.');
+      if (!toSnap.exists) throw new TransferValidationError('Dompet tujuan tidak ditemukan.');
+      fromName = fromSnap.data()?.name ?? fromWalletId;
+      toName = toSnap.data()?.name ?? toWalletId;
+
+      const fromBalance = await computeWalletBalance(db, fromWalletId, Number(fromSnap.data()?.initialBalance) || 0, undefined, tx);
+      if (amount > fromBalance) {
+        throw new TransferValidationError(`Saldo "${fromName}" tidak cukup (saldo saat ini Rp${Math.round(fromBalance).toLocaleString('id-ID')}).`);
+      }
+
+      const ref = db.collection('walletTransfers').doc();
+      tx.set(ref, { ...payload, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+      return ref.id;
+    });
+  } catch (err) {
+    if (err instanceof TransferValidationError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
+
   try {
     await logHistory(db, {
       entity: 'wallet-transfers',
-      entityId: ref.id,
-      entityLabel: `${fromSnap.data()?.name ?? fromWalletId} → ${toSnap.data()?.name ?? toWalletId} - Rp${amount.toLocaleString('id-ID')}`,
+      entityId: transferId,
+      entityLabel: `${fromName} → ${toName} - Rp${amount.toLocaleString('id-ID')}`,
       action: 'create',
       actor: guard,
       after: payload,
@@ -70,5 +93,5 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write history for wallet-transfers create', err);
   }
-  return Response.json({ id: ref.id });
+  return Response.json({ id: transferId });
 }

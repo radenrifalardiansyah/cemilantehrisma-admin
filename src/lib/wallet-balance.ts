@@ -1,4 +1,4 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import type { Firestore, Query, Transaction } from 'firebase-admin/firestore';
 
 const WALLET_ID_COLLECTIONS = ['income', 'expenses', 'capitalEntries', 'materialPurchases', 'orders', 'consignmentRecaps'];
 
@@ -19,20 +19,29 @@ export async function walletHasReferences(db: Firestore, walletId: string): Prom
 // query `where('walletId', '==', ...)` (single-field, otomatis ter-index Firestore) lalu filter
 // status/tipe di JS, supaya tidak perlu index komposit tambahan — sama seperti pola agregasi
 // client-side yang sudah dipakai WalletsTab.tsx & FinanceReportTab.tsx.
+//
+// `tx`: bila diberikan, semua query dibaca lewat `tx.get()` alih-alih `.get()` biasa, supaya
+// pemanggil bisa membungkus pengecekan saldo + penulisan transfer dalam SATU transaksi Firestore.
+// Tanpa ini, dua transfer keluar yang tiba bersamaan bisa lolos validasi berdasarkan saldo yang
+// sama lalu sama-sama commit, membuat saldo dompet minus (TOCTOU) — dengan `tx`, Firestore
+// otomatis me-retry salah satu transaksi begitu transfer pesaingnya lebih dulu commit, sehingga
+// baca-ulang saldo di percobaan berikutnya sudah memperhitungkan transfer itu.
 export async function computeWalletBalance(
   db: Firestore,
   walletId: string,
   initialBalance: number,
   excludeTransferId?: string,
+  tx?: Transaction,
 ): Promise<number> {
+  const read = <T>(q: Query<T>) => (tx ? tx.get(q) : q.get());
   const [incomeSnap, expensesSnap, capitalSnap, ordersSnap, recapsSnap, transfersInSnap, transfersOutSnap] = await Promise.all([
-    db.collection('income').where('walletId', '==', walletId).get(),
-    db.collection('expenses').where('walletId', '==', walletId).get(),
-    db.collection('capitalEntries').where('walletId', '==', walletId).get(),
-    db.collection('orders').where('walletId', '==', walletId).get(),
-    db.collection('consignmentRecaps').where('walletId', '==', walletId).get(),
-    db.collection('walletTransfers').where('toWalletId', '==', walletId).get(),
-    db.collection('walletTransfers').where('fromWalletId', '==', walletId).get(),
+    read(db.collection('income').where('walletId', '==', walletId)),
+    read(db.collection('expenses').where('walletId', '==', walletId)),
+    read(db.collection('capitalEntries').where('walletId', '==', walletId)),
+    read(db.collection('orders').where('walletId', '==', walletId)),
+    read(db.collection('consignmentRecaps').where('walletId', '==', walletId)),
+    read(db.collection('walletTransfers').where('toWalletId', '==', walletId)),
+    read(db.collection('walletTransfers').where('fromWalletId', '==', walletId)),
   ]);
 
   const totalIncome = incomeSnap.docs.reduce((s, d) => s + (Number(d.data().amount) || 0), 0);

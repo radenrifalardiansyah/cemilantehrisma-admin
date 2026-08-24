@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requireSuperAdmin } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { productUrl } from '@/lib/branding';
 
@@ -19,7 +19,11 @@ const PRODUCTS = [
 ];
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  // Menyeed/reset katalog produk default — operasi setup, bukan sesuatu yang boleh dipanggil
+  // role apa pun yang kebetulan sedang login (validateAdminAuth sebelumnya cuma cek "sudah
+  // login", bukan role).
+  const guard = await requireSuperAdmin(req);
+  if (guard instanceof Response) return guard;
   const db = getDb();
   const batch = db.batch();
   let count = 0;

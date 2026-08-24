@@ -26,6 +26,25 @@ export async function POST(req: NextRequest) {
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
   let batch = db.batch();
   let opsInBatch = 0;
+  let pendingCreated = 0;
+
+  // Commit tiap chunk dibungkus try/catch — tanpa ini, satu commit gagal di tengah jalan
+  // (mis. error jaringan sesaat) membuat seluruh request 500 tanpa laporan created/skipped sama
+  // sekali, padahal chunk-chunk sebelumnya sudah permanen tersimpan.
+  async function flush(): Promise<boolean> {
+    if (opsInBatch === 0) return true;
+    try {
+      await batch.commit();
+      created += pendingCreated;
+      batch = db.batch();
+      opsInBatch = 0;
+      pendingCreated = 0;
+      return true;
+    } catch (err) {
+      console.error('Bulk import bahan baku: commit chunk gagal', err);
+      return false;
+    }
+  }
 
   for (const row of materials) {
     const name = (row.name ?? '').toString().trim();
@@ -41,16 +60,24 @@ export async function POST(req: NextRequest) {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    created++;
+    pendingCreated++;
     opsInBatch++;
 
-    if (opsInBatch >= BATCH_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      opsInBatch = 0;
+    if (opsInBatch >= BATCH_LIMIT && !(await flush())) {
+      if (created > 0) revalidateTag('admin-materials', { expire: 0 });
+      return Response.json({
+        created, skippedInvalid, skippedDuplicate,
+        error: `Impor terhenti — ${created} bahan baku berhasil disimpan sebelum gagal. Data yang sudah tersimpan aman; coba impor ulang sisanya.`,
+      }, { status: 500 });
     }
   }
-  if (opsInBatch > 0) await batch.commit();
+  if (!(await flush())) {
+    if (created > 0) revalidateTag('admin-materials', { expire: 0 });
+    return Response.json({
+      created, skippedInvalid, skippedDuplicate,
+      error: `Impor terhenti — ${created} bahan baku berhasil disimpan sebelum gagal. Data yang sudah tersimpan aman; coba impor ulang sisanya.`,
+    }, { status: 500 });
+  }
   if (created > 0) revalidateTag('admin-materials', { expire: 0 });
 
   return Response.json({ created, skippedInvalid, skippedDuplicate });

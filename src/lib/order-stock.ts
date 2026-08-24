@@ -28,10 +28,14 @@ export async function restoreOrderStockInTx(tx: Transaction, db: Firestore, orde
   if (items.length === 0) return;
 
   // Item lama (sebelum productId ikut disimpan di tiap item order) dicocokkan lewat nama produk.
+  // limit(2) (bukan 1) supaya bisa dideteksi kalau ada LEBIH DARI SATU produk dengan nama yang
+  // sama persis (tidak ada constraint keunikan nama) — kalau ambigu, lebih aman melewati restore
+  // item ini (perilaku lama untuk item yang sama sekali tidak ketemu) daripada menebak salah satu
+  // dan mengembalikan stok ke produk yang keliru.
   const resolved = await Promise.all(items.map(async item => {
     if (item.productId) return item;
-    const snap = await tx.get(db.collection('products').where('name', '==', item.name).limit(1));
-    if (snap.empty) return null;
+    const snap = await tx.get(db.collection('products').where('name', '==', item.name).limit(2));
+    if (snap.size !== 1) return null;
     return { ...item, productId: snap.docs[0].id };
   }));
 

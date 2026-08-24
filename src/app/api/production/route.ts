@@ -11,6 +11,32 @@ interface MaterialUsedInput { materialId: string; materialName: string; unit: st
 interface OutputInput { productId: string; productName: string; yieldQty: number }
 interface BatchWithMeta { id: string; warehouseId?: string; outputs?: { productId: string; yieldQty: number }[]; createdAt?: Timestamp }
 
+// Gabungkan baris dengan id yang sama SEBELUM dipakai untuk tx.get/tx.update — tanpa ini, dua
+// baris bahan (atau dua baris hasil) untuk material/produk yang sama masing-masing menghitung
+// delta dari snapshot awal yang sama lalu tx.update dengan nilai literal, sehingga baris kedua
+// menimpa (bukan menambah) hasil baris pertama dan stok jadi kurang terpotong/kurang bertambah.
+function mergeMaterialsUsed(rows: MaterialUsedInput[]): MaterialUsedInput[] {
+  const merged = new Map<string, MaterialUsedInput>();
+  for (const r of rows) {
+    const qty = Number(r.qty) || 0;
+    const existing = merged.get(r.materialId);
+    if (existing) existing.qty += qty;
+    else merged.set(r.materialId, { ...r, qty });
+  }
+  return [...merged.values()];
+}
+
+function mergeOutputs(rows: OutputInput[]): OutputInput[] {
+  const merged = new Map<string, OutputInput>();
+  for (const r of rows) {
+    const qty = Number(r.yieldQty) || 0;
+    const existing = merged.get(r.productId);
+    if (existing) existing.yieldQty += qty;
+    else merged.set(r.productId, { ...r, yieldQty: qty });
+  }
+  return [...merged.values()];
+}
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'production', 'view');
   if (guard instanceof Response) return guard;
@@ -89,8 +115,8 @@ export async function POST(req: NextRequest) {
     date?: string; note?: string; warehouseId?: string; warehouseName?: string;
     outputs: OutputInput[]; materialsUsed: MaterialUsedInput[]; otherCost?: number;
   };
-  const materialsUsed = data.materialsUsed ?? [];
-  const outputs = (data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
+  const materialsUsed = mergeMaterialsUsed(data.materialsUsed ?? []);
+  const outputs = mergeOutputs(data.outputs ?? []).filter(o => o.yieldQty > 0);
   const otherCost = Number(data.otherCost) || 0;
   const date = data.date || new Date().toISOString().slice(0, 10);
   const warehouseId   = data.warehouseId ?? '';

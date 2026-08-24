@@ -30,8 +30,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `Modul dengan ID "${id}" sudah ada.` }, { status: 409 });
   }
 
-  const countSnap = await db.collection('modules').get();
+  // max(order)+1, bukan jumlah dokumen — count menyusut tiap ada modul yang dihapus, jadi modul
+  // baru bisa dapat `order` yang bentrok dengan modul lain yang masih ada (lihat komentar sama di
+  // api/menus/route.ts POST).
+  const siblingSnap = await db.collection('modules').get();
+  const nextOrder = siblingSnap.docs.reduce((max, d) => Math.max(max, Number(d.data().order) || 0), -1) + 1;
   const now = FieldValue.serverTimestamp();
-  await ref.set({ name, icon, order: countSnap.size, isActive: true, createdAt: now, updatedAt: now });
+  await ref.set({ name, icon, order: nextOrder, isActive: true, createdAt: now, updatedAt: now });
   return Response.json({ id, name, icon });
 }

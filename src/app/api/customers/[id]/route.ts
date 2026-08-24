@@ -61,6 +61,18 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'customers', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  await getDb().collection('customers').doc(id).delete();
+  const db = getDb();
+
+  // Tolak kalau pelanggan ini masih terhubung ke akun reseller — kalau dibolehkan,
+  // resellers.customerId jadi menunjuk ke dokumen yang sudah tidak ada.
+  const resellerRef = await db.collection('resellers').where('customerId', '==', id).limit(1).get();
+  if (!resellerRef.empty) {
+    return Response.json(
+      { error: 'Pelanggan ini masih terhubung ke akun reseller — lepaskan tautannya dulu sebelum menghapus.' },
+      { status: 400 },
+    );
+  }
+
+  await db.collection('customers').doc(id).delete();
   return Response.json({ ok: true });
 }

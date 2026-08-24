@@ -202,8 +202,10 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       setMaterials(prev => prev.filter(x => x.id !== m.id));
       setSelectedMaterials(s => { const n = new Set(s); n.delete(m.id); return n; });
       toast.success(`"${m.name}" berhasil dihapus.`);
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus bahan baku.');
     }
-    else toast.error('Gagal menghapus bahan baku.');
     setDeletingMId(null);
   };
 
@@ -249,15 +251,18 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     if (selectedMaterials.size === 0) return;
     if (!await confirm({ message: `Hapus ${selectedMaterials.size} bahan baku yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setBulkDeletingMaterials(true);
-    const count = selectedMaterials.size;
     const r = await fetch(`${API}/api/materials/bulk-delete`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [...selectedMaterials] }),
     });
     if (r.ok) {
-      setMaterials(prev => prev.filter(x => !selectedMaterials.has(x.id)));
+      const d = await r.json() as { deleted: number; skippedInUse: number };
+      // Refetch, bukan filter optimis lokal — sebagian item terpilih bisa saja dilewati server
+      // (skippedInUse), jadi tidak semua id yang dicentang benar-benar terhapus.
+      await loadMaterials();
       setSelectedMaterials(new Set());
-      toast.success(`${count} bahan baku berhasil dihapus.`);
+      const extra = d.skippedInUse > 0 ? ` (${d.skippedInUse} masih dipakai di pembelian/produksi, dilewati)` : '';
+      toast.success(`${d.deleted} bahan baku berhasil dihapus.${extra}`);
     } else {
       toast.error('Gagal menghapus bahan baku yang dipilih.');
     }
@@ -378,7 +383,8 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         ].filter(Boolean).join(', ');
         toast.success(`${d.created} bahan baku berhasil diimpor.${extra ? ` (${extra})` : ''}`);
       } else {
-        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        const d = await r.json().catch(() => ({ error: undefined, created: 0 })) as { error?: string; created?: number };
+        if (d.created) await loadMaterials(); // sebagian sempat tersimpan sebelum gagal — refresh biar tidak dobel-impor
         toast.error(d.error ?? 'Gagal mengimpor data bahan baku.');
       }
     } catch {
@@ -1061,7 +1067,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                     {paginatedMaterials.map((m, idx) => {
                       const isSelected = selectedMaterials.has(m.id);
-                      const rowNum = (materialSafePage - 1) * materialPageSize + idx + 1;
+                      const rowNum = (materialSafePage - 1) * (Number.isFinite(materialPageSize) ? materialPageSize : 0) + idx + 1;
                       return (
                         <div key={m.id} ref={el => { materialRowRefs.current[m.id] = el; }} className="px-4 py-3 flex items-center gap-3"
                           style={{ transition: 'background-color 0.6s ease', background: highlightedMaterialId === m.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
@@ -1296,7 +1302,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                     <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                       {paginatedPurchases.map((p, idx) => {
                         const isSelected = selectedPurchases.has(p.id);
-                        const rowNum = (purchaseSafePage - 1) * purchasePageSize + idx + 1;
+                        const rowNum = (purchaseSafePage - 1) * (Number.isFinite(purchasePageSize) ? purchasePageSize : 0) + idx + 1;
                         return (
                           <div key={p.id}>
                             <div className="px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: p.voided ? 0.55 : 1 }}>
@@ -1518,7 +1524,10 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                 </div>
                 <div>
                   <label className="field-label">Stok Minimum (peringatan &quot;Stok Menipis&quot;)</label>
-                  <NumberInput value={mForm.minStock} onChange={raw => setMForm({ ...mForm, minStock: raw })}
+                  {/* input polos, BUKAN NumberInput — NumberInput cuma menerima bilangan bulat
+                      (membuang titik desimal), padahal satuan bahan baku bisa pecahan (kg, liter) */}
+                  <input type="number" min="0" step="any" inputMode="decimal" className="input"
+                    value={mForm.minStock} onChange={e => setMForm({ ...mForm, minStock: e.target.value })}
                     placeholder="0 = tidak ada peringatan" />
                 </div>
               </div>

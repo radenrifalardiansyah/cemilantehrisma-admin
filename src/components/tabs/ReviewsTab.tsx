@@ -246,7 +246,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
                     <div className="flex items-start gap-3">
                       <Checkbox checked={isSelected} onChange={() => toggleSelect(r.id)} />
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {(safePage - 1) * pageSize + idx + 1}
+                        {(safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">

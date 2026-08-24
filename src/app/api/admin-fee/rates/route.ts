@@ -12,7 +12,7 @@ import {
 const serializeTs = (t: Timestamp | undefined) => t ? { seconds: t.seconds, nanoseconds: t.nanoseconds } : null;
 
 export async function GET(req: NextRequest) {
-  const guard = requireSuperAdmin(req);
+  const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const rates = await getAllRateHistories(getDb());
   const serialized = Object.fromEntries(
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 // Mengubah rate = menambah entri baru (append-only), tidak pernah menimpa entri lama — supaya
 // fee yang sudah dihitung/diinvoice untuk periode lampau tidak berubah retroaktif.
 export async function POST(req: NextRequest) {
-  const guard = requireSuperAdmin(req);
+  const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     channel?: AdminFeeChannel; type?: AdminFeeType; value?: number; effectiveFrom?: string;

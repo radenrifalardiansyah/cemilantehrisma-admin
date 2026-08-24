@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power, ArrowRightLeft,
   Search, ChevronLeft, ChevronRight,
@@ -117,7 +117,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const [transferBulkDeleting, setTransferBulkDeleting] = useState(false);
   const [transferExporting, setTransferExporting] = useState(false);
 
+  // Generasi request — `load()` dipanggil ulang setelah tiap aksi CRUD dompet/transfer (lihat
+  // pemanggil di bawah); dua aksi yang dipicu cepat berurutan bisa membuat dua `load()` tumpang
+  // tindih, dan tanpa penjaga ini yang datang belakangan belum tentu yang paling baru.
+  const loadIdRef = useRef(0);
   const load = async () => {
+    const myLoadId = ++loadIdRef.current;
     setLoading(true);
     const qs = 'from=2000-01-01';
     const [wRes, iRes, eRes, cRes, oRes, rRes, tRes] = await Promise.all([
@@ -136,6 +141,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     const orders: OrderRow[] = oRes.ok ? (await oRes.json() as { orders: OrderRow[] }).orders : [];
     const recaps: RecapRow[] = rRes.ok ? (await rRes.json() as { recaps: RecapRow[] }).recaps : [];
     const transferList: Transfer[] = tRes.ok ? (await tRes.json() as { transfers: Transfer[] }).transfers : [];
+    if (myLoadId !== loadIdRef.current) return;
 
     // Sama persis dengan definisi "uang masuk terhitung" di IncomeTab/FinanceReportTab.
     const countedOrders = orders.filter(o =>

@@ -52,6 +52,18 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
+
+  // Tolak kalau masih ada stok titip tersisa di lokasi ini — kalau dibolehkan, stok itu jadi
+  // yatim permanen (tidak bisa direkap lagi karena lokasinya sudah tidak ada untuk dipilih).
+  const stockSnap = await db.collection('consignmentStock').where('locationId', '==', id).get();
+  const hasStock = stockSnap.docs.some(d => (Number(d.data().stockQty) || 0) > 0);
+  if (hasStock) {
+    return Response.json(
+      { error: 'Lokasi ini masih punya stok titip tersisa — rekap atau kosongkan dulu sebelum menghapus.' },
+      { status: 400 },
+    );
+  }
+
   const locationRef = db.collection('consignmentLocations').doc(id);
   const beforeSnap = await locationRef.get();
   const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;

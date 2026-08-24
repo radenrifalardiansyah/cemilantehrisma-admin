@@ -4,7 +4,7 @@ import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = requireAdminOrSuperAdmin(req);
+  const guard = await requireAdminOrSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const { id } = await params;
   const snap = await getDb().collection('adminFeeInvoices').doc(id).get();
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = requireSuperAdmin(req);
+  const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const { id } = await params;
   const data = await req.json() as { status?: 'draft' | 'invoiced' | 'paid' | 'cancelled' };

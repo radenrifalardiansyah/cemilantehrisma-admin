@@ -9,6 +9,27 @@ import { revalidateStorefront } from '@/lib/revalidate';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
+// Gabungkan baris ganda untuk produk yang sama SEBELUM dipakai di tx.get/tx.update — tanpa ini,
+// tiap baris dibaca & divalidasi dari snapshot produk yang sama, lalu tx.update dengan nilai
+// literal per baris (bukan akumulatif), sehingga baris kedua menimpa hasil baris pertama dan
+// stok yang benar-benar keluar dari toko tidak sepenuhnya tercatat di stockQty produk. Pola yang
+// sama sudah dipakai di endpoint edit (PUT) untuk masalah persis ini.
+function mergeItems(items: SendItemInput[]): SendItemInput[] {
+  const merged = new Map<string, SendItemInput>();
+  for (const it of items) {
+    const qty = Number(it.qty) || 0;
+    const existing = merged.get(it.productId);
+    if (existing) {
+      const totalQty = existing.qty + qty;
+      existing.hargaTitip = totalQty > 0 ? (existing.qty * existing.hargaTitip + qty * it.hargaTitip) / totalQty : it.hargaTitip;
+      existing.qty = totalQty;
+    } else {
+      merged.set(it.productId, { ...it, qty });
+    }
+  }
+  return [...merged.values()];
+}
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'consignment', 'view');
   if (guard instanceof Response) return guard;
@@ -40,7 +61,7 @@ export async function POST(req: NextRequest) {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
     note?: string; items: SendItemInput[]; date?: string;
   };
-  const items = data.items ?? [];
+  const items = mergeItems(data.items ?? []);
   if (items.length === 0) return Response.json({ error: 'Minimal 1 produk dikirim.' }, { status: 400 });
   if (!data.warehouseId) return Response.json({ error: 'Pilih gudang asal pengiriman.' }, { status: 400 });
 

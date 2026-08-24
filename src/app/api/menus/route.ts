@@ -101,12 +101,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const countSnap = await db.collection('menus').where('moduleId', '==', moduleId).get();
+  // max(order)+1, bukan jumlah dokumen — count menyusut tiap ada menu yang dihapus, jadi menu
+  // baru bisa dapat `order` yang bentrok dengan menu lain yang masih ada di modul ini (Firestore
+  // memutus dasi urutan yang sama lewat id dokumen, bukan urutan pembuatan, jadi posisi sidebar
+  // jadi tidak terduga setiap kali siklus hapus-lalu-buat terjadi).
+  const siblingSnap = await db.collection('menus').where('moduleId', '==', moduleId).get();
+  const nextOrder = siblingSnap.docs.reduce((max, d) => Math.max(max, Number(d.data().order) || 0), -1) + 1;
   const now = FieldValue.serverTimestamp();
   const ref = db.collection('menus').doc();
   await ref.set({
     moduleId, parentId: parentId ?? null, featureKey, label, icon,
-    order: countSnap.size, isActive: active, createdAt: now, updatedAt: now,
+    order: nextOrder, isActive: active, createdAt: now, updatedAt: now,
   });
   return Response.json({ id: ref.id });
 }

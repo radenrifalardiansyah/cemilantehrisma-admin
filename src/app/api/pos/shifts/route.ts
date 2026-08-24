@@ -25,20 +25,30 @@ export async function POST(req: NextRequest) {
   const { openingBalance, note } = await req.json() as { openingBalance: number; note?: string };
 
   const db = getDb();
-  const existing = await db.collection('cashierShifts').where('status', '==', 'open').limit(1).get();
-  if (!existing.empty) {
-    return Response.json({ error: 'Sudah ada sesi kasir yang terbuka.' }, { status: 409 });
-  }
-
-  const ref = await db.collection('cashierShifts').add({
-    openedAt: FieldValue.serverTimestamp(),
+  const ref = db.collection('cashierShifts').doc();
+  const shiftData = {
     openedBy: user.username,
     openingBalance: Number(openingBalance) || 0,
     note: note?.trim() ?? '',
     status: 'open',
-  });
-  const doc = await ref.get();
-  const shiftData = doc.data();
+  };
+  try {
+    // Cek "belum ada shift open" DAN penulisan shift baru harus satu transaksi — kalau terpisah
+    // (query lalu add), dua permintaan buka-shift yang tiba hampir bersamaan (double click, dua
+    // kasir) bisa sama-sama melihat "kosong" sebelum salah satunya commit, lalu sama-sama
+    // berhasil membuat shift open. GET di atas cuma limit(1), jadi shift kedua "hilang" dari
+    // rekonsiliasi tutup kasir walau transaksinya tetap tercatat.
+    await db.runTransaction(async tx => {
+      const existing = await tx.get(db.collection('cashierShifts').where('status', '==', 'open').limit(1));
+      if (!existing.empty) throw new Error('DUPLICATE_OPEN_SHIFT');
+      tx.set(ref, { ...shiftData, openedAt: FieldValue.serverTimestamp() });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === 'DUPLICATE_OPEN_SHIFT') {
+      return Response.json({ error: 'Sudah ada sesi kasir yang terbuka.' }, { status: 409 });
+    }
+    throw err;
+  }
   try {
     await logHistory(db, {
       entity: 'pos',

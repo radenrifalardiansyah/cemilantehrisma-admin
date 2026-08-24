@@ -9,7 +9,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 // apapun tapi superadmin-only): endpoint ini cuma boleh transisi invoiced -> paid, jadi admin
 // tidak bisa mengubah status ke draft atau mengarang ulang nominal tagihan.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = requireAdminOrSuperAdmin(req);
+  const guard = await requireAdminOrSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const { id } = await params;
   const body = await req.json().catch(() => ({})) as { note?: string };

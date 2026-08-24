@@ -377,7 +377,8 @@ export default function SuppliersTab({ creds }: { creds: string }) {
       setSelected(s => { const n = new Set(s); n.delete(id); return n; });
       toast.success(`Supplier "${name}" berhasil dihapus.`);
     } else {
-      toast.error('Gagal menghapus supplier.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus supplier.');
     }
     setDeletingId(null);
   };
@@ -386,16 +387,19 @@ export default function SuppliersTab({ creds }: { creds: string }) {
     if (selected.size === 0) return;
     if (!await confirm({ message: `Hapus ${selected.size} supplier yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setBulkDeleting(true);
-    const count = selected.size;
     const r = await fetch(`${API}/api/suppliers/bulk-delete`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [...selected] }),
     });
     if (r.ok) {
-      setSuppliers(ss => ss.filter(s => !selected.has(s.id)));
+      const d = await r.json() as { deleted: number; skippedInUse: number };
+      // Refetch, bukan filter optimis lokal — sebagian id terpilih bisa dilewati server
+      // (skippedInUse, mis. masih punya riwayat pembelian bahan baku).
+      await load();
       setSelected(new Set());
-      toast.success(`${count} supplier berhasil dihapus.`);
+      const extra = d.skippedInUse > 0 ? ` (${d.skippedInUse} masih punya riwayat pembelian, dilewati)` : '';
+      toast.success(`${d.deleted} supplier berhasil dihapus.${extra}`);
     } else {
       toast.error('Gagal menghapus supplier yang dipilih.');
     }

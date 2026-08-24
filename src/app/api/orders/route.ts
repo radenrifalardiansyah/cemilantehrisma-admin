@@ -63,6 +63,22 @@ export async function POST(req: NextRequest) {
       const { products, shortages } = await readProductsForDeltas(tx, db, deltas);
       if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
+      // invoiceNo dibuat di klien dengan resolusi menit (INV-YYYYMMDD-HHmm), tanpa detik/counter —
+      // dua transaksi kasir yang selesai dalam menit yang sama bisa kirim invoiceNo identik.
+      // Server tidak pernah mengeceknya sebelum ini, jadi keduanya tersimpan dengan nomor yang
+      // sama (merusak pencarian invoice untuk cetak ulang struk/CS). Kalau bentrok, tambahkan
+      // sufiks alih-alih menolak — checkout kasir yang sudah selesai tidak boleh gagal karena ini.
+      let invoiceNo = typeof rest.invoiceNo === 'string' ? rest.invoiceNo : undefined;
+      if (invoiceNo) {
+        let candidate = invoiceNo;
+        for (let suffix = 2; suffix <= 20; suffix++) {
+          const dupe = await tx.get(db.collection('orders').where('invoiceNo', '==', candidate).limit(1));
+          if (dupe.empty) break;
+          candidate = `${invoiceNo}-${suffix}`;
+        }
+        invoiceNo = candidate;
+      }
+
       // Snapshot HPP (costPrice) tiap item saat transaksi terjadi — costPrice produk adalah
       // rata-rata bergerak yang berubah tiap ada produksi baru, jadi HPP historis tidak bisa
       // direkonstruksi ulang secara akurat kalau tidak disimpan di sini (dipakai Laporan Keuangan).
@@ -75,6 +91,7 @@ export async function POST(req: NextRequest) {
       orderId = ref.id;
       const orderData = {
         ...rest,
+        invoiceNo,
         items: itemsWithCost,
         status: 'done',
         source: 'kasir',
@@ -83,7 +100,7 @@ export async function POST(req: NextRequest) {
       };
       tx.set(ref, orderData);
       writeHistoryEntry(tx, db, {
-        entity: 'orders', entityId: ref.id, entityLabel: `Pesanan ${data.invoiceNo ?? ref.id}`,
+        entity: 'orders', entityId: ref.id, entityLabel: `Pesanan ${invoiceNo ?? ref.id}`,
         action: 'create', actor: guard, after: orderData,
       });
       pushPayload = writeNotification(tx, db, {

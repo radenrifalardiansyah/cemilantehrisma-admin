@@ -9,7 +9,7 @@ import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-interface OrderItemInput { productId?: string; name: string; weight: string; qty: number; price: number; subtotal: number; }
+interface OrderItemInput { productId?: string; name: string; weight: string; qty: number; price: number; subtotal: number; costPrice?: number }
 interface OrderEditInput {
   customerName: string; customerPhone?: string; items: OrderItemInput[];
   subtotal: number; discount?: { amount: number; label: string }; total: number;
@@ -49,6 +49,28 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (!order) throw new Error('Pesanan tidak ditemukan.');
         if (order.status === 'dibatalkan') throw new Error('Pesanan yang sudah dibatalkan tidak bisa diedit.');
 
+        // Pertahankan snapshot HPP (costPrice) tiap item lama — costPrice produk adalah rata-rata
+        // bergerak yang terus berubah seiring produksi baru, jadi kalau array items ditimpa tanpa
+        // costPrice, HPP historis pesanan ini diam-diam dihitung ulang pakai HPP produk SAAT INI
+        // ketika laporan dibuka nanti (lihat fallback di analytics/overview.ts), menggeser laba
+        // periode yang sudah ditutup — bahkan untuk edit yang tidak menyentuh item sama sekali
+        // (mis. cuma ganti nama pelanggan). Baris yang qty/harganya diedit tetap pakai costPrice
+        // lama; hanya baris produk yang BENAR-BENAR baru (belum ada di pesanan ini sebelumnya)
+        // yang costPrice-nya diambil dari harga pokok produk saat ini — tidak ada histori lain.
+        const oldCostByProductId = new Map<string, number>();
+        (order.items as OrderItemInput[] | undefined ?? []).forEach(it => {
+          if (it.productId) oldCostByProductId.set(it.productId, Number(it.costPrice) || 0);
+        });
+        const newProductIds = [...new Set(
+          data.items.map(it => it.productId).filter((pid): pid is string => !!pid && !oldCostByProductId.has(pid)),
+        )];
+        const newProductSnaps = await Promise.all(
+          newProductIds.map(pid => tx.get(db.collection('products').doc(pid))),
+        );
+        const freshCostByProductId = new Map(
+          newProductIds.map((pid, i) => [pid, Number(newProductSnaps[i].data()?.costPrice) || 0]),
+        );
+
         // Selisih qty hanya disesuaikan ke stok kalau pesanan ini memang sudah pernah memotong
         // stok (kasir sejak dibuat, atau pesanan online yang sudah "Selesai") — sama seperti
         // aturan restore, supaya edit pesanan yang belum memotong stok tidak ikut memotongnya.
@@ -82,7 +104,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           }
         }
 
-        const items = data.items.map(it => ({ ...it, subtotal: it.price * it.qty }));
+        const items = data.items.map(it => ({
+          ...it,
+          subtotal: it.price * it.qty,
+          costPrice: it.productId ? (oldCostByProductId.get(it.productId) ?? freshCostByProductId.get(it.productId) ?? 0) : 0,
+        }));
         const orderUpdate: Record<string, unknown> = {
           customerName: data.customerName, customerPhone: data.customerPhone, items,
           subtotal: data.subtotal, discount: data.discount, total: data.total,
@@ -118,6 +144,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const order = snap.data() as (RestorableOrder & Record<string, unknown>) | undefined;
       if (!order) throw new Error('Pesanan tidak ditemukan.');
 
+      // "dibatalkan" adalah status akhir — sama seperti cabang edit item di atas yang menolak
+      // mengedit pesanan berstatus batal. Tanpa guard ini, siklus baru→selesai (stok terpotong,
+      // stockCut=true)→dibatalkan (stok dikembalikan, tapi stockCut TIDAK pernah direset)→selesai
+      // lagi lolos guard recut stok (karena stockCut masih true dari siklus pertama) sehingga
+      // stok tidak terpotong ulang, padahal pendapatan pesanan ini terhitung lagi di analitik.
+      if (status !== undefined && order.status === 'dibatalkan') {
+        throw new Error('Pesanan yang sudah dibatalkan tidak bisa diubah statusnya lagi.');
+      }
+
       const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
       if (status !== undefined) update.status = status;
       if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
@@ -133,10 +168,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const warehouseName = settings.posWarehouseName as string | undefined;
 
         const items = order.items ?? [];
+        // limit(2) (bukan 1) supaya bisa dideteksi kalau ada LEBIH DARI SATU produk dengan nama
+        // yang sama persis — kalau ambigu, lebih aman membiarkan item ini tidak terpotong
+        // stoknya (perilaku lama untuk item yang sama sekali tidak ketemu) daripada menebak salah
+        // satu dan memotong stok produk yang keliru.
         const resolved = await Promise.all(items.map(async item => {
           if (item.productId || !item.qty) return item;
-          const s = await tx.get(db.collection('products').where('name', '==', item.name).limit(1));
-          if (s.empty) return item;
+          const s = await tx.get(db.collection('products').where('name', '==', item.name).limit(2));
+          if (s.size !== 1) return item;
           return { ...item, productId: s.docs[0].id };
         }));
 

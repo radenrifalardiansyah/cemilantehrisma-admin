@@ -44,7 +44,17 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
   const handleConfirm = async () => {
     if (state?.onConfirm) {
       setConfirming(true);
-      await state.onConfirm();
+      try {
+        await state.onConfirm();
+      } catch (err) {
+        // Tanpa try/catch ini, onConfirm yang reject membuat dialog macet permanen (kedua tombol
+        // disabled selama confirming=true, dan tidak ada yang pernah mengembalikannya ke false).
+        // Biarkan dialog tetap terbuka (bukan close(true)) — aksinya gagal, jadi belum benar-benar
+        // terkonfirmasi; user bisa coba lagi atau membatalkan.
+        console.error('Confirm onConfirm handler failed', err);
+        setConfirming(false);
+        return;
+      }
       setConfirming(false);
     }
     close(true);

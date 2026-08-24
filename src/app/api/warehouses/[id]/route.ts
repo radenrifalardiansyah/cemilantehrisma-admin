@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { clearWarehouseStockForProducts } from '@/lib/warehouse-stock';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -59,6 +60,26 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const beforeSnap = await db.collection('warehouses').doc(id).get();
   const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
 
+  // Kembalikan dulu stok tiap produk di gudang ini ke `products.stockQty` global SEBELUM baris
+  // warehouse_stock-nya dihapus — kalau dihapus langsung lewat batch.delete tanpa lewat sini,
+  // stockQty global tetap menghitung stok yang sudah tidak ada di gudang manapun (stok hantu).
+  const stockSnap = await db.collection('warehouse_stock').where('warehouseId', '==', id).get();
+  const productIds = stockSnap.docs
+    .filter(d => ((d.data().stockQty as number) ?? 0) > 0)
+    .map(d => d.data().productId as string);
+  const { cleared, failed } = await clearWarehouseStockForProducts(id, productIds, 'Gudang dihapus');
+  // Kalau ada produk yang gagal dikembalikan stoknya, JANGAN lanjut menghapus gudang & baris
+  // warehouse_stock-nya — produk yang sudah berhasil (`cleared`) tetap permanen ter-commit, tapi
+  // menghapus gudang di titik ini akan mengorbankan sisanya jadi stok hantu lagi (masalah yang
+  // justru sedang diperbaiki). Aman diulang: yang sudah cleared di-skip otomatis (no-op) di
+  // percobaan hapus berikutnya.
+  if (failed.length > 0) {
+    return Response.json({
+      error: `Gagal mengembalikan stok ${failed.length} produk sebelum menghapus gudang — coba hapus lagi. (${cleared.length} produk lain sudah berhasil dikembalikan.)`,
+      failed,
+    }, { status: 500 });
+  }
+
   await db.collection('warehouses').doc(id).delete();
 
   try {
@@ -69,13 +90,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       action: 'delete',
       actor: guard,
       before,
+      meta: { clearedProductCount: cleared.length },
     });
   } catch {
     // audit log failure must never fail the business request
   }
 
-  // Hapus semua warehouse_stock entries untuk gudang ini
-  const stockSnap = await db.collection('warehouse_stock').where('warehouseId', '==', id).get();
+  // Hapus sisa dokumen warehouse_stock untuk gudang ini (sekarang sudah bernilai 0 lewat
+  // clearWarehouseProductStock di atas, atau memang sudah 0 sebelumnya).
   if (!stockSnap.empty) {
     const batch = db.batch();
     stockSnap.docs.forEach(d => batch.delete(d.ref));

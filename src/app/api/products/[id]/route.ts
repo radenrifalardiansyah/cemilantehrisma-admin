@@ -61,7 +61,20 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'products', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  await getDb().collection('products').doc(id).delete();
+  const db = getDb();
+
+  // Bersihkan baris warehouse_stock produk ini SEBELUM dokumen produknya hilang — kalau tidak,
+  // baris itu jadi yatim permanen: tidak muncul lagi di tab "Stok per Gudang" (produknya sudah
+  // tidak ada), dan penyesuaian stok berikutnya ke baris itu ditolak sebagai "kekurangan stok"
+  // karena readProductsForDeltas melihat produknya tidak exists.
+  const stockSnap = await db.collection('warehouse_stock').where('productId', '==', id).get();
+  if (!stockSnap.empty) {
+    const batch = db.batch();
+    stockSnap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  await db.collection('products').doc(id).delete();
   revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });

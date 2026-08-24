@@ -24,6 +24,18 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'suppliers', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  await getDb().collection('suppliers').doc(id).delete();
+  const db = getDb();
+
+  // Tolak kalau supplier ini masih punya riwayat pembelian bahan baku — kalau dibolehkan,
+  // materialPurchases.supplierId jadi menunjuk ke dokumen yang sudah tidak ada.
+  const purchaseRef = await db.collection('materialPurchases').where('supplierId', '==', id).limit(1).get();
+  if (!purchaseRef.empty) {
+    return Response.json(
+      { error: 'Supplier ini masih punya riwayat pembelian bahan baku — tidak bisa dihapus.' },
+      { status: 400 },
+    );
+  }
+
+  await db.collection('suppliers').doc(id).delete();
   return Response.json({ ok: true });
 }

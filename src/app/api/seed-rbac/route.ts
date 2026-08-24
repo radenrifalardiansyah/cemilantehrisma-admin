@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requireSuperAdmin } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { permissionCell as cell, fullAccessPermissions as fullAccess } from '@/lib/permissions';
 import type { Action } from '@/types/rbac';
@@ -111,7 +111,12 @@ const MENUS: { id: string; moduleId: string; parentId: string | null; featureKey
 ];
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  // Menulis ulang roles/role_permissions/modules/menus — operasi setup RBAC inti, bukan sesuatu
+  // yang boleh dipanggil role apa pun yang kebetulan sedang login (validateAdminAuth sebelumnya
+  // cuma cek "sudah login", bukan role — role apa pun termasuk yang tanpa permission bisa memicu
+  // merge permission ke role admin/super-admin/finance di bawah).
+  const guard = await requireSuperAdmin(req);
+  if (guard instanceof Response) return guard;
   const db = getDb();
   const now = FieldValue.serverTimestamp();
 

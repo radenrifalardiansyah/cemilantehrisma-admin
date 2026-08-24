@@ -10,14 +10,14 @@ const DOC = 'paymentInfo';
 // toko milik `admin`). Kalau digabung ke situ, `admin` (pihak yang justru harus bayar ke sini)
 // akan bisa mengedit nomor rekening tujuannya sendiri lewat halaman Pengaturan biasa.
 export async function GET(req: NextRequest) {
-  const guard = requireAdminOrSuperAdmin(req);
+  const guard = await requireAdminOrSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const doc = await getDb().collection('adminFeeSettings').doc(DOC).get();
   return Response.json({ paymentInfo: doc.exists ? doc.data() : {} });
 }
 
 export async function PUT(req: NextRequest) {
-  const guard = requireSuperAdmin(req);
+  const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const data = await req.json() as { bankName?: string; accountNumber?: string; accountHolder?: string };
   await getDb().collection('adminFeeSettings').doc(DOC).set({

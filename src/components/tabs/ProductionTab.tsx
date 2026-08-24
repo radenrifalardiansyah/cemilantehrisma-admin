@@ -859,7 +859,11 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       <div key={i} className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr auto', alignItems: 'center' }}>
                         <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
                           options={productOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-                        <input type="number" min="0" value={row.qty} onChange={e => updateOutputRow(i, { qty: e.target.value })}
+                        {/* min="0" tidak menolak tanda minus saat diketik — tanpa kloning ke '0' di
+                            sini, baris dengan qty negatif diam-diam hilang dari total (di-filter
+                            bersama baris yang memang belum diisi) tanpa pesan apa pun. */}
+                        <input type="number" min="0" value={row.qty}
+                          onChange={e => updateOutputRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
                           placeholder="Jumlah (pcs)" className="input" />
                         <Tooltip label="Hapus baris">
                           <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
@@ -887,7 +891,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr auto', alignItems: 'center' }}>
                             <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
                               options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-                            <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })}
+                            {/* Lihat komentar sama di input qty output di atas — cegah negatif
+                                langsung di sini, bukan hanya menyaringnya diam-diam dari total. */}
+                            <input type="number" min="0" value={row.qty}
+                              onChange={e => updateRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
                               placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" />
                             <Tooltip label="Hapus baris">
                               <button onClick={() => removeRow(i)} disabled={rows.length === 1}

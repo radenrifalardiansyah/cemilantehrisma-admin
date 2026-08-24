@@ -21,6 +21,28 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const current = await ref.get();
   if (!current.exists) return Response.json({ error: 'Menu tidak ditemukan.' }, { status: 404 });
 
+  // Tolak parentId yang bikin siklus — perlindungan ini sebelumnya cuma ada di klien (menyaring
+  // dropdown pemilihan induk), yang bisa dilewati lewat panggilan API langsung. Kalau sampai
+  // tersimpan, kode yang menyusun pohon menu (MenusTab.tsx) merekursi tanpa visited-set dan bisa
+  // stack-overflow saat merender Struktur Menu.
+  if (typeof data.parentId === 'string' && data.parentId) {
+    if (data.parentId === id) {
+      return Response.json({ error: 'Menu tidak bisa menjadi induk dirinya sendiri.' }, { status: 400 });
+    }
+    const allMenusSnap = await db.collection('menus').get();
+    const parentById = new Map(allMenusSnap.docs.map(d => [d.id, d.data().parentId as string | null | undefined]));
+    const seen = new Set<string>();
+    let cursor: string | null | undefined = data.parentId;
+    while (cursor) {
+      if (cursor === id) {
+        return Response.json({ error: 'Induk yang dipilih akan membuat struktur menu melingkar (siklus).' }, { status: 400 });
+      }
+      if (seen.has(cursor)) break;
+      seen.add(cursor);
+      cursor = parentById.get(cursor);
+    }
+  }
+
   const featureKey = (data.featureKey as string | undefined) ?? current.data()!.featureKey;
   const nextActive = (data.isActive as boolean | undefined) ?? current.data()!.isActive;
   if (nextActive) {

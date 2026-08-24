@@ -43,10 +43,12 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'capital', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
+  const amount = Number(data.amount) || 0;
+  if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
   const db = getDb();
   const payload = {
     type: data.type === 'prive' ? 'prive' : 'modal',
-    amount: Number(data.amount) || 0,
+    amount,
     date: data.date,
     note: data.note ?? '',
     walletId: data.walletId ?? null,

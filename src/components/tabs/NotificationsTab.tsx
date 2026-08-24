@@ -110,7 +110,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
               {paginated.map((n, idx) => {
                 const Icon = TYPE_ICON[n.type] ?? Bell;
                 const isRead = n.readBy?.includes(username);
-                const rowNum = (safePage - 1) * pageSize + idx + 1;
+                const rowNum = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                 const expanded = expandedId === n.id;
                 return (
                   <div key={n.id}>

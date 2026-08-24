@@ -451,16 +451,19 @@ export default function CustomersTab({ creds }: { creds: string }) {
     if (selected.size === 0) return;
     if (!await confirm({ message: `Hapus ${selected.size} pelanggan yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setBulkDeleting(true);
-    const count = selected.size;
     const r = await fetch(`${API}/api/customers/bulk-delete`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [...selected] }),
     });
     if (r.ok) {
-      setCustomers(cs => cs.filter(c => !selected.has(c.id)));
+      const d = await r.json() as { deleted: number; skippedInUse: number };
+      // Refetch, bukan filter optimis lokal — sebagian id terpilih bisa dilewati server
+      // (skippedInUse, mis. masih terhubung ke akun reseller).
+      await load();
       setSelected(new Set());
-      toast.success(`${count} pelanggan berhasil dihapus.`);
+      const extra = d.skippedInUse > 0 ? ` (${d.skippedInUse} masih terhubung ke akun reseller, dilewati)` : '';
+      toast.success(`${d.deleted} pelanggan berhasil dihapus.${extra}`);
     } else {
       toast.error('Gagal menghapus pelanggan yang dipilih.');
     }

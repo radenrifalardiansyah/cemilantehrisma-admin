@@ -52,14 +52,15 @@ export async function POST(req: NextRequest) {
       .catch(err => ({ ok: false as const, reason: 'error' as const, message: err instanceof Error ? err.message : String(err) }));
     if (result.ok) {
       loginAttempts.delete(ip);
-      const user = { username: identifier, role: (result.claims.role as string) ?? '', uid: result.localId };
+      const mustChangePassword = result.claims.mustChangePassword === true;
+      const user = { username: identifier, role: (result.claims.role as string) ?? '', uid: result.localId, mustChangePassword };
       const token = jwt.sign(user, process.env.JWT_SECRET!, { expiresIn: '7d' });
       try {
         await recordLogin(getDb(), { username: user.username, role: user.role, ip, userAgent: req.headers.get('user-agent') || 'unknown' });
       } catch {
         // Best-effort — gagal mencatat riwayat login tidak boleh menggagalkan login yang sudah valid.
       }
-      return Response.json({ ok: true, token, user, mustChangePassword: result.claims.mustChangePassword === true });
+      return Response.json({ ok: true, token, user, mustChangePassword });
     }
     if (result.reason === 'invalid-credentials') {
       return Response.json({ error: 'Invalid credentials' }, { status: 401 });

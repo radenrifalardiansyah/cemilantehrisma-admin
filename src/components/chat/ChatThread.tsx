@@ -46,7 +46,13 @@ export default function ChatThread({
   }, [messages, username]);
 
   const markRead = useCallback(() => {
-    fetch(`/api/chat/rooms/${roomId}/read`, { method: 'POST', headers: { 'x-admin-auth': creds } })
+    // Kirim createdAt pesan terakhir yang BENAR-BENAR sudah dimuat (bukan biarkan server pakai
+    // waktunya sendiri) — supaya watermark tidak pernah melewati apa yang klien sudah tampilkan.
+    fetch(`/api/chat/rooms/${roomId}/read`, {
+      method: 'POST',
+      headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upTo: lastCreatedAtRef.current }),
+    })
       .then(onMarkedRead)
       .catch(() => {});
   }, [roomId, creds, onMarkedRead]);
@@ -61,7 +67,14 @@ export default function ChatThread({
       const data = await r.json() as { messages: Message[] };
       if (data.messages.length === 0) return;
       lastCreatedAtRef.current = data.messages[data.messages.length - 1].createdAt;
-      setMessages(prev => (initial ? data.messages : [...prev, ...data.messages]));
+      setMessages(prev => {
+        if (initial) return data.messages;
+        // Dedup by id — the 6s poll tick and the post-send reload both read lastCreatedAtRef
+        // before either updates it, so a message sent right as a poll fires can be fetched by
+        // both calls and appended twice without this guard.
+        const seen = new Set(prev.map(m => m.id));
+        return [...prev, ...data.messages.filter(m => !seen.has(m.id))];
+      });
       if (!initial && data.messages.some(m => m.senderUsername !== username)) markRead();
     } catch {
       // polling — transient failures are ignored, next tick retries

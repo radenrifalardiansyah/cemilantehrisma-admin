@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, ChevronLeft, ChevronRight, Loader2, User as UserIcon } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -61,11 +61,16 @@ export default function HistoryTab({ creds }: { creds: string }) {
   const [customTo, setCustomTo] = useState('');
   const { from, to } = periodRange(period, customFrom, customTo);
 
+  // Generasi request — cegah respons filter LAMA yang datang belakangan menimpa data filter BARU
+  // yang sudah lebih dulu tampil (fetch bisa tumpang tindih kalau filter diganti cepat).
+  const loadIdRef = useRef(0);
   const load = async () => {
+    const myLoadId = ++loadIdRef.current;
     setLoading(true);
     const qs = new URLSearchParams({ from, to });
     if (entityFilter !== 'semua') qs.set('entity', entityFilter);
     const r = await fetch(`${API}/api/history?${qs.toString()}`, { headers });
+    if (myLoadId !== loadIdRef.current) return;
     if (r.ok) { const { entries: e } = await r.json() as { entries: AuditEntry[] }; setEntries(e); }
     setLoading(false);
   };

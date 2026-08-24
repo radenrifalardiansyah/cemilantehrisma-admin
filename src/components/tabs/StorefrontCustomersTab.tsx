@@ -181,7 +181,7 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
               <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                 {paginated.map((c, idx) => {
                   const isSelected = selected.has(c.id);
-                  const rowNum = (safePage - 1) * pageSize + idx + 1;
+                  const rowNum = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
                   return (
                     <div key={c.id} className="flex items-center gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                       <Checkbox checked={isSelected} onChange={() => toggleSelect(c.id)} />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store, Coins,
   ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark,
@@ -290,7 +290,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
 
   const { from, to } = periodRange(period, customFrom, customTo);
 
+  // Generasi request — cegah respons periode LAMA yang datang belakangan menimpa (atau, lebih
+  // buruk, tercampur sebagian dengan) data periode BARU yang sudah lebih dulu tampil.
+  const loadIdRef = useRef(0);
   const load = async () => {
+    const myLoadId = ++loadIdRef.current;
     setLoading(true);
     try {
       const qs = `from=${from}&to=${to}`;
@@ -301,12 +305,18 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         fetch(`${API}/api/expenses?${qs}`, { headers }),
         fetch(`${API}/api/capital?${qs}`, { headers }),
       ]);
-      setOrders(oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : []);
-      setRecaps(rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : []);
-      setIncome(iRes.ok ? (await iRes.json() as { income: IncomeRecord[] }).income : []);
-      setExpenses(eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : []);
-      setCapital(cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : []);
-    } finally { setLoading(false); }
+      const orders   = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
+      const recaps   = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
+      const income   = iRes.ok ? (await iRes.json() as { income: IncomeRecord[] }).income : [];
+      const expenses = eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : [];
+      const capital  = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
+      if (myLoadId !== loadIdRef.current) return;
+      setOrders(orders);
+      setRecaps(recaps);
+      setIncome(income);
+      setExpenses(expenses);
+      setCapital(capital);
+    } finally { if (myLoadId === loadIdRef.current) setLoading(false); }
   };
   useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
 

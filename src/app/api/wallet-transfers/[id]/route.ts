@@ -7,6 +7,8 @@ import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
 
+class TransferValidationError extends Error {}
+
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'wallets', 'edit');
   if (guard instanceof Response) return guard;
@@ -14,9 +16,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
   const ref = db.collection('walletTransfers').doc(id);
-  const existing = await ref.get();
-  if (!existing.exists) return Response.json({ error: 'Transfer tidak ditemukan.' }, { status: 404 });
-  const before = existing.data();
 
   const fromWalletId = typeof data.fromWalletId === 'string' ? data.fromWalletId : '';
   const toWalletId = typeof data.toWalletId === 'string' ? data.toWalletId : '';
@@ -25,30 +24,55 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (fromWalletId === toWalletId) return Response.json({ error: 'Dompet asal dan tujuan tidak boleh sama.' }, { status: 400 });
   if (amount <= 0) return Response.json({ error: 'Jumlah transfer harus lebih dari 0.' }, { status: 400 });
 
-  const fromSnap = await db.collection('wallets').doc(fromWalletId).get();
-  if (!fromSnap.exists) return Response.json({ error: 'Dompet asal tidak ditemukan.' }, { status: 400 });
-  const toSnap = await db.collection('wallets').doc(toWalletId).get();
-  if (!toSnap.exists) return Response.json({ error: 'Dompet tujuan tidak ditemukan.' }, { status: 400 });
+  const fromRef = db.collection('wallets').doc(fromWalletId);
+  const toRef = db.collection('wallets').doc(toWalletId);
 
-  // Hitung saldo dompet asal TANPA transfer ini (excludeTransferId) — supaya edit transfer yang
-  // sama (mis. cuma ganti catatan) tidak keblokir oleh kontribusi transfer itu sendiri.
-  const fromBalance = await computeWalletBalance(db, fromWalletId, Number(fromSnap.data()?.initialBalance) || 0, id);
-  if (amount > fromBalance) {
-    return Response.json({ error: `Saldo "${fromSnap.data()?.name}" tidak cukup (saldo saat ini Rp${Math.round(fromBalance).toLocaleString('id-ID')}).` }, { status: 400 });
+  let before: FirebaseFirestore.DocumentData | undefined;
+  let fromName = fromWalletId;
+  let toName = toWalletId;
+  let payload: Record<string, unknown>;
+  try {
+    // Sama seperti POST /api/wallet-transfers: pengecekan saldo dan penulisan update harus satu
+    // transaksi, supaya edit yang tiba bersamaan dengan transfer lain dari dompet yang sama tidak
+    // lolos validasi berdasarkan saldo yang sudah basi (TOCTOU).
+    payload = await db.runTransaction(async tx => {
+      const [existing, fromSnap, toSnap] = await Promise.all([tx.get(ref), tx.get(fromRef), tx.get(toRef)]);
+      if (!existing.exists) throw new TransferValidationError('Transfer tidak ditemukan.');
+      before = existing.data();
+      if (!fromSnap.exists) throw new TransferValidationError('Dompet asal tidak ditemukan.');
+      if (!toSnap.exists) throw new TransferValidationError('Dompet tujuan tidak ditemukan.');
+      fromName = fromSnap.data()?.name ?? fromWalletId;
+      toName = toSnap.data()?.name ?? toWalletId;
+
+      // Hitung saldo dompet asal TANPA transfer ini (excludeTransferId) — supaya edit transfer
+      // yang sama (mis. cuma ganti catatan) tidak keblokir oleh kontribusi transfer itu sendiri.
+      const fromBalance = await computeWalletBalance(db, fromWalletId, Number(fromSnap.data()?.initialBalance) || 0, id, tx);
+      if (amount > fromBalance) {
+        throw new TransferValidationError(`Saldo "${fromName}" tidak cukup (saldo saat ini Rp${Math.round(fromBalance).toLocaleString('id-ID')}).`);
+      }
+
+      const update = {
+        fromWalletId, toWalletId, amount,
+        date: typeof data.date === 'string' && data.date ? data.date : before?.date,
+        note: data.note ?? '',
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      tx.update(ref, update);
+      return update;
+    });
+  } catch (err) {
+    if (err instanceof TransferValidationError) {
+      const status = err.message === 'Transfer tidak ditemukan.' ? 404 : 400;
+      return Response.json({ error: err.message }, { status });
+    }
+    throw err;
   }
 
-  const payload = {
-    fromWalletId, toWalletId, amount,
-    date: typeof data.date === 'string' && data.date ? data.date : before?.date,
-    note: data.note ?? '',
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  await ref.update(payload);
   try {
     await logHistory(db, {
       entity: 'wallet-transfers',
       entityId: id,
-      entityLabel: `${fromSnap.data()?.name ?? fromWalletId} → ${toSnap.data()?.name ?? toWalletId} - Rp${amount.toLocaleString('id-ID')}`,
+      entityLabel: `${fromName} → ${toName} - Rp${amount.toLocaleString('id-ID')}`,
       action: 'update',
       actor: guard,
       before,

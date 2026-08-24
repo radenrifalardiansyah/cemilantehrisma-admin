@@ -333,15 +333,19 @@ export default function ProductsTab({ creds }: { creds: string }) {
         body: JSON.stringify({ products: rows }),
       });
       if (r.ok) {
-        const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
+        const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number; stockDroppedNoWarehouse?: number };
         await load();
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} Kode duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
         ].filter(Boolean).join(', ');
         toast.success(`${d.created} produk berhasil diimpor.${extra ? ` (${extra})` : ''}`);
+        if (d.stockDroppedNoWarehouse) {
+          toast.error(`${d.stockDroppedNoWarehouse} produk diimpor dengan stok 0 — atur "Gudang Kasir" di Pengaturan supaya stok impor bisa langsung tercatat per gudang.`);
+        }
       } else {
-        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        const d = await r.json().catch(() => ({ error: undefined, created: 0 })) as { error?: string; created?: number };
+        if (d.created) await load(); // sebagian sempat tersimpan sebelum gagal — refresh biar tidak dobel-impor
         toast.error(d.error ?? 'Gagal mengimpor data produk.');
       }
     } catch {

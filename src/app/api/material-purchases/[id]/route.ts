@@ -52,9 +52,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const createdAt = purchase.createdAt;
         const materialIds = [...new Set([...oldItems.map(it => it.materialId), ...newItems.map(it => it.materialId)])];
 
+        // tx.get, bukan .get() biasa — guard "sudah dipakai lagi setelah ini" harus ikut dijamin
+        // konsisten oleh transaksi yang sama, supaya kalau ada pembelian/produksi baru yang commit
+        // TEPAT di celah antara pengecekan ini dan commit transaksi ini, Firestore memaksa retry
+        // alih-alih membiarkan reversal avgCost di bawah berjalan berdasarkan data yang sudah basi.
         const [laterPurchasesSnap, laterBatchesSnap] = await Promise.all([
-          db.collection('materialPurchases').where('createdAt', '>', createdAt).get(),
-          db.collection('productionBatches').where('createdAt', '>', createdAt).get(),
+          tx.get(db.collection('materialPurchases').where('createdAt', '>', createdAt)),
+          tx.get(db.collection('productionBatches').where('createdAt', '>', createdAt)),
         ]);
         const touchedAfter = new Set<string>();
         laterPurchasesSnap.docs.forEach(d => {
@@ -190,9 +194,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const items = (purchase.items as PurchaseItem[] | undefined) ?? [];
       const createdAt = purchase.createdAt;
 
+      // tx.get, bukan .get() biasa — lihat komentar yang sama di PUT di atas.
       const [laterPurchasesSnap, laterBatchesSnap] = await Promise.all([
-        db.collection('materialPurchases').where('createdAt', '>', createdAt).get(),
-        db.collection('productionBatches').where('createdAt', '>', createdAt).get(),
+        tx.get(db.collection('materialPurchases').where('createdAt', '>', createdAt)),
+        tx.get(db.collection('productionBatches').where('createdAt', '>', createdAt)),
       ]);
       const touchedAfter = new Set<string>();
       laterPurchasesSnap.docs.forEach(d => {

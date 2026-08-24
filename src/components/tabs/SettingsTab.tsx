@@ -402,9 +402,13 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   ) : (
                     <input
                       type={f.type}
+                      min={f.type === 'number' ? 0 : undefined}
                       placeholder={f.placeholder}
                       value={(settings as Record<string, string | number>)[f.key] ?? ''}
-                      onChange={e => set(f.key, f.type === 'number' ? Number(e.target.value) : e.target.value)}
+                      // Math.max(0, ...) — min="0" tidak mencegah user mengetik tanda minus
+                      // langsung; kedua field number di sini (Min. Gratis Ongkir, Diskon
+                      // Reseller) tidak masuk akal bernilai negatif.
+                      onChange={e => set(f.key, f.type === 'number' ? Math.max(0, Number(e.target.value) || 0) : e.target.value)}
                       className="input w-full text-sm"
                     />
                   )}

@@ -18,6 +18,11 @@ export async function PUT(req: NextRequest) {
   const guard = await requirePermission(req, 'settings', 'edit');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
+  // Dipakai langsung sebagai ambang/pengali harga di storefront (gratis ongkir, diskon reseller)
+  // — clamp di server juga, bukan cuma di form Pengaturan, supaya panggilan API langsung tidak
+  // bisa menyimpan nilai negatif.
+  if (data.freeShippingMin !== undefined) data.freeShippingMin = Math.max(0, Number(data.freeShippingMin) || 0);
+  if (data.resellerDiscount !== undefined) data.resellerDiscount = Math.max(0, Number(data.resellerDiscount) || 0);
   await getDb().collection('settings').doc(DOC).set(
     { ...data, updatedAt: FieldValue.serverTimestamp() },
     { merge: true }

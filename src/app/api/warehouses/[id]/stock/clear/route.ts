@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
-import { clearWarehouseProductStock } from '@/lib/warehouse-stock';
+import { clearWarehouseStockForProducts } from '@/lib/warehouse-stock';
 import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -20,9 +20,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     .filter(d => ((d.data().stockQty as number) ?? 0) > 0)
     .map(d => d.data().productId as string);
 
-  await Promise.all(productIds.map(productId =>
-    clearWarehouseProductStock(warehouseId, productId, 'Kosongkan semua stok gudang')
-  ));
+  const { cleared, failed } = await clearWarehouseStockForProducts(warehouseId, productIds, 'Kosongkan semua stok gudang');
 
   try {
     const warehouseSnap = await db.collection('warehouses').doc(warehouseId).get();
@@ -32,11 +30,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       entityLabel: (warehouseSnap.data()?.name as string) ?? warehouseId,
       action: 'delete',
       actor: guard,
-      meta: { clearedProductCount: productIds.length },
+      meta: { clearedProductCount: cleared.length, failedProductCount: failed.length },
     });
   } catch {
     // audit log failure must never fail the business request
   }
 
-  return Response.json({ ok: true, cleared: productIds.length });
+  // 200 dengan daftar `failed` (bukan 500) — sebagian produk yang berhasil dikosongkan tetap
+  // permanen ter-commit, jadi ini bukan kegagalan request secara keseluruhan; UI perlu tahu
+  // persis mana yang gagal supaya bisa dicoba ulang, bukan cuma "gagal, coba lagi" generik.
+  return Response.json({ ok: true, cleared: cleared.length, failed });
 }

@@ -21,7 +21,7 @@ const getCachedInvoices = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  const guard = requireAdminOrSuperAdmin(req);
+  const guard = await requireAdminOrSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const all = await getCachedInvoices();
   const invoices = all
@@ -36,31 +36,36 @@ export async function GET(req: NextRequest) {
 // dihitung ulang otomatis, supaya rate yang berubah setelahnya atau koreksi data tidak mengubah
 // angka yang sudah diinvoice ke client.
 export async function POST(req: NextRequest) {
-  const guard = requireSuperAdmin(req);
+  const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
   const data = await req.json() as { from?: string; to?: string; note?: string; dueDate?: string };
-  if (!data.from || !data.to) return Response.json({ error: 'Periode (from/to) wajib diisi.' }, { status: 400 });
+  const { from, to } = data;
+  if (!from || !to) return Response.json({ error: 'Periode (from/to) wajib diisi.' }, { status: 400 });
 
   const db = getDb();
-  const report = await computeReport(db, data.from, data.to);
-
   const ref = db.collection('adminFeeInvoices').doc();
   const invoiceNo = `INV-ADM-${ref.id.slice(0, 8).toUpperCase()}`;
-  await ref.set({
-    invoiceNo,
-    periodFrom: report.from,
-    periodTo: report.to,
-    breakdown: report.breakdown,
-    transactionIds: collectTransactionIds(report),
-    totalRevenue: report.totalRevenue,
-    totalFee: report.totalFee,
-    status: 'draft',
-    // Catatan bebas dari superadmin untuk invoice ini (mis. penjelasan penyesuaian rate,
-    // permintaan khusus) — ikut tampil di halaman Tagihan admin & di PDF, bukan cuma internal.
-    note: data.note?.trim() || null,
-    dueDate: data.dueDate || null,
-    createdAt: FieldValue.serverTimestamp(),
-    createdBy: guard.username,
+
+  // computeReport (yang menentukan transaksi "belum ditagih") dan penulisan invoice ini harus
+  // satu transaksi — lihat komentar di lib/admin-fee.ts.
+  await db.runTransaction(async tx => {
+    const report = await computeReport(db, from, to, tx);
+    tx.set(ref, {
+      invoiceNo,
+      periodFrom: report.from,
+      periodTo: report.to,
+      breakdown: report.breakdown,
+      transactionIds: collectTransactionIds(report),
+      totalRevenue: report.totalRevenue,
+      totalFee: report.totalFee,
+      status: 'draft',
+      // Catatan bebas dari superadmin untuk invoice ini (mis. penjelasan penyesuaian rate,
+      // permintaan khusus) — ikut tampil di halaman Tagihan admin & di PDF, bukan cuma internal.
+      note: data.note?.trim() || null,
+      dueDate: data.dueDate || null,
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: guard.username,
+    });
   });
 
   return Response.json({ id: ref.id, invoiceNo });

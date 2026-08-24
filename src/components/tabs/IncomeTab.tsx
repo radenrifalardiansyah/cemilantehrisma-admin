@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Coins, Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronLeft, ChevronRight, TrendingUp, CalendarDays, Wallet,
@@ -166,7 +166,13 @@ export default function IncomeTab({ creds }: { creds: string }) {
   const [error,      setError]      = useState('');
   const [exporting,  setExporting]  = useState(false);
 
+  // Generasi request — dua fetch untuk periode berbeda bisa tumpang tindih (klik cepat ganti
+  // filter sebelum respons pertama selesai), dan tidak ada jaminan urutan respons sama dengan
+  // urutan request dikirim. Tanpa penjaga ini, respons periode LAMA yang kebetulan datang
+  // belakangan bisa menimpa data periode BARU yang sudah lebih dulu tampil.
+  const loadIdRef = useRef(0);
   const load = async () => {
+    const myLoadId = ++loadIdRef.current;
     setLoading(true);
     // from/to non-kosong juga otomatis bypass limit 50 default di /api/orders & /api/consignment/recap.
     const qs = `from=${from}&to=${to}`;
@@ -175,6 +181,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       fetch(`${API}/api/orders?${qs}`, { headers }),
       fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
     ]);
+    if (myLoadId !== loadIdRef.current) return; // request lain (lebih baru) sudah menggantikan ini
     const manual: Income[] = iRes.ok ? (await iRes.json() as { income: Income[] }).income : [];
     const orders: OrderForIncome[] = oRes.ok ? (await oRes.json() as { orders: OrderForIncome[] }).orders : [];
     const recaps: RecapForIncome[] = rRes.ok ? (await rRes.json() as { recaps: RecapForIncome[] }).recaps : [];

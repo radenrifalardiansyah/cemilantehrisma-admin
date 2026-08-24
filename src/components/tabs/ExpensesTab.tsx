@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Banknote, Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronLeft, ChevronRight, TrendingDown, CalendarDays, Wallet,
@@ -140,9 +140,15 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const [error,      setError]      = useState('');
   const [exporting,  setExporting]  = useState(false);
 
+  // Generasi request — cegah respons periode LAMA yang datang belakangan menimpa data periode
+  // BARU yang sudah lebih dulu tampil (dua fetch untuk periode berbeda bisa tumpang tindih kalau
+  // filter diganti cepat sebelum respons pertama selesai).
+  const loadIdRef = useRef(0);
   const load = async () => {
+    const myLoadId = ++loadIdRef.current;
     setLoading(true);
     const r = await fetch(`${API}/api/expenses?from=${from}&to=${to}`, { headers });
+    if (myLoadId !== loadIdRef.current) return;
     if (r.ok) { const { expenses: e } = await r.json() as { expenses: Expense[] }; setExpenses(e); }
     setLoading(false);
   };
