@@ -1144,14 +1144,14 @@ export default function PosTab({
   const shiftBar = shiftLoaded && (
     currentShift ? (
       <Tooltip label={`Kas ${formatCurrency(currentShift.openingBalance)} · Tutup Kasir`}>
-        <button onClick={() => setShiftModal('close')} title="Tutup Kasir" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5" style={{ color: 'var(--success)' }}>
+        <button onClick={() => setShiftModal('close')} title="Tutup Kasir" className="btn-ghost gap-2 text-xs h-9 w-9 p-0 flex items-center justify-center sm:w-auto sm:px-3.5 sm:justify-start" style={{ color: 'var(--success)' }}>
           <Wallet size={14} />
           <span className="hidden sm:inline">Kas {formatCurrency(currentShift.openingBalance)} · Tutup Kasir</span>
         </button>
       </Tooltip>
     ) : (
       <Tooltip label="Buka Kasir">
-        <button onClick={() => setShiftModal('open')} title="Buka Kasir" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5" style={{ color: 'var(--accent)' }}>
+        <button onClick={() => setShiftModal('open')} title="Buka Kasir" className="btn-ghost gap-2 text-xs h-9 w-9 p-0 flex items-center justify-center sm:w-auto sm:px-3.5 sm:justify-start" style={{ color: 'var(--accent)' }}>
           <Wallet size={14} /> <span className="hidden sm:inline">Buka Kasir</span>
         </button>
       </Tooltip>
@@ -1160,7 +1160,7 @@ export default function PosTab({
 
   const heldBar = heldTransactions.length > 0 && (
     <Tooltip label={`Tertahan (${heldTransactions.length})`}>
-      <button onClick={() => setHeldModalOpen(true)} title="Tertahan" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5 relative" style={{ color: 'var(--warning)' }}>
+      <button onClick={() => setHeldModalOpen(true)} title="Tertahan" className="btn-ghost gap-2 text-xs h-9 w-9 p-0 flex items-center justify-center sm:w-auto sm:px-3.5 sm:justify-start relative" style={{ color: 'var(--warning)' }}>
         <PauseCircle size={14} />
         <span className="hidden sm:inline">Tertahan ({heldTransactions.length})</span>
         <span
@@ -1174,7 +1174,7 @@ export default function PosTab({
 
   const reportBar = (
     <Tooltip label="Laporan">
-      <button onClick={() => setReportOpen(true)} title="Laporan" className="btn-ghost gap-2 text-xs py-2 px-2 sm:px-3.5" style={{ color: '#0284C7' }}>
+      <button onClick={() => setReportOpen(true)} title="Laporan" className="btn-ghost gap-2 text-xs h-9 w-9 p-0 flex items-center justify-center sm:w-auto sm:px-3.5 sm:justify-start" style={{ color: '#0284C7' }}>
         <BarChart2 size={14} /> <span className="hidden sm:inline">Laporan</span>
       </button>
     </Tooltip>
