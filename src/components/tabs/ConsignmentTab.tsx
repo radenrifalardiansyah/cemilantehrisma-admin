@@ -16,6 +16,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
+import { resolveScannedProductId } from '@/lib/scan';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { useViewMode } from '@/lib/useViewMode';
@@ -126,15 +127,6 @@ interface ConsignmentWarehouse { id: string; name: string }
 
 interface SendRow { productId: string; qty: string; hargaTitip: string }
 const EMPTY_SEND_ROW: SendRow = { productId: '', qty: '', hargaTitip: '' };
-
-/** Resolves a scanned QR value (default = product detail URL, e.g. ".../products/{id}") to a product id. */
-function resolveScannedProductId(text: string, products: PosProduct[]): string | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/\/products\/([^/?#]+)/);
-  const candidateId = match ? decodeURIComponent(match[1]) : trimmed;
-  return products.find(p => p.id === candidateId)?.id ?? null;
-}
 
 // ─── Excel import (Lokasi) ─────────────────────────────────────────────────────
 const LOCATION_TEMPLATE_COLS = [

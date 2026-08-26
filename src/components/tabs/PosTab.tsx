@@ -6,7 +6,7 @@ import {
   ShoppingCart, Plus, Minus, ChevronLeft, CheckCircle2, Loader2, User, Phone,
   Trash2, Tag, Send, Search, Wallet, X, Banknote, Printer,
   MessageCircle, Receipt, ArrowRight, Camera, PauseCircle, BarChart2, TrendingUp, Award, CalendarClock,
-  RefreshCw,
+  RefreshCw, ScanLine,
 } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import { formatCurrency, WHATSAPP_NUMBER } from '@/lib/whatsapp';
@@ -21,6 +21,8 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { recognizeTransferAmount } from '@/lib/receipt-ocr';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
+import BarcodeScannerModal from '@/components/BarcodeScannerModal';
+import { resolveScannedProductId } from '@/lib/scan';
 import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
@@ -398,6 +400,18 @@ export default function PosTab({
     if (exists) return prev.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i);
     return [...prev, { productId: id, qty: 1 }];
   });
+  const [showPosScanner, setShowPosScanner] = useState(false);
+  const handlePosScan = (text: string) => {
+    const productId = resolveScannedProductId(text, posProducts);
+    const product = productId ? posProducts.find(p => p.id === productId) : undefined;
+    if (!product) { toast.error('Produk tidak dikenali dari QR ini.'); return { ok: false, label: 'Produk tidak dikenali' }; }
+    if (posStockStatus(product).label === 'Habis') {
+      toast.error(`${product.name} stoknya habis.`);
+      return { ok: false, label: `${product.name} — stok habis` };
+    }
+    addToCart(product.id);
+    return { ok: true, label: `+1 ${product.name}` };
+  };
   const removeFromCart = (id: string) => setCart(prev =>
     prev.flatMap(i => i.productId === id
       ? i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []
@@ -735,10 +749,18 @@ export default function PosTab({
   const catalogContent = (
     <div className="flex flex-col h-full relative">
       <div className="flex-shrink-0 px-4 pt-4 pb-3 space-y-2.5">
-        <div className="relative">
-          <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input type="text" value={query} onChange={e => setQuery(e.target.value)}
-            className="input" style={{ paddingLeft: 38 }} placeholder="Cari produk…" />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input type="text" value={query} onChange={e => setQuery(e.target.value)}
+              className="input" style={{ paddingLeft: 38 }} placeholder="Cari produk…" />
+          </div>
+          <Tooltip label="Scan Produk">
+            <button onClick={() => setShowPosScanner(true)} type="button"
+              className="btn-ghost p-2.5 flex-shrink-0" style={{ color: 'var(--accent)' }}>
+              <ScanLine size={18} />
+            </button>
+          </Tooltip>
         </div>
         <ScrollChips gap="gap-2">
           {[POS_CAT_ALL, ...posCategories].map(c => (
@@ -1460,6 +1482,15 @@ export default function PosTab({
       {heldModalContent}
       {reportModalContent}
       {receiptPrintBlock}
+
+      {showPosScanner && (
+        <BarcodeScannerModal
+          title="Scan Produk"
+          subtitle="Setiap QR yang terbaca langsung masuk keranjang"
+          onDetect={handlePosScan}
+          onClose={() => setShowPosScanner(false)}
+        />
+      )}
     </div>
   );
 }
