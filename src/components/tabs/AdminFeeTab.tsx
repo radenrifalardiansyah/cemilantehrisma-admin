@@ -45,7 +45,7 @@ interface InvoiceRecord {
 }
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // Tinggi seragam untuk semua kontrol di baris form rate (toggle tipe, input nilai, tanggal,
 // tombol simpan) — tanpa ini, `<input>`/`<button>` bawaan browser tidak selalu render dengan

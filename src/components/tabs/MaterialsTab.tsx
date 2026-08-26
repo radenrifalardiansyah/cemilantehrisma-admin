@@ -9,6 +9,7 @@ import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
+import FilterSelect from '@/components/FilterSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { useViewMode } from '@/lib/useViewMode';
@@ -44,10 +45,12 @@ function Checkbox({ checked, indeterminate, onChange }: {
 }
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // Stok bahan baku dihitung dari akumulasi transaksi float, jadi kadang menyisakan noise
-// seperti 0.00009999999999993348 — dibulatkan 2 desimal supaya tampilan tetap rapi.
+// seperti 0.00009999999999993348 — dibulatkan 2 desimal supaya tampilan tetap rapi. Nilai stok
+// (stok x harga) dihitung dari qty yang sudah dibulatkan ini juga, supaya stok 0 selalu tampil Rp 0.
+const roundQty = (n: number) => Math.round(n * 100) / 100;
 const formatQty = (n: number) =>
   new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 
@@ -151,6 +154,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [deletingMId, setDeletingMId] = useState<string | null>(null);
 
   const [materialSearch, setMaterialSearch] = useState('');
+  const [materialStockFilter, setMaterialStockFilter] = useState('semua');
   const [materialPage,     setMaterialPage]     = useState(1);
   const [materialPageSize, setMaterialPageSize] = useState(10);
   const [materialView, setMaterialView] = useViewMode('materials');
@@ -456,7 +460,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       rows.forEach((m, i) => {
         const row = ws.addRow({
           no: i + 1, name: m.name, unit: m.unit, stockQty: m.stockQty,
-          avgCost: m.avgCost, value: m.stockQty * m.avgCost,
+          avgCost: m.avgCost, value: roundQty(m.stockQty) * m.avgCost,
         });
         const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
         row.eachCell(cell => {
@@ -514,6 +518,9 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
 
   const filteredMaterials = materials
     .filter(m => !materialSearch || m.name.toLowerCase().includes(materialSearch.toLowerCase()))
+    .filter(m => materialStockFilter === 'semua'
+      || (materialStockFilter === 'ada' && roundQty(m.stockQty) > 0)
+      || (materialStockFilter === 'habis' && roundQty(m.stockQty) <= 0))
     .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
   const materialTotalPages = Math.max(1, Math.ceil(filteredMaterials.length / materialPageSize));
   const materialSafePage   = Math.min(materialPage, materialTotalPages);
@@ -1014,6 +1021,20 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                   />
                 </div>
               )}
+              {materials.length > 0 && (
+                <div className="w-[130px] sm:w-[160px] flex-shrink-0">
+                  <FilterSelect
+                    value={materialStockFilter}
+                    onChange={v => { setMaterialStockFilter(v); resetMaterialPage(); }}
+                    height={HEADER_BTN_H}
+                    options={[
+                      { value: 'semua', label: 'Semua Stok' },
+                      { value: 'ada', label: 'Ada Stok' },
+                      { value: 'habis', label: 'Stok Habis' },
+                    ]}
+                  />
+                </div>
+              )}
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
                   <button onClick={downloadMaterialTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
@@ -1100,7 +1121,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                             </p>
                           </div>
                           <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>
-                            {formatRp(m.stockQty * m.avgCost)}
+                            {formatRp(roundQty(m.stockQty) * m.avgCost)}
                           </span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <Tooltip label="Koreksi Stok/Harga">
@@ -1141,7 +1162,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                             {isLowStock(m) && <span className="badge badge-amber">Stok Menipis</span>}
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Stok {formatQty(m.stockQty)} {m.unit}</p>
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Rata-rata {formatRp(m.avgCost)}/{m.unit}</p>
-                            <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--accent-dark)' }}>{formatRp(m.stockQty * m.avgCost)}</p>
+                            <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--accent-dark)' }}>{formatRp(roundQty(m.stockQty) * m.avgCost)}</p>
                           </div>
                           <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                             <Tooltip label="Koreksi Stok/Harga">

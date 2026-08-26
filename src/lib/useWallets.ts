@@ -24,7 +24,7 @@ export function useWallets(creds: string) {
 }
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // `balances` opsional — kalau dioper (dari useWalletBalances), tiap opsi dompet di dropdown
 // ikut menampilkan saldonya (sebagai sublabel SearchSelect) supaya kelihatan langsung saat

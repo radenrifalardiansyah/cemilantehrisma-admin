@@ -82,7 +82,7 @@ const PAGE_LABELS: Record<string, string> = {
 const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const formatQty = (n: number) =>
   new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);

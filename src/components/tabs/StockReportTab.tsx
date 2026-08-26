@@ -54,7 +54,7 @@ function reportPeriodRange(period: ReportPeriodKey, customFrom: string, customTo
 }
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // pageSize bisa Infinity (opsi "Semua" di PageSizeSelect) — (1 - 1) * Infinity = NaN di JS,
 // jadi hitung manual supaya baris pertama tetap index 0 saat seluruh data ditampilkan satu halaman.
@@ -484,7 +484,7 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
 
   const catLabel = (id?: string) => categories.find(c => c.id === id)?.label;
   const formatRpCell = (n: number) =>
-    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
   return (
     <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>

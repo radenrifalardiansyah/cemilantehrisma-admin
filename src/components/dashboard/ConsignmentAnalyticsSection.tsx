@@ -34,7 +34,7 @@ export interface ConsignmentAnalyticsData {
 }
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 function compactRp(n: number): string {
   const abs = Math.abs(n);

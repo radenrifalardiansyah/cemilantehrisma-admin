@@ -64,7 +64,7 @@ export const isLowStock = (p: Pick<FireProduct, 'stockQty' | 'openPO' | 'minStoc
   !p.openPO && (p.minStock ?? 0) > 0 && (p.stockQty ?? 0) > 0 && (p.stockQty ?? 0) <= (p.minStock ?? 0);
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // ─── Excel import ─────────────────────────────────────────────────────────────
 const PRODUCT_TEMPLATE_COLS = [

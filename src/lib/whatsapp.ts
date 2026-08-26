@@ -4,7 +4,7 @@ import { WHATSAPP_NUMBER } from '@/lib/branding';
 export { WHATSAPP_NUMBER };
 
 export const formatCurrency = (amount: number): string =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 
 export const formatWhatsAppMessage = (
   items: CartItem[],

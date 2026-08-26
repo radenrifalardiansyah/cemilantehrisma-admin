@@ -44,7 +44,7 @@ function Checkbox({ checked, indeterminate, onChange }: {
 }
 
 const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // Stok bahan baku dihitung dari akumulasi transaksi float, jadi kadang menyisakan noise
 // seperti 0.00009999999999993348 — dibulatkan 2 desimal supaya tampilan tetap rapi.
