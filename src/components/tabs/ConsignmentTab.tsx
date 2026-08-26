@@ -2596,23 +2596,33 @@ _${storeHeader.name}_`.trim();
                       const qty = parseFloat(row.qty) || 0;
                       const harga = parseFloat(row.hargaTitip) || 0;
                       return (
-                        <div key={i}>
-                          <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-center">
-                            <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
-                              options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
-                            <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
-                              placeholder="Qty (pcs)" className="input" />
-                            <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
-                              placeholder="Harga titip" />
+                        <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
+                                options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
+                            </div>
                             <Tooltip label="Hapus baris">
                               <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
-                                className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
                                 <X size={14} />
                               </button>
                             </Tooltip>
                           </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label style={fieldLabel}>Qty (pcs)</label>
+                              <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
+                                placeholder="0" className="input" />
+                            </div>
+                            <div>
+                              <label style={fieldLabel}>Harga Titip</label>
+                              <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
+                                placeholder="0" />
+                            </div>
+                          </div>
                           {qty > 0 && harga > 0 && (
-                            <p className="text-xs tabular mt-1" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
+                            <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
                           )}
                         </div>
                       );
