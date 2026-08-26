@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import type { CameraDevice } from 'html5-qrcode/camera/core';
-import { X, ScanLine, CheckCircle2, XCircle, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw } from 'lucide-react';
+import type { CameraDevice, RangeCameraCapability } from 'html5-qrcode/camera/core';
+import { X, ScanLine, CheckCircle2, XCircle, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 
 export interface ScanResult { ok: boolean; label: string }
 
@@ -29,6 +29,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   const mountedRef = useRef(true);
+  const zoomCapRef = useRef<RangeCameraCapability | null>(null);
 
   // Created synchronously on first render — which for this modal always
   // happens as a direct result of a user tap on "Scan Produk" — so beeps
@@ -73,6 +74,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
   const [cameraIdx, setCameraIdx] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  const [zoom, setZoom] = useState<{ min: number; max: number; step: number; value: number } | null>(null);
 
   const stopScanner = useCallback(async () => {
     const s = scannerRef.current;
@@ -154,7 +156,21 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       try {
         const caps = scanner.getRunningTrackCameraCapabilities();
         setTorchSupported(caps.torchFeature().isSupported());
-      } catch { setTorchSupported(false); }
+
+        const zoomCap = caps.zoomFeature();
+        if (zoomCap.isSupported() && zoomCap.max() > zoomCap.min()) {
+          zoomCapRef.current = zoomCap;
+          setZoom({
+            min: zoomCap.min(),
+            max: zoomCap.max(),
+            step: zoomCap.step() || 0.1,
+            value: zoomCap.value() ?? zoomCap.min(),
+          });
+        } else {
+          zoomCapRef.current = null;
+          setZoom(null);
+        }
+      } catch { setTorchSupported(false); zoomCapRef.current = null; setZoom(null); }
       setTorchOn(false);
     } catch (err) {
       if (!mountedRef.current) return;
@@ -194,6 +210,15 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       await s.applyVideoConstraints({ advanced: [{ torch: !torchOn } as MediaTrackConstraintSet] });
       setTorchOn(v => !v);
     } catch { /* torch toggle failed silently */ }
+  };
+
+  const stepZoom = (dir: 1 | -1) => {
+    setZoom(z => {
+      if (!z) return z;
+      const next = Math.min(z.max, Math.max(z.min, z.value + dir * (z.step || 0.1)));
+      zoomCapRef.current?.apply(next).catch(() => {});
+      return { ...z, value: next };
+    });
   };
 
   return (
@@ -259,6 +284,27 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
                       <SwitchCamera size={15} />
                     </button>
                   )}
+                  {zoom && (
+                    <div className="bcsm-zoom">
+                      <button
+                        type="button"
+                        onClick={() => stepZoom(1)}
+                        disabled={zoom.value >= zoom.max}
+                        className="bcsm-icon-btn"
+                      >
+                        <ZoomIn size={15} />
+                      </button>
+                      <span className="bcsm-zoom-value">{zoom.value.toFixed(1)}x</span>
+                      <button
+                        type="button"
+                        onClick={() => stepZoom(-1)}
+                        disabled={zoom.value <= zoom.min}
+                        className="bcsm-icon-btn"
+                      >
+                        <ZoomOut size={15} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -271,7 +317,9 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
             </div>
 
             <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-              Arahkan kamera ke QR Code produk — hasil scan langsung tersimpan
+              {zoom
+                ? 'Jaga jarak kamera ± 15 cm dari barcode (jangan terlalu dekat), lalu pakai tombol zoom kalau barcode kecil'
+                : 'Arahkan kamera ke QR Code produk — hasil scan langsung tersimpan'}
             </p>
 
             {lastResult && (
@@ -391,6 +439,29 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
           background: #f59e0b;
           border-color: #f59e0b;
           color: #1c1917;
+        }
+        .bcsm-icon-btn:disabled {
+          opacity: 0.35;
+        }
+        .bcsm-zoom {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          background: rgba(0,0,0,0.5);
+          backdrop-filter: blur(4px);
+          border: 1px solid rgba(255,255,255,0.25);
+          border-radius: 999px;
+          padding: 6px 0;
+        }
+        .bcsm-zoom .bcsm-icon-btn {
+          background: transparent;
+          border: none;
+        }
+        .bcsm-zoom-value {
+          font-size: 10px;
+          font-weight: 700;
+          color: #fff;
         }
         .bcsm-toast {
           position: absolute;
