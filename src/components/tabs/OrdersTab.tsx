@@ -136,7 +136,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const toast = useToast();
   const confirm = useConfirm();
   const wallets = useWallets(creds);
-  const walletBalances = useWalletBalances(creds, wallets);
+  const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
   const [orders,     setOrders]     = useState<Order[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -278,6 +278,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     });
     if (r.ok) {
       setOrders(o => o.map(x => x.id === id ? { ...x, paymentStatus: 'lunas', walletId } : x));
+      refetchBalances();
       toast.success('Pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.');
     } else {
       toast.error('Gagal menandai lunas.');
@@ -322,6 +323,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
     const deleted = results.filter(Boolean).length;
     await load();
+    refetchBalances();
     setSelected(new Set());
     if (deleted === ids.length) toast.success(`${deleted} pesanan berhasil dihapus & stok dikembalikan ke gudang.`);
     else toast.error(`${deleted} dari ${ids.length} pesanan berhasil dihapus, sisanya gagal.`);
@@ -434,6 +436,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     });
     if (r.ok) {
       await load();
+      refetchBalances();
       toast.success('Pesanan berhasil diperbarui.');
       setEditingOrder(null);
     } else {

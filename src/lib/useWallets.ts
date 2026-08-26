@@ -53,6 +53,7 @@ interface BalanceTransfer { fromWalletId: string; toWalletId: string; amount: nu
 // persis dengan balanceOf() di WalletsTab.tsx & FinanceReportTab.tsx.
 export function useWalletBalances(creds: string, wallets: WalletDoc[]) {
   const [balances, setBalances] = useState<Record<string, number>>({});
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     if (wallets.length === 0) return;
     let cancelled = false;
@@ -99,6 +100,7 @@ export function useWalletBalances(creds: string, wallets: WalletDoc[]) {
       setBalances(next);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [creds, wallets]);
-  return balances;
+  }, [creds, wallets, refreshKey]);
+  const refetch = () => setRefreshKey(k => k + 1);
+  return [balances, refetch] as const;
 }

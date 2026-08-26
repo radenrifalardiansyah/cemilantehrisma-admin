@@ -557,7 +557,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [submittingPurchase, setSubmittingPurchase] = useState(false);
   const [markingPurchaseId, setMarkingPurchaseId] = useState<string | null>(null);
   const wallets = useWallets(creds);
-  const walletBalances = useWalletBalances(creds, wallets);
+  const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const resetPurchaseForm = () => {
@@ -608,13 +608,14 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       toast.success(editingPurchase ? 'Perubahan pembelian tersimpan.' : 'Pembelian bahan baku tersimpan.');
       closePurchaseForm();
       await Promise.all([loadMaterials(), loadPurchases()]);
+      refetchBalances();
     } finally { setSubmittingPurchase(false); }
   };
 
   const markPurchaseLunas = async (id: string) => {
     setMarkingPurchaseId(id);
     const r = await fetch(`${API}/api/material-purchases/${id}/mark-lunas`, { method: 'POST', headers });
-    if (r.ok) { toast.success('Pembelian ditandai lunas — sudah tercatat di Pengeluaran.'); await loadPurchases(); }
+    if (r.ok) { toast.success('Pembelian ditandai lunas — sudah tercatat di Pengeluaran.'); await loadPurchases(); refetchBalances(); }
     else toast.error('Gagal menandai lunas.');
     setMarkingPurchaseId(null);
   };
@@ -625,7 +626,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     setDeletingPurchaseId(p.id);
     const r = await fetch(`${API}/api/material-purchases/${p.id}`, { method: 'DELETE', headers });
     const data = await r.json().catch(() => ({})) as { error?: string };
-    if (r.ok) { toast.success('Pembelian berhasil dihapus, stok bahan baku dikembalikan.'); await Promise.all([loadMaterials(), loadPurchases()]); }
+    if (r.ok) { toast.success('Pembelian berhasil dihapus, stok bahan baku dikembalikan.'); await Promise.all([loadMaterials(), loadPurchases()]); refetchBalances(); }
     else toast.error(`${data.error ?? 'Gagal menghapus pembelian.'} Coba tombol "Batalkan" sebagai gantinya.`);
     setDeletingPurchaseId(null);
   };
@@ -641,7 +642,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
     const data = await r.json().catch(() => ({})) as { error?: string };
-    if (r.ok) { toast.success('Pembelian dibatalkan — tidak lagi dihitung sebagai pengeluaran.'); await loadPurchases(); }
+    if (r.ok) { toast.success('Pembelian dibatalkan — tidak lagi dihitung sebagai pengeluaran.'); await loadPurchases(); refetchBalances(); }
     else toast.error(data.error ?? 'Gagal membatalkan pembelian.');
     setVoidingPurchaseId(null);
   };
@@ -675,6 +676,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     }
     setSelectedPurchases(new Set());
     await Promise.all([loadMaterials(), loadPurchases()]);
+    refetchBalances();
     if (okCount > 0) toast.success(`${okCount} pembelian berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena sudah dipakai/dibeli lagi.` : ''}`);
     else toast.error('Semua pembelian yang dipilih tidak bisa dihapus (sudah dipakai/dibeli lagi setelahnya).');
     setBulkDeletingPurchases(false);

@@ -46,6 +46,11 @@ function Checkbox({ checked, indeterminate, onChange }: {
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
+// Stok bahan baku dihitung dari akumulasi transaksi float, jadi kadang menyisakan noise
+// seperti 0.00009999999999993348 — dibulatkan 2 desimal supaya tampilan tetap rapi.
+const formatQty = (n: number) =>
+  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -524,7 +529,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const selectedMaterialIds = new Set(rows.map(r => r.materialId).filter(Boolean));
   const materialOptions = effectiveMaterials
     .filter(m => m.stockQty > 0 || selectedMaterialIds.has(m.id))
-    .map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${m.stockQty} ${m.unit}` }));
+    .map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
   return (
@@ -906,10 +911,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           {material && (
                             <p className="text-xs tabular mt-1" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
                               {qty === 0
-                                ? `Stok tersedia: ${material.stockQty} ${material.unit}`
+                                ? `Stok tersedia: ${formatQty(material.stockQty)} ${material.unit}`
                                 : shortage
-                                ? `Stok kurang — tersedia ${material.stockQty} ${material.unit}`
-                                : `Biaya: ${formatRp(material.avgCost * qty)} (stok tersisa ${material.stockQty - qty} ${material.unit})`}
+                                ? `Stok kurang — tersedia ${formatQty(material.stockQty)} ${material.unit}`
+                                : `Biaya: ${formatRp(material.avgCost * qty)} (stok tersisa ${formatQty(material.stockQty - qty)} ${material.unit})`}
                             </p>
                           )}
                         </div>

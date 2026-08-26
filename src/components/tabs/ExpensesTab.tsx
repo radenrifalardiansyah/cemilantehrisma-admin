@@ -112,7 +112,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
-  const walletBalances = useWalletBalances(creds, wallets);
+  const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const [expenses,    setExpenses]    = useState<Expense[]>([]);
@@ -191,6 +191,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
       await load();
+      refetchBalances();
       closeEdit();
       toast.success(isNew ? 'Pengeluaran berhasil dicatat.' : 'Pengeluaran berhasil diperbarui.');
     } else {
@@ -207,6 +208,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     const r = await fetch(`${API}/api/expenses/${e.id}`, { method: 'DELETE', headers });
     if (r.ok) {
       await load();
+      refetchBalances();
       setSelected(s => { const n = new Set(s); n.delete(e.id); return n; });
       toast.success('Pengeluaran berhasil dihapus.');
     } else {
@@ -231,6 +233,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     if (r.ok) {
       const d = await r.json() as { deleted: number; skipped: number };
       await load();
+      refetchBalances();
       setSelected(new Set());
       toast.success(`${d.deleted} pengeluaran berhasil dihapus.${d.skipped > 0 ? ` ${d.skipped} dilewati karena otomatis dari sumber lain.` : ''}`);
     } else {

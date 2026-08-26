@@ -278,7 +278,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
-  const walletBalances = useWalletBalances(creds, wallets);
+  const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
@@ -1226,6 +1226,7 @@ _${storeHeader.name}_`.trim();
       setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
       setRecapDate(toLocalDateTimeInput(new Date()));
       await Promise.all([loadRecaps(), loadLocations()]);
+      refetchBalances();
     } finally { setSubmittingRecap(false); }
   };
 
@@ -1235,7 +1236,7 @@ _${storeHeader.name}_`.trim();
       method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ walletId }),
     });
-    if (r.ok) { toast.success('Rekap ditandai lunas.'); await loadRecaps(); }
+    if (r.ok) { toast.success('Rekap ditandai lunas.'); await loadRecaps(); refetchBalances(); }
     else toast.error('Gagal menandai lunas.');
     setMarkingRecapId(null);
   };
@@ -1374,6 +1375,7 @@ _${storeHeader.name}_`.trim();
       setSelectedRecaps(sel => { const n = new Set(sel); n.delete(r.id); return n; });
       toast.success('Riwayat rekap berhasil dihapus.');
       await loadLocations();
+      refetchBalances();
     } else {
       const data = await res.json().catch(() => ({} as { error?: string }));
       toast.error(data.error ?? 'Gagal menghapus riwayat rekap.');
@@ -1759,7 +1761,7 @@ _${storeHeader.name}_`.trim();
               </div>
             )}
 
-            <div className="flex flex-row items-center gap-2 sm:gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {locations.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -1772,6 +1774,7 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
+              <div className="flex items-center justify-between gap-2 flex-wrap w-full sm:w-auto">
               {locations.length > 0 && (
                 <button
                   onClick={() => { setLocationOnlyInStock(v => !v); resetLocationPage(); }}
@@ -1785,7 +1788,7 @@ _${storeHeader.name}_`.trim();
                   <PackageCheck size={14} /> <span className="hidden sm:inline">Ada Stok</span>
                 </button>
               )}
-              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+              <div className="flex items-center gap-2 justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
                   <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                     <ExcelIcon size={14} />
@@ -1810,6 +1813,7 @@ _${storeHeader.name}_`.trim();
                 <button onClick={openCreateL} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Tambah Lokasi</span>
                 </button>
+              </div>
               </div>
             </div>
 
@@ -1850,9 +1854,10 @@ _${storeHeader.name}_`.trim();
                       const num = (safeLocationPage - 1) * locationPageSize + i + 1;
                       return (
                         <div key={l.id}>
-                          <div className="flex items-center gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
-                          <span className="w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
-                          <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
+                          <div className="flex flex-col gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <div className="flex flex-wrap items-start gap-3">
+                          <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
+                          <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} /></div>
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)' }}>
                             <Store size={16} style={{ color: 'var(--accent)' }} />
                           </div>
@@ -1879,11 +1884,8 @@ _${storeHeader.name}_`.trim();
                                 </span>
                               )}
                             </div>
-                            <div className="mt-2">
-                              <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
-                            </div>
                           </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
+                          <div className="flex items-center gap-1 flex-shrink-0 justify-end w-full sm:w-auto sm:ml-auto">
                             <Tooltip label="Kirim Stok">
                               <button onClick={() => openSendForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
                                 <Send size={12} />
@@ -1911,6 +1913,8 @@ _${storeHeader.name}_`.trim();
                               </button>
                             </Tooltip>
                           </div>
+                          </div>
+                          <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                           </div>
                           {auditHistoryId === l.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={l.id} />}
                         </div>
@@ -2014,7 +2018,7 @@ _${storeHeader.name}_`.trim();
         {/* ════ KIRIM STOK ═════════════════════════════════════ */}
         {subTab === 'kirim' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-row items-center gap-2 sm:gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {shipments.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -2027,7 +2031,7 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
-              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+              <div className="flex items-center gap-2 justify-end flex-shrink-0 w-full sm:w-auto">
                 {shipments.length > 0 && (
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportShipmentsExcel(filteredShipments, 'sesuai filter')} disabled={exportingShipments} aria-label="Export Excel"
@@ -2211,7 +2215,7 @@ _${storeHeader.name}_`.trim();
         {/* ════ REKAP HARIAN ═══════════════════════════════════ */}
         {subTab === 'rekap' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-            <div className="flex flex-row items-center gap-2 sm:gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {recaps.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -2224,6 +2228,7 @@ _${storeHeader.name}_`.trim();
                   />
                 </div>
               )}
+              <div className="flex items-center justify-between gap-2 flex-wrap w-full sm:w-auto">
               {recaps.length > 0 && (
                 <button
                   onClick={() => { setRecapOnlyBelumLunas(v => !v); resetRecapPage(); }}
@@ -2237,7 +2242,7 @@ _${storeHeader.name}_`.trim();
                   <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
                 </button>
               )}
-              <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+              <div className="flex items-center gap-2 justify-end flex-shrink-0">
                 {recaps.length > 0 && (
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
@@ -2250,6 +2255,7 @@ _${storeHeader.name}_`.trim();
                 <button onClick={openCreateRecap} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Tambah Rekap</span>
                 </button>
+              </div>
               </div>
             </div>
 

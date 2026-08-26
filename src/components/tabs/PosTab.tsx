@@ -305,7 +305,7 @@ export default function PosTab({
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
   const toast = useToast();
   const wallets = useWallets(creds);
-  const walletBalances = useWalletBalances(creds, wallets);
+  const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   // ── Info toko (nama, alamat, telepon, logo) — dipakai di struk cetak & pesan WA ──
@@ -659,6 +659,7 @@ export default function PosTab({
         throw new Error(error ?? 'Gagal menyimpan transaksi.');
       }
 
+      refetchBalances();
       setLastReceipt({
         invoiceNo: invNo, dateStr, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
         paymentMethod,

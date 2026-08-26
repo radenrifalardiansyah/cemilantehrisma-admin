@@ -73,7 +73,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
-  const walletBalances = useWalletBalances(creds, wallets);
+  const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const [entries,     setEntries]     = useState<CapitalEntry[]>([]);
@@ -124,6 +124,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
       : await fetch(`${API}/api/capital/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
       await load();
+      refetchBalances();
       closeEdit();
       toast.success(isNew ? 'Tercatat.' : 'Berhasil diperbarui.');
     } else {
@@ -139,6 +140,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
     const r = await fetch(`${API}/api/capital/${id}`, { method: 'DELETE', headers });
     if (r.ok) {
       await load();
+      refetchBalances();
       setSelected(s => { const n = new Set(s); n.delete(id); return n; });
       toast.success('Berhasil dihapus.');
     } else {
@@ -158,6 +160,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
     });
     if (r.ok) {
       setEntries(es => es.filter(e => !selected.has(e.id)));
+      refetchBalances();
       setSelected(new Set());
       toast.success(`${count} catatan berhasil dihapus.`);
     } else {
