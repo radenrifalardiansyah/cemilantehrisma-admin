@@ -3,13 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Boxes, ShoppingBag, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban, Upload,
+  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck,
 } from 'lucide-react';
 import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
-import FilterSelect from '@/components/FilterSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { useViewMode } from '@/lib/useViewMode';
@@ -154,7 +153,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [deletingMId, setDeletingMId] = useState<string | null>(null);
 
   const [materialSearch, setMaterialSearch] = useState('');
-  const [materialStockFilter, setMaterialStockFilter] = useState('semua');
+  const [materialOnlyInStock, setMaterialOnlyInStock] = useState(false);
   const [materialPage,     setMaterialPage]     = useState(1);
   const [materialPageSize, setMaterialPageSize] = useState(10);
   const [materialView, setMaterialView] = useViewMode('materials');
@@ -518,9 +517,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
 
   const filteredMaterials = materials
     .filter(m => !materialSearch || m.name.toLowerCase().includes(materialSearch.toLowerCase()))
-    .filter(m => materialStockFilter === 'semua'
-      || (materialStockFilter === 'ada' && roundQty(m.stockQty) > 0)
-      || (materialStockFilter === 'habis' && roundQty(m.stockQty) <= 0))
+    .filter(m => !materialOnlyInStock || roundQty(m.stockQty) > 0)
     .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
   const materialTotalPages = Math.max(1, Math.ceil(filteredMaterials.length / materialPageSize));
   const materialSafePage   = Math.min(materialPage, materialTotalPages);
@@ -1022,18 +1019,17 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                 </div>
               )}
               {materials.length > 0 && (
-                <div className="w-[130px] sm:w-[160px] flex-shrink-0">
-                  <FilterSelect
-                    value={materialStockFilter}
-                    onChange={v => { setMaterialStockFilter(v); resetMaterialPage(); }}
-                    height={HEADER_BTN_H}
-                    options={[
-                      { value: 'semua', label: 'Semua Stok' },
-                      { value: 'ada', label: 'Ada Stok' },
-                      { value: 'habis', label: 'Stok Habis' },
-                    ]}
-                  />
-                </div>
+                <button
+                  onClick={() => { setMaterialOnlyInStock(v => !v); resetMaterialPage(); }}
+                  className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+                  style={{
+                    height: HEADER_BTN_H,
+                    background: materialOnlyInStock ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+                    color: materialOnlyInStock ? 'white' : 'var(--text-muted)',
+                  }}
+                >
+                  <PackageCheck size={14} /> <span className="hidden sm:inline">Ada Stok</span>
+                </button>
               )}
               <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
