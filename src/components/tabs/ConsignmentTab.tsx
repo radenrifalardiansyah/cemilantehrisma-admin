@@ -5,7 +5,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronLeft, ChevronRight, Upload,
-  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart,
+  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { type PeriodKey, periodRange } from '@/lib/period';
@@ -15,6 +15,7 @@ import { pdf } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
+import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { useViewMode } from '@/lib/useViewMode';
@@ -125,6 +126,15 @@ interface ConsignmentWarehouse { id: string; name: string }
 
 interface SendRow { productId: string; qty: string; hargaTitip: string }
 const EMPTY_SEND_ROW: SendRow = { productId: '', qty: '', hargaTitip: '' };
+
+/** Resolves a scanned QR value (default = product detail URL, e.g. ".../products/{id}") to a product id. */
+function resolveScannedProductId(text: string, products: PosProduct[]): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/\/products\/([^/?#]+)/);
+  const candidateId = match ? decodeURIComponent(match[1]) : trimmed;
+  return products.find(p => p.id === candidateId)?.id ?? null;
+}
 
 // ─── Excel import (Lokasi) ─────────────────────────────────────────────────────
 const LOCATION_TEMPLATE_COLS = [
@@ -793,6 +803,23 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const addSendRow    = () => setSendRows(prev => [...prev, { ...EMPTY_SEND_ROW }]);
   const removeSendRow = (i: number) => setSendRows(prev => prev.filter((_, idx) => idx !== i));
   const updateSendRow = (i: number, patch: Partial<SendRow>) => setSendRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const [showSendScanner, setShowSendScanner] = useState(false);
+  const handleSendScan = (text: string) => {
+    const productId = resolveScannedProductId(text, products);
+    if (!productId) { toast.error('Produk tidak dikenali dari QR ini.'); return; }
+    const product = products.find(p => p.id === productId)!;
+    setSendRows(prev => {
+      const existingIdx = prev.findIndex(r => r.productId === productId);
+      if (existingIdx >= 0) {
+        const nextQty = (parseFloat(prev[existingIdx].qty) || 0) + 1;
+        return prev.map((r, i) => i === existingIdx ? { ...r, qty: String(nextQty) } : r);
+      }
+      const emptyIdx = prev.findIndex(r => !r.productId);
+      if (emptyIdx >= 0) return prev.map((r, i) => i === emptyIdx ? { ...r, productId, qty: '1' } : r);
+      return [...prev, { productId, qty: '1', hargaTitip: '' }];
+    });
+    toast.success(`+1 ${product.name}`);
+  };
 
   const sendTotal = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.hargaTitip) || 0), 0);
   const canSubmitSend = !!sendLocationId && !!sendWarehouseId
@@ -1102,6 +1129,20 @@ _${storeHeader.name}_`.trim();
   const [recapStock,        setRecapStock]        = useState<ConsignmentStockItem[]>([]);
   const [recapStockLoading, setRecapStockLoading] = useState(false);
   const [recapInputs,       setRecapInputs]       = useState<Record<string, { sold: string; retur: string; reject: string }>>({});
+  const [showRecapScanner,  setShowRecapScanner]  = useState(false);
+  const [recapScanMode,     setRecapScanMode]     = useState<'sold' | 'retur' | 'reject'>('sold');
+  const recapScanModeLabel: Record<'sold' | 'retur' | 'reject', string> = { sold: 'Terjual', retur: 'Retur', reject: 'Reject' };
+  const handleRecapScan = (text: string) => {
+    const productId = resolveScannedProductId(text, products);
+    const stockItem = productId ? recapStock.find(s => s.productId === productId) : undefined;
+    if (!productId || !stockItem) { toast.error('Produk ini tidak ada di stok konsinyasi lokasi ini.'); return; }
+    setRecapInputs(prev => {
+      const cur = prev[productId] ?? { sold: '', retur: '', reject: '' };
+      const next = (parseFloat(cur[recapScanMode]) || 0) + 1;
+      return { ...prev, [productId]: { ...cur, [recapScanMode]: String(next) } };
+    });
+    toast.success(`${recapScanModeLabel[recapScanMode]} +1 ${stockItem.productName}`);
+  };
   const [recapNote,         setRecapNote]         = useState('');
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [recapWalletId,     setRecapWalletId]     = useState('');
@@ -2537,8 +2578,14 @@ _${storeHeader.name}_`.trim();
                 </div>
 
                 <div>
-                  <label className="field-label">Produk Dikirim</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="flex items-center justify-between">
+                    <label className="field-label" style={{ marginBottom: 0 }}>Produk Dikirim</label>
+                    <button onClick={() => setShowSendScanner(true)} type="button"
+                      className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                      <ScanLine size={13} /> Scan Produk
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
                     {sendRows.map((row, i) => {
                       const qty = parseFloat(row.qty) || 0;
                       const harga = parseFloat(row.hargaTitip) || 0;
@@ -2592,6 +2639,15 @@ _${storeHeader.name}_`.trim();
             </div>
           </div>
         </div>
+      )}
+
+      {showSendScanner && (
+        <BarcodeScannerModal
+          title="Scan Produk Kirim"
+          subtitle="Setiap QR yang terbaca menambah qty 1 pcs"
+          onDetect={handleSendScan}
+          onClose={() => setShowSendScanner(false)}
+        />
       )}
 
       {markLunasRecap && (
@@ -2672,6 +2728,23 @@ _${storeHeader.name}_`.trim();
                     <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Tidak ada stok titip di lokasi ini.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                          {(['sold', 'retur', 'reject'] as const).map(mode => (
+                            <button key={mode} type="button" onClick={() => setRecapScanMode(mode)}
+                              className="text-[11px] font-bold px-2 py-1 rounded-md" style={{
+                                background: recapScanMode === mode ? 'var(--accent)' : 'transparent',
+                                color: recapScanMode === mode ? '#fff' : 'var(--text-muted)',
+                              }}>
+                              {recapScanModeLabel[mode]}
+                            </button>
+                          ))}
+                        </div>
+                        <button onClick={() => setShowRecapScanner(true)} type="button"
+                          className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                          <ScanLine size={13} /> Scan Produk
+                        </button>
+                      </div>
                       {recapRows.map(({ item, sold, sisa, exceeds }) => (
                         <div key={item.productId} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
                           <div className="flex items-center justify-between gap-2 mb-2">
@@ -2789,6 +2862,15 @@ _${storeHeader.name}_`.trim();
             </div>
           </div>
         </div>
+      )}
+
+      {showRecapScanner && (
+        <BarcodeScannerModal
+          title="Scan Produk Rekap"
+          subtitle={`Setiap QR yang terbaca menambah qty ${recapScanModeLabel[recapScanMode]} +1`}
+          onDetect={handleRecapScan}
+          onClose={() => setShowRecapScanner(false)}
+        />
       )}
 
       {/* ════ ANALITIK ═══════════════════════════════════════ */}
