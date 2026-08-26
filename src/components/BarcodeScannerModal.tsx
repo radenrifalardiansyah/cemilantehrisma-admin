@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import type { CameraDevice, RangeCameraCapability } from 'html5-qrcode/camera/core';
-import { X, ScanLine, CheckCircle2, XCircle, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, ScanLine, CheckCircle2, XCircle, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw, ZoomIn, ZoomOut, Focus } from 'lucide-react';
 
 export interface ScanResult { ok: boolean; label: string }
 
@@ -122,7 +122,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       await scanner.start(
         cameraTarget,
         {
-          fps: 12,
+          fps: 20,
           qrbox: { width: 260, height: 260 },
           aspectRatio: 1,
           // Request a high-res stream with continuous autofocus — without this
@@ -172,6 +172,17 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
         }
       } catch { setTorchSupported(false); zoomCapRef.current = null; setZoom(null); }
       setTorchOn(false);
+
+      // Re-assert continuous autofocus directly against the live track. Some
+      // browsers/drivers only honor 'focusMode' via applyConstraints() on a
+      // running track rather than the constraints passed to getUserMedia at
+      // start() time, so this is a belt-and-suspenders follow-up.
+      try {
+        const rawCaps = scanner.getRunningTrackCapabilities() as MediaTrackCapabilities & { focusMode?: string[] };
+        if (rawCaps.focusMode?.includes('continuous')) {
+          scanner.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => {});
+        }
+      } catch { /* focus capability not reported */ }
     } catch (err) {
       if (!mountedRef.current) return;
       const name = (err as { name?: string })?.name;
@@ -220,6 +231,8 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       return { ...z, value: next };
     });
   };
+
+  const refocus = () => start(cameras[cameraIdx]?.id);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -284,6 +297,9 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
                       <SwitchCamera size={15} />
                     </button>
                   )}
+                  <button type="button" onClick={refocus} className="bcsm-icon-btn">
+                    <Focus size={15} />
+                  </button>
                   {zoom && (
                     <div className="bcsm-zoom">
                       <button
