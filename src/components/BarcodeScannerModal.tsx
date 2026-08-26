@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import type { CameraDevice } from 'html5-qrcode/camera/core';
-import { X, ScanLine, CheckCircle2, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw } from 'lucide-react';
+import { X, ScanLine, CheckCircle2, XCircle, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw } from 'lucide-react';
+
+export interface ScanResult { ok: boolean; label: string }
 
 interface Props {
   title?: string;
   subtitle?: string;
-  onDetect: (text: string) => void;
+  onDetect: (text: string) => ScanResult | void;
   onClose: () => void;
   /** Extra controls rendered above the camera view (e.g. a mode toggle). */
   headerExtra?: React.ReactNode;
@@ -16,26 +18,6 @@ interface Props {
 
 const REGION_ID = 'barcode-scanner-region';
 const RESCAN_COOLDOWN_MS = 1500;
-
-function playBeep() {
-  try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 1568;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.13);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.14);
-    osc.onended = () => ctx.close().catch(() => {});
-  } catch { /* audio not available */ }
-}
 
 function vibrate() {
   try { navigator.vibrate?.(55); } catch { /* not supported */ }
@@ -48,10 +30,45 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
   const lastScanRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   const mountedRef = useRef(true);
 
+  // Created synchronously on first render — which for this modal always
+  // happens as a direct result of a user tap on "Scan Produk" — so beeps
+  // fired later from the async scan callback are audible under iOS
+  // Safari's strict autoplay policy (a lazy useState initializer runs
+  // during that same render, unlike a ref mutated during render).
+  const [audioCtx] = useState<AudioContext | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return null;
+    try {
+      const ctx = new Ctx();
+      ctx.resume().catch(() => {});
+      return ctx;
+    } catch { return null; }
+  });
+
+  const playBeep = useCallback((ok: boolean) => {
+    const ctx = audioCtx;
+    if (!ctx) return;
+    try {
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = ok ? 1568 : 320;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + (ok ? 0.13 : 0.22));
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + (ok ? 0.14 : 0.24));
+    } catch { /* audio playback failed */ }
+  }, [audioCtx]);
+
   const [status, setStatus] = useState<Status>('init');
   const [errorMsg, setErrorMsg] = useState('');
-  const [lastLabel, setLastLabel] = useState('');
-  const [flash, setFlash] = useState(false);
+  const [lastResult, setLastResult] = useState<ScanResult | null>(null);
+  const [flash, setFlash] = useState<'ok' | 'bad' | ''>('');
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [cameraIdx, setCameraIdx] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
@@ -103,12 +120,12 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
           const now = Date.now();
           if (text === lastScanRef.current.text && now - lastScanRef.current.at < RESCAN_COOLDOWN_MS) return;
           lastScanRef.current = { text, at: now };
-          playBeep();
+          const result = onDetect(text) ?? { ok: true, label: text };
+          playBeep(result.ok);
           vibrate();
-          setLastLabel(text);
-          setFlash(true);
-          setTimeout(() => mountedRef.current && setFlash(false), 400);
-          onDetect(text);
+          setLastResult(result);
+          setFlash(result.ok ? 'ok' : 'bad');
+          setTimeout(() => mountedRef.current && setFlash(''), RESCAN_COOLDOWN_MS - 100);
         },
         () => {},
       );
@@ -132,7 +149,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       setErrorMsg(msg);
       setStatus('error');
     }
-  }, [cameras, onDetect, stopScanner]);
+  }, [cameras, onDetect, playBeep, stopScanner]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -140,6 +157,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
     return () => {
       mountedRef.current = false;
       stopScanner();
+      audioCtx?.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -181,7 +199,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {headerExtra}
 
-            <div className="bcsm-frame" data-flash={flash ? '1' : '0'}>
+            <div className="bcsm-frame" data-flash={flash}>
               <div id={REGION_ID} className="bcsm-region" />
 
               {status === 'scanning' && (
@@ -225,15 +243,24 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
                   )}
                 </div>
               )}
+
+              {lastResult && flash && (
+                <div className="bcsm-toast" data-ok={lastResult.ok ? '1' : '0'}>
+                  {lastResult.ok ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                  <span>{lastResult.label}</span>
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-              Arahkan kamera ke QR Code produk
+              Arahkan kamera ke QR Code produk — hasil scan langsung tersimpan
             </p>
 
-            {lastLabel && status === 'scanning' && (
-              <div className="flex items-center gap-1.5 justify-center text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                <CheckCircle2 size={13} /> Terakhir discan: {lastLabel.length > 40 ? lastLabel.slice(0, 40) + '…' : lastLabel}
+            {lastResult && (
+              <div className="flex items-center gap-1.5 justify-center text-xs font-bold"
+                style={{ color: lastResult.ok ? 'var(--success)' : 'var(--danger)' }}>
+                {lastResult.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                {lastResult.label}
               </div>
             )}
           </div>
@@ -254,11 +281,10 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
           background: #0a0a0a;
           aspect-ratio: 1 / 1;
           box-shadow: 0 0 0 1px var(--border);
-          transition: box-shadow 0.25s ease;
+          transition: box-shadow 0.2s ease;
         }
-        .bcsm-frame[data-flash="1"] {
-          box-shadow: 0 0 0 3px #22c55e;
-        }
+        .bcsm-frame[data-flash="ok"] { box-shadow: 0 0 0 3px #22c55e; }
+        .bcsm-frame[data-flash="bad"] { box-shadow: 0 0 0 3px #ef4444; }
         .bcsm-region, .bcsm-region video {
           width: 100% !important;
           height: 100% !important;
@@ -347,6 +373,27 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
           background: #f59e0b;
           border-color: #f59e0b;
           color: #1c1917;
+        }
+        .bcsm-toast {
+          position: absolute;
+          left: 10px;
+          right: 10px;
+          bottom: 10px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #fff;
+          animation: bcsm-toast-in 0.18s ease-out;
+        }
+        .bcsm-toast[data-ok="1"] { background: rgba(34,197,94,0.92); }
+        .bcsm-toast[data-ok="0"] { background: rgba(239,68,68,0.92); }
+        @keyframes bcsm-toast-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
         @media (max-width: 480px) {
           .bcsm-frame { aspect-ratio: 3 / 4; }

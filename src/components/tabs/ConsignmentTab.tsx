@@ -806,7 +806,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [showSendScanner, setShowSendScanner] = useState(false);
   const handleSendScan = (text: string) => {
     const productId = resolveScannedProductId(text, products);
-    if (!productId) { toast.error('Produk tidak dikenali dari QR ini.'); return; }
+    if (!productId) { toast.error('Produk tidak dikenali dari QR ini.'); return { ok: false, label: 'Produk tidak dikenali' }; }
     const product = products.find(p => p.id === productId)!;
     setSendRows(prev => {
       const existingIdx = prev.findIndex(r => r.productId === productId);
@@ -819,6 +819,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       return [...prev, { productId, qty: '1', hargaTitip: '' }];
     });
     toast.success(`+1 ${product.name}`);
+    return { ok: true, label: `+1 ${product.name}` };
   };
 
   const sendTotal = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.hargaTitip) || 0), 0);
@@ -1135,13 +1136,18 @@ _${storeHeader.name}_`.trim();
   const handleRecapScan = (text: string) => {
     const productId = resolveScannedProductId(text, products);
     const stockItem = productId ? recapStock.find(s => s.productId === productId) : undefined;
-    if (!productId || !stockItem) { toast.error('Produk ini tidak ada di stok konsinyasi lokasi ini.'); return; }
+    if (!productId || !stockItem) {
+      toast.error('Produk ini tidak ada di stok konsinyasi lokasi ini.');
+      return { ok: false, label: 'Tidak ada di stok lokasi ini' };
+    }
     setRecapInputs(prev => {
       const cur = prev[productId] ?? { sold: '', retur: '', reject: '' };
       const next = (parseFloat(cur[recapScanMode]) || 0) + 1;
       return { ...prev, [productId]: { ...cur, [recapScanMode]: String(next) } };
     });
-    toast.success(`${recapScanModeLabel[recapScanMode]} +1 ${stockItem.productName}`);
+    const label = `${recapScanModeLabel[recapScanMode]} +1 ${stockItem.productName}`;
+    toast.success(label);
+    return { ok: true, label };
   };
   const [recapNote,         setRecapNote]         = useState('');
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
@@ -2870,6 +2876,19 @@ _${storeHeader.name}_`.trim();
           subtitle={`Setiap QR yang terbaca menambah qty ${recapScanModeLabel[recapScanMode]} +1`}
           onDetect={handleRecapScan}
           onClose={() => setShowRecapScanner(false)}
+          headerExtra={
+            <div className="flex items-center justify-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+              {(['sold', 'retur', 'reject'] as const).map(mode => (
+                <button key={mode} type="button" onClick={() => setRecapScanMode(mode)}
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-md" style={{
+                    background: recapScanMode === mode ? 'var(--accent)' : 'transparent',
+                    color: recapScanMode === mode ? '#fff' : 'var(--text-muted)',
+                  }}>
+                  {recapScanModeLabel[mode]}
+                </button>
+              ))}
+            </div>
+          }
         />
       )}
 
