@@ -113,9 +113,27 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       const scanner = new Html5Qrcode(REGION_ID, { verbose: false });
       scannerRef.current = scanner;
 
+      const cameraTarget: MediaTrackConstraints = target
+        ? { deviceId: { exact: target } }
+        : { facingMode: 'environment' };
+
       await scanner.start(
-        target ? { deviceId: { exact: target } } : { facingMode: 'environment' },
-        { fps: 12, qrbox: { width: 260, height: 260 }, aspectRatio: 1 },
+        cameraTarget,
+        {
+          fps: 12,
+          qrbox: { width: 260, height: 260 },
+          aspectRatio: 1,
+          // Request a high-res stream with continuous autofocus — without this
+          // the browser can hand back a low-res default feed, which leaves too
+          // few pixels per bar for small barcodes (e.g. original product
+          // stickers) once cropped down to the qrbox region for decoding.
+          videoConstraints: {
+            ...cameraTarget,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+          },
+        },
         text => {
           const now = Date.now();
           if (text === lastScanRef.current.text && now - lastScanRef.current.at < RESCAN_COOLDOWN_MS) return;
