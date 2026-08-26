@@ -46,6 +46,11 @@ function Checkbox({ checked, indeterminate, onChange }: {
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
+// Stok bahan baku dihitung dari akumulasi transaksi float, jadi kadang menyisakan noise
+// seperti 0.00009999999999993348 — dibulatkan 2 desimal supaya tampilan tetap rapi.
+const formatQty = (n: number) =>
+  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+
 function formatDate(seconds?: number) {
   if (!seconds) return '–';
   return new Date(seconds * 1000).toLocaleDateString('id-ID', {
@@ -218,7 +223,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
 
   const openAdjust = (m: RawMaterial) => {
     setAdjustingMaterial(m);
-    setAdjustStockQty(String(m.stockQty));
+    setAdjustStockQty(String(Math.round(m.stockQty * 100) / 100));
     setAdjustAvgCost(String(m.avgCost));
     setAdjustNote('');
   };
@@ -467,6 +472,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         row.getCell('no').alignment       = { horizontal: 'center', vertical: 'middle' };
         row.getCell('unit').alignment     = { horizontal: 'center', vertical: 'middle' };
         row.getCell('stockQty').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('stockQty').numFmt    = '0.##';
         row.getCell('avgCost').numFmt = '"Rp"#,##0';
         row.getCell('avgCost').alignment = { horizontal: 'right', vertical: 'middle' };
         row.getCell('value').numFmt = '"Rp"#,##0';
@@ -960,7 +966,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     });
   };
 
-  const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${m.stockQty} ${m.unit}` }));
+  const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
   const supplierOptions = [
     { value: '', label: '– Supplier lain / tidak tercatat –' },
     ...suppliers.map(s => ({ value: s.id, label: s.name })),
@@ -1090,7 +1096,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                               )}
                             </div>
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
-                              Stok {m.stockQty} {m.unit} · Rata-rata {formatRp(m.avgCost)}/{m.unit}
+                              Stok {formatQty(m.stockQty)} {m.unit} · Rata-rata {formatRp(m.avgCost)}/{m.unit}
                             </p>
                           </div>
                           <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>
@@ -1133,7 +1139,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                             </div>
                             <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{m.name}</p>
                             {isLowStock(m) && <span className="badge badge-amber">Stok Menipis</span>}
-                            <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Stok {m.stockQty} {m.unit}</p>
+                            <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Stok {formatQty(m.stockQty)} {m.unit}</p>
                             <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>Rata-rata {formatRp(m.avgCost)}/{m.unit}</p>
                             <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--accent-dark)' }}>{formatRp(m.stockQty * m.avgCost)}</p>
                           </div>
@@ -1567,7 +1573,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Membetulkan angka <strong>saat ini</strong> langsung — tidak mengubah riwayat pembelian/produksi yang sudah tercatat.
-                  Stok sekarang: <strong className="tabular">{adjustingMaterial.stockQty} {adjustingMaterial.unit}</strong>,
+                  Stok sekarang: <strong className="tabular">{formatQty(adjustingMaterial.stockQty)} {adjustingMaterial.unit}</strong>,
                   harga rata-rata: <strong className="tabular">{formatRp(adjustingMaterial.avgCost)}</strong>.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1660,8 +1666,8 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                           </Tooltip>
                           {material && (
                             <p className="text-xs tabular" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', marginTop: -4 }}>
-                              Stok saat ini: {material.stockQty} {material.unit}
-                              {qty > 0 && ` · Setelah pembelian: ${material.stockQty + qty} ${material.unit}`}
+                              Stok saat ini: {formatQty(material.stockQty)} {material.unit}
+                              {qty > 0 && ` · Setelah pembelian: ${formatQty(material.stockQty + qty)} ${material.unit}`}
                             </p>
                           )}
                           {qty > 0 && price > 0 && (

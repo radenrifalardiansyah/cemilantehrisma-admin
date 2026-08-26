@@ -161,7 +161,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const shortages: string[] = [];
       newMaterialsUsed.forEach(m => {
         const stockQty = materialState.get(m.materialId) ?? 0;
-        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${stockQty} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
       });
       if (shortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${shortages.join(', ')}`);
 

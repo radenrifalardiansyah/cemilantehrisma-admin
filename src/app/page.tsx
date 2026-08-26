@@ -84,6 +84,9 @@ const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
+const formatQty = (n: number) =>
+  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+
 // Tanggal kalender WIB (Asia/Jakarta) dalam format yyyy-mm-dd — dipakai untuk menyamakan
 // pengelompokan "hari ini" di dashboard dengan konvensi wibDayStart/wibDayEnd di API orders,
 // supaya tidak selisih beberapa jam di sekitar tengah malam akibat timezone browser.
@@ -1025,7 +1028,7 @@ export default function AdminPage() {
                     </span>
                     <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
                     <span className="text-xs font-semibold tabular flex-shrink-0" style={{ color: 'var(--warning)' }}>
-                      Sisa {item.stockQty} {item.unit} <span style={{ color: 'var(--text-muted)' }}>· min. {item.minStock}</span>
+                      Sisa {formatQty(item.stockQty)} {item.unit} <span style={{ color: 'var(--text-muted)' }}>· min. {item.minStock}</span>
                     </span>
                   </button>
                 ))}

@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
       materialsUsed.forEach((m, i) => {
         if (!materialSnaps[i].exists) { shortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
         const stockQty = Number(materialSnaps[i].data()!.stockQty) || 0;
-        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${stockQty} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
       });
       if (shortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${shortages.join(', ')}`);
 

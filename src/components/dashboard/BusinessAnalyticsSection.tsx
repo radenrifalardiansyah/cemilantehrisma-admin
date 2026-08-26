@@ -30,6 +30,9 @@ export interface BusinessAnalyticsData {
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
 
+const formatQty = (n: number) =>
+  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+
 function compactRp(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}jt`;
@@ -373,7 +376,7 @@ export default function BusinessAnalyticsSection({
                 <TopListChart
                   color="var(--accent)"
                   formatValue={formatRp}
-                  items={data.materials.topByValue.map(m => ({ label: m.name, value: m.value, sub: m.unit ? `· stok ${m.stockQty} ${m.unit}` : undefined }))}
+                  items={data.materials.topByValue.map(m => ({ label: m.name, value: m.value, sub: m.unit ? `· stok ${formatQty(m.stockQty)} ${m.unit}` : undefined }))}
                 />
               )}
             </div>
