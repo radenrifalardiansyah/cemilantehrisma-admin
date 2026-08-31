@@ -62,9 +62,6 @@ export async function POST(req: NextRequest) {
       }
       return Response.json({ ok: true, token, user, mustChangePassword });
     }
-    if (result.reason === 'invalid-credentials') {
-      return Response.json({ error: 'Invalid credentials' }, { status: 401 });
-    }
     if (result.reason === 'error') {
       // Kegagalan tak terduga dari layanan Firebase Auth sendiri (bukan salah password) — tidak
       // tahu pasti apakah akun ini sudah dimigrasikan atau belum, jadi jatuh ke jalur Firestore
@@ -74,26 +71,48 @@ export async function POST(req: NextRequest) {
       // untuk akun yang BELUM dimigrasikan, ini cuma jalur biasa yang sudah berjalan bertahun-tahun.
       console.error('Firebase Auth signIn error, falling back to Firestore path:', result.message);
     }
-    // result.reason === 'not-found' atau 'error' -> lanjut ke jalur Firestore + bcrypt lama di bawah.
+    // result.reason === 'not-found' | 'error' | 'invalid-credentials' -> lanjut ke jalur Firestore
+    // + bcrypt lama di bawah. 'invalid-credentials' dulu di-reject langsung di sini, tapi Google
+    // sejak beberapa waktu lalu memakai satu pesan generik INVALID_LOGIN_CREDENTIALS baik untuk
+    // "email tidak terdaftar" MAUPUN "password salah" (identitytoolkit tidak lagi membedakan
+    // keduanya lewat EMAIL_NOT_FOUND, demi mencegah enumerasi akun) — jadi akun yang BELUM
+    // dimigrasikan sama sekali (emailnya memang tidak ada di Firebase Auth) ikut ditolak di sini
+    // dan tidak pernah sampai ke fallback Firestore-nya. Sama seperti alasan di atas untuk
+    // 'error': aman untuk akun yang sudah dimigrasi karena passwordHash lamanya sudah dihapus
+    // (lihat guard di bawah), sehingga percobaan password salah pada akun yang SUDAH dimigrasi
+    // tetap ditolak — cuma lewat jalur Firestore, bukan Firebase Auth.
   }
 
   // Jalur lama (Firestore + bcrypt) — dipakai untuk akun yang belum dimigrasikan, dan untuk
   // login by-email (tidak pernah dikirim oleh form login sekarang, tapi tetap didukung).
   const db = getDb();
   let snap: QueryDocumentSnapshot | DocumentSnapshot | undefined;
-  if (identifier.includes('@')) {
-    const q = await db.collection('users').where('email', '==', identifier).limit(1).get();
-    snap = q.docs[0];
-  } else {
-    const doc = await db.collection('users').doc(identifier).get();
-    snap = doc.exists ? doc : undefined;
+  try {
+    if (identifier.includes('@')) {
+      const q = await db.collection('users').where('email', '==', identifier).limit(1).get();
+      snap = q.docs[0];
+    } else {
+      const doc = await db.collection('users').doc(identifier).get();
+      snap = doc.exists ? doc : undefined;
+    }
+  } catch (err) {
+    // Firestore lagi bermasalah (mis. kuota habis) — sekarang jalur ini juga dilalui akun yang
+    // SUDAH dimigrasikan saat salah ketik password (lihat komentar 'invalid-credentials' di atas),
+    // jadi error di sini tidak selalu berarti akunnya belum dimigrasikan. Jangan biarkan exception
+    // ini menjatuhkan seluruh request jadi 500 tanpa body — dan jangan balas "Invalid credentials"
+    // juga, karena itu salah untuk user yang passwordnya sebenarnya benar.
+    console.error('Firestore login fallback error:', err);
+    return Response.json({ error: 'Sistem sedang sibuk, coba lagi sebentar lagi.' }, { status: 503 });
   }
   if (!snap) {
     return Response.json({ error: 'Invalid credentials' }, { status: 401 });
   }
 
-  const data = snap.data() as { passwordHash: string; role: string };
-  const valid = await bcrypt.compare(password, data.passwordHash);
+  const data = snap.data() as { passwordHash?: string; role: string };
+  // Akun yang sudah dimigrasi ke Firebase Auth tidak lagi punya passwordHash di sini (dihapus saat
+  // migrasi) — tanpa guard ini, bcrypt.compare(password, undefined) throw dan menghasilkan 500,
+  // bukan 401, untuk percobaan password salah pada akun yang sudah dimigrasi.
+  const valid = !!data.passwordHash && await bcrypt.compare(password, data.passwordHash);
   if (!valid) {
     return Response.json({ error: 'Invalid credentials' }, { status: 401 });
   }
