@@ -1,5 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
-import { THEME_COLOR } from '@/lib/branding';
+import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
 
 export interface ProductReportPDFRow {
@@ -165,7 +165,7 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
           </View>
         </View>
 
-        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · https://cemilantehrisma.eleven-digital.id</Text>
+        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
         <Text style={s.pageNo} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </Page>
     </Document>

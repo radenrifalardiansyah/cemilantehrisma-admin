@@ -1,5 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
-import { THEME_COLOR } from '@/lib/branding';
+import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 
 export interface ShipmentNoteItem { productName: string; qty: number; hargaTitip: number; subtotal: number }
 
@@ -199,7 +199,7 @@ export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteDat
           </View>
         </View>
 
-        <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name} · https://cemilantehrisma.eleven-digital.id</Text>
+        <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
       </Page>
     </Document>
   );
