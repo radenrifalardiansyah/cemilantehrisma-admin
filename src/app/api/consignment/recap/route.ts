@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
@@ -34,6 +35,37 @@ function mergeRecapItems(items: RecapItemInput[]): RecapItemInput[] {
   return [...merged.values()];
 }
 
+// Dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab setiap kali ada
+// transaksi baru — cache waktu murni (bukan revalidateTag) karena koleksi ini juga ditulis dari
+// PATCH/PUT/DELETE di consignment/recap/[id]/route.ts. Lihat komentar serupa di
+// src/app/api/orders/route.ts. `dueDate` di-serialize ke {seconds,nanoseconds} di sini (sama
+// seperti createdAt) karena nilai balik unstable_cache lewat JSON round-trip — instance
+// Timestamp asli (dengan method .toMillis()) tidak akan selamat kalau dibiarkan apa adanya.
+const getCachedRecaps = unstable_cache(
+  async (from: string | null, to: string | null, limit: number) => {
+    const db = getDb();
+    let query: Query<DocumentData> = db.collection('consignmentRecaps').orderBy('createdAt', 'desc');
+    if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+    if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
+    if (!from && !to) query = query.limit(limit);
+
+    const snap = await query.get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      const createdAt = data.createdAt as Timestamp | undefined;
+      const dueDate = data.dueDate as Timestamp | undefined | null;
+      return {
+        ...(data as { paymentStatus?: 'lunas' | 'belum_lunas'; locationName?: string; totalRevenue?: number; overdueNotifiedAt?: unknown }),
+        id: d.id,
+        createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null,
+        dueDate: dueDate ? { seconds: dueDate.seconds, nanoseconds: dueDate.nanoseconds } : null,
+      };
+    });
+  },
+  ['admin-consignment-recap-list'],
+  { revalidate: 15 },
+);
+
 // Read by IncomeTab & FinanceReportTab (not just the Konsinyasi tab) to roll
 // consignment revenue into their totals — gate view with OR semantics so a
 // Finance role without `consignment` access doesn't get its totals silently
@@ -44,44 +76,31 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai Laporan Keuangan untuk filter per periode
   const to   = searchParams.get('to');
+  const limit = parseInt(searchParams.get('limit') ?? '50');
   const db = getDb();
 
-  let query: Query<DocumentData> = db.collection('consignmentRecaps').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
-  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
-  if (!from && !to) {
-    const limit = parseInt(searchParams.get('limit') ?? '50');
-    query = query.limit(limit);
-  }
+  const recaps = await getCachedRecaps(from, to, limit);
 
-  const snap = await query.get();
-
-  // Lazy overdue check — dijalankan tiap daftar rekap dibuka, bukan lewat cron (tidak ada infra
-  // scheduler saat ini). `overdueNotifiedAt` jadi flag idempoten supaya notifikasi cuma ditulis
-  // sekali per rekap, bukan berulang setiap kali endpoint ini dipanggil.
+  // Lazy overdue check — dijalankan tiap daftar rekap dibuka (dalam window cache 15 detik di
+  // atas, bukan tiap request persis), bukan lewat cron (tidak ada infra scheduler saat ini).
+  // `overdueNotifiedAt` jadi flag idempoten supaya notifikasi cuma ditulis sekali per rekap.
   const now = Timestamp.now();
-  await Promise.all(snap.docs.map(async d => {
-    const data = d.data();
-    if (data.paymentStatus !== 'belum_lunas' || !data.dueDate || data.overdueNotifiedAt) return;
-    if ((data.dueDate as Timestamp).toMillis() > now.toMillis()) return;
+  await Promise.all(recaps.map(async r => {
+    if (r.paymentStatus !== 'belum_lunas' || !r.dueDate || r.overdueNotifiedAt) return;
+    if (r.dueDate.seconds * 1000 > now.toMillis()) return;
     await notify(db, {
       type: 'consignment_overdue',
       title: 'Konsinyasi jatuh tempo',
-      message: `Rekap konsinyasi ${data.locationName ?? d.id} senilai Rp${(data.totalRevenue ?? 0).toLocaleString('id-ID')} sudah lewat tenggat pembayaran.`,
+      message: `Rekap konsinyasi ${r.locationName ?? r.id} senilai Rp${(r.totalRevenue ?? 0).toLocaleString('id-ID')} sudah lewat tenggat pembayaran.`,
       link: 'consignment',
-      entityCollection: 'consignmentRecaps', entityId: d.id,
+      entityCollection: 'consignmentRecaps', entityId: r.id,
       // Bukan aksi si pembuka halaman — ini terdeteksi otomatis oleh waktu yang lewat, jadi
       // actor-nya "system", bukan `guard` (yang cuma kebetulan sedang membuka daftar rekap).
       actor: { username: 'system', role: 'system' },
     });
-    await d.ref.update({ overdueNotifiedAt: FieldValue.serverTimestamp() });
+    await db.collection('consignmentRecaps').doc(r.id).update({ overdueNotifiedAt: FieldValue.serverTimestamp() });
   }));
 
-  const recaps = snap.docs.map(d => {
-    const data = d.data();
-    const createdAt = data.createdAt as Timestamp | undefined;
-    return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
-  });
   return Response.json({ recaps });
 }
 

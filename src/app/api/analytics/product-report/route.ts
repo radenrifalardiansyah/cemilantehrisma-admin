@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
@@ -32,6 +33,34 @@ function eachDay(from: string, to: string): string[] {
   return days;
 }
 
+// Raw Firestore reads untuk satu rentang tanggal — cached 3 menit, sama seperti getRawAnalytics
+// di analytics/overview/route.ts, supaya ganti-ganti periode/refresh di Laporan Produk tidak
+// query Firestore fresh tiap kali (endpoint ini dulu tidak di-cache sama sekali).
+const getRawProductReport = unstable_cache(
+  async (from: string, to: string) => {
+    const db = getDb();
+    const [orderSnap, recapSnap] = await Promise.all([
+      db.collection('orders')
+        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+      db.collection('consignmentRecaps')
+        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+    ]);
+    const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
+    return {
+      orders: orderSnap.docs.map(d => {
+        const data = d.data();
+        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as OrderDoc;
+      }),
+      recaps: recapSnap.docs.map(d => {
+        const data = d.data();
+        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
+      }),
+    };
+  },
+  ['admin-analytics-product-report'],
+  { revalidate: 180 },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'product-report', 'view');
   if (guard instanceof Response) return guard;
@@ -43,22 +72,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Parameter from & to (yyyy-mm-dd) wajib diisi.' }, { status: 400 });
   }
 
-  const db = getDb();
-  const [orderSnap, recapSnap] = await Promise.all([
-    db.collection('orders')
-      .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-    db.collection('consignmentRecaps')
-      .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-  ]);
-  const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
-  const orders = orderSnap.docs.map(d => {
-    const data = d.data();
-    return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as OrderDoc;
-  });
-  const recaps = recapSnap.docs.map(d => {
-    const data = d.data();
-    return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
-  });
+  const { orders, recaps } = await getRawProductReport(from, to);
 
   // Sama seperti Laporan Keuangan: order/rekap "Belum Lunas" atau yang belum dikonfirmasi
   // (pesanan "baru"/dibatalkan) tidak dihitung sebagai penjualan.

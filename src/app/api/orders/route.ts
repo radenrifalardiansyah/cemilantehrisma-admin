@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
@@ -8,28 +9,42 @@ import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
 import { writeNotification, sendPush } from '@/lib/notifications';
 
+// `orders` dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab
+// berbeda (Kasir, Pesanan, Pemasukan, Pengeluaran, Modal, Bahan Baku, Mitra) SETIAP kali ada
+// transaksi baru dimanapun — tanpa cache, itu artinya satu scan penuh koleksi `orders` per
+// panggilan. Cache berbasis waktu murni (bukan revalidateTag) dengan sengaja: koleksi ini juga
+// ditulis dari banyak endpoint (checkout kasir, edit/hapus/ubah status pesanan, impor massal) —
+// mengandalkan invalidasi manual di SEMUA titik tulis itu gampang ada yang kelewat dan diam-diam
+// jadi stale permanen. TTL pendek (15s, sama seperti capital/wallet-transfers) menjaga tampilan
+// tetap terasa langsung sambil menyerap lonjakan baca yang terjadi bersamaan.
+const getCachedOrders = unstable_cache(
+  async (from: string | null, to: string | null, limit: number) => {
+    const db = getDb();
+    let query: Query<DocumentData> = db.collection('orders').orderBy('createdAt', 'desc');
+    if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+    if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
+    if (!from && !to) query = query.limit(limit);
+
+    const snap = await query.get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      const createdAt = data.createdAt as Timestamp | undefined;
+      return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
+    });
+  },
+  ['admin-orders-list'],
+  { revalidate: 15 },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'view');
   if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai Laporan Keuangan untuk filter per periode
   const to   = searchParams.get('to');
-  const db = getDb();
+  const limit = parseInt(searchParams.get('limit') ?? '50');
 
-  let query: Query<DocumentData> = db.collection('orders').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
-  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
-  if (!from && !to) {
-    const limit = parseInt(searchParams.get('limit') ?? '50');
-    query = query.limit(limit);
-  }
-
-  const snap = await query.get();
-  const orders = snap.docs.map(d => {
-    const data = d.data();
-    const createdAt = data.createdAt as Timestamp | undefined;
-    return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
-  });
+  const orders = await getCachedOrders(from, to, limit);
   return Response.json({ orders });
 }
 
@@ -40,8 +55,10 @@ export async function POST(req: NextRequest) {
     transactionAt?: string; invoiceNo?: string;
     items?: { productId?: string; qty: number }[];
     warehouseId?: string; warehouseName?: string;
+    isPreOrder?: boolean;
   };
   const { transactionAt, ...rest } = data;
+  delete rest.isPreOrder;
   const db = getDb();
   // Kasir bisa mengedit tanggal & jam transaksi (mis. transaksi baru sempat diinput belakangan) —
   // kalau dikirim, itu yang jadi createdAt (dipakai buat urutan & filter periode di Pesanan/Laporan
@@ -61,12 +78,16 @@ export async function POST(req: NextRequest) {
   let pushPayload: { title: string; message: string } | null = null;
   try {
     await db.runTransaction(async tx => {
-      const { products, shortages } = await readProductsForDeltas(tx, db, deltas);
-      // Item "Buka PO" (lihat menu Produk) boleh dijual walau stoknya belum ada/cukup — pesanan
-      // ini disimpan sebagai 'baru' tanpa memotong stok sekarang, persis pesanan Website, dan baru
-      // dipotong begitu admin menandai Selesai di menu Pesanan (lihat PUT /api/orders/[id]).
-      isPreOrder = [...deltas.keys()].some(pid => !!products.get(pid)?.data.openPO);
-      if (!isPreOrder && shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
+      const { products, shortageDetails } = await readProductsForDeltas(tx, db, deltas);
+      // "Jual sebagai PO" adalah pilihan manual kasir (lihat checkbox di PosTab.tsx), lepas dari
+      // stok saat ini — sengaja TIDAK otomatis dipicu oleh stok habis, supaya kasir yang menentukan
+      // kapan suatu transaksi perlu jadi PO. Kalau dicentang, pesanan disimpan sebagai 'baru' tanpa
+      // memotong stok sekarang (persis pesanan Website), baru dipotong begitu admin menandai
+      // Selesai di menu Pesanan (lihat PUT /api/orders/[id]). Cek `hasOpenPOItem` di sini cuma
+      // jaga-jaga kalau body dikirim manual (bukan lewat UI) tanpa produk "Buka PO" sama sekali.
+      const hasOpenPOItem = [...deltas.keys()].some(pid => !!products.get(pid)?.data.openPO);
+      isPreOrder = data.isPreOrder === true && hasOpenPOItem;
+      if (!isPreOrder && shortageDetails.length > 0) throw new Error(`Stok tidak cukup: ${shortageDetails.map(s => s.message).join(', ')}`);
 
       // invoiceNo dibuat di klien dengan resolusi menit (INV-YYYYMMDD-HHmm), tanpa detik/counter —
       // dua transaksi kasir yang selesai dalam menit yang sama bisa kirim invoiceNo identik.

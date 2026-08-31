@@ -1,9 +1,30 @@
 import { NextRequest } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
+
+// Dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab setiap kali ada
+// transaksi baru — cache waktu murni (bukan revalidateTag) karena koleksi ini juga ditulis dari
+// banyak endpoint lain di luar folder ini (Pembelian Bahan Baku, Produksi), jadi invalidasi
+// manual di SEMUA titik tulis berisiko ada yang kelewat. Lihat komentar serupa di
+// src/app/api/orders/route.ts.
+const getCachedExpenses = unstable_cache(
+  async (from: string | null, to: string | null) => {
+    let query: Query<DocumentData> = getDb().collection('expenses').orderBy('date', 'desc');
+    if (from) query = query.where('date', '>=', from);
+    if (to)   query = query.where('date', '<=', to);
+    const snap = await query.get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
+    });
+  },
+  ['admin-expenses-list'],
+  { revalidate: 15 },
+);
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'expenses', 'view');
@@ -12,15 +33,7 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai Laporan Keuangan untuk filter per periode
   const to   = searchParams.get('to');
 
-  let query: Query<DocumentData> = getDb().collection('expenses').orderBy('date', 'desc');
-  if (from) query = query.where('date', '>=', from);
-  if (to)   query = query.where('date', '<=', to);
-
-  const snap = await query.get();
-  const expenses = snap.docs.map(d => {
-    const data = d.data();
-    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-  });
+  const expenses = await getCachedExpenses(from, to);
   return Response.json({ expenses });
 }
 
