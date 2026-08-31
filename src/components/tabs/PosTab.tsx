@@ -28,7 +28,7 @@ import {
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
 
-const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.eleven-digital.id';
+const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // Ingat dompet terakhir dipakai per metode pembayaran (localStorage saja) supaya kasir
 // biasanya tidak perlu pilih ulang tiap transaksi — cukup konfirmasi, bukan wajib mikir.

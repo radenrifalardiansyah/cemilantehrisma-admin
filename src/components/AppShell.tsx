@@ -99,7 +99,7 @@ function buildNavGroups(modules: ModuleDoc[], menus: MenuDoc[]): NavGroup[] {
 // assuming these 4 always exist.
 const PREFERRED_PRIMARY_IDS: TabId[] = ['dashboard', 'pos', 'products', 'orders'];
 
-const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.eleven-digital.id';
+const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 const SIDEBAR_BG   = '#190C03';
 const SIDEBAR_FULL = 256;
