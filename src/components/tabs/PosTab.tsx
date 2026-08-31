@@ -272,6 +272,7 @@ export default function PosTab({
   const [custPhone,    setCustPhone]    = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'nominal'>('percent');
   const [discountRaw,  setDiscountRaw]  = useState('');
+  const [sellAsPO,     setSellAsPO]     = useState(false);
   const [paymentMethod,     setPaymentMethod]     = useState<PaymentMethod>('cash');
   const [walletId,          setWalletId]          = useState('');
   const [amountPaidRaw,     setAmountPaidRaw]     = useState('');
@@ -363,9 +364,11 @@ export default function PosTab({
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
   const cartTotal = cartSubtotal - discountAmount;
   const hasCart   = cartItems.length > 0;
-  // Kalau ada produk "Buka PO" (stok belum ada) di keranjang, transaksi ini disimpan sebagai
-  // pesanan 'baru' oleh server — stok baru dipotong nanti setelah ditandai Selesai di menu
-  // Pesanan, persis pesanan Website (lihat POST /api/orders).
+  // Kalau keranjang berisi produk "Buka PO", kasir BOLEH (tidak otomatis) menandai transaksi ini
+  // sebagai PO lewat checkbox "Jual sebagai PO" — lepas dari stok saat ini. Kalau ditandai, server
+  // menyimpan pesanan sebagai 'baru' tanpa memotong stok sekarang, persis pesanan Website, baru
+  // dipotong setelah ditandai Selesai di menu Pesanan (lihat POST /api/orders). Kalau tidak
+  // ditandai, transaksi dijual normal seperti biasa (perlu stok cukup).
   const cartHasOpenPO = cartItems.some(i => posProducts.find(p => p.id === i.productId)?.openPO);
   const amountPaidNum      = parseFloat(amountPaidRaw) || 0;
   const changeAmount       = amountPaidNum - cartTotal;
@@ -419,7 +422,7 @@ export default function PosTab({
   const clearCart = () => setCart([]);
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); setQuery(''); clearCart();
-    setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
+    setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw(''); setSellAsPO(false);
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
     setSelectedCustRef(''); setTxDateTime(() => nowLocalInput());
@@ -682,6 +685,7 @@ export default function PosTab({
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
           ...(currentShift ? { shiftId: currentShift.id } : {}),
           ...(posWarehouseId ? { warehouseId: posWarehouseId, warehouseName: posWarehouseName } : {}),
+          ...(cartHasOpenPO && sellAsPO ? { isPreOrder: true } : {}),
         }),
       });
       if (!orderRes.ok) {
@@ -698,7 +702,7 @@ export default function PosTab({
         customerName: finalCustName, customerPhone: custPhone, cashier: username, pdfUrl,
       });
       if (paymentMethod !== 'kredit' && walletId) setLastWallet(paymentMethod, walletId);
-      if (cartHasOpenPO) toast.success('Pesanan PO tersimpan sebagai "Baru" — tandai Selesai di menu Pesanan begitu barangnya siap, baru stoknya dipotong.');
+      if (cartHasOpenPO && sellAsPO) toast.success('Pesanan PO tersimpan sebagai "Baru" — tandai Selesai di menu Pesanan begitu barangnya siap, baru stoknya dipotong.');
       else if (paymentMethod === 'kredit') toast.success(`Transaksi kredit tersimpan — tandai Lunas di menu Pesanan kalau ${finalCustName} sudah bayar.`);
       setInvoiceNo(invNo);
       setWaPhoneDraft(custPhone);
@@ -967,9 +971,15 @@ export default function PosTab({
             <div className="card p-4">
               <p className="section-label mb-3 flex items-center gap-1.5"><Banknote size={11} /> Metode Pembayaran</p>
               {cartHasOpenPO && (
-                <p className="text-xs mb-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
-                  Keranjang berisi produk <strong>Buka PO</strong> (stok belum ada) — transaksi ini akan disimpan sebagai pesanan <strong>Baru</strong>, stok baru dipotong nanti setelah ditandai Selesai di menu Pesanan.
-                </p>
+                <label className="flex items-start gap-2 text-xs mb-3 px-3 py-2 rounded-xl cursor-pointer" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
+                  <input type="checkbox" checked={sellAsPO} onChange={e => setSellAsPO(e.target.checked)} className="mt-0.5" />
+                  <span>
+                    Jual sebagai <strong>PO</strong> — keranjang berisi produk <strong>Buka PO</strong>.{' '}
+                    {sellAsPO
+                      ? 'Transaksi ini akan disimpan sebagai pesanan Baru, stok tidak dipotong sekarang — baru dipotong setelah ditandai Selesai di menu Pesanan.'
+                      : 'Tidak dicentang = dijual normal seperti biasa sekarang (perlu stok cukup).'}
+                  </span>
+                </label>
               )}
               <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
                 {availablePaymentMethods.map(m => (

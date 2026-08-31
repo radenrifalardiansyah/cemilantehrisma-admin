@@ -22,13 +22,17 @@ export async function readProductsForDeltas(
   tx: Transaction,
   db: Firestore,
   deltas: Map<string, number>,
-): Promise<{ products: Map<string, ProductStockInfo>; shortages: string[] }> {
+): Promise<{ products: Map<string, ProductStockInfo>; shortages: string[]; shortageDetails: { productId: string; message: string }[] }> {
   const productIds = [...deltas.keys()];
   const refs = productIds.map(pid => db.collection('products').doc(pid));
   const snaps = await Promise.all(refs.map(r => tx.get(r)));
 
   const products = new Map<string, ProductStockInfo>();
   const shortages: string[] = [];
+  // Sama isinya dengan `shortages`, tapi per produk (bukan cuma pesan jadi) — dipakai caller
+  // yang perlu tahu PRODUK MANA yang kurang stoknya, mis. buat cek apakah produk itu "Buka PO"
+  // sebelum memutuskan boleh lanjut atau harus ditolak (lihat POST /api/orders).
+  const shortageDetails: { productId: string; message: string }[] = [];
 
   productIds.forEach((pid, i) => {
     const snap = snaps[i];
@@ -38,13 +42,15 @@ export async function readProductsForDeltas(
 
     if (delta < 0 && (!snap.exists || currentQty < -delta)) {
       const name = typeof data.name === 'string' ? data.name : pid;
-      shortages.push(`${name} (stok tersisa ${currentQty}, butuh ${-delta})`);
+      const message = `${name} (stok tersisa ${currentQty}, butuh ${-delta})`;
+      shortages.push(message);
+      shortageDetails.push({ productId: pid, message });
     }
 
     products.set(pid, { ref: refs[i], data, currentQty, exists: snap.exists });
   });
 
-  return { products, shortages };
+  return { products, shortages, shortageDetails };
 }
 
 // Terapkan satu delta stok: update total global di `products`, ikut sesuaikan `warehouse_stock`
