@@ -523,7 +523,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     });
   };
 
-  const productOptions  = products.map(p => ({ value: p.id, label: p.name, emoji: p.emoji }));
+  const productOptions  = products.map(p => ({ value: p.id, label: p.name, imageUrl: p.imageUrls?.[0], emoji: p.emoji }));
   // Hanya tampilkan bahan baku yang masih ada stoknya; bahan yang sudah dipilih di baris tetap
   // ditampilkan meski stoknya 0 supaya baris yang sudah terisi tidak jadi kosong.
   const selectedMaterialIds = new Set(rows.map(r => r.materialId).filter(Boolean));

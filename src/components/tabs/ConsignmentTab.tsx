@@ -1540,7 +1540,7 @@ _${storeHeader.name}_`.trim();
   };
 
   const locationOptions = locations.map(l => ({ value: l.id, label: l.name }));
-  const productOptions  = products.map(p => ({ value: p.id, label: p.name, emoji: p.emoji }));
+  const productOptions  = products.map(p => ({ value: p.id, label: p.name, imageUrl: p.imageUrls?.[0], emoji: p.emoji }));
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
   // ── Riwayat per lokasi (data turunan untuk modal) ─────────────

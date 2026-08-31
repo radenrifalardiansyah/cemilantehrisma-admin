@@ -35,7 +35,7 @@ interface Order {
 }
 
 interface EditItem { productId?: string; name: string; weight: string; qty: number; price: number; }
-interface PickerProduct { id: string; name: string; price: number; weight: string; published?: boolean; }
+interface PickerProduct { id: string; name: string; price: number; weight: string; published?: boolean; emoji?: string; imageUrls?: string[]; }
 
 function SourceBadge({ source }: { source?: 'kasir' | 'portal' }) {
   return source === 'portal' ? (
@@ -1151,7 +1151,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                         </div>
                       ))}
                       <SearchSelect value={addProductId} onChange={addEditItem}
-                        options={pickerProducts.filter(p => p.published !== false).map(p => ({ value: p.id, label: p.name, sublabel: `${p.weight} · ${formatRp(p.price)}` }))}
+                        options={pickerProducts.filter(p => p.published !== false).map(p => ({ value: p.id, label: p.name, sublabel: `${p.weight} · ${formatRp(p.price)}`, imageUrl: p.imageUrls?.[0], emoji: p.emoji }))}
                         placeholder="+ Tambah Produk" searchPlaceholder="Cari produk…" />
                     </div>
                   )}
