@@ -861,28 +861,23 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                   <label style={fieldLabel}>Produk Hasil <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {outputRows.map((row, i) => (
-                      <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
-                              options={productOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-                          </div>
-                          <Tooltip label="Hapus baris">
-                            <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
-                              className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                              <X size={14} />
-                            </button>
-                          </Tooltip>
+                      <div key={i} className="flex items-center gap-2">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
+                            options={productOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                         </div>
-                        <div>
-                          <label style={fieldLabel}>Jumlah (pcs)</label>
-                          {/* min="0" tidak menolak tanda minus saat diketik — tanpa kloning ke '0' di
-                              sini, baris dengan qty negatif diam-diam hilang dari total (di-filter
-                              bersama baris yang memang belum diisi) tanpa pesan apa pun. */}
-                          <input type="number" min="0" value={row.qty}
-                            onChange={e => updateOutputRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
-                            placeholder="0" className="input" />
-                        </div>
+                        {/* min="0" tidak menolak tanda minus saat diketik — tanpa kloning ke '0' di
+                            sini, baris dengan qty negatif diam-diam hilang dari total (di-filter
+                            bersama baris yang memang belum diisi) tanpa pesan apa pun. */}
+                        <input type="number" min="0" value={row.qty}
+                          onChange={e => updateOutputRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
+                          placeholder="Qty" className="input" style={{ width: 84, flexShrink: 0, textAlign: 'center' }} />
+                        <Tooltip label="Hapus baris">
+                          <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
+                            className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                            <X size={14} />
+                          </button>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>
