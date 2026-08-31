@@ -6,14 +6,18 @@ import {
   Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
+import { useToast } from '@/components/Toast';
 import { useViewMode } from '@/lib/useViewMode';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
+import ProductReportPDF from '@/lib/pdf/ProductReportPDF';
+import { toDataUri } from '@/lib/pdf/logo';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -31,6 +35,7 @@ interface Category { id: string; name: string; emoji: string }
 
 export default function ProductReportTab({ creds }: { creds: string }) {
   const headers = { 'x-admin-auth': creds };
+  const toast = useToast();
 
   const [period,     setPeriod]     = useState<PeriodKey>('month');
   const [customFrom, setCustomFrom] = useState('');
@@ -48,6 +53,10 @@ export default function ProductReportTab({ creds }: { creds: string }) {
 
   const [productMeta, setProductMeta] = useState<Map<string, ProductMeta>>(new Map());
   const [categories, setCategories]   = useState<Category[]>([]);
+  const [printingPdf, setPrintingPdf] = useState(false);
+
+  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     fetch(`${API}/api/products`, { headers }).then(async r => {
@@ -60,7 +69,19 @@ export default function ProductReportTab({ creds }: { creds: string }) {
       const { categories: cats } = await r.json() as { categories: Category[] };
       setCategories(cats);
     }).catch(() => {});
+    fetch(`${API}/api/settings`, { headers }).then(async r => {
+      if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { toDataUri(storeInfo.logo).then(setLogoDataUri); }, [storeInfo.logo]);
+
+  const storeHeader = {
+    name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
+    tagline: storeInfo.storeTagline?.trim() || undefined,
+    address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
+    phone:   storeInfo.whatsapp?.trim() || undefined,
+    logo:    logoDataUri,
+  };
 
   const catName  = (id?: string) => categories.find(c => c.id === id)?.name;
   const catEmoji = (id?: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
@@ -195,6 +216,41 @@ export default function ProductReportTab({ creds }: { creds: string }) {
     } finally { setExporting(false); }
   };
 
+  const printReportPdf = async () => {
+    setPrintingPdf(true);
+    try {
+      const rows = displayRows.map((p, i) => ({
+        no: i + 1,
+        productName: p.name,
+        category: catName(productMeta.get(p.productId)?.category),
+        qtyPos: p.qtyPos, qtyOnline: p.qtyOnline, qtyConsignment: p.qtyConsignment,
+        qtyTotal: p.qtyTotal, revenue: p.revenue,
+      }));
+      const blob = await pdf(
+        <ProductReportPDF
+          store={storeHeader}
+          data={{
+            periodLabel, from, to,
+            totalQty: footerTotals.qtyTotal, totalRevenue: footerTotals.revenue, jenisProduk: displayRows.length,
+            rows,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-produk-${from}-sd-${to}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat laporan PDF.');
+    } finally {
+      setPrintingPdf(false);
+    }
+  };
+
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
@@ -276,12 +332,20 @@ export default function ProductReportTab({ creds }: { creds: string }) {
               />
             </div>
             {products.length > 0 && (
-              <Tooltip label="Export Excel">
-                <button onClick={exportExcel} disabled={exporting || loading} aria-label="Export Excel"
-                  className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
-                </button>
-              </Tooltip>
+              <>
+                <Tooltip label="Export Excel">
+                  <button onClick={exportExcel} disabled={exporting || loading} aria-label="Export Excel"
+                    className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="Cetak PDF">
+                  <button onClick={printReportPdf} disabled={printingPdf || loading} aria-label="Cetak PDF"
+                    className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {printingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                  </button>
+                </Tooltip>
+              </>
             )}
             {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           </div>
