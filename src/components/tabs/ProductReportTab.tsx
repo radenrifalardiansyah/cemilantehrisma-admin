@@ -198,11 +198,6 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
-        <Tooltip label="Export Excel">
-          <button onClick={exportExcel} disabled={exporting || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
-            {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
-          </button>
-        </Tooltip>
         <Tooltip label="Refresh">
           <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -280,6 +275,14 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                 placeholder="Cari produk…"
               />
             </div>
+            {products.length > 0 && (
+              <Tooltip label="Export Excel">
+                <button onClick={exportExcel} disabled={exporting || loading} aria-label="Export Excel"
+                  className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+            )}
             {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           </div>
 
