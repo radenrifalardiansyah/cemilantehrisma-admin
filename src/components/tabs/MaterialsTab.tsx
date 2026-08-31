@@ -1668,27 +1668,39 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                       const price = parseFloat(row.price) || 0;
                       const material = materials.find(m => m.id === row.materialId);
                       return (
-                        <div key={i} className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', alignItems: 'center' }}>
-                          <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
-                            options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-                          <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })}
-                            placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" />
-                          <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })}
-                            placeholder="Harga/satuan" />
-                          <Tooltip label="Hapus baris">
-                            <button onClick={() => removeRow(i)} disabled={rows.length === 1}
-                              className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                              <X size={14} />
-                            </button>
-                          </Tooltip>
+                        <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
+                                options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                            </div>
+                            <Tooltip label="Hapus baris">
+                              <button onClick={() => removeRow(i)} disabled={rows.length === 1}
+                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                                <X size={14} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label style={fieldLabel}>{`Qty${material ? ` (${material.unit})` : ''}`}</label>
+                              <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })}
+                                placeholder="0" className="input" />
+                            </div>
+                            <div>
+                              <label style={fieldLabel}>Harga/satuan</label>
+                              <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })}
+                                placeholder="0" />
+                            </div>
+                          </div>
                           {material && (
-                            <p className="text-xs tabular" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', marginTop: -4 }}>
+                            <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>
                               Stok saat ini: {formatQty(material.stockQty)} {material.unit}
                               {qty > 0 && ` · Setelah pembelian: ${formatQty(material.stockQty + qty)} ${material.unit}`}
                             </p>
                           )}
                           {qty > 0 && price > 0 && (
-                            <p className="text-xs tabular" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', marginTop: -4 }}>
+                            <p className="text-xs tabular mt-1" style={{ color: 'var(--text-muted)' }}>
                               Subtotal: {formatRp(qty * price)}
                             </p>
                           )}
