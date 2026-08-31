@@ -12,17 +12,19 @@ export interface RestorableOrder {
   warehouseName?: string;
 }
 
-// Kembalikan stok satu pesanan yang stoknya sudah pernah dipotong. Dua sumber kebenaran:
-// - `source === 'kasir'`: kasir SELALU memotong stok sejak dibuat (termasuk pesanan lama dari
-//   sebelum flag `stockCut` ada — kalau digantung ke flag saja, pesanan lama tidak akan pernah
-//   di-restore saat dibatalkan/dihapus).
-// - `stockCut === true`: dipakai pesanan online, yang baru memotong stok begitu ditandai selesai
-//   (lihat PUT /api/orders/[id]).
+// Kembalikan stok satu pesanan yang stoknya sudah pernah dipotong. Sumber kebenaran:
+// - `stockCut === true`: dipotong sejak dibuat (kasir normal), atau baru dipotong begitu
+//   ditandai selesai (pesanan online, atau kasir yang berisi item "Buka PO" — lihat
+//   PUT /api/orders/[id]).
+// - `source === 'kasir' && stockCut === undefined`: dokumen lama dari sebelum field `stockCut`
+//   ada sama sekali — kasir dulu SELALU memotong stok sejak dibuat, jadi diasumsikan begitu.
+//   Asumsi ini TIDAK berlaku kalau `stockCut` eksplisit `false` (pesanan kasir-PO yang belum
+//   dikonfirmasi), makanya dicek `=== undefined`, bukan sekadar falsy.
 // No-op kalau belum pernah dipotong atau sudah pernah dikembalikan sebelumnya. Harus dipanggil di
 // dalam transaksi milik caller (mis. digabung dengan `tx.update(status)` atau `tx.delete(orderRef)`)
 // supaya restore + perubahan order jadi satu operasi atomik.
 export async function restoreOrderStockInTx(tx: Transaction, db: Firestore, order: RestorableOrder): Promise<void> {
-  const wasStockCut = order.source === 'kasir' || order.stockCut === true;
+  const wasStockCut = order.stockCut === true || (order.source === 'kasir' && order.stockCut === undefined);
   if (!wasStockCut || order.stockRestored) return;
   const items = (order.items ?? []).filter(i => i.qty > 0);
   if (items.length === 0) return;

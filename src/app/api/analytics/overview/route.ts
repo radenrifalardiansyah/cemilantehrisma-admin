@@ -114,8 +114,9 @@ export async function GET(req: NextRequest) {
   const productCostMap = new Map(productCosts);
 
   // ── Sama persis dengan FinanceReportTab: order/rekap "Belum Lunas" tidak dihitung sebagai uang
-  // masuk, dan pesanan portal yang masih "baru" (belum dikonfirmasi) belum dihitung sebagai omzet ──
-  const countedOrders = orders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  // masuk, dan pesanan yang masih "baru" (belum dikonfirmasi — online atau kasir berisi item
+  // "Buka PO") belum dihitung sebagai omzet ──
+  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
   const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
   const posRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
@@ -153,7 +154,7 @@ export async function GET(req: NextRequest) {
   // ── Saldo kas — snapshot sejak awal pencatatan (bukan per-periode), sama rumusnya dengan
   // loadAllTimeSaldo di FinanceReportTab ──
   const allTime = await getAllTimeCash();
-  const allTimeCountedOrders = allTime.orders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  const allTimeCountedOrders = allTime.orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
   const allTimeCountedRecaps = allTime.recaps.filter(r => r.paymentStatus !== 'belum_lunas');
   const allTimeTxSaldo =
     allTimeCountedOrders.reduce((s, o) => s + (o.total ?? 0), 0) +

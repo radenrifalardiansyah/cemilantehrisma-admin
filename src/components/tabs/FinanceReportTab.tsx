@@ -248,7 +248,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const walletList = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
       const allTransfers = tRes.ok ? (await tRes.json() as { transfers: TransferRecord[] }).transfers : [];
 
-      const countedAllOrders = allOrders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+      const countedAllOrders = allOrders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
       const countedAllRecaps = allRecaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
       const saldo =
@@ -346,7 +346,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // Order/rekap "Belum Lunas" tidak ikut dihitung sebagai uang masuk sampai ditandai Lunas
   // (lihat menu Pesanan / riwayat Pembelian Bahan Baku & Rekap Konsinyasi). Field yang hilang
   // (data lama sebelum fitur ini ada) dianggap lunas.
-  const countedOrders = orders.filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
   const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
   const kasirRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
   const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0);

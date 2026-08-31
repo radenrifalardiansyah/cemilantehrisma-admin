@@ -186,10 +186,11 @@ export default function IncomeTab({ creds }: { creds: string }) {
     const orders: OrderForIncome[] = oRes.ok ? (await oRes.json() as { orders: OrderForIncome[] }).orders : [];
     const recaps: RecapForIncome[] = rRes.ok ? (await rRes.json() as { recaps: RecapForIncome[] }).recaps : [];
 
-    // Sama persis dengan definisi "uang masuk terhitung" di Laporan Keuangan — pesanan online
-    // yang belum dikonfirmasi ('baru'), belum lunas, atau dibatalkan tidak ikut dihitung.
+    // Sama persis dengan definisi "uang masuk terhitung" di Laporan Keuangan — pesanan yang
+    // belum dikonfirmasi ('baru' — online atau kasir berisi item "Buka PO"), belum lunas,
+    // atau dibatalkan tidak ikut dihitung.
     const countedOrders = orders.filter(o =>
-      (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+      (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
     const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
     const dateOf = (c?: { seconds: number } | null) => c?.seconds ? new Date(c.seconds * 1000).toISOString().slice(0, 10) : todayISO();
 

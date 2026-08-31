@@ -45,17 +45,15 @@ function SourceBadge({ source }: { source?: 'kasir' | 'portal' }) {
   );
 }
 
-// Pesanan Kasir selalu status 'done' sejak dibuat — badge status baru/selesai cuma relevan untuk
-// pesanan Website ('portal'), yang perlu ditandai manual sebelum ikut terhitung di Laporan Keuangan.
+// Pesanan Kasir biasanya status 'done' sejak dibuat, tapi kalau keranjangnya berisi produk
+// "Buka PO" (stok belum ada), pesanan itu juga disimpan sebagai 'baru' persis pesanan Website —
+// perlu ditandai Selesai manual sebelum stok dipotong & ikut terhitung di Laporan Keuangan.
 // Badge "Dibatalkan" berlaku untuk semua sumber pesanan.
-function StatusBadge({ source, status }: { source?: 'kasir' | 'portal'; status: string }) {
+function StatusBadge({ status }: { status: string }) {
   if (status === 'dibatalkan') return <span className="badge badge-red">Dibatalkan</span>;
-  if (source !== 'portal') return null;
-  return status === 'baru' ? (
-    <span className="badge badge-amber">Baru</span>
-  ) : (
-    <span className="badge badge-green">Selesai</span>
-  );
+  if (status === 'baru') return <span className="badge badge-amber">Baru</span>;
+  if (status === 'selesai') return <span className="badge badge-green">Selesai</span>;
+  return null;
 }
 
 // Belum Lunas bisa terjadi di transaksi Kredit (Reseller) dari Kasir — order lain selalu lunas seketika.
@@ -163,9 +161,10 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   };
   useEffect(() => { load(); }, []);
 
-  // Pesanan Website yang belum ditandai selesai — dipakai buat badge notifikasi di menu sidebar.
+  // Pesanan yang belum ditandai selesai (Website, atau Kasir berisi item "Buka PO") — dipakai
+  // buat badge notifikasi di menu sidebar.
   useEffect(() => {
-    onNewOrdersCountChange?.(orders.filter(o => o.source === 'portal' && o.status === 'baru').length);
+    onNewOrdersCountChange?.(orders.filter(o => o.status === 'baru').length);
   }, [orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko — dipakai saat cetak ulang struk ──
@@ -829,7 +828,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
             const isSelected = selected.has(o.id);
             const actionButtons = (
               <>
-                {o.source === 'portal' && o.status === 'baru' && (
+                {o.status === 'baru' && (
                   <Tooltip label="Tandai Selesai">
                     <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
                       className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Tandai Selesai">
@@ -894,7 +893,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
-                      <StatusBadge source={o.source} status={o.status} />
+                      <StatusBadge status={o.status} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} />
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
@@ -949,7 +948,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
-                      <StatusBadge source={o.source} status={o.status} />
+                      <StatusBadge status={o.status} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} />
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
@@ -992,7 +991,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    {o.source === 'portal' && o.status === 'baru' && (
+                    {o.status === 'baru' && (
                       <Tooltip label="Tandai Selesai">
                         <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
                           className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Tandai Selesai">

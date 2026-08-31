@@ -76,7 +76,7 @@ export function useWalletBalances(creds: string, wallets: WalletDoc[]) {
       if (cancelled) return;
 
       const countedOrders = orders.filter(o =>
-        (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+        (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
       const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
       const balanceOf = (walletId: string) => {

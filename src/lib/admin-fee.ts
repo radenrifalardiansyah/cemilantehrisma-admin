@@ -83,10 +83,10 @@ interface OrderDoc {
 interface RecapDoc { totalRevenue?: number; paymentStatus?: string; createdAt?: Timestamp; locationName?: string }
 
 // Mengikuti filter "counted" yang sama dengan FinanceReportTab (Laporan Keuangan) — pesanan
-// online yang belum dikonfirmasi ('baru'), belum lunas, atau dibatalkan tidak dihitung sebagai
-// omzet, jadi juga tidak dikenakan biaya admin.
+// yang belum dikonfirmasi ('baru' — online atau kasir berisi item "Buka PO"), belum lunas, atau
+// dibatalkan tidak dihitung sebagai omzet, jadi juga tidak dikenakan biaya admin.
 const isCountedOrder = (o: OrderDoc) =>
-  (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan';
+  (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan';
 const isCountedRecap = (r: RecapDoc) => r.paymentStatus !== 'belum_lunas';
 
 export interface AdminFeeTransaction {

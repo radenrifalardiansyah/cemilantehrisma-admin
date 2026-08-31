@@ -363,6 +363,10 @@ export default function PosTab({
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
   const cartTotal = cartSubtotal - discountAmount;
   const hasCart   = cartItems.length > 0;
+  // Kalau ada produk "Buka PO" (stok belum ada) di keranjang, transaksi ini disimpan sebagai
+  // pesanan 'baru' oleh server — stok baru dipotong nanti setelah ditandai Selesai di menu
+  // Pesanan, persis pesanan Website (lihat POST /api/orders).
+  const cartHasOpenPO = cartItems.some(i => posProducts.find(p => p.id === i.productId)?.openPO);
   const amountPaidNum      = parseFloat(amountPaidRaw) || 0;
   const changeAmount       = amountPaidNum - cartTotal;
   const transferAmountNum  = parseFloat(transferAmountRaw) || 0;
@@ -586,7 +590,7 @@ export default function PosTab({
       const todaysOrders = orders.filter(o =>
         o.createdAt?.seconds && new Date(o.createdAt.seconds * 1000).toDateString() === todayKey
         && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan'
-        && (o.source !== 'portal' || o.status !== 'baru')
+        && (o.status !== 'baru')
       );
       const omzet = todaysOrders.reduce((s, o) => s + (o.total ?? 0), 0);
       const count = todaysOrders.length;
@@ -693,8 +697,9 @@ export default function PosTab({
         ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
         customerName: finalCustName, customerPhone: custPhone, cashier: username, pdfUrl,
       });
-      if (paymentMethod === 'kredit') toast.success(`Transaksi kredit tersimpan — tandai Lunas di menu Pesanan kalau ${finalCustName} sudah bayar.`);
-      else if (walletId) setLastWallet(paymentMethod, walletId);
+      if (paymentMethod !== 'kredit' && walletId) setLastWallet(paymentMethod, walletId);
+      if (cartHasOpenPO) toast.success('Pesanan PO tersimpan sebagai "Baru" — tandai Selesai di menu Pesanan begitu barangnya siap, baru stoknya dipotong.');
+      else if (paymentMethod === 'kredit') toast.success(`Transaksi kredit tersimpan — tandai Lunas di menu Pesanan kalau ${finalCustName} sudah bayar.`);
       setInvoiceNo(invNo);
       setWaPhoneDraft(custPhone);
       setPosView('done');
@@ -961,6 +966,11 @@ export default function PosTab({
             {/* Pembayaran */}
             <div className="card p-4">
               <p className="section-label mb-3 flex items-center gap-1.5"><Banknote size={11} /> Metode Pembayaran</p>
+              {cartHasOpenPO && (
+                <p className="text-xs mb-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
+                  Keranjang berisi produk <strong>Buka PO</strong> (stok belum ada) — transaksi ini akan disimpan sebagai pesanan <strong>Baru</strong>, stok baru dipotong nanti setelah ditandai Selesai di menu Pesanan.
+                </p>
+              )}
               <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
                 {availablePaymentMethods.map(m => (
                   <button key={m.id} onClick={() => { setPaymentMethod(m.id); setWalletId(getLastWallet(m.id)); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw(''); }}

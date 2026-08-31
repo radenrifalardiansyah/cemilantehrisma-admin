@@ -57,11 +57,16 @@ export async function POST(req: NextRequest) {
   }
 
   let orderId = '';
+  let isPreOrder = false;
   let pushPayload: { title: string; message: string } | null = null;
   try {
     await db.runTransaction(async tx => {
       const { products, shortages } = await readProductsForDeltas(tx, db, deltas);
-      if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
+      // Item "Buka PO" (lihat menu Produk) boleh dijual walau stoknya belum ada/cukup — pesanan
+      // ini disimpan sebagai 'baru' tanpa memotong stok sekarang, persis pesanan Website, dan baru
+      // dipotong begitu admin menandai Selesai di menu Pesanan (lihat PUT /api/orders/[id]).
+      isPreOrder = [...deltas.keys()].some(pid => !!products.get(pid)?.data.openPO);
+      if (!isPreOrder && shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
       // invoiceNo dibuat di klien dengan resolusi menit (INV-YYYYMMDD-HHmm), tanpa detik/counter —
       // dua transaksi kasir yang selesai dalam menit yang sama bisa kirim invoiceNo identik.
@@ -93,9 +98,9 @@ export async function POST(req: NextRequest) {
         ...rest,
         invoiceNo,
         items: itemsWithCost,
-        status: 'done',
+        status: isPreOrder ? 'baru' : 'done',
         source: 'kasir',
-        stockCut: true,
+        stockCut: !isPreOrder,
         createdAt,
       };
       tx.set(ref, orderData);
@@ -112,14 +117,16 @@ export async function POST(req: NextRequest) {
         actor: guard,
       });
 
-      for (const [productId, delta] of deltas) {
-        const product = products.get(productId)!;
-        applyStockDelta(tx, db, { productId, product, warehouseId: data.warehouseId, delta });
-        writeStockLedgerEntry(tx, db, {
-          productId, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
-          type: 'out', qty: delta,
-          note: `Penjualan Kasir - ${data.invoiceNo ?? ''}`,
-        });
+      if (!isPreOrder) {
+        for (const [productId, delta] of deltas) {
+          const product = products.get(productId)!;
+          applyStockDelta(tx, db, { productId, product, warehouseId: data.warehouseId, delta });
+          writeStockLedgerEntry(tx, db, {
+            productId, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+            type: 'out', qty: delta,
+            note: `Penjualan Kasir - ${data.invoiceNo ?? ''}`,
+          });
+        }
       }
     });
   } catch (err) {
@@ -127,7 +134,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for new order', err));
-  if (deltas.size > 0) after(() => revalidateStorefront('products'));
+  if (!isPreOrder && deltas.size > 0) after(() => revalidateStorefront('products'));
 
   return Response.json({ id: orderId });
 }

@@ -50,7 +50,7 @@ export async function computeWalletBalance(
   const totalPrive = capitalSnap.docs.filter(d => d.data().type === 'prive').reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
   const totalOrders = ordersSnap.docs
     .map(d => d.data())
-    .filter(o => (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan')
+    .filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan')
     .reduce((s, o) => s + (Number(o.total) || 0), 0);
   const totalRecaps = recapsSnap.docs
     .map(d => d.data())

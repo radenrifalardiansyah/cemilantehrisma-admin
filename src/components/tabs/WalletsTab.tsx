@@ -146,7 +146,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
     // Sama persis dengan definisi "uang masuk terhitung" di IncomeTab/FinanceReportTab.
     const countedOrders = orders.filter(o =>
-      (o.source !== 'portal' || o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+      (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
     const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
     // Transfer antar dompet tidak masuk hitungan "Belum Ditentukan" — selalu antara 2 dompet

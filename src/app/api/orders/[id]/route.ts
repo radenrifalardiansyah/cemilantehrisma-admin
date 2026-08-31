@@ -72,9 +72,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         );
 
         // Selisih qty hanya disesuaikan ke stok kalau pesanan ini memang sudah pernah memotong
-        // stok (kasir sejak dibuat, atau pesanan online yang sudah "Selesai") — sama seperti
-        // aturan restore, supaya edit pesanan yang belum memotong stok tidak ikut memotongnya.
-        const stockCut = order.source === 'kasir' || order.stockCut === true;
+        // stok (kasir sejak dibuat, atau pesanan online/kasir-PO yang sudah "Selesai") — sama
+        // seperti aturan restore, supaya edit pesanan yang belum memotong stok tidak ikut
+        // memotongnya. `stockCut === false` eksplisit (pesanan kasir berisi item "Buka PO", atau
+        // pesanan online yang belum dikonfirmasi) mengalahkan asumsi lama "kasir pasti sudah
+        // memotong stok" — asumsi itu cuma dipakai lagi untuk dokumen lama dari sebelum field
+        // `stockCut` ada sama sekali (undefined, bukan false).
+        const stockCut = order.stockCut === true || (order.source === 'kasir' && order.stockCut === undefined);
         const deltas = new Map<string, number>();
         if (stockCut) {
           const oldQty = qtyByProduct(order.items ?? []);
@@ -158,10 +162,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
       if (walletId !== undefined) update.walletId = walletId;
 
-      // Pesanan online ditandai selesai → baru sekarang stoknya dipotong (pesanan 'baru' yang
-      // belum dikonfirmasi tidak pernah mengunci stok). Dipotong dari gudang yang sama dengan
-      // kasir (Pengaturan > Gudang Kasir). Kalau stok kurang, batalkan — status tetap 'baru'.
-      if (status === 'selesai' && order.source === 'portal' && !order.stockCut) {
+      // Pesanan (online ATAU kasir yang berisi item "Buka PO") ditandai selesai → baru sekarang
+      // stoknya dipotong ('baru' yang belum dikonfirmasi tidak pernah mengunci stok). Dipotong
+      // dari gudang yang sama dengan kasir (Pengaturan > Gudang Kasir). Kalau stok kurang,
+      // batalkan — status tetap 'baru'.
+      if (status === 'selesai' && !order.stockCut) {
         const settingsSnap = await tx.get(db.collection('settings').doc('main'));
         const settings = settingsSnap.data() ?? {};
         const warehouseId = settings.posWarehouseId as string | undefined;
