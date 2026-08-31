@@ -27,6 +27,7 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'capital',          label: 'Modal & Prive',      actions: CRUD },
   { key: 'wallets',          label: 'Dompet',             actions: CRUD },
   { key: 'finance-report',   label: 'Laporan Keuangan',   actions: ['view'] },
+  { key: 'product-report',   label: 'Laporan Produk',     actions: ['view'] },
   { key: 'stock',            label: 'Gudang',             actions: ['view', 'edit'] },
   { key: 'materials',        label: 'Bahan Baku',         actions: CRUD },
   { key: 'suppliers',        label: 'Supplier',           actions: CRUD },

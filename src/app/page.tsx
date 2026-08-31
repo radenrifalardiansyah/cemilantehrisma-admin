@@ -30,6 +30,7 @@ import ConsignmentTab from '@/components/tabs/ConsignmentTab';
 import IncomeTab      from '@/components/tabs/IncomeTab';
 import ExpensesTab   from '@/components/tabs/ExpensesTab';
 import FinanceReportTab from '@/components/tabs/FinanceReportTab';
+import ProductReportTab from '@/components/tabs/ProductReportTab';
 import CapitalTab from '@/components/tabs/CapitalTab';
 import WalletsTab from '@/components/tabs/WalletsTab';
 import SettingsTab  from '@/components/tabs/SettingsTab';
@@ -525,16 +526,17 @@ export default function AdminPage() {
     } catch {}
   }, []);
 
-  // ── Badge notifikasi "Pesanan" — pesanan Website yang belum ditandai selesai.
-  // Dipakai supaya badge di sidebar sudah muncul sebelum tab Pesanan pernah dibuka;
-  // begitu tab Pesanan dibuka, OrdersTab yang mengambil alih hitungan lewat state-nya sendiri.
+  // ── Badge notifikasi "Pesanan" — pesanan yang belum ditandai selesai (Website, atau
+  // Kasir yang berisi item "Buka PO"). Dipakai supaya badge di sidebar sudah muncul sebelum
+  // tab Pesanan pernah dibuka; begitu tab Pesanan dibuka, OrdersTab yang mengambil alih
+  // hitungan lewat state-nya sendiri.
   const fetchNewOrdersCount = useCallback(async (authHeader?: string) => {
     const token = authHeader ?? creds;
     try {
       const res = await fetch('/api/orders', { headers: { 'x-admin-auth': token } });
       if (res.ok) {
         const { orders } = await res.json() as { orders: { source?: string; status?: string }[] };
-        setNewOrdersCount(orders.filter(o => o.source === 'portal' && o.status === 'baru').length);
+        setNewOrdersCount(orders.filter(o => o.status === 'baru').length);
       }
     } catch {}
   }, [creds]);
@@ -1362,6 +1364,7 @@ export default function AdminPage() {
         <FinanceReportTab creds={creds}
           onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />
       )}
+      {activeTab === 'product-report' && <ProductReportTab creds={creds} />}
       {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
       {activeTab === 'users'      && <UsersTab     creds={creds} currentUsername={adminUsername} can={(a: Action) => can('users', a)} />}
       {activeTab === 'roles'      && <RolesTab     creds={creds} can={(a: Action) => can('roles', a)} />}

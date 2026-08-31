@@ -3,7 +3,7 @@ import {
   BarChart2, ShoppingCart, Package, Receipt, Tag, Users, Contact, Warehouse,
   Settings, Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark, Coins,
   FileBarChart, User, ShieldCheck, IdCard, Archive, ListTree, Lock, Blocks, History, Bell,
-  Star, Smartphone, Wallet, CreditCard, PiggyBank,
+  Star, Smartphone, Wallet, CreditCard, PiggyBank, ClipboardList,
 } from 'lucide-react';
 
 // Icon names are stored as plain strings on `modules`/`menus` Firestore docs
@@ -13,7 +13,7 @@ export const ICON_REGISTRY: Record<string, LucideIcon> = {
   BarChart2, ShoppingCart, Package, Receipt, Tag, Users, Contact, Warehouse,
   Settings, Boxes, Truck, Factory, Store, Banknote, LineChart, Landmark, Coins,
   FileBarChart, User, ShieldCheck, IdCard, Archive, ListTree, Lock, Blocks, History, Bell,
-  Star, Smartphone, Wallet, CreditCard, PiggyBank,
+  Star, Smartphone, Wallet, CreditCard, PiggyBank, ClipboardList,
 };
 
 export const ICON_NAMES = Object.keys(ICON_REGISTRY);

@@ -53,6 +53,7 @@ const STARTER_PERMISSIONS: Record<string, Record<string, PermCell>> = {
     capital: cell(['view', 'create', 'edit', 'delete']),
     wallets: cell(['view', 'create', 'edit', 'delete']),
     'finance-report': cell(['view']),
+    'product-report': cell(['view']),
     products: cell(['view']),
     orders: cell(['view']),
     resellers: cell(['view']),
@@ -91,7 +92,8 @@ const MENUS: { id: string; moduleId: string; parentId: string | null; featureKey
   { id: 'expenses',        moduleId: 'keuangan', parentId: null, featureKey: 'expenses',        label: 'Pengeluaran',      icon: 'Banknote',  order: 1 },
   { id: 'capital',         moduleId: 'keuangan', parentId: null, featureKey: 'capital',         label: 'Modal & Prive',    icon: 'Landmark',  order: 2 },
   { id: 'finance-report',  moduleId: 'keuangan', parentId: null, featureKey: 'finance-report',  label: 'Laporan Keuangan', icon: 'LineChart', order: 3 },
-  { id: 'wallets',         moduleId: 'keuangan', parentId: null, featureKey: 'wallets',         label: 'Dompet',           icon: 'Wallet',    order: 4 },
+  { id: 'product-report',  moduleId: 'keuangan', parentId: null, featureKey: 'product-report',  label: 'Laporan Produk',   icon: 'ClipboardList', order: 4 },
+  { id: 'wallets',         moduleId: 'keuangan', parentId: null, featureKey: 'wallets',         label: 'Dompet',           icon: 'Wallet',    order: 5 },
 
   { id: 'stock',        moduleId: 'operasional', parentId: null,        featureKey: 'stock',        label: 'Gudang',       icon: 'Warehouse',    order: 0 },
   { id: 'materials',    moduleId: 'operasional', parentId: null,        featureKey: 'materials',    label: 'Bahan Baku',   icon: 'Boxes',        order: 1 },
@@ -148,6 +150,7 @@ export async function POST(req: NextRequest) {
           history: cell(['view']), notifications: cell(['view']),
           'storefront-customers': cell(['view', 'delete']), reviews: cell(['view', 'edit', 'delete']),
           wallets: cell(['view', 'create', 'edit', 'delete']),
+          'product-report': cell(['view']),
         },
         updatedAt: now,
       },
@@ -157,7 +160,7 @@ export async function POST(req: NextRequest) {
   // `finance` predates `wallets` too, and its STARTER_PERMISSIONS entry only applies on first
   // seed — merge it in here the same way, so an already-seeded environment picks it up.
   await db.collection('role_permissions').doc('finance').set(
-    { permissions: { wallets: cell(['view', 'create', 'edit', 'delete']) }, updatedAt: now },
+    { permissions: { wallets: cell(['view', 'create', 'edit', 'delete']), 'product-report': cell(['view']) }, updatedAt: now },
     { merge: true },
   );
 

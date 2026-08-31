@@ -37,7 +37,7 @@ async function unregisterPushToken(creds: string): Promise<void> {
   });
 }
 
-// The 26 fixed screens the app actually has code for (18 original tabs + 5
+// The 27 fixed screens the app actually has code for (19 original tabs + 5
 // RBAC-management tabs + Riwayat + Akun Storefront + Ulasan). Struktur Menu / Modul only
 // control label, icon, order, nesting, and active-state for the sidebar — not which screens
 // exist — so this stays a closed union, just a bigger one than before.
@@ -54,7 +54,7 @@ export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'storefront-customers' | 'reviews'
   | 'stock' | 'stock-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'income' | 'expenses'
-  | 'finance-report' | 'capital' | 'wallets' | 'settings'
+  | 'finance-report' | 'product-report' | 'capital' | 'wallets' | 'settings'
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
   | 'admin-fee' | 'tagihan-admin-fee' | 'notifications';
 
