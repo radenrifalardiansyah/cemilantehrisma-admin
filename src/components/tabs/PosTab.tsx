@@ -49,6 +49,9 @@ function setLastWallet(method: string, walletId: string) {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type CartEntry     = { productId: string; qty: number };
+// Item bebas input di checkout (bukan produk katalog) — mis. ongkir, bungkus kado, atau nominal
+// tambahan lain. Bisa ditambahkan lebih dari satu, ikut masuk ke total & struk seperti item biasa.
+type CustomItem    = { id: string; name: string; price: number; qty: number };
 type PosView       = 'products' | 'cart' | 'done';
 type PaymentMethod = 'cash' | 'transfer' | 'qris' | 'kredit';
 
@@ -81,7 +84,7 @@ type OcrStatus = 'idle' | 'reading' | 'done' | 'failed';
 // perangkat yang menahannya.
 interface HeldTransaction {
   id: string; createdAt: number; label: string;
-  cart: CartEntry[]; custName: string; custPhone: string;
+  cart: CartEntry[]; customItems?: CustomItem[]; custName: string; custPhone: string;
   discountType: 'percent' | 'nominal'; discountRaw: string;
   paymentMethod: PaymentMethod; amountPaidRaw: string;
   transferBank: string; transferAmountRaw: string; transferProofUrl: string;
@@ -118,7 +121,7 @@ function normalizePhone(raw: string) {
 function formatWAMessage(receipt: ReceiptData, store: { name: string; address: string; phone: string }) {
   const SEP = '─────────────────────';
   const itemLines = receipt.items
-    .map((it, i) => `${i + 1}. ${it.name} (${it.weight})\n   ${it.qty} x ${formatCurrency(it.price)} = *${formatCurrency(it.subtotal)}*`)
+    .map((it, i) => `${i + 1}. ${it.name}${it.weight ? ` (${it.weight})` : ''}\n   ${it.qty} x ${formatCurrency(it.price)} = *${formatCurrency(it.subtotal)}*`)
     .join('\n');
   const discountLine = receipt.discount && receipt.discount.amount > 0
     ? `Diskon (${receipt.discount.label}) : -${formatCurrency(receipt.discount.amount)}\n`
@@ -268,6 +271,10 @@ export default function PosTab({
   const [activeCat,    setActiveCat]    = useState<string>('semua');
   const [query,        setQuery]        = useState('');
   const [cart,         setCart]         = useState<CartEntry[]>([]);
+  const [customItems,        setCustomItems]        = useState<CustomItem[]>([]);
+  const [showCustomItemForm, setShowCustomItemForm] = useState(false);
+  const [customItemName,     setCustomItemName]     = useState('');
+  const [customItemPriceRaw, setCustomItemPriceRaw] = useState('');
   const [custName,     setCustName]     = useState('');
   const [custPhone,    setCustPhone]    = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'nominal'>('percent');
@@ -347,11 +354,13 @@ export default function PosTab({
   // ── Cart computations ────────────────────────────────────
   const getQty       = (id: string) => cart.find(i => i.productId === id)?.qty ?? 0;
   const cartItems    = cart.filter(i => i.qty > 0);
-  const cartCount    = cartItems.reduce((s, i) => s + i.qty, 0);
+  const customItemsTotal = customItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const customItemsCount = customItems.reduce((s, i) => s + i.qty, 0);
+  const cartCount    = cartItems.reduce((s, i) => s + i.qty, 0) + customItemsCount;
   const cartSubtotal = cartItems.reduce((s, i) => {
     const p = posProducts.find(pr => pr.id === i.productId);
     return s + (p?.price ?? 0) * i.qty;
-  }, 0);
+  }, 0) + customItemsTotal;
   // Math.max(0, ...) — kolom diskon persen pakai <input type="number"> polos yang tidak menolak
   // tanda minus saat diketik (atribut min="0" tidak dipaksakan ke keystroke), jadi tanpa clamp di
   // sini nilai negatif membuat discountAmount ikut negatif dan justru MENAMBAH total, bukan
@@ -363,7 +372,7 @@ export default function PosTab({
   const discountLabel = discountType === 'percent' ? `${discountNum}%` : formatCurrency(discountAmount);
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
   const cartTotal = cartSubtotal - discountAmount;
-  const hasCart   = cartItems.length > 0;
+  const hasCart   = cartItems.length > 0 || customItems.length > 0;
   // Kalau keranjang berisi produk "Buka PO", kasir BOLEH (tidak otomatis) menandai transaksi ini
   // sebagai PO lewat checkbox "Jual sebagai PO" — lepas dari stok saat ini. Kalau ditandai, server
   // menyimpan pesanan sebagai 'baru' tanpa memotong stok sekarang, persis pesanan Website, baru
@@ -419,9 +428,26 @@ export default function PosTab({
       : [i]
     )
   );
-  const clearCart = () => setCart([]);
+
+  // Item bebas input (bukan produk katalog) — bisa ditambahkan berkali-kali, tiap satu jadi
+  // baris tersendiri di keranjang/struk supaya keterangannya tetap jelas per item.
+  const addCustomItem = () => {
+    const name  = customItemName.trim();
+    const price = parseFloat(customItemPriceRaw) || 0;
+    if (!name || price <= 0) return;
+    setCustomItems(prev => [...prev, { id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, price, qty: 1 }]);
+    setCustomItemName(''); setCustomItemPriceRaw(''); setShowCustomItemForm(false);
+  };
+  const removeCustomItem    = (id: string) => setCustomItems(prev => prev.filter(i => i.id !== id));
+  const addCustomItemQty    = (id: string) => setCustomItems(prev => prev.map(i => i.id === id ? { ...i, qty: i.qty + 1 } : i));
+  const removeCustomItemQty = (id: string) => setCustomItems(prev =>
+    prev.flatMap(i => i.id === id ? (i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []) : [i])
+  );
+
+  const clearCart = () => { setCart([]); setCustomItems([]); };
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); setQuery(''); clearCart();
+    setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw('');
     setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw(''); setSellAsPO(false);
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
@@ -511,21 +537,22 @@ export default function PosTab({
     const subtotal = h.cart.reduce((s, i) => {
       const p = posProducts.find(pr => pr.id === i.productId);
       return s + (p?.price ?? 0) * i.qty;
-    }, 0);
+    }, 0) + (h.customItems ?? []).reduce((s, i) => s + i.price * i.qty, 0);
     const discNum = Math.max(0, parseFloat(h.discountRaw) || 0);
     const disc = h.discountType === 'percent'
       ? Math.min(Math.round(subtotal * discNum / 100), subtotal)
       : Math.min(discNum, subtotal);
     return subtotal - disc;
   };
-  const heldItemCount = (h: HeldTransaction) => h.cart.reduce((s, i) => s + i.qty, 0);
+  const heldItemCount = (h: HeldTransaction) =>
+    h.cart.reduce((s, i) => s + i.qty, 0) + (h.customItems ?? []).reduce((s, i) => s + i.qty, 0);
 
   // Kirim keranjang berjalan ke server sebagai transaksi tertahan; mengembalikan
   // record tersimpan (dengan id dari server) atau null kalau gagal.
   const holdCurrentCart = async (createdAt: number): Promise<HeldTransaction | null> => {
     const body = {
       label: custName.trim() || `Transaksi ${heldTransactions.length + 1}`,
-      cart: cartItems, custName, custPhone, discountType, discountRaw, paymentMethod,
+      cart: cartItems, customItems, custName, custPhone, discountType, discountRaw, paymentMethod,
       amountPaidRaw, transferBank, transferAmountRaw, transferProofUrl, selectedCustRef,
       createdAt,
     };
@@ -562,7 +589,7 @@ export default function PosTab({
     }
     fetch(`/api/pos/held/${h.id}`, { method: 'DELETE', headers: { 'x-admin-auth': creds } }).catch(() => {});
     setHeldTransactions(prev => prev.filter(x => x.id !== h.id));
-    setCart(h.cart); setCustName(h.custName); setCustPhone(h.custPhone);
+    setCart(h.cart); setCustomItems(h.customItems ?? []); setCustName(h.custName); setCustPhone(h.custPhone);
     setDiscountType(h.discountType); setDiscountRaw(h.discountRaw);
     setPaymentMethod(h.paymentMethod); setAmountPaidRaw(h.amountPaidRaw);
     setTransferBank(h.transferBank); setTransferAmountRaw(h.transferAmountRaw);
@@ -649,10 +676,15 @@ export default function PosTab({
       const invNo = `INV-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
       const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       const finalCustName = custName.trim() || 'Pelanggan Umum';
-      const items = cartItems.map(i => {
-        const p = posProducts.find(pr => pr.id === i.productId)!;
-        return { productId: i.productId, name: p.name, weight: p.weight, qty: i.qty, price: p.price, subtotal: p.price * i.qty };
-      });
+      // Item bebas input tidak punya productId — server (/api/orders) sudah didesain untuk skip
+      // pemotongan stok & HPP untuk item semacam ini, jadi aman digabung apa adanya ke `items`.
+      const items = [
+        ...cartItems.map(i => {
+          const p = posProducts.find(pr => pr.id === i.productId)!;
+          return { productId: i.productId, name: p.name, weight: p.weight, qty: i.qty, price: p.price, subtotal: p.price * i.qty };
+        }),
+        ...customItems.map(ci => ({ name: ci.name, weight: '', qty: ci.qty, price: ci.price, subtotal: ci.price * ci.qty })),
+      ];
       const res = await fetch(`${MAIN_APP}/api/admin/invoice-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
@@ -826,7 +858,7 @@ export default function PosTab({
               </span>
             </div>
             <div className="flex-1 text-left min-w-0">
-              <p className="text-[11px] text-white/70 truncate">{cartItems.length} produk · {cartCount} pcs</p>
+              <p className="text-[11px] text-white/70 truncate">{cartItems.length + customItems.length} item · {cartCount} pcs</p>
               <p className="text-[15px] font-black tabular">{formatCurrency(cartTotal)}</p>
             </div>
             <span className="text-sm opacity-90 flex-shrink-0">Checkout →</span>
@@ -857,12 +889,38 @@ export default function PosTab({
             )}
           </div>
           {!hasCart ? (
-            <div className="px-4 py-10 text-center">
-              <ShoppingCart size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada item. Pilih produk di sebelah kiri.</p>
+            <div className="px-4 py-8 text-center space-y-3">
+              <div>
+                <ShoppingCart size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada item. Pilih produk di sebelah kiri.</p>
+              </div>
+              {showCustomItemForm ? (
+                <div className="space-y-2 text-left">
+                  <input type="text" value={customItemName} onChange={e => setCustomItemName(e.target.value)}
+                    className="input" placeholder="Nama item / keterangan (mis. Ongkir, Bungkus kado)" autoFocus />
+                  <NumberInput value={customItemPriceRaw} onChange={setCustomItemPriceRaw} placeholder="Nominal (Rp)" />
+                  <div className="flex gap-2">
+                    <button onClick={() => { setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw(''); }}
+                      className="btn-ghost flex-1 justify-center py-2 text-xs font-semibold">
+                      Batal
+                    </button>
+                    <button onClick={addCustomItem} disabled={!customItemName.trim() || !(parseFloat(customItemPriceRaw) > 0)}
+                      className="btn-primary flex-1 justify-center py-2 text-xs disabled:opacity-40">
+                      Tambah
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setShowCustomItemForm(true)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold"
+                  style={{ color: 'var(--accent)', background: 'var(--accent-bg)' }}>
+                  <Plus size={12} /> Tambah Item / Nominal Lain
+                </button>
+              )}
             </div>
           ) : (
             <>
+              {cartItems.length > 0 && (
               <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                 {cartItems.map(item => {
                   const p = posProducts.find(pr => pr.id === item.productId);
@@ -900,6 +958,72 @@ export default function PosTab({
                     </div>
                   );
                 })}
+              </div>
+              )}
+              {customItems.length > 0 && (
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)', borderTop: '1px solid var(--border-2)' }}>
+                {customItems.map(item => (
+                  <div key={item.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--surface-2)' }}>
+                      <Tag size={15} style={{ color: 'var(--text-muted)' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
+                      <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatCurrency(item.price)} / item · bebas input</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Tooltip label="Kurangi jumlah">
+                        <button onClick={() => removeCustomItemQty(item.id)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <Minus size={11} strokeWidth={2.5} />
+                        </button>
+                      </Tooltip>
+                      <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
+                      <Tooltip label="Tambah jumlah">
+                        <button onClick={() => addCustomItemQty(item.id)}
+                          className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
+                          <Plus size={11} strokeWidth={2.5} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                    <span className="text-sm font-bold tabular w-16 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>
+                      {formatCurrency(item.price * item.qty)}
+                    </span>
+                    <Tooltip label="Hapus item">
+                      <button onClick={() => removeCustomItem(item.id)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                        <Trash2 size={12} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                ))}
+              </div>
+              )}
+              <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+                {showCustomItemForm ? (
+                  <div className="space-y-2">
+                    <input type="text" value={customItemName} onChange={e => setCustomItemName(e.target.value)}
+                      className="input" placeholder="Nama item / keterangan (mis. Ongkir, Bungkus kado)" autoFocus />
+                    <NumberInput value={customItemPriceRaw} onChange={setCustomItemPriceRaw} placeholder="Nominal (Rp)" />
+                    <div className="flex gap-2">
+                      <button onClick={() => { setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw(''); }}
+                        className="btn-ghost flex-1 justify-center py-2 text-xs font-semibold">
+                        Batal
+                      </button>
+                      <button onClick={addCustomItem} disabled={!customItemName.trim() || !(parseFloat(customItemPriceRaw) > 0)}
+                        className="btn-primary flex-1 justify-center py-2 text-xs disabled:opacity-40">
+                        Tambah
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowCustomItemForm(true)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold"
+                    style={{ color: 'var(--accent)', background: 'var(--accent-bg)' }}>
+                    <Plus size={12} /> Tambah Item / Nominal Lain
+                  </button>
+                )}
               </div>
               <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)', borderTop: '1px solid var(--border-2)' }}>
                 {discountAmount > 0 && (
@@ -1444,7 +1568,7 @@ export default function PosTab({
         <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
         {lastReceipt.items.map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
-            <div>{it.name} ({it.weight})</div>
+            <div>{it.name}{it.weight ? ` (${it.weight})` : ''}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>{it.qty} x {formatCurrency(it.price)}</span>
               <span>{formatCurrency(it.subtotal)}</span>
@@ -1486,7 +1610,7 @@ export default function PosTab({
       </Tooltip>
       <div className="flex-1">
         <p className="text-[15px] font-extrabold" style={{ color: 'var(--text-primary)' }}>Detail &amp; Checkout</p>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{`${cartItems.length} jenis · ${cartCount} pcs`}</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{`${cartItems.length + customItems.length} jenis · ${cartCount} pcs`}</p>
       </div>
     </div>
   );

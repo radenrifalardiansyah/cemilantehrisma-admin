@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
   const data = {
     label: String(body.label ?? ''),
     cart: Array.isArray(body.cart) ? body.cart : [],
+    customItems: Array.isArray(body.customItems) ? body.customItems : [],
     custName: String(body.custName ?? ''),
     custPhone: String(body.custPhone ?? ''),
     discountType: body.discountType === 'nominal' ? 'nominal' : 'percent',
