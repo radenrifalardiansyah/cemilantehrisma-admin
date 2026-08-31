@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -146,6 +147,9 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
+  const [onlyBelumLunas, setOnlyBelumLunas] = useState(false);
+  const [page,     setPage]     = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -155,7 +159,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
 
   const load = async () => {
     setLoading(true);
-    const r = await fetch(`${API}/api/orders`, { headers });
+    const r = await fetch(`${API}/api/orders?from=2000-01-01`, { headers });
     if (r.ok) { const { orders: o } = await r.json() as { orders: Order[] }; setOrders(o); }
     setLoading(false);
   };
@@ -291,8 +295,32 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     setMarkLunasWalletId('');
   };
 
+  const [showBulkMarkLunas, setShowBulkMarkLunas] = useState(false);
+  const [bulkMarkLunasWalletId, setBulkMarkLunasWalletId] = useState('');
+  const [bulkMarkingLunas, setBulkMarkingLunas] = useState(false);
+  const belumLunasSelected = orders.filter(o => selected.has(o.id) && o.paymentStatus === 'belum_lunas');
+  const confirmBulkMarkLunas = async () => {
+    if (!bulkMarkLunasWalletId || belumLunasSelected.length === 0) return;
+    setBulkMarkingLunas(true);
+    const ids = belumLunasSelected.map(o => o.id);
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/orders/${id}`, {
+      method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentStatus: 'lunas', walletId: bulkMarkLunasWalletId }),
+    }).then(r => r.ok).catch(() => false)));
+    const okCount = results.filter(Boolean).length;
+    await load();
+    refetchBalances();
+    setSelected(new Set());
+    setShowBulkMarkLunas(false);
+    setBulkMarkLunasWalletId('');
+    if (okCount === ids.length) toast.success(`${okCount} pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.`);
+    else toast.error(`Hanya ${okCount} dari ${ids.length} pesanan berhasil ditandai lunas.`);
+    setBulkMarkingLunas(false);
+  };
+
   // ─── Pencarian & seleksi massal ─────────────────────────────────────────────
   const filtered = orders.filter(o => {
+    if (onlyBelumLunas && o.paymentStatus !== 'belum_lunas') return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return o.customerName?.toLowerCase().includes(q)
@@ -300,11 +328,18 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
       || o.customerPhone?.toLowerCase().includes(q);
   });
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const goPage    = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+  const resetPage = () => setPage(1);
+
   const toggleSelect = (id: string) =>
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const toggleAll = () => {
-    const ids = filtered.map(o => o.id);
+  const togglePageAll = () => {
+    const ids = paginated.map(o => o.id);
     const allSelected = ids.every(id => selected.has(id));
     setSelected(s => {
       const n = new Set(s);
@@ -730,6 +765,25 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   return (
     <div className="p-4 lg:p-6 space-y-5">
 
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { icon: <ShoppingBag size={16}/>, label: 'Total Transaksi', val: orders.length.toString(), color: 'var(--accent)', bg: 'var(--accent-bg)' },
+          { icon: <TrendingUp  size={16}/>, label: 'Total Omzet',     val: formatRp(totalRevenue), color: 'var(--success)', bg: 'var(--success-bg)' },
+          { icon: <Receipt     size={16}/>, label: 'Rata-rata Order', val: formatRp(avgOrder), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
+        ].map((c, i) => (
+          <div key={i} className="card p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.bg, color: c.color }}>
+              {c.icon}
+            </div>
+            <div>
+              <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{c.val}</p>
+              <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Header */}
       <div className="flex flex-row items-center gap-2 sm:gap-3">
         {orders.length > 0 && (
@@ -737,7 +791,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
               className="input text-sm w-full"
               style={{ paddingLeft: 38, height: HEADER_BTN_H }}
               placeholder="Cari nama pelanggan, no. invoice, atau no. HP…"
@@ -758,6 +812,19 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importOrdersFromExcel(f); e.target.value = ''; }} />
           {orders.length > 0 && (
+            <button
+              onClick={() => { setOnlyBelumLunas(v => !v); resetPage(); }}
+              className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+              style={{
+                height: HEADER_BTN_H,
+                background: onlyBelumLunas ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+                color: onlyBelumLunas ? 'white' : 'var(--text-muted)',
+              }}
+            >
+              <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
+            </button>
+          )}
+          {orders.length > 0 && (
             <Tooltip label="Export Excel">
               <button onClick={() => exportExcel(orders)} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
@@ -776,25 +843,6 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
         </Tooltip>
       </TopbarPortal>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {[
-          { icon: <ShoppingBag size={16}/>, label: 'Total Transaksi', val: orders.length.toString(), color: 'var(--accent)', bg: 'var(--accent-bg)' },
-          { icon: <TrendingUp  size={16}/>, label: 'Total Omzet',     val: formatRp(totalRevenue), color: 'var(--success)', bg: 'var(--success-bg)' },
-          { icon: <Receipt     size={16}/>, label: 'Rata-rata Order', val: formatRp(avgOrder), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
-        ].map((c, i) => (
-          <div key={i} className="card p-4 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.bg, color: c.color }}>
-              {c.icon}
-            </div>
-            <div>
-              <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{c.val}</p>
-              <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Orders list */}
       {orders.length === 0 ? (
         <div className="card p-12 text-center">
@@ -805,15 +853,15 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
       ) : (
         <>
           {/* Select-all bar */}
-          {filtered.length > 0 && (
+          {paginated.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
               <Checkbox
-                checked={filtered.every(o => selected.has(o.id))}
-                indeterminate={filtered.some(o => selected.has(o.id)) && !filtered.every(o => selected.has(o.id))}
-                onChange={toggleAll}
+                checked={paginated.every(o => selected.has(o.id))}
+                indeterminate={paginated.some(o => selected.has(o.id)) && !paginated.every(o => selected.has(o.id))}
+                onChange={togglePageAll}
               />
               <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-                {selected.size > 0 ? `${selected.size} dipilih` : `${filtered.length} pesanan`}
+                {selected.size > 0 ? `${selected.size} dipilih` : `${paginated.length} pesanan di halaman ini`}
               </span>
             </div>
           )}
@@ -824,7 +872,8 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
             </div>
           ) : view === 'table' ? (
         <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-          {filtered.map((o, idx) => {
+          {paginated.map((o, idx) => {
+            const rowNum = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
             const isSelected = selected.has(o.id);
             const actionButtons = (
               <>
@@ -882,7 +931,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                 <div className="flex items-center gap-3">
                   <Checkbox checked={isSelected} onChange={() => toggleSelect(o.id)} />
                   <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
-                    {idx + 1}
+                    {rowNum}
                   </span>
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ background: 'var(--accent-bg)' }}>
@@ -930,7 +979,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(o => {
+          {paginated.map(o => {
             const isSelected = selected.has(o.id);
             return (
             <div key={o.id} ref={el => { rowRefs.current[o.id] = el; }} className="card overflow-hidden relative"
@@ -1020,6 +1069,50 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
           })}
         </div>
           )}
+
+          {/* Pagination */}
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {filtered.length} pesanan · halaman {safePage} dari {totalPages}
+                </p>
+                <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); resetPage(); }} />
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goPage(n as number)}
+                            className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={safePage === n
+                              ? { background: 'var(--accent)', color: '#fff' }
+                              : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )
+                  }
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -1036,6 +1129,14 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
+            {belumLunasSelected.length > 0 && (
+              <button onClick={() => { setBulkMarkLunasWalletId(''); setShowBulkMarkLunas(true); }}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+                style={{ background: 'var(--success)', color: '#fff' }}>
+                <Check size={13} />
+                Tandai Lunas {belumLunasSelected.length < selected.size ? `(${belumLunasSelected.length})` : ''}
+              </button>
+            )}
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'var(--danger)', color: '#fff' }}>
@@ -1082,6 +1183,45 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                 className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
                 {markingLunasId === markLunasOrder.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 Tandai Lunas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkMarkLunas && (
+        <div className="modal-overlay" onClick={() => !bulkMarkingLunas && setShowBulkMarkLunas(false)}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><CheckCircle2 size={17} /></div>
+                <div>
+                  <p className="modal-title">Tandai Lunas</p>
+                  <p className="modal-subtitle">{belumLunasSelected.length} pesanan terpilih</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setShowBulkMarkLunas(false)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <SearchSelect value={bulkMarkLunasWalletId} onChange={setBulkMarkLunasWalletId}
+                options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+              {bulkMarkLunasWalletId && (
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Saldo saat ini: {formatRp(walletBalances[bulkMarkLunasWalletId] ?? 0)}
+                </p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowBulkMarkLunas(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={confirmBulkMarkLunas} disabled={!bulkMarkLunasWalletId || bulkMarkingLunas}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {bulkMarkingLunas ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Tandai Lunas ({belumLunasSelected.length})
               </button>
             </div>
           </div>
