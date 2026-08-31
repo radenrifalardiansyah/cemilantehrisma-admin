@@ -76,8 +76,9 @@ interface StoreInfo {
 
 type OcrStatus = 'idle' | 'reading' | 'done' | 'failed';
 
-// Transaksi yang ditahan sementara (Hold/Pending) — disimpan di localStorage supaya
-// tidak hilang kalau tab kasir ter-refresh sebelum dilanjutkan.
+// Transaksi yang ditahan sementara (Hold/Pending) — disimpan di server (koleksi
+// posHeldTransactions) supaya bisa dilanjutkan dari perangkat manapun, bukan cuma
+// perangkat yang menahannya.
 interface HeldTransaction {
   id: string; createdAt: number; label: string;
   cart: CartEntry[]; custName: string; custPhone: string;
@@ -86,7 +87,6 @@ interface HeldTransaction {
   transferBank: string; transferAmountRaw: string; transferProofUrl: string;
   selectedCustRef: string;
 }
-const HELD_STORAGE_KEY = 'pos_held_transactions';
 
 // Data order mentah dari /api/orders — dipakai untuk hitung Laporan Penjualan hari ini
 interface PosOrderRecord {
@@ -296,7 +296,7 @@ export default function PosTab({
   const [receiptPrintedAt, setReceiptPrintedAt] = useState('');
   const [waPhoneDraft, setWaPhoneDraft] = useState('');
   const [heldTransactions, setHeldTransactions] = useState<HeldTransaction[]>([]);
-  const [heldLoaded,       setHeldLoaded]       = useState(false);
+  const [heldLoading,      setHeldLoading]      = useState(false);
   const [heldModalOpen,    setHeldModalOpen]    = useState(false);
   const [reportOpen,      setReportOpen]      = useState(false);
   const [reportLoading,   setReportLoading]   = useState(false);
@@ -328,7 +328,7 @@ export default function PosTab({
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await onRefresh();
+      await Promise.all([onRefresh(), fetchHeldTransactions()]);
       toast.success('Data kasir diperbarui.');
     } catch {
       toast.error('Gagal memuat ulang data.');
@@ -490,18 +490,21 @@ export default function PosTab({
   // ── Laporkan jumlah cart ke parent (untuk badge sidebar/bottom-nav) ──
   useEffect(() => { onCartChange(cartCount); }, [cartCount, onCartChange]);
 
-  // ── Transaksi tertahan (Hold/Pending) — muat & simpan ke localStorage ──
-  useEffect(() => {
+  // ── Transaksi tertahan (Hold/Pending) — disimpan di server (Firestore) supaya
+  // bisa dilanjutkan dari perangkat manapun, bukan cuma perangkat yang menahannya.
+  const fetchHeldTransactions = async () => {
+    if (!creds) return;
+    setHeldLoading(true);
     try {
-      const raw = localStorage.getItem(HELD_STORAGE_KEY);
-      if (raw) setHeldTransactions(JSON.parse(raw));
-    } catch { /* abaikan data korup */ }
-    setHeldLoaded(true);
-  }, []);
+      const r = await fetch('/api/pos/held', { headers: { 'x-admin-auth': creds } });
+      if (r.ok) setHeldTransactions((await r.json() as { held: HeldTransaction[] }).held);
+    } catch { /* biarkan daftar lama tampil kalau gagal muat ulang */ }
+    setHeldLoading(false);
+  };
   useEffect(() => {
-    if (!heldLoaded) return;
-    localStorage.setItem(HELD_STORAGE_KEY, JSON.stringify(heldTransactions));
-  }, [heldTransactions, heldLoaded]);
+    if (!isActive || !creds) return;
+    fetchHeldTransactions();
+  }, [isActive, creds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const heldTotal = (h: HeldTransaction) => {
     const subtotal = h.cart.reduce((s, i) => {
@@ -516,36 +519,48 @@ export default function PosTab({
   };
   const heldItemCount = (h: HeldTransaction) => h.cart.reduce((s, i) => s + i.qty, 0);
 
-  // Tahan transaksi berjalan: simpan ke daftar tertahan lalu kosongkan form untuk pelanggan berikutnya
-  const holdTransaction = () => {
-    if (!hasCart) return;
-    setHeldTransactions(prev => [...prev, {
-      id: `hold-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      createdAt: Date.now(),
-      label: custName.trim() || `Transaksi ${prev.length + 1}`,
+  // Kirim keranjang berjalan ke server sebagai transaksi tertahan; mengembalikan
+  // record tersimpan (dengan id dari server) atau null kalau gagal.
+  const holdCurrentCart = async (createdAt: number): Promise<HeldTransaction | null> => {
+    const body = {
+      label: custName.trim() || `Transaksi ${heldTransactions.length + 1}`,
       cart: cartItems, custName, custPhone, discountType, discountRaw, paymentMethod,
       amountPaidRaw, transferBank, transferAmountRaw, transferProofUrl, selectedCustRef,
-    }]);
+      createdAt,
+    };
+    try {
+      const r = await fetch('/api/pos/held', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) return null;
+      return (await r.json() as { held: HeldTransaction }).held;
+    } catch { return null; }
+  };
+
+  // Tahan transaksi berjalan: simpan ke server lalu kosongkan form untuk pelanggan berikutnya
+  const holdTransaction = async () => {
+    if (!hasCart) return;
+    const held = await holdCurrentCart(Date.now());
+    if (!held) { toast.error('Gagal menahan transaksi.'); return; }
+    setHeldTransactions(prev => [...prev, held]);
     clearCart(); setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setOcrStatus('idle'); setSelectedCustRef(''); setProcessErr('');
     setPosView('products');
-    toast.success('Transaksi ditahan. Lanjutkan lagi lewat menu "Tertahan".');
+    toast.success('Transaksi ditahan. Lanjutkan lagi lewat menu "Tertahan" dari perangkat manapun.');
   };
 
   // Lanjutkan transaksi tertahan — kalau ada keranjang berjalan, itu ikut ditahan dulu supaya tidak hilang
-  const resumeHeldTransaction = (h: HeldTransaction) => {
+  const resumeHeldTransaction = async (h: HeldTransaction) => {
     if (hasCart && !window.confirm('Keranjang saat ini akan ditahan otomatis agar tidak hilang. Lanjutkan ke transaksi tertahan ini?')) return;
-    setHeldTransactions(prev => {
-      const rest = prev.filter(x => x.id !== h.id);
-      if (!hasCart) return rest;
-      return [...rest, {
-        id: `hold-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        createdAt: Date.now(), label: custName.trim() || `Transaksi ${rest.length + 1}`,
-        cart: cartItems, custName, custPhone, discountType, discountRaw, paymentMethod,
-        amountPaidRaw, transferBank, transferAmountRaw, transferProofUrl, selectedCustRef,
-      }];
-    });
+    if (hasCart) {
+      const held = await holdCurrentCart(Date.now());
+      if (!held) { toast.error('Gagal menahan keranjang saat ini.'); return; }
+      setHeldTransactions(prev => [...prev.filter(x => x.id !== h.id), held]);
+    }
+    fetch(`/api/pos/held/${h.id}`, { method: 'DELETE', headers: { 'x-admin-auth': creds } }).catch(() => {});
+    setHeldTransactions(prev => prev.filter(x => x.id !== h.id));
     setCart(h.cart); setCustName(h.custName); setCustPhone(h.custPhone);
     setDiscountType(h.discountType); setDiscountRaw(h.discountRaw);
     setPaymentMethod(h.paymentMethod); setAmountPaidRaw(h.amountPaidRaw);
@@ -556,9 +571,12 @@ export default function PosTab({
     setPosView('cart');
   };
 
-  const deleteHeldTransaction = (id: string) => {
+  const deleteHeldTransaction = async (id: string) => {
     if (!window.confirm('Hapus transaksi tertahan ini? Tindakan ini tidak bisa dibatalkan.')) return;
-    setHeldTransactions(prev => prev.filter(x => x.id !== id));
+    const prev = heldTransactions;
+    setHeldTransactions(cur => cur.filter(x => x.id !== id));
+    const r = await fetch(`/api/pos/held/${id}`, { method: 'DELETE', headers: { 'x-admin-auth': creds } }).catch(() => null);
+    if (!r || !r.ok) { setHeldTransactions(prev); toast.error('Gagal menghapus transaksi tertahan.'); }
   };
 
   // ── Laporan Penjualan — omzet, produk terlaris & laba hari ini ────────────
@@ -1183,7 +1201,7 @@ export default function PosTab({
 
   const heldBar = heldTransactions.length > 0 && (
     <Tooltip label={`Tertahan (${heldTransactions.length})`}>
-      <button onClick={() => setHeldModalOpen(true)} title="Tertahan" className="btn-ghost gap-2 text-xs h-9 w-9 p-0 flex items-center justify-center sm:w-auto sm:px-3.5 sm:justify-start relative" style={{ color: 'var(--warning)' }}>
+      <button onClick={() => { setHeldModalOpen(true); fetchHeldTransactions(); }} title="Tertahan" className="btn-ghost gap-2 text-xs h-9 w-9 p-0 flex items-center justify-center sm:w-auto sm:px-3.5 sm:justify-start relative" style={{ color: 'var(--warning)' }}>
         <PauseCircle size={14} />
         <span className="hidden sm:inline">Tertahan ({heldTransactions.length})</span>
         <span
@@ -1222,7 +1240,10 @@ export default function PosTab({
             <div className="modal-icon"><PauseCircle size={17} /></div>
             <div>
               <p className="modal-title">Transaksi Tertahan</p>
-              <p className="modal-subtitle">{heldTransactions.length} transaksi menunggu dilanjutkan</p>
+              <p className="modal-subtitle flex items-center gap-1.5">
+                {heldLoading && <Loader2 size={11} className="animate-spin" />}
+                {heldTransactions.length} transaksi menunggu dilanjutkan
+              </p>
             </div>
           </div>
           <Tooltip label="Tutup"><button onClick={() => setHeldModalOpen(false)} className="modal-close"><X size={14} /></button></Tooltip>
