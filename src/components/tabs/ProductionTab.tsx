@@ -894,12 +894,17 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       const qty = parseFloat(row.qty) || 0;
                       const shortage = !!material && qty > material.stockQty;
                       return (
-                        <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                          <div className="flex items-center gap-2 mb-2">
+                        <div key={i}>
+                          <div className="flex items-center gap-2">
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
                                 options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
                             </div>
+                            {/* Lihat komentar sama di input qty output di atas — cegah negatif
+                                langsung di sini, bukan hanya menyaringnya diam-diam dari total. */}
+                            <input type="number" min="0" value={row.qty}
+                              onChange={e => updateRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
+                              placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" style={{ width: 84, flexShrink: 0, textAlign: 'center' }} />
                             <Tooltip label="Hapus baris">
                               <button onClick={() => removeRow(i)} disabled={rows.length === 1}
                                 className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
@@ -907,16 +912,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                               </button>
                             </Tooltip>
                           </div>
-                          <div>
-                            <label style={fieldLabel}>{`Qty${material ? ` (${material.unit})` : ''}`}</label>
-                            {/* Lihat komentar sama di input qty output di atas — cegah negatif
-                                langsung di sini, bukan hanya menyaringnya diam-diam dari total. */}
-                            <input type="number" min="0" value={row.qty}
-                              onChange={e => updateRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
-                              placeholder="0" className="input" />
-                          </div>
                           {material && (
-                            <p className="text-xs tabular mt-2" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
+                            <p className="text-xs tabular mt-1.5" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
                               {qty === 0
                                 ? `Stok tersedia: ${formatQty(material.stockQty)} ${material.unit}`
                                 : shortage
