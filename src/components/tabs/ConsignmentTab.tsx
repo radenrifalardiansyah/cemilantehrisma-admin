@@ -1152,6 +1152,9 @@ _${storeHeader.name}_`.trim();
   const [markingRecapId, setMarkingRecapId] = useState<string | null>(null);
   const [markLunasRecap, setMarkLunasRecap] = useState<Recap | null>(null);
   const [markLunasRecapWalletId, setMarkLunasRecapWalletId] = useState('');
+  const [showBulkMarkLunasRecaps, setShowBulkMarkLunasRecaps] = useState(false);
+  const [bulkMarkLunasWalletId, setBulkMarkLunasWalletId] = useState('');
+  const [bulkMarkingLunasRecaps, setBulkMarkingLunasRecaps] = useState(false);
   const [recapView, setRecapView] = useViewMode('consignment-recaps', 'table');
 
   const [recapSearch,   setRecapSearch]   = useState('');
@@ -1474,6 +1477,27 @@ _${storeHeader.name}_`.trim();
     if (okIds.length === count) toast.success(`${count} riwayat rekap berhasil dihapus.`);
     else toast.error(`Hanya ${okIds.length} dari ${count} riwayat rekap berhasil dihapus.`);
     setBulkDeletingRecaps(false);
+  };
+
+  const belumLunasSelectedRecaps = recaps.filter(r => selectedRecaps.has(r.id) && r.paymentStatus === 'belum_lunas');
+
+  const confirmBulkMarkRecapsLunas = async () => {
+    if (!bulkMarkLunasWalletId || belumLunasSelectedRecaps.length === 0) return;
+    setBulkMarkingLunasRecaps(true);
+    const ids = belumLunasSelectedRecaps.map(r => r.id);
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/recap/${id}`, {
+      method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletId: bulkMarkLunasWalletId }),
+    })));
+    const okCount = results.filter(r => r.ok).length;
+    await loadRecaps();
+    refetchBalances();
+    setSelectedRecaps(new Set());
+    setShowBulkMarkLunasRecaps(false);
+    setBulkMarkLunasWalletId('');
+    if (okCount === ids.length) toast.success(`${okCount} rekap ditandai lunas.`);
+    else toast.error(`Hanya ${okCount} dari ${ids.length} rekap berhasil ditandai lunas.`);
+    setBulkMarkingLunasRecaps(false);
   };
 
   const filteredRecaps = recaps.filter(r => {
@@ -2697,6 +2721,45 @@ _${storeHeader.name}_`.trim();
         </div>
       )}
 
+      {showBulkMarkLunasRecaps && (
+        <div className="modal-overlay" onClick={() => !bulkMarkingLunasRecaps && setShowBulkMarkLunasRecaps(false)}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><PackageCheck size={17} /></div>
+                <div>
+                  <p className="modal-title">Tandai Lunas</p>
+                  <p className="modal-subtitle">{belumLunasSelectedRecaps.length} rekap terpilih</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setShowBulkMarkLunasRecaps(false)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <SearchSelect value={bulkMarkLunasWalletId} onChange={setBulkMarkLunasWalletId}
+                options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+              {bulkMarkLunasWalletId && (
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Saldo saat ini: {formatRp(walletBalances[bulkMarkLunasWalletId] ?? 0)}
+                </p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowBulkMarkLunasRecaps(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={confirmBulkMarkRecapsLunas} disabled={!bulkMarkLunasWalletId || bulkMarkingLunasRecaps}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {bulkMarkingLunasRecaps ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Tandai Lunas ({belumLunasSelectedRecaps.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRecapForm && (
         <div className="modal-overlay" onClick={() => !submittingRecap && setShowRecapForm(false)}>
           <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
@@ -3099,6 +3162,14 @@ _${storeHeader.name}_`.trim();
               {exportingRecaps ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
+            {belumLunasSelectedRecaps.length > 0 && (
+              <button onClick={() => { setBulkMarkLunasWalletId(''); setShowBulkMarkLunasRecaps(true); }}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+                style={{ background: 'var(--success)', color: '#fff' }}>
+                <Check size={13} />
+                Tandai Lunas {belumLunasSelectedRecaps.length < selectedRecaps.size ? `(${belumLunasSelectedRecaps.length})` : ''}
+              </button>
+            )}
             <button onClick={bulkDeleteRecaps} disabled={bulkDeletingRecaps}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
               style={{ background: 'var(--danger)', color: '#fff' }}>
