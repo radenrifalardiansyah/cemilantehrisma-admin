@@ -4,7 +4,10 @@ import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 interface OrderItemDoc { productId?: string; name?: string; qty: number; price?: number; subtotal?: number }
-interface OrderDoc { source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas'; items?: OrderItemDoc[] }
+interface OrderDoc {
+  source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas'; items?: OrderItemDoc[];
+  subtotal?: number; total?: number;
+}
 interface RecapItemDoc { productId?: string; productName?: string; qtySold: number; revenue?: number; hargaTitip?: number }
 interface RecapDoc { paymentStatus?: 'lunas' | 'belum_lunas'; items?: RecapItemDoc[] }
 
@@ -52,10 +55,15 @@ export async function GET(req: NextRequest) {
   };
 
   countedOrders.forEach(o => {
+    // Diskon di POS dipotong dari TOTAL order, bukan dari subtotal tiap item — prorata di sini
+    // (scale = total / subtotal) supaya jumlah omzet per produk tetap identik dengan
+    // "Penjualan Kasir/Online" di Laporan Keuangan (yang pakai order.total, sudah net diskon).
+    const itemsSubtotal = (o.items ?? []).reduce((s, it) => s + (it.subtotal ?? (it.price ?? 0) * it.qty), 0);
+    const scale = (o.total != null && itemsSubtotal > 0) ? o.total / itemsSubtotal : 1;
     (o.items ?? []).forEach(it => {
       const r = rowFor(it.productId, it.name);
       if (o.source === 'portal') r.qtyOnline += it.qty; else r.qtyPos += it.qty;
-      r.revenue += it.subtotal ?? (it.price ?? 0) * it.qty;
+      r.revenue += (it.subtotal ?? (it.price ?? 0) * it.qty) * scale;
     });
   });
   countedRecaps.forEach(rec => {
@@ -67,7 +75,8 @@ export async function GET(req: NextRequest) {
   });
 
   const products = [...rows.values()]
-    .map(r => ({ ...r, qtyTotal: r.qtyPos + r.qtyOnline + r.qtyConsignment }))
+    // Math.round karena prorata diskon di atas menghasilkan pecahan rupiah.
+    .map(r => ({ ...r, revenue: Math.round(r.revenue), qtyTotal: r.qtyPos + r.qtyOnline + r.qtyConsignment }))
     .filter(r => r.qtyTotal > 0)
     .sort((a, b) => b.qtyTotal - a.qtyTotal);
 

@@ -1,14 +1,22 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store } from 'lucide-react';
+import Image from 'next/image';
+import {
+  Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store,
+  ChevronLeft, ChevronRight,
+} from 'lucide-react';
 import { ExcelIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
+import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import { useViewMode } from '@/lib/useViewMode';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 
 const API = '';
+const HEADER_BTN_H = 34;
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -18,6 +26,8 @@ interface ProductRow {
   qtyPos: number; qtyOnline: number; qtyConsignment: number; qtyTotal: number;
   revenue: number;
 }
+interface ProductMeta { emoji: string; imageUrls?: string[]; bgColor: string; category?: string }
+interface Category { id: string; name: string; emoji: string }
 
 export default function ProductReportTab({ creds }: { creds: string }) {
   const headers = { 'x-admin-auth': creds };
@@ -26,12 +36,34 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo,   setCustomTo]   = useState('');
   const [search,     setSearch]     = useState('');
+  const [view, setView] = useViewMode('product-report');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const [loading,  setLoading]  = useState(true);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [totalQty, setTotalQty] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [exporting, setExporting] = useState(false);
+
+  const [productMeta, setProductMeta] = useState<Map<string, ProductMeta>>(new Map());
+  const [categories, setCategories]   = useState<Category[]>([]);
+
+  useEffect(() => {
+    fetch(`${API}/api/products`, { headers }).then(async r => {
+      if (!r.ok) return;
+      const { products: prods } = await r.json() as { products: { id: string; emoji: string; imageUrls?: string[]; bgColor: string; category?: string }[] };
+      setProductMeta(new Map(prods.map(p => [p.id, { emoji: p.emoji, imageUrls: p.imageUrls, bgColor: p.bgColor, category: p.category }])));
+    }).catch(() => {});
+    fetch(`${API}/api/categories`, { headers }).then(async r => {
+      if (!r.ok) return;
+      const { categories: cats } = await r.json() as { categories: Category[] };
+      setCategories(cats);
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const catName  = (id?: string) => categories.find(c => c.id === id)?.name;
+  const catEmoji = (id?: string) => categories.find(c => c.id === id)?.emoji ?? '🏷️';
 
   const { from, to } = periodRange(period, customFrom, customTo);
 
@@ -56,6 +88,14 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   const displayRows = search
     ? products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
     : products;
+
+  const totalPages = Math.max(1, Math.ceil(displayRows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedRows = displayRows.slice(
+    Number.isFinite(pageSize) ? (safePage - 1) * pageSize : 0,
+    Number.isFinite(pageSize) ? safePage * pageSize : displayRows.length,
+  );
+  const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
 
   const periodLabel = PERIOD_OPTIONS.find(p => p.id === period)?.label ?? '';
 
@@ -100,21 +140,22 @@ export default function ProductReportTab({ creds }: { creds: string }) {
 
       const ws = wb.addWorksheet('Laporan Produk');
       ws.columns = [
-        { key: 'produk', width: 32 }, { key: 'kasir', width: 12 }, { key: 'online', width: 12 },
+        { key: 'produk', width: 32 }, { key: 'kategori', width: 16 }, { key: 'kasir', width: 12 }, { key: 'online', width: 12 },
         { key: 'konsinyasi', width: 14 }, { key: 'total', width: 14 }, { key: 'omzet', width: 18 },
       ];
-      styleTitle(ws, 'LAPORAN PRODUK TERJUAL — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to})`, 6);
-      styleHeader(ws, 3, ['Produk', 'Kasir', 'Online', 'Konsinyasi', 'Total Qty', 'Omzet']);
+      styleTitle(ws, 'LAPORAN PRODUK TERJUAL — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to})`, 7);
+      styleHeader(ws, 3, ['Produk', 'Kategori', 'Kasir', 'Online', 'Konsinyasi', 'Total Qty', 'Omzet']);
       displayRows.forEach((p, i) => {
         const rowNum = 4 + i;
         const row = ws.getRow(rowNum);
         row.getCell(1).value = p.name;
-        row.getCell(2).value = p.qtyPos;
-        row.getCell(3).value = p.qtyOnline;
-        row.getCell(4).value = p.qtyConsignment;
-        row.getCell(5).value = p.qtyTotal;
-        row.getCell(6).value = p.revenue;
-        row.getCell(6).numFmt = '"Rp"#,##0';
+        row.getCell(2).value = catName(productMeta.get(p.productId)?.category) ?? '';
+        row.getCell(3).value = p.qtyPos;
+        row.getCell(4).value = p.qtyOnline;
+        row.getCell(5).value = p.qtyConsignment;
+        row.getCell(6).value = p.qtyTotal;
+        row.getCell(7).value = p.revenue;
+        row.getCell(7).numFmt = '"Rp"#,##0';
         zebra(ws, rowNum, i);
       });
 
@@ -149,7 +190,7 @@ export default function ProductReportTab({ creds }: { creds: string }) {
       {/* Pemilih periode */}
       <div className="flex flex-wrap items-center gap-2">
         {PERIOD_OPTIONS.map(p => (
-          <button key={p.id} onClick={() => setPeriod(p.id)}
+          <button key={p.id} onClick={() => { setPeriod(p.id); setPage(1); }}
             className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
             style={period === p.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
             {p.label}
@@ -157,9 +198,9 @@ export default function ProductReportTab({ creds }: { creds: string }) {
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPage(1); }} className="input" style={{ height: 36 }} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPage(1); }} className="input" style={{ height: 36 }} />
           </div>
         )}
       </div>
@@ -201,55 +242,164 @@ export default function ProductReportTab({ creds }: { creds: string }) {
             </div>
           </div>
 
-          {/* Search */}
-          <div className="relative max-w-xs">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari produk..."
-              className="input pl-9" style={{ height: 36 }} />
+          {/* Search + toggle tampilan */}
+          <div className="flex flex-row items-center gap-2 sm:gap-3">
+            <div className="relative flex-1 min-w-0">
+              <Search size={14} style={{
+                position: 'absolute', left: 14, top: '50%',
+                transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none',
+              }} />
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1); }}
+                className="input text-sm w-full"
+                style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+                placeholder="Cari produk…"
+              />
+            </div>
+            {products.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
           </div>
 
-          {/* Tabel */}
-          <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'var(--surface-2)' }}>
-                    <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Produk</th>
-                    <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>
-                      <span className="inline-flex items-center gap-1"><ShoppingCart size={10} /> Kasir</span>
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>
-                      <span className="inline-flex items-center gap-1"><Globe size={10} /> Online</span>
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>
-                      <span className="inline-flex items-center gap-1"><Store size={10} /> Konsinyasi</span>
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Total Qty</th>
-                    <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Omzet</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayRows.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
-                        Tidak ada produk terjual di periode ini.
-                      </td>
-                    </tr>
-                  )}
-                  {displayRows.map((p, i) => (
-                    <tr key={p.productId || p.name} style={{ borderBottom: '1px solid var(--border-2)', background: i % 2 === 0 ? 'var(--surface)' : 'transparent' }}>
-                      <td className="px-3 py-2.5 font-semibold truncate max-w-[220px]" style={{ color: 'var(--text-primary)' }}>{p.name}</td>
-                      <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyPos || '–'}</td>
-                      <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyOnline || '–'}</td>
-                      <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyConsignment || '–'}</td>
-                      <td className="px-3 py-2.5 text-right font-extrabold tabular" style={{ color: 'var(--accent)' }}>{p.qtyTotal}</td>
-                      <td className="px-3 py-2.5 text-right font-semibold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatRp(p.revenue)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {displayRows.length === 0 ? (
+            <div className="rounded-2xl p-12 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
+              <Package size={24} style={{ color: 'var(--text-muted)', margin: '0 auto 10px', display: 'block' }} />
+              <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Tidak ada produk terjual di periode ini.</p>
             </div>
-          </div>
+          ) : view === 'table' ? (
+            <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--surface-2)' }}>
+                      <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Produk</th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>
+                        <span className="inline-flex items-center gap-1"><ShoppingCart size={10} /> Kasir</span>
+                      </th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>
+                        <span className="inline-flex items-center gap-1"><Globe size={10} /> Online</span>
+                      </th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>
+                        <span className="inline-flex items-center gap-1"><Store size={10} /> Konsinyasi</span>
+                      </th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Total Qty</th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Omzet</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedRows.map((p, i) => {
+                      const meta = productMeta.get(p.productId);
+                      return (
+                        <tr key={p.productId || p.name} style={{ borderBottom: '1px solid var(--border-2)', background: i % 2 === 0 ? 'var(--surface)' : 'transparent' }}>
+                          <td className="px-3 py-2.5" style={{ color: 'var(--text-primary)' }}>
+                            <div className="flex items-center gap-2.5 max-w-[260px]">
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm relative overflow-hidden" style={{ background: `${meta?.bgColor ?? '#F5F0E9'}22` }}>
+                                {meta?.imageUrls?.[0]
+                                  ? <Image src={meta.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="32px" unoptimized />
+                                  : (meta?.emoji ?? '📦')}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold truncate">{p.name}</p>
+                                {catName(meta?.category) && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-muted)' }}>{catName(meta?.category)}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyPos || '–'}</td>
+                          <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyOnline || '–'}</td>
+                          <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyConsignment || '–'}</td>
+                          <td className="px-3 py-2.5 text-right font-extrabold tabular" style={{ color: 'var(--accent)' }}>{p.qtyTotal}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatRp(p.revenue)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {paginatedRows.map(p => {
+                const meta = productMeta.get(p.productId);
+                return (
+                  <div key={p.productId || p.name} className="card overflow-hidden flex flex-col">
+                    <div className="relative w-full aspect-square flex items-center justify-center text-4xl" style={{ background: `${meta?.bgColor ?? '#F5F0E9'}22` }}>
+                      {meta?.imageUrls?.[0]
+                        ? <Image src={meta.imageUrls[0]} alt={p.name} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" unoptimized />
+                        : (meta?.emoji ?? '📦')}
+                      <span className="absolute top-2 right-2 badge badge-amber" style={{ fontSize: 11 }}>{p.qtyTotal} terjual</span>
+                    </div>
+                    <div className="p-3 flex-1 flex flex-col gap-1.5">
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
+                      {catName(meta?.category) && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full self-start"
+                          style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                          {catEmoji(meta?.category)} {catName(meta?.category)}
+                        </span>
+                      )}
+                      <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.revenue)}</p>
+                      <div className="grid grid-cols-3 gap-2 mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                        <div className="text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide flex items-center justify-center gap-0.5" style={{ color: 'var(--text-muted)' }}><ShoppingCart size={9} /> Kasir</p>
+                          <p className="text-xs font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyPos}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide flex items-center justify-center gap-0.5" style={{ color: 'var(--text-muted)' }}><Globe size={9} /> Online</p>
+                          <p className="text-xs font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyOnline}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[9px] font-bold uppercase tracking-wide flex items-center justify-center gap-0.5" style={{ color: 'var(--text-muted)' }}><Store size={9} /> Mitra</p>
+                          <p className="text-xs font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyConsignment}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {displayRows.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {displayRows.length} produk · halaman {safePage} dari {totalPages}
+                </p>
+                <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); setPage(1); }} />
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronLeft size={14} />
+                    </button>
+                  </Tooltip>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goPage(n as number)}
+                            className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={safePage === n
+                              ? { background: 'var(--accent)', color: '#fff' }
+                              : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )
+                  }
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <ChevronRight size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
