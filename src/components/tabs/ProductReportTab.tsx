@@ -97,6 +97,14 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   );
   const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
 
+  // Total baris footer tabel — mengikuti hasil pencarian (semua halaman), bukan cuma yang tampil
+  // di halaman saat ini, supaya konsisten dengan angka "N produk" di caption pagination.
+  const footerTotals = displayRows.reduce((acc, p) => ({
+    qtyPos: acc.qtyPos + p.qtyPos, qtyOnline: acc.qtyOnline + p.qtyOnline,
+    qtyConsignment: acc.qtyConsignment + p.qtyConsignment, qtyTotal: acc.qtyTotal + p.qtyTotal,
+    revenue: acc.revenue + p.revenue,
+  }), { qtyPos: 0, qtyOnline: 0, qtyConsignment: 0, qtyTotal: 0, revenue: 0 });
+
   const periodLabel = PERIOD_OPTIONS.find(p => p.id === period)?.label ?? '';
 
   const exportExcel = async () => {
@@ -157,6 +165,21 @@ export default function ProductReportTab({ creds }: { creds: string }) {
         row.getCell(7).value = p.revenue;
         row.getCell(7).numFmt = '"Rp"#,##0';
         zebra(ws, rowNum, i);
+      });
+
+      const totalRowNum = 4 + displayRows.length;
+      const totalRow = ws.getRow(totalRowNum);
+      totalRow.getCell(1).value = `Total (${displayRows.length} produk)`;
+      totalRow.getCell(3).value = footerTotals.qtyPos;
+      totalRow.getCell(4).value = footerTotals.qtyOnline;
+      totalRow.getCell(5).value = footerTotals.qtyConsignment;
+      totalRow.getCell(6).value = footerTotals.qtyTotal;
+      totalRow.getCell(7).value = footerTotals.revenue;
+      totalRow.getCell(7).numFmt = '"Rp"#,##0';
+      totalRow.eachCell(cell => {
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE8CF' } };
+        cell.border = { top: { style: 'medium', color: { argb: 'FFC96018' } } };
       });
 
       const buffer = await wb.xlsx.writeBuffer();
@@ -312,6 +335,18 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border-2)' }}>
+                      <td className="px-3 py-2.5 font-bold" style={{ color: 'var(--text-primary)' }}>
+                        Total ({displayRows.length} produk)
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{footerTotals.qtyPos || '–'}</td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{footerTotals.qtyOnline || '–'}</td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{footerTotals.qtyConsignment || '–'}</td>
+                      <td className="px-3 py-2.5 text-right font-extrabold tabular" style={{ color: 'var(--accent)' }}>{footerTotals.qtyTotal}</td>
+                      <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatRp(footerTotals.revenue)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
