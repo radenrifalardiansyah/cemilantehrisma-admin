@@ -102,7 +102,6 @@ interface SalesReportData {
 }
 
 // QRIS belum diaktifkan (masih proses manual) — cukup tambah entrinya lagi di sini kalau sudah siap.
-// 'kredit' cuma ditambahkan ke daftar yang dirender kalau ada reseller terpilih (lihat availablePaymentMethods).
 const PAYMENT_METHODS: { id: PaymentMethod; label: string }[] = [
   { id: 'cash', label: 'Tunai' }, { id: 'transfer', label: 'Transfer' },
 ];
@@ -371,18 +370,13 @@ export default function PosTab({
   const selectedReseller = selectedCustRef.startsWith('reseller:')
     ? resellerList.find(r => r.id === selectedCustRef.slice('reseller:'.length))
     : undefined;
-  // Kredit (belum lunas) cuma boleh untuk transaksi Reseller — pelanggan umum tetap harus bayar di tempat.
-  const availablePaymentMethods = selectedReseller ? [...PAYMENT_METHODS, KREDIT_METHOD] : PAYMENT_METHODS;
+  // Kredit (belum lunas) boleh untuk pelanggan umum juga, tidak cuma reseller — transaksinya
+  // tetap tercatat di menu Pesanan dan bisa ditandai Lunas begitu pelanggan bayar.
+  const availablePaymentMethods = [...PAYMENT_METHODS, KREDIT_METHOD];
   const canProcess = hasCart
     && (paymentMethod !== 'cash'     || amountPaidNum >= cartTotal)
     && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= cartTotal))
-    && (paymentMethod !== 'kredit'   || !!selectedReseller)
     && (paymentMethod === 'kredit'   || !!walletId);
-
-  // Kalau reseller dibatalkan saat metode Kredit sedang dipilih, balik ke Tunai (Kredit cuma untuk reseller).
-  useEffect(() => {
-    if (paymentMethod === 'kredit' && !selectedReseller) setPaymentMethod('cash');
-  }, [selectedReseller, paymentMethod]);
 
   const filteredProducts = (activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat))
     .filter(p => p.published !== false)
