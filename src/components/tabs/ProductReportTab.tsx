@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
+} from 'recharts';
+import {
   Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, LineChart as LineChartIcon,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -22,14 +25,48 @@ import { toDataUri } from '@/lib/pdf/logo';
 const API = '';
 const HEADER_BTN_H = 34;
 
+// Palet kategorikal 4-slot, urutan tetap (bukan berdasar urutan seleksi) — supaya produk yang
+// tetap tampil tidak berganti warna saat produk lain di-toggle. Sudah divalidasi lolos cek CVD
+// adjacent DAN all-pairs (light & dark) via dataviz skill's validate_palette.js.
+const TREND_COLORS = ['#0284C7', '#D4691E', '#7C3AED', '#DB2777'];
+
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+const formatQty = (n: number) => new Intl.NumberFormat('id-ID').format(n);
+
+function shortDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+function TrendTooltip({ active, payload, label }: {
+  active?: boolean; label?: string; payload?: { name?: string; value?: number; color?: string }[];
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div style={{
+      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+    }}>
+      {label && <div style={{ opacity: 0.65, marginBottom: 4, fontWeight: 700 }}>{shortDate(label)}</div>}
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+          <span style={{ opacity: 0.75 }}>{p.name}:</span>
+          <span style={{ fontWeight: 800 }}>{formatQty(p.value ?? 0)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface ProductRow {
   productId: string; name: string;
   qtyPos: number; qtyOnline: number; qtyConsignment: number; qtyTotal: number;
   revenue: number;
 }
+interface TrendProduct { key: string; name: string }
 interface ProductMeta { emoji: string; imageUrls?: string[]; bgColor: string; category?: string }
 interface Category { id: string; name: string; emoji: string }
 
@@ -50,6 +87,15 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   const [totalQty, setTotalQty] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [exporting, setExporting] = useState(false);
+
+  const [trendProducts, setTrendProducts] = useState<TrendProduct[]>([]);
+  const [dailyTrend, setDailyTrend] = useState<Record<string, string | number>[]>([]);
+  const [hiddenTrendKeys, setHiddenTrendKeys] = useState<Set<string>>(new Set());
+  const toggleTrendKey = (key: string) => setHiddenTrendKeys(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const [productMeta, setProductMeta] = useState<Map<string, ProductMeta>>(new Map());
   const [categories, setCategories]   = useState<Category[]>([]);
@@ -97,11 +143,17 @@ export default function ProductReportTab({ creds }: { creds: string }) {
     try {
       const res = await fetch(`${API}/api/analytics/product-report?from=${from}&to=${to}`, { headers });
       if (!res.ok) return;
-      const data = await res.json() as { products: ProductRow[]; totalQty: number; totalRevenue: number };
+      const data = await res.json() as {
+        products: ProductRow[]; totalQty: number; totalRevenue: number;
+        trendProducts: TrendProduct[]; dailyTrend: Record<string, string | number>[];
+      };
       if (myLoadId !== loadIdRef.current) return;
       setProducts(data.products);
       setTotalQty(data.totalQty);
       setTotalRevenue(data.totalRevenue);
+      setTrendProducts(data.trendProducts);
+      setDailyTrend(data.dailyTrend);
+      setHiddenTrendKeys(new Set());
     } finally { if (myLoadId === loadIdRef.current) setLoading(false); }
   };
   useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -315,6 +367,50 @@ export default function ProductReportTab({ creds }: { creds: string }) {
               </div>
             </div>
           </div>
+
+          {/* Tren harian — top 4 produk terlaris di periode ini */}
+          {trendProducts.length > 0 && (
+            <div className="card p-5">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                    <LineChartIcon size={16} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Harian Produk Terlaris</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik nama produk untuk sembunyikan/tampilkan garisnya</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                  {trendProducts.map((p, i) => {
+                    const hidden = hiddenTrendKeys.has(p.key);
+                    return (
+                      <button key={p.key} onClick={() => toggleTrendKey(p.key)}
+                        className="flex items-center gap-1.5 font-semibold transition-opacity"
+                        style={{ color: hidden ? 'var(--text-muted)' : 'var(--text-secondary)', opacity: hidden ? 0.5 : 1 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 4, background: TREND_COLORS[i], display: 'inline-block', flexShrink: 0 }} />
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <LineChart data={dailyTrend} margin={{ top: 6, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="var(--border-2)" />
+                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-2)' }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={36} />
+                    <RTooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 3' }} />
+                    {trendProducts.map((p, i) => !hiddenTrendKeys.has(p.key) && (
+                      <Line key={p.key} type="monotone" dataKey={p.key} name={p.name}
+                        stroke={TREND_COLORS[i]} strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 5 }} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
 
           {/* Search + toggle tampilan */}
           <div className="flex flex-row items-center gap-2 sm:gap-3">
