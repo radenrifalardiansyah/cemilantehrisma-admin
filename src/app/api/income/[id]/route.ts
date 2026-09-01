@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -54,6 +55,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for income update', err);
   }
+  revalidateTag('admin-income', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -77,5 +79,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for income delete', err);
   }
+  revalidateTag('admin-income', { expire: 0 });
   return Response.json({ ok: true });
 }

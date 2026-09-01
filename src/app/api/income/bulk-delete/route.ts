@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
@@ -11,5 +12,6 @@ export async function POST(req: NextRequest) {
 
   const sql = getSql();
   await sql`delete from income where id in ${sql(ids)}`;
+  revalidateTag('admin-income', { expire: 0 });
   return Response.json({ deleted: ids.length });
 }

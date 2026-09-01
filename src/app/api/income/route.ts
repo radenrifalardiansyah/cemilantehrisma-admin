@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
@@ -50,7 +50,7 @@ const getCachedIncome = unstable_cache(
     return rows.map(toIncome);
   },
   ['admin-income-list'],
-  { revalidate: 15 },
+  { revalidate: 15, tags: ['admin-income'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -110,5 +110,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write notification for income create', err);
   }
+  revalidateTag('admin-income', { expire: 0 });
   return Response.json({ id });
 }

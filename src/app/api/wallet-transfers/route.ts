@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
@@ -38,7 +38,7 @@ const getCachedWalletTransfers = unstable_cache(
     return rows.map(toTransfer);
   },
   ['admin-wallet-transfers'],
-  { revalidate: 15 },
+  { revalidate: 15, tags: ['admin-wallet-transfers'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -123,5 +123,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write history for wallet-transfers create', err);
   }
+  revalidateTag('admin-wallet-transfers', { expire: 0 });
   return Response.json({ id: transferId });
 }
