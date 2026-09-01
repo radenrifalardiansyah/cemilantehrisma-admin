@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 
@@ -17,11 +18,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
+  const sql = getSql();
 
-  const productSnap = await db.collection('products').doc(id).get();
-  if (!productSnap.exists) return Response.json({ error: 'Produk tidak ditemukan.' }, { status: 404 });
-  const costPrice = Number(productSnap.data()?.costPrice) || 0;
-  const productName = productSnap.data()?.name ?? '';
+  const [productRow] = await sql<{ cost_price: string | null; name: string | null }[]>`
+    select cost_price, name from products where id = ${id}
+  `;
+  if (!productRow) return Response.json({ error: 'Produk tidak ditemukan.' }, { status: 404 });
+  const costPrice = productRow.cost_price != null ? Number(productRow.cost_price) : 0;
+  const productName = productRow.name ?? '';
 
   const [ordersSnap, recapsSnap] = await Promise.all([
     db.collection('orders').get(),

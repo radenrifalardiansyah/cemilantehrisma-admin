@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requireSuperAdmin } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { productUrl } from '@/lib/branding';
 
 const PRODUCTS = [
@@ -24,20 +23,26 @@ export async function POST(req: NextRequest) {
   // login", bukan role).
   const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
-  const db = getDb();
-  const batch = db.batch();
+  const sql = getSql();
   let count = 0;
 
   for (const p of PRODUCTS) {
-    const { id, ...data } = p;
-    const ref = db.collection('products').doc(id);
-    const existing = await ref.get();
-    if (!existing.exists) {
-      batch.set(ref, { ...data, qrUrl: productUrl(id), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-      count++;
-    }
+    const [{ exists }] = await sql<{ exists: boolean }[]>`select exists(select 1 from products where id = ${p.id})`;
+    if (exists) continue;
+    await sql`
+      insert into products (
+        id, name, description, details, code, category, price, original_price, weight, emoji,
+        image_urls, gradient, bg_color, badge, stock_qty, stock, open_po, published, qr_url,
+        created_at, updated_at
+      ) values (
+        ${p.id}, ${p.name}, ${p.description}, ${JSON.stringify(p.details)}, ${(p as { code?: string }).code ?? null},
+        ${p.category}, ${p.price}, ${(p as { originalPrice?: number }).originalPrice ?? null}, ${p.weight}, ${p.emoji},
+        ${JSON.stringify(p.imageUrls)}, ${p.gradient}, ${p.bgColor}, ${(p as { badge?: string }).badge ?? null},
+        ${p.stockQty}, ${p.stock}, false, true, ${productUrl(p.id)}, now(), now()
+      )
+    `;
+    count++;
   }
 
-  await batch.commit();
   return Response.json({ seeded: count, total: PRODUCTS.length });
 }

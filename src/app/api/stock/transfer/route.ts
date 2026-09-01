@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
+import { logHistory } from '@/lib/history';
+import { writeTransferLedgerEntryPg } from '@/lib/stock-pg';
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'stock', 'edit');
@@ -31,45 +32,51 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
-  const fromRef = db.collection('warehouse_stock').doc(`${fromWarehouseId}_${productId}`);
-  const toRef = db.collection('warehouse_stock').doc(`${toWarehouseId}_${productId}`);
+  const sql = getSql();
 
   try {
-    await db.runTransaction(async tx => {
-      const fromSnap = await tx.get(fromRef);
-      const fromQty = typeof fromSnap.data()?.stockQty === 'number' ? fromSnap.data()!.stockQty as number : 0;
+    await sql.begin(async pgTx => {
+      const [fromRow] = await pgTx<{ stock_qty: string }[]>`
+        select stock_qty from warehouse_stock where id = ${`${fromWarehouseId}_${productId}`} for update
+      `;
+      const fromQty = fromRow ? Number(fromRow.stock_qty) || 0 : 0;
       if (fromQty < qty) {
         throw new Error(`Stok ${productName} di ${fromWarehouseName} tidak cukup (tersisa ${fromQty}, butuh ${qty})`);
       }
 
-      tx.set(fromRef, {
-        warehouseId: fromWarehouseId, productId, productName,
-        stockQty: FieldValue.increment(-qty), updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-      tx.set(toRef, {
-        warehouseId: toWarehouseId, productId, productName,
-        stockQty: FieldValue.increment(qty), updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      await pgTx`
+        insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
+        values (${`${fromWarehouseId}_${productId}`}, ${fromWarehouseId}, ${productId}, ${productName}, ${-qty}, now())
+        on conflict (id) do update set stock_qty = warehouse_stock.stock_qty - ${qty}, updated_at = now()
+      `;
+      await pgTx`
+        insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
+        values (${`${toWarehouseId}_${productId}`}, ${toWarehouseId}, ${productId}, ${productName}, ${qty}, now())
+        on conflict (id) do update set stock_qty = warehouse_stock.stock_qty + ${qty}, updated_at = now()
+      `;
 
-      const stockRef = db.collection('stock').doc();
-      tx.set(stockRef, {
-        type: 'transfer',
+      await writeTransferLedgerEntryPg(pgTx, {
+        productId, productName,
         fromWarehouseId, fromWarehouseName, toWarehouseId, toWarehouseName,
-        productId, productName, qty, note: note ?? '',
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      writeHistoryEntry(tx, db, {
-        entity: 'stock',
-        entityId: productId,
-        entityLabel: productName ?? productId,
-        action: 'update',
-        actor: guard,
-        meta: { fromWarehouseId, toWarehouseId, qty },
+        qty, note: note ?? '',
       });
     });
+
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal transfer stok.' }, { status: 400 });
+  }
+
+  try {
+    await logHistory(db, {
+      entity: 'stock',
+      entityId: productId,
+      entityLabel: productName ?? productId,
+      action: 'update',
+      actor: guard,
+      meta: { fromWarehouseId, toWarehouseId, qty },
+    });
+  } catch {
+    // audit log failure must never fail the business request
   }
 
   return Response.json({ ok: true });

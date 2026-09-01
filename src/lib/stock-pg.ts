@@ -151,3 +151,27 @@ export async function writeStockLedgerEntryPg(
     values (${id}, ${opts.productId}, ${opts.productName ?? null}, ${opts.warehouseId ?? null}, ${opts.warehouseName ?? null}, ${opts.type}, ${Math.abs(opts.qty)}, ${opts.note}, now())
   `;
 }
+
+// Transfer stok antar gudang — satu baris ledger dengan info gudang asal & tujuan sekaligus
+// (bukan warehouse_id/warehouse_name tunggal seperti tipe lain), supaya tampilan "A → B" di
+// StockTab/StockReportTab tetap sama seperti versi Firestore lama.
+export async function writeTransferLedgerEntryPg(
+  pgTx: PgTx,
+  opts: {
+    productId: string; productName?: string;
+    fromWarehouseId: string; fromWarehouseName?: string;
+    toWarehouseId: string; toWarehouseName?: string;
+    qty: number; note: string;
+  },
+): Promise<void> {
+  const id = randomUUID();
+  await pgTx`
+    insert into stock_ledger (
+      id, product_id, product_name, type, qty, note,
+      from_warehouse_id, from_warehouse_name, to_warehouse_id, to_warehouse_name, created_at
+    ) values (
+      ${id}, ${opts.productId}, ${opts.productName ?? null}, 'transfer', ${Math.abs(opts.qty)}, ${opts.note},
+      ${opts.fromWarehouseId}, ${opts.fromWarehouseName ?? null}, ${opts.toWarehouseId}, ${opts.toWarehouseName ?? null}, now()
+    )
+  `;
+}

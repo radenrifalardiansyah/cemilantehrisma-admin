@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
@@ -55,9 +56,9 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   // Tolak kalau masih ada stok titip tersisa di lokasi ini — kalau dibolehkan, stok itu jadi
   // yatim permanen (tidak bisa direkap lagi karena lokasinya sudah tidak ada untuk dipilih).
-  const stockSnap = await db.collection('consignmentStock').where('locationId', '==', id).get();
-  const hasStock = stockSnap.docs.some(d => (Number(d.data().stockQty) || 0) > 0);
-  if (hasStock) {
+  const sql = getSql();
+  const [{ count }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_stock where location_id = ${id} and stock_qty > 0`;
+  if (Number(count) > 0) {
     return Response.json(
       { error: 'Lokasi ini masih punya stok titip tersisa — rekap atau kosongkan dulu sebelum menghapus.' },
       { status: 400 },

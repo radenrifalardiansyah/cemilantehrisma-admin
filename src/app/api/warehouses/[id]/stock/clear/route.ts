@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { clearWarehouseStockForProducts } from '@/lib/warehouse-stock';
 import { logHistory } from '@/lib/history';
@@ -12,13 +13,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id: warehouseId } = await ctx.params;
   const db = getDb();
+  const sql = getSql();
 
-  const stockSnap = await db.collection('warehouse_stock')
-    .where('warehouseId', '==', warehouseId)
-    .get();
-  const productIds = stockSnap.docs
-    .filter(d => ((d.data().stockQty as number) ?? 0) > 0)
-    .map(d => d.data().productId as string);
+  const rows = await sql<{ product_id: string }[]>`select product_id from warehouse_stock where warehouse_id = ${warehouseId} and stock_qty > 0`;
+  const productIds = rows.map(r => r.product_id);
 
   const { cleared, failed } = await clearWarehouseStockForProducts(warehouseId, productIds, 'Kosongkan semua stok gudang');
 

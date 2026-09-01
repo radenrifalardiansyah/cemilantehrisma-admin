@@ -1,7 +1,7 @@
 import { NextRequest, after } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { revalidateTag } from 'next/cache';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 export async function POST(req: NextRequest) {
@@ -11,12 +11,9 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(ids) || ids.length === 0)
     return Response.json({ error: 'ids required' }, { status: 400 });
 
-  const db    = getDb();
-  const batch = db.batch();
-  for (const id of ids) {
-    batch.update(db.collection('products').doc(id), { published, updatedAt: FieldValue.serverTimestamp() });
-  }
-  await batch.commit();
+  const sql = getSql();
+  await sql`update products set published = ${published}, updated_at = now() where id in ${sql(ids)}`;
+  revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ updated: ids.length });
 }

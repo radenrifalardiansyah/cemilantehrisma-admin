@@ -1,10 +1,12 @@
 import { NextRequest, after } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { getAuthUser } from '@/lib/admin-auth';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { revalidateStorefront } from '@/lib/revalidate';
+import { rowToProduct, productPatchFromBody, type ProductRow } from '@/lib/products-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -12,9 +14,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'products', 'view');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const doc = await getDb().collection('products').doc(id).get();
-  if (!doc.exists) return Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json({ id: doc.id, ...doc.data() });
+  const sql = getSql();
+  const [row] = await sql<ProductRow[]>`select * from products where id = ${id}`;
+  if (!row) return Response.json({ error: 'Not found' }, { status: 404 });
+  return Response.json(rowToProduct(row));
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -28,18 +31,20 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   delete data.stock;
 
   const db = getDb();
-  const ref = db.collection('products').doc(id);
+  const sql = getSql();
+  const patch = productPatchFromBody(data);
+  if (Object.keys(patch).length === 0) return Response.json({ ok: true });
 
-  // Catat riwayat perubahan harga jual (audit trail) di koleksi `price_history` supaya kalau
-  // ada transaksi dengan harga yang beda dari harga sekarang, bisa ditelusuri siapa & kapan
-  // harga produk ini pernah diubah — tanpa perlu mengubah alur update produk yang lain.
+  // Catat riwayat perubahan harga jual (audit trail, tetap di Firestore) supaya kalau ada
+  // transaksi dengan harga yang beda dari harga sekarang, bisa ditelusuri siapa & kapan harga
+  // produk ini pernah diubah — tanpa perlu mengubah alur update produk yang lain.
   if (typeof data.price === 'number') {
-    const before = await ref.get();
-    const oldPrice = before.data()?.price;
+    const [before] = await sql<{ price: string | null; name: string | null }[]>`select price, name from products where id = ${id}`;
+    const oldPrice = before?.price != null ? Number(before.price) : undefined;
     if (typeof oldPrice === 'number' && oldPrice !== data.price) {
       await db.collection('price_history').add({
         productId: id,
-        productName: before.data()?.name ?? '',
+        productName: before?.name ?? '',
         oldPrice,
         newPrice: data.price,
         changedBy: getAuthUser(req)?.username ?? '',
@@ -48,10 +53,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     }
   }
 
-  await ref.update({
-    ...data,
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  await sql`update products set ${sql(patch)}, updated_at = now() where id = ${id}`;
   revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
@@ -61,20 +63,21 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'products', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const db = getDb();
+  const sql = getSql();
 
-  // Bersihkan baris warehouse_stock produk ini SEBELUM dokumen produknya hilang — kalau tidak,
-  // baris itu jadi yatim permanen: tidak muncul lagi di tab "Stok per Gudang" (produknya sudah
-  // tidak ada), dan penyesuaian stok berikutnya ke baris itu ditolak sebagai "kekurangan stok"
-  // karena readProductsForDeltas melihat produknya tidak exists.
-  const stockSnap = await db.collection('warehouse_stock').where('productId', '==', id).get();
-  if (!stockSnap.empty) {
-    const batch = db.batch();
-    stockSnap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
+  try {
+    await sql`delete from products where id = ${id}`;
+  } catch (err) {
+    // FK ke stock_ledger/warehouse_stock/consignment_stock sengaja TIDAK cascade — produk yang
+    // sudah punya riwayat stok/transaksi tidak boleh hilang begitu saja (merusak jejak audit &
+    // laporan). Nonaktifkan (unpublish) adalah alternatif yang aman untuk kasus ini.
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23503') {
+      return Response.json({
+        error: 'Tidak bisa dihapus — produk ini sudah punya riwayat stok/transaksi. Nonaktifkan (unpublish) saja daripada dihapus.',
+      }, { status: 400 });
+    }
+    throw err;
   }
-
-  await db.collection('products').doc(id).delete();
   revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });

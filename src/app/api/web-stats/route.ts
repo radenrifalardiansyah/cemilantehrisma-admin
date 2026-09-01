@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDateKey } from '@/lib/date';
 
@@ -25,6 +26,7 @@ function addTo(agg: Record<string, number>, source: unknown) {
 const getRawWebStats = unstable_cache(
   async (numDays: number) => {
     const db = getDb();
+    const sql = getSql();
     // Bucket harian di koleksi `analytics` (ditulis storefront lewat analyticsService.ts) kini
     // dikunci per hari kalender WIB, bukan UTC — harus dibaca pakai kunci yang sama persis, atau
     // pergantian hari UTC (07:00 WIB) membuat kunjungan dini hari salah bucket.
@@ -33,16 +35,16 @@ const getRawWebStats = unstable_cache(
       return wibDateKey(d);
     });
 
-    const [snapshots, prodSnap, catSnap] = await Promise.all([
+    const [snapshots, prodRows, catSnap] = await Promise.all([
       Promise.all(days.map(day => db.collection('analytics').doc(day).get())),
-      db.collection('products').get(),
+      sql<{ id: string; name: string | null; emoji: string | null; bg_color: string | null }[]>`select id, name, emoji, bg_color from products`,
       db.collection('categories').get(),
     ]);
 
     return {
       days,
       analyticsData: snapshots.map(s => s.exists ? s.data()! : null),
-      products: prodSnap.docs.map(d => ({ id: d.id, data: d.data() })),
+      products: prodRows.map(r => ({ id: r.id, data: { name: r.name, emoji: r.emoji, bgColor: r.bg_color } })),
       categories: catSnap.docs.map(d => ({ id: d.id, data: d.data() })),
     };
   },

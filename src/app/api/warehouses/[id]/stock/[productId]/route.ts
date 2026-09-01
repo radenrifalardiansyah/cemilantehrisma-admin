@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { clearWarehouseProductStock } from '@/lib/warehouse-stock';
 import { logHistory } from '@/lib/history';
@@ -10,16 +11,16 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'settings', 'view');
   if (guard instanceof Response) return guard;
   const { id: warehouseId, productId } = await ctx.params;
+  const sql = getSql();
 
-  const snap = await getDb()
-    .collection('stock')
-    .where('warehouseId', '==', warehouseId)
-    .where('productId', '==', productId)
-    .orderBy('createdAt', 'desc')
-    .limit(50)
-    .get();
-
-  const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const rows = await sql`
+    select id, product_id as "productId", product_name as "productName", warehouse_id as "warehouseId",
+      warehouse_name as "warehouseName", type, qty, note, created_at as "createdAt"
+    from stock_ledger
+    where warehouse_id = ${warehouseId} and product_id = ${productId}
+    order by created_at desc limit 50
+  `;
+  const entries = rows.map(r => ({ ...r, qty: Number(r.qty) }));
   return Response.json({ entries });
 }
 
@@ -29,10 +30,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id: warehouseId, productId } = await ctx.params;
   const db = getDb();
+  const sql = getSql();
 
-  const wsRef = db.collection('warehouse_stock').doc(`${warehouseId}_${productId}`);
-  const beforeSnap = await wsRef.get();
-  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
+  const [before] = await sql<{ product_name: string | null; stock_qty: string }[]>`
+    select product_name, stock_qty from warehouse_stock where id = ${`${warehouseId}_${productId}`}
+  `;
 
   await clearWarehouseProductStock(warehouseId, productId, 'Kosongkan stok produk');
 
@@ -40,10 +42,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     await logHistory(db, {
       entity: 'stock',
       entityId: productId,
-      entityLabel: (before?.productName as string) ?? productId,
+      entityLabel: before?.product_name ?? productId,
       action: 'delete',
       actor: guard,
-      before,
+      before: before ? { productName: before.product_name, stockQty: Number(before.stock_qty) } : null,
     });
   } catch {
     // audit log failure must never fail the business request

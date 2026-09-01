@@ -1,7 +1,7 @@
 import { NextRequest, after } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { revalidateTag } from 'next/cache';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 export async function POST(req: NextRequest) {
@@ -11,15 +11,13 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(orders) || orders.length === 0)
     return Response.json({ error: 'orders required' }, { status: 400 });
 
-  const db    = getDb();
-  const batch = db.batch();
-  for (const { id, order } of orders) {
-    batch.update(db.collection('products').doc(id), {
-      order,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-  }
-  await batch.commit();
+  const sql = getSql();
+  await sql.begin(async pgTx => {
+    for (const { id, order } of orders) {
+      await pgTx`update products set sort_order = ${order}, updated_at = now() where id = ${id}`;
+    }
+  });
+  revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }

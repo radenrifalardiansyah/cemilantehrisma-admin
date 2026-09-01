@@ -34,7 +34,7 @@ const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
     const sql = getSql();
-    const [orderSnap, recapSnap, incomeRows, expenseRows, materialSnap, productSnap] = await Promise.all([
+    const [orderSnap, recapSnap, incomeRows, expenseRows, materialSnap, productRows] = await Promise.all([
       db.collection('orders')
         .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
       db.collection('consignmentRecaps')
@@ -48,7 +48,7 @@ const getRawAnalytics = unstable_cache(
         select category, amount, date, source_type from expenses where date >= ${from} and date <= ${to}
       `,
       db.collection('rawMaterials').get(),
-      db.collection('products').get(),
+      sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
     ]);
 
     const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
@@ -65,7 +65,7 @@ const getRawAnalytics = unstable_cache(
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
       expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined }) as ExpenseDoc),
       materials: materialSnap.docs.map(d => ({ id: d.id, ...d.data() }) as MaterialDoc),
-      productCosts: productSnap.docs.map(d => [d.id, Number(d.data().costPrice) || 0] as const),
+      productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
     };
   },
   ['admin-analytics-overview'],

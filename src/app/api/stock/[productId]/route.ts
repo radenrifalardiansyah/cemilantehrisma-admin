@@ -1,7 +1,7 @@
 import { NextRequest, after } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
+import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ productId: string }> };
@@ -10,12 +10,13 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'stock', 'view');
   if (guard instanceof Response) return guard;
   const { productId } = await ctx.params;
-  const snap = await getDb()
-    .collection('stock')
-    .where('productId', '==', productId)
-    .orderBy('createdAt', 'desc')
-    .get();
-  const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const sql = getSql();
+  const rows = await sql`
+    select id, product_id as "productId", product_name as "productName", warehouse_id as "warehouseId",
+      warehouse_name as "warehouseName", type, qty, note, created_at as "createdAt"
+    from stock_ledger where product_id = ${productId} order by created_at desc
+  `;
+  const entries = rows.map(r => ({ ...r, qty: Number(r.qty) }));
   return Response.json({ entries });
 }
 
@@ -33,19 +34,18 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: 'Data tidak valid' }, { status: 400 });
   }
 
-  const db = getDb();
+  const sql = getSql();
   const delta = type === 'in' ? qty : -qty;
 
   try {
-    await db.runTransaction(async tx => {
-      const { products, shortages } = await readProductsForDeltas(tx, db, new Map([[productId, delta]]));
+    await sql.begin(async pgTx => {
+      const { products, shortages } = await readProductsForDeltasPg(pgTx, new Map([[productId, delta]]));
       if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
       const product = products.get(productId)!;
-      applyStockDelta(tx, db, { productId, product, delta });
-      writeStockLedgerEntry(tx, db, {
-        productId, type, qty, note: data.note ?? '',
-        extra: { productName: data.productName ?? '' },
+      await applyStockDeltaPg(pgTx, { productId, product, delta });
+      await writeStockLedgerEntryPg(pgTx, {
+        productId, productName: product.name, type, qty, note: data.note ?? '',
       });
     });
   } catch (err) {

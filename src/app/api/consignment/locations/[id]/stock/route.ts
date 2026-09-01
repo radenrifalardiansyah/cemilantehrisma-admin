@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,10 +9,13 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'view');
   if (guard instanceof Response) return guard;
   const { id: locationId } = await ctx.params;
-  const snap = await getDb().collection('consignmentStock').where('locationId', '==', locationId).get();
-  const stock = snap.docs
-    .map(d => d.data())
-    .filter(data => ((data.stockQty as number) ?? 0) > 0)
-    .sort((a, b) => (a.productName as string).localeCompare(b.productName as string));
+  const sql = getSql();
+  const rows = await sql`
+    select location_id as "locationId", product_id as "productId", product_name as "productName",
+      stock_qty as "stockQty", harga_titip as "hargaTitip"
+    from consignment_stock where location_id = ${locationId} and stock_qty > 0
+    order by product_name
+  `;
+  const stock = rows.map(r => ({ ...r, stockQty: Number(r.stockQty), hargaTitip: Number(r.hargaTitip) }));
   return Response.json({ stock });
 }

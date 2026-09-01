@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -28,13 +29,16 @@ const CONSIGNMENT_ANALYTICS_VIEW_KEYS = ['consignment', 'dashboard'];
 const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
-    const [locSnap, shipSnap, recapSnap, stockSnap] = await Promise.all([
+    const sql = getSql();
+    const [locSnap, shipSnap, recapSnap, stockRows] = await Promise.all([
       db.collection('consignmentLocations').get(),
       db.collection('consignmentShipments')
         .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
       db.collection('consignmentRecaps')
         .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-      db.collection('consignmentStock').get(),
+      sql<{ location_id: string | null; product_id: string | null; stock_qty: string; harga_titip: string | null }[]>`
+        select location_id, product_id, stock_qty, harga_titip from consignment_stock
+      `,
     ]);
 
     const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
@@ -49,7 +53,10 @@ const getRawConsignmentAnalytics = unstable_cache(
         const data = d.data();
         return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
       }),
-      stock: stockSnap.docs.map(d => d.data() as StockDoc),
+      stock: stockRows.map(r => ({
+        locationId: r.location_id ?? undefined, productId: r.product_id ?? undefined,
+        stockQty: Number(r.stock_qty) || 0, hargaTitip: r.harga_titip != null ? Number(r.harga_titip) : 0,
+      }) as StockDoc),
     };
   },
   ['admin-analytics-consignment'],

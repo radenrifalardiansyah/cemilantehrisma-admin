@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 export async function GET(req: NextRequest) {
@@ -10,13 +9,25 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai Laporan Stok untuk filter per periode
   const to   = searchParams.get('to');
+  const sql = getSql();
 
-  let query: Query<DocumentData> = getDb().collection('stock').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
-  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
-  if (!from && !to) query = query.limit(200);
+  const SELECT_COLUMNS = sql`
+    id, product_id as "productId", product_name as "productName", warehouse_id as "warehouseId",
+    warehouse_name as "warehouseName", type, qty, note,
+    from_warehouse_id as "fromWarehouseId", from_warehouse_name as "fromWarehouseName",
+    to_warehouse_id as "toWarehouseId", to_warehouse_name as "toWarehouseName",
+    created_at as "createdAt"
+  `;
 
-  const snap = await query.get();
-  const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const rows = (from || to)
+    ? await sql`
+        select ${SELECT_COLUMNS} from stock_ledger
+        where created_at >= ${from ? wibDayStart(from).toDate() : new Date(0)}
+          and created_at <= ${to ? wibDayEnd(to).toDate() : new Date()}
+        order by created_at desc
+      `
+    : await sql`select ${SELECT_COLUMNS} from stock_ledger order by created_at desc limit 200`;
+
+  const entries = rows.map(r => ({ ...r, qty: Number(r.qty) }));
   return Response.json({ entries });
 }
