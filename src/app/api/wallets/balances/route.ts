@@ -14,6 +14,12 @@ import { requirePermission } from '@/lib/rbac';
 // (orders/consignmentRecaps) tetap di-cache 15 detik seperti pola lain di app ini, supaya tidak
 // menambah beban baca Firestore.
 //
+// Ke-4 tabel Postgres digabung jadi SATU query (UNION ALL + SUM ... FILTER) alih-alih 6 query
+// terpisah lewat Promise.all — bukan cuma soal efisiensi (1 round trip, bukan 6), tapi wajib:
+// beberapa query Postgres konkuren lewat 1 koneksi pool bergantung pada pipelining postgres.js,
+// dan pipelining itu terbukti macet total (bukan cuma lambat) lewat PgBouncer transaction-mode
+// Supabase — lihat komentar di src/lib/db.ts. 1 query = tidak ada yang perlu dipipeline sama sekali.
+//
 // Response:
 // - `balances`: saldo per walletId (initialBalance dompet + semua transaksi milik dompet itu).
 // - `unassigned`: entri lama tanpa walletId (dari sebelum fitur Dompet ada) — dipakai WalletsTab &
@@ -59,21 +65,15 @@ const getCachedOrdersRecapsByWallet = unstable_cache(
   { revalidate: 15 },
 );
 
-interface GroupedSum { wallet_id: string | null; total: string }
-
-async function groupedSum(query: Promise<GroupedSum[]>) {
-  const rows = await query;
-  const map = new Map<string, number>();
-  rows.forEach(r => { if (r.wallet_id) map.set(r.wallet_id, Number(r.total) || 0); });
-  return map;
+interface PgTotalsRow {
+  wallet_id: string | null;
+  income: string | null; expense: string | null;
+  modal: string | null; prive: string | null;
+  transfer_in: string | null; transfer_out: string | null;
 }
+interface WalletTotals { income: number; expense: number; modal: number; prive: number; transferIn: number; transferOut: number }
 
-async function scalarSum(query: Promise<{ total: string | null }[]>) {
-  const [row] = await query;
-  return Number(row?.total) || 0;
-}
-
-const sumOfMap = (m: Map<string, number>) => [...m.values()].reduce((s, v) => s + v, 0);
+const EMPTY_TOTALS: WalletTotals = { income: 0, expense: 0, modal: 0, prive: 0, transferIn: 0, transferOut: 0 };
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'wallets', 'view');
@@ -82,24 +82,46 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const sql = getSql();
 
-  const [
-    walletsSnap, ordersRecaps,
-    incomeByWallet, expensesByWallet, modalByWallet, priveByWallet, transfersInByWallet, transfersOutByWallet,
-    incomeNull, expensesNull, modalNull, priveNull,
-  ] = await Promise.all([
+  const [walletsSnap, ordersRecaps, pgRows] = await Promise.all([
     db.collection('wallets').get(),
     getCachedOrdersRecapsByWallet(),
-    groupedSum(sql<GroupedSum[]>`select wallet_id, sum(amount) as total from income where wallet_id is not null group by wallet_id`),
-    groupedSum(sql<GroupedSum[]>`select wallet_id, sum(amount) as total from expenses where wallet_id is not null group by wallet_id`),
-    groupedSum(sql<GroupedSum[]>`select wallet_id, sum(amount) as total from capital_entries where wallet_id is not null and type = 'modal' group by wallet_id`),
-    groupedSum(sql<GroupedSum[]>`select wallet_id, sum(amount) as total from capital_entries where wallet_id is not null and type = 'prive' group by wallet_id`),
-    groupedSum(sql<GroupedSum[]>`select to_wallet_id as wallet_id, sum(amount) as total from wallet_transfers group by to_wallet_id`),
-    groupedSum(sql<GroupedSum[]>`select from_wallet_id as wallet_id, sum(amount) as total from wallet_transfers group by from_wallet_id`),
-    scalarSum(sql<{ total: string | null }[]>`select sum(amount) as total from income where wallet_id is null`),
-    scalarSum(sql<{ total: string | null }[]>`select sum(amount) as total from expenses where wallet_id is null`),
-    scalarSum(sql<{ total: string | null }[]>`select sum(amount) as total from capital_entries where wallet_id is null and type = 'modal'`),
-    scalarSum(sql<{ total: string | null }[]>`select sum(amount) as total from capital_entries where wallet_id is null and type = 'prive'`),
+    sql<PgTotalsRow[]>`
+      select
+        wallet_id,
+        sum(amount) filter (where kind = 'income') as income,
+        sum(amount) filter (where kind = 'expense') as expense,
+        sum(amount) filter (where kind = 'modal') as modal,
+        sum(amount) filter (where kind = 'prive') as prive,
+        sum(amount) filter (where kind = 'transfer_in') as transfer_in,
+        sum(amount) filter (where kind = 'transfer_out') as transfer_out
+      from (
+        select wallet_id, amount, 'income' as kind from income
+        union all
+        select wallet_id, amount, 'expense' as kind from expenses
+        union all
+        select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal'
+        union all
+        select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive'
+        union all
+        select to_wallet_id as wallet_id, amount, 'transfer_in' as kind from wallet_transfers
+        union all
+        select from_wallet_id as wallet_id, amount, 'transfer_out' as kind from wallet_transfers
+      ) combined
+      group by wallet_id
+    `,
   ]);
+
+  const pgByWallet = new Map<string, WalletTotals>();
+  let pgUnassigned: WalletTotals = EMPTY_TOTALS;
+  pgRows.forEach(r => {
+    const totals: WalletTotals = {
+      income: Number(r.income) || 0, expense: Number(r.expense) || 0,
+      modal: Number(r.modal) || 0, prive: Number(r.prive) || 0,
+      transferIn: Number(r.transfer_in) || 0, transferOut: Number(r.transfer_out) || 0,
+    };
+    if (r.wallet_id) pgByWallet.set(r.wallet_id, totals);
+    else pgUnassigned = totals;
+  });
 
   const ordersByWallet = new Map(ordersRecaps.orders);
   const recapsByWallet = new Map(ordersRecaps.recaps);
@@ -108,26 +130,22 @@ export async function GET(req: NextRequest) {
   walletsSnap.docs.forEach(d => {
     const id = d.id;
     const initialBalance = Number(d.data().initialBalance) || 0;
+    const t = pgByWallet.get(id) ?? EMPTY_TOTALS;
     balances[id] = initialBalance
-      + (incomeByWallet.get(id) ?? 0)
-      + (ordersByWallet.get(id) ?? 0)
-      + (recapsByWallet.get(id) ?? 0)
-      + (modalByWallet.get(id) ?? 0)
-      + (transfersInByWallet.get(id) ?? 0)
-      - (expensesByWallet.get(id) ?? 0)
-      - (priveByWallet.get(id) ?? 0)
-      - (transfersOutByWallet.get(id) ?? 0);
+      + t.income + t.modal + t.transferIn
+      + (ordersByWallet.get(id) ?? 0) + (recapsByWallet.get(id) ?? 0)
+      - t.expense - t.prive - t.transferOut;
   });
 
-  const unassigned = incomeNull + ordersRecaps.ordersUnassigned + ordersRecaps.recapsUnassigned + modalNull - expensesNull - priveNull;
+  const unassigned = pgUnassigned.income + pgUnassigned.modal - pgUnassigned.expense - pgUnassigned.prive
+    + ordersRecaps.ordersUnassigned + ordersRecaps.recapsUnassigned;
 
-  const totalTx =
-    (sumOfMap(incomeByWallet) + incomeNull)
-    + (sumOfMap(ordersByWallet) + ordersRecaps.ordersUnassigned)
-    + (sumOfMap(recapsByWallet) + ordersRecaps.recapsUnassigned)
-    + (sumOfMap(modalByWallet) + modalNull)
-    - (sumOfMap(expensesByWallet) + expensesNull)
-    - (sumOfMap(priveByWallet) + priveNull);
+  let totalTx = ordersRecaps.ordersUnassigned + ordersRecaps.recapsUnassigned;
+  for (const t of [...pgByWallet.values(), pgUnassigned]) {
+    totalTx += t.income + t.modal - t.expense - t.prive;
+  }
+  for (const v of ordersByWallet.values()) totalTx += v;
+  for (const v of recapsByWallet.values()) totalTx += v;
 
   return Response.json({ balances, unassigned, totalTx });
 }
