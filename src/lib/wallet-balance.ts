@@ -1,17 +1,24 @@
 import type { Firestore, Query, Transaction } from 'firebase-admin/firestore';
+import { getSql } from '@/lib/db';
 
-const WALLET_ID_COLLECTIONS = ['income', 'expenses', 'capitalEntries', 'materialPurchases', 'orders', 'consignmentRecaps'];
+// `capitalEntries` pindah ke Postgres (Tahap 2 migrasi, lihat plan gleaming-wondering-quokka.md)
+// — makanya dicek terpisah dari koleksi Firestore lain di bawah.
+const WALLET_ID_COLLECTIONS = ['income', 'expenses', 'materialPurchases', 'orders', 'consignmentRecaps'];
 
 // Dipakai oleh DELETE satuan dan bulk-delete dompet — dompet dengan riwayat transaksi (termasuk
 // jadi asal/tujuan transfer) tidak boleh dihapus permanen, harus dinonaktifkan saja, supaya
 // dokumen lama yang masih menyimpan walletId ini tidak jadi anak yatim.
 export async function walletHasReferences(db: Firestore, walletId: string): Promise<boolean> {
-  const checks = await Promise.all([
-    ...WALLET_ID_COLLECTIONS.map(col => db.collection(col).where('walletId', '==', walletId).limit(1).get()),
-    db.collection('walletTransfers').where('fromWalletId', '==', walletId).limit(1).get(),
-    db.collection('walletTransfers').where('toWalletId', '==', walletId).limit(1).get(),
+  const sql = getSql();
+  const [checks, [capitalRow]] = await Promise.all([
+    Promise.all([
+      ...WALLET_ID_COLLECTIONS.map(col => db.collection(col).where('walletId', '==', walletId).limit(1).get()),
+      db.collection('walletTransfers').where('fromWalletId', '==', walletId).limit(1).get(),
+      db.collection('walletTransfers').where('toWalletId', '==', walletId).limit(1).get(),
+    ]),
+    sql`select exists(select 1 from capital_entries where wallet_id = ${walletId}) as exists`,
   ]);
-  return checks.some(snap => !snap.empty);
+  return checks.some(snap => !snap.empty) || Boolean(capitalRow.exists);
 }
 
 // Satu-satunya tempat menghitung saldo dompet di server — dipakai untuk validasi Transfer
@@ -34,10 +41,19 @@ export async function computeWalletBalance(
   tx?: Transaction,
 ): Promise<number> {
   const read = <T>(q: Query<T>) => (tx ? tx.get(q) : q.get());
-  const [incomeSnap, expensesSnap, capitalSnap, ordersSnap, recapsSnap, transfersInSnap, transfersOutSnap] = await Promise.all([
+  // `capitalEntries` sudah pindah ke Postgres (Tahap 2) — dibaca terpisah, di LUAR transaksi
+  // Firestore `tx` di atas (Postgres tidak ikut serta dalam transaksi Firestore). Untuk frekuensi
+  // transaksi modal/prive yang rendah (input manual, bukan high-concurrency), risiko baca
+  // non-transactional ini diterima sebagai trade-off migrasi bertahap — lihat plan.
+  const sql = getSql();
+  const [incomeSnap, expensesSnap, [capitalTotals], ordersSnap, recapsSnap, transfersInSnap, transfersOutSnap] = await Promise.all([
     read(db.collection('income').where('walletId', '==', walletId)),
     read(db.collection('expenses').where('walletId', '==', walletId)),
-    read(db.collection('capitalEntries').where('walletId', '==', walletId)),
+    sql<{ total_modal: string; total_prive: string }[]>`
+      select coalesce(sum(amount) filter (where type = 'modal'), 0) as total_modal,
+             coalesce(sum(amount) filter (where type = 'prive'), 0) as total_prive
+      from capital_entries where wallet_id = ${walletId}
+    `,
     read(db.collection('orders').where('walletId', '==', walletId)),
     read(db.collection('consignmentRecaps').where('walletId', '==', walletId)),
     read(db.collection('walletTransfers').where('toWalletId', '==', walletId)),
@@ -46,8 +62,8 @@ export async function computeWalletBalance(
 
   const totalIncome = incomeSnap.docs.reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
   const totalExpenses = expensesSnap.docs.reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
-  const totalModal = capitalSnap.docs.filter(d => d.data().type === 'modal').reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
-  const totalPrive = capitalSnap.docs.filter(d => d.data().type === 'prive').reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
+  const totalModal = Number(capitalTotals.total_modal) || 0;
+  const totalPrive = Number(capitalTotals.total_prive) || 0;
   const totalOrders = ordersSnap.docs
     .map(d => d.data())
     .filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan')

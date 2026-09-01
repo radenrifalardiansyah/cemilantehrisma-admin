@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
 export async function POST(req: NextRequest) {
@@ -10,10 +10,8 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(ids) || ids.length === 0)
     return Response.json({ error: 'ids required' }, { status: 400 });
 
-  const db    = getDb();
-  const batch = db.batch();
-  for (const id of ids) batch.delete(db.collection('capitalEntries').doc(id));
-  await batch.commit();
+  const sql = getSql();
+  await sql`delete from capital_entries where id in ${sql(ids)}`;
   revalidateTag('admin-capital', { expire: 0 });
   return Response.json({ deleted: ids.length });
 }

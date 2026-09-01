@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -19,7 +20,6 @@ interface RecapDoc {
 interface IncomeDoc { category?: string; amount?: number; date?: string }
 interface ExpenseDoc { category?: string; amount?: number; date?: string; sourceType?: string }
 interface MaterialDoc { id: string; name?: string; unit?: string; stockQty?: number; avgCost?: number; minStock?: number }
-interface CapitalDoc { type?: 'modal' | 'prive'; amount?: number }
 
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi sudah masuk HPP saat barangnya
 // terjual — sama seperti FinanceReportTab, jangan dihitung lagi di Beban Operasional (dobel).
@@ -80,19 +80,26 @@ interface RecapCashDoc { totalRevenue?: number; paymentStatus?: 'lunas' | 'belum
 const getAllTimeCash = unstable_cache(
   async () => {
     const db = getDb();
-    const [orderSnap, recapSnap, incomeSnap, expenseSnap, capitalSnap] = await Promise.all([
+    const sql = getSql();
+    const [orderSnap, recapSnap, incomeSnap, expenseSnap, [capitalTotals]] = await Promise.all([
       db.collection('orders').get(),
       db.collection('consignmentRecaps').get(),
       db.collection('income').get(),
       db.collection('expenses').get(),
-      db.collection('capitalEntries').get(),
+      // capitalEntries pindah ke Postgres (Tahap 2 migrasi) — agregat langsung di SQL,
+      // bukan tarik semua baris lalu jumlah di JS seperti koleksi Firestore lainnya di atas.
+      sql<{ total_modal: string; total_prive: string }[]>`
+        select coalesce(sum(amount) filter (where type = 'modal'), 0) as total_modal,
+               coalesce(sum(amount) filter (where type = 'prive'), 0) as total_prive
+        from capital_entries
+      `,
     ]);
     return {
       orders: orderSnap.docs.map(d => d.data() as OrderCashDoc),
       recaps: recapSnap.docs.map(d => d.data() as RecapCashDoc),
       income: incomeSnap.docs.map(d => d.data() as IncomeDoc),
       expenses: expenseSnap.docs.map(d => d.data() as ExpenseDoc),
-      capital: capitalSnap.docs.map(d => d.data() as CapitalDoc),
+      capital: { totalModal: Number(capitalTotals.total_modal) || 0, totalPrive: Number(capitalTotals.total_prive) || 0 },
     };
   },
   ['admin-analytics-alltime-cash'],
@@ -160,9 +167,9 @@ export async function GET(req: NextRequest) {
     allTimeCountedOrders.reduce((s, o) => s + (o.total ?? 0), 0) +
     allTimeCountedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0) +
     allTime.income.reduce((s, i) => s + (i.amount ?? 0), 0) +
-    allTime.capital.filter(c => c.type === 'modal').reduce((s, c) => s + (c.amount ?? 0), 0) -
+    allTime.capital.totalModal -
     allTime.expenses.reduce((s, e) => s + (e.amount ?? 0), 0) -
-    allTime.capital.filter(c => c.type === 'prive').reduce((s, c) => s + (c.amount ?? 0), 0);
+    allTime.capital.totalPrive;
 
   // ── Bahan baku — snapshot kondisi saat ini (bukan per-periode) ──
   const materialsWithValue = materials.map(m => ({
