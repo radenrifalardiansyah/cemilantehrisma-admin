@@ -1,5 +1,5 @@
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql, parseJsonb } from '@/lib/db';
 import { getAuthUser, unauthorized, passwordChangeRequired, type AuthUser } from '@/lib/admin-auth';
 import type { Action } from '@/types/rbac';
 
@@ -15,18 +15,24 @@ export function sessionExpired() {
 }
 
 // Cached the same way as getRolePermissionsMap, for the same reason (runs on nearly every
-// authenticated call). `null` means the user doc no longer exists — an already-issued token for
+// authenticated call). `null` means the profile no longer exists — an already-issued token for
 // a deleted account must be rejected outright, not just treated as "never invalidated".
 //
 // Compared against the token's own `iat` (JWT "issued at", unix seconds) rather than keeping a
 // token blacklist: users/[username] PUT bumps this to "now" whenever role or password changes,
-// and DELETE removes the doc entirely — either way, any token minted BEFORE that moment reads as
+// and DELETE removes the row entirely — either way, any token minted BEFORE that moment reads as
 // stale on its very next request, without needing to track individual tokens anywhere.
+//
+// `profiles` pindah ke Postgres (Tahap 7 migrasi, lihat plan gleaming-wondering-quokka.md) —
+// dulu koleksi Firestore `users`.
 export const getSessionInvalidatedAt = unstable_cache(
   async (username: string): Promise<number | null> => {
-    const doc = await getDb().collection('users').doc(username).get();
-    if (!doc.exists) return null;
-    return Number(doc.data()?.sessionsInvalidatedAt) || 0;
+    const sql = getSql();
+    const [row] = await sql<{ sessions_invalidated_at: string | null }[]>`
+      select sessions_invalidated_at from profiles where username = ${username}
+    `;
+    if (!row) return null;
+    return Number(row.sessions_invalidated_at) || 0;
   },
   ['session-invalidated-at'],
   { revalidate: 30, tags: [SESSION_TAG] },
@@ -56,14 +62,18 @@ export async function hasPermission(
 // N-item sequential Firestore round trip into a single read.
 //
 // Cached: this runs on nearly every authenticated API call (requirePermission is used across
-// ~150 routes), so an uncached read here roughly doubled the app's total Firestore read volume.
-// Role matrices change rarely, so a short TTL is safe; role-permissions/[roleId] PUT and
-// roles/[id] DELETE call revalidateTag(ROLE_PERMISSIONS_TAG) so edits still apply immediately
-// instead of waiting out the TTL.
+// ~150 routes). Role matrices change rarely, so a short TTL is safe; role-permissions/[roleId]
+// PUT and roles/[id] DELETE call revalidateTag(ROLE_PERMISSIONS_TAG) so edits still apply
+// immediately instead of waiting out the TTL.
+//
+// `role_permissions` pindah ke Postgres (Tahap 7 migrasi, lihat plan gleaming-wondering-quokka.md).
 export const getRolePermissionsMap = unstable_cache(
   async (role: string): Promise<PermissionsMap | null> => {
-    const doc = await getDb().collection('role_permissions').doc(role).get();
-    return (doc.data()?.permissions as PermissionsMap | undefined) ?? null;
+    const sql = getSql();
+    const [row] = await sql<{ permissions: PermissionsMap | null }[]>`
+      select permissions from role_permissions where role = ${role}
+    `;
+    return parseJsonb(row?.permissions ?? null);
   },
   ['role-permissions-map'],
   { revalidate: 30, tags: [ROLE_PERMISSIONS_TAG] },

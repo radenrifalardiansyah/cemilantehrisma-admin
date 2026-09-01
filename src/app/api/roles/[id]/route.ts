@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission, ROLE_PERMISSIONS_TAG } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,10 +15,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   const data = await req.json() as { name?: string; description?: string };
-  await getDb().collection('roles').doc(id).update({
-    ...data,
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  const sql = getSql();
+  const [existing] = await sql<{ name: string; description: string | null }[]>`select name, description from roles where id = ${id}`;
+  if (!existing) return Response.json({ error: 'Role tidak ditemukan.' }, { status: 404 });
+
+  await sql`
+    update roles set name = ${data.name ?? existing.name}, description = ${data.description ?? existing.description}, updated_at = now()
+    where id = ${id}
+  `;
   return Response.json({ ok: true });
 }
 
@@ -32,17 +35,16 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: 'Role sistem tidak dapat dihapus.' }, { status: 400 });
   }
 
-  const db = getDb();
-  const usedBy = await db.collection('users').where('role', '==', id).get();
-  if (!usedBy.empty) {
+  const sql = getSql();
+  const [usedBy] = await sql<{ count: string }[]>`select count(*)::int as count from profiles where role = ${id}`;
+  if (Number(usedBy.count) > 0) {
     return Response.json(
-      { error: `Tidak bisa dihapus — ${usedBy.size} pengguna masih menggunakan role ini.` },
+      { error: `Tidak bisa dihapus — ${usedBy.count} pengguna masih menggunakan role ini.` },
       { status: 409 },
     );
   }
 
-  await db.collection('roles').doc(id).delete();
-  await db.collection('role_permissions').doc(id).delete();
+  await sql`delete from roles where id = ${id}`;
   revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });
   return Response.json({ ok: true });
 }

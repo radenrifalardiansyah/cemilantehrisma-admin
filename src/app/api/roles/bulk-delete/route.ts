@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission, ROLE_PERMISSIONS_TAG } from '@/lib/rbac';
 
 export async function POST(req: NextRequest) {
@@ -10,9 +10,9 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(ids) || ids.length === 0)
     return Response.json({ error: 'ids required' }, { status: 400 });
 
-  const db = getDb();
-  const usersSnap = await db.collection('users').get();
-  const rolesInUse = new Set(usersSnap.docs.map(d => d.data().role as string));
+  const sql = getSql();
+  const rolesInUseRows = await sql<{ role: string }[]>`select distinct role from profiles`;
+  const rolesInUse = new Set(rolesInUseRows.map(r => r.role));
 
   const deletable: string[] = [];
   let skippedSystem = 0;
@@ -23,13 +23,11 @@ export async function POST(req: NextRequest) {
     deletable.push(id);
   }
 
-  const batch = db.batch();
-  for (const id of deletable) {
-    batch.delete(db.collection('roles').doc(id));
-    batch.delete(db.collection('role_permissions').doc(id));
+  if (deletable.length > 0) {
+    // role_permissions ikut terhapus lewat "on delete cascade" di foreign key-nya.
+    await sql`delete from roles where id in ${sql(deletable)}`;
+    revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });
   }
-  await batch.commit();
-  if (deletable.length > 0) revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });
 
   return Response.json({ deleted: deletable.length, skippedSystem, skippedInUse });
 }
