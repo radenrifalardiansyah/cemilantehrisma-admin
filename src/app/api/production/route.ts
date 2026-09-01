@@ -2,6 +2,7 @@ import { NextRequest, after } from 'next/server';
 import { randomUUID } from 'crypto';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
@@ -9,6 +10,7 @@ import { writeNotification, sendPush } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { insertExpensePg } from '@/lib/expenses-pg';
+import { writeStockLedgerEntryPg } from '@/lib/stock-pg';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
@@ -46,6 +48,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
   const db = getDb();
+  const sql = getSql();
   const snap = await db.collection('productionBatches').orderBy('createdAt', 'desc').limit(limit).get();
   const batches = snap.docs.map(d => ({ id: d.id, ...d.data() })) as BatchWithMeta[];
 
@@ -61,11 +64,12 @@ export async function GET(req: NextRequest) {
     (b.outputs ?? []).forEach(o => wsKeys.add(`${b.warehouseId}_${o.productId}`));
   });
   const wsKeyList = [...wsKeys];
-  const wsSnaps = wsKeyList.length > 0
-    ? await db.getAll(...wsKeyList.map(k => db.collection('warehouse_stock').doc(k)))
+  const wsRows = wsKeyList.length > 0
+    ? await sql<{ id: string; stock_qty: string }[]>`select id, stock_qty from warehouse_stock where id in ${sql(wsKeyList)}`
     : [];
+  const wsById = new Map(wsRows.map(r => [r.id, Number(r.stock_qty) || 0]));
   const wsStock = new Map<string, number>();
-  wsKeyList.forEach((k, i) => wsStock.set(k, Number(wsSnaps[i].data()?.stockQty) || 0));
+  wsKeyList.forEach(k => wsStock.set(k, wsById.get(k) ?? 0));
 
   // Kelompokkan tiap output (per productId+warehouseId) jadi "lot", urut dari yang terbaru, lalu
   // alokasikan stok yang tersisa ke lot-lot itu mulai dari yang terbaru sampai stoknya habis dibagi.
@@ -129,46 +133,97 @@ export async function POST(req: NextRequest) {
   if (!warehouseId) return Response.json({ error: 'Pilih gudang tujuan.' }, { status: 400 });
 
   const db = getDb();
+  const sql = getSql();
   const batchRef    = db.collection('productionBatches').doc();
-  const productRefs = outputs.map(o => db.collection('products').doc(o.productId));
-  const warehouseStockRefs = outputs.map(o => db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`));
-  const stockLogRefs = outputs.map(() => db.collection('stock').doc());
+  const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
   const expenseId = randomUUID();
+
+  // `rawMaterials` masih di Firestore (di luar cakupan Fase 2), sedang `products`/`warehouse_stock`/
+  // `stock_ledger` sudah pindah ke Postgres (Tahap 8-10). Biaya bahan baku (materialCost) dibutuhkan
+  // untuk hitung costPrice produk (Postgres) SEBELUM materialnya sendiri divalidasi & dipotong secara
+  // otentik (Firestore, transaksional) — jadi urutannya di sini kebalikan dari checkout: baca material
+  // biasa dulu (sekadar untuk avgCost, bukan pengecekan stok otoritatif) → kunci & update produk di
+  // Postgres → baru validasi+potong material & tulis dokumen batch di Firestore (di sinilah pengecekan
+  // stok bahan baku yang SEBENARNYA terjadi, dengan tx.get segar). Kalau langkah Firestore gagal
+  // setelah Postgres berhasil, kompensasi (kembalikan produk ke kondisi semula) dijalankan.
+  const materialSnaps = await db.getAll(...materialRefs);
+  const shortages: string[] = [];
+  materialsUsed.forEach((m, i) => {
+    if (!materialSnaps[i].exists) { shortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
+    const stockQty = Number(materialSnaps[i].data()!.stockQty) || 0;
+    if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+  });
+  if (shortages.length > 0) return Response.json({ error: `Stok bahan baku tidak cukup: ${shortages.join(', ')}` }, { status: 400 });
+
+  const materialsWithCost = materialsUsed.map((m, i) => {
+    const costPerUnit = Number(materialSnaps[i].data()!.avgCost) || 0;
+    return { ...m, costPerUnit, cost: costPerUnit * m.qty };
+  });
+  const materialCost  = materialsWithCost.reduce((s, m) => s + m.cost, 0);
+  const totalCost     = materialCost + otherCost;
+  const totalYieldQty = outputs.reduce((s, o) => s + o.yieldQty, 0);
+  // Biaya dari satu batch bahan baku dibagi rata per pcs ke semua produk hasil
+  // (mis. Ori & Pedas dari adonan yang sama) — HPP/pcs dianggap seragam antar varian.
+  const costPerPcs = totalCost / totalYieldQty;
+  const outputsWithCost = outputs.map(o => ({ ...o, costPerPcs }));
+
+  interface ProductSnapshot { productId: string; oldQty: number; oldCost: number; openPO: boolean }
+  const productSnapshots: ProductSnapshot[] = [];
+  let stockCommitted = false;
+
+  try {
+    await sql.begin(async pgTx => {
+      const productIds = outputs.map(o => o.productId);
+      const rows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
+        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
+      `;
+      const byId = new Map(rows.map(r => [r.id, r]));
+      outputs.forEach(o => { if (!byId.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
+
+      for (const o of outputs) {
+        const row = byId.get(o.productId)!;
+        const oldQty  = Number(row.stock_qty) || 0;
+        const oldCost = row.cost_price != null ? Number(row.cost_price) : 0;
+        const newQty  = oldQty + o.yieldQty;
+        const newCost = newQty > 0 ? (oldQty * oldCost + o.yieldQty * costPerPcs) / newQty : costPerPcs;
+        const newStock = row.open_po ? 'open_po' : newQty > 0 ? 'ready' : 'habis';
+        await pgTx`update products set stock_qty = ${newQty}, cost_price = ${newCost}, stock = ${newStock}, updated_at = now() where id = ${o.productId}`;
+
+        await pgTx`
+          insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
+          values (${`${warehouseId}_${o.productId}`}, ${warehouseId}, ${o.productId}, ${o.productName}, ${o.yieldQty}, now())
+          on conflict (id) do update set
+            stock_qty = warehouse_stock.stock_qty + excluded.stock_qty,
+            product_name = excluded.product_name,
+            updated_at = now()
+        `;
+        await writeStockLedgerEntryPg(pgTx, {
+          productId: o.productId, productName: o.productName, warehouseId, warehouseName, type: 'in', qty: o.yieldQty,
+          note: `Hasil produksi${data.note ? ` - ${data.note}` : ''}`,
+        });
+
+        productSnapshots.push({ productId: o.productId, oldQty, oldCost, openPO: row.open_po });
+      }
+    });
+    stockCommitted = true;
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan produksi.' }, { status: 400 });
+  }
 
   const pushPayloads: { title: string; message: string }[] = [];
   try {
     await db.runTransaction(async tx => {
-      const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
-      const [materialSnaps, productSnaps] = await Promise.all([
-        Promise.all(materialRefs.map(r => tx.get(r))),
-        Promise.all(productRefs.map(r => tx.get(r))),
-      ]);
-
-      outputs.forEach((o, i) => {
-        if (!productSnaps[i].exists) throw new Error(`Produk "${o.productName}" tidak ditemukan.`);
-      });
-
-      const shortages: string[] = [];
+      const freshMaterialSnaps = await Promise.all(materialRefs.map(r => tx.get(r)));
+      const freshShortages: string[] = [];
       materialsUsed.forEach((m, i) => {
-        if (!materialSnaps[i].exists) { shortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
-        const stockQty = Number(materialSnaps[i].data()!.stockQty) || 0;
-        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+        if (!freshMaterialSnaps[i].exists) { freshShortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
+        const stockQty = Number(freshMaterialSnaps[i].data()!.stockQty) || 0;
+        if (stockQty < m.qty) freshShortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
       });
-      if (shortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${shortages.join(', ')}`);
-
-      const materialsWithCost = materialsUsed.map((m, i) => {
-        const costPerUnit = Number(materialSnaps[i].data()!.avgCost) || 0;
-        return { ...m, costPerUnit, cost: costPerUnit * m.qty };
-      });
-      const materialCost   = materialsWithCost.reduce((s, m) => s + m.cost, 0);
-      const totalCost      = materialCost + otherCost;
-      const totalYieldQty  = outputs.reduce((s, o) => s + o.yieldQty, 0);
-      // Biaya dari satu batch bahan baku dibagi rata per pcs ke semua produk hasil
-      // (mis. Ori & Pedas dari adonan yang sama) — HPP/pcs dianggap seragam antar varian.
-      const costPerPcs = totalCost / totalYieldQty;
+      if (freshShortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${freshShortages.join(', ')}`);
 
       materialsUsed.forEach((m, i) => {
-        const material = materialSnaps[i].data()!;
+        const material = freshMaterialSnaps[i].data()!;
         const oldQty = Number(material.stockQty) || 0;
         const newQty = oldQty - m.qty;
         const minStock = Number(material.minStock) || 0;
@@ -186,40 +241,6 @@ export async function POST(req: NextRequest) {
             actor: guard,
           }));
         }
-      });
-
-      const outputsWithCost = outputs.map((o, i) => {
-        const product = productSnaps[i].data()!;
-        const oldQty  = Number(product.stockQty) || 0;
-        const oldCost = Number(product.costPrice) || 0;
-        const newQty  = oldQty + o.yieldQty;
-        const newCost = newQty > 0 ? (oldQty * oldCost + o.yieldQty * costPerPcs) / newQty : costPerPcs;
-        tx.update(productRefs[i], {
-          stockQty: newQty,
-          costPrice: newCost,
-          stock: product.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-
-        // Stok hasil produksi masuk ke gudang tujuan (sama seperti stok-masuk manual di menu Gudang)
-        tx.set(
-          warehouseStockRefs[i],
-          {
-            warehouseId, productId: o.productId, productName: o.productName,
-            stockQty: FieldValue.increment(o.yieldQty),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
-        tx.set(stockLogRefs[i], {
-          warehouseId, warehouseName,
-          productId: o.productId, productName: o.productName,
-          type: 'in', qty: o.yieldQty,
-          note: `Hasil produksi${data.note ? ` - ${data.note}` : ''}`,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-
-        return { ...o, costPerPcs };
       });
 
       const batchData = {
@@ -240,12 +261,34 @@ export async function POST(req: NextRequest) {
       // Expense (biaya lain) ditulis ke Postgres SETELAH transaksi ini commit — lihat src/lib/expenses-pg.ts.
     });
   } catch (err) {
+    // Dokumen batch/material gagal tersimpan SETELAH stok produk Postgres sudah diperbarui —
+    // kompensasi: kembalikan produk ke kondisi (qty/cost) semula sebelum produksi ini.
+    if (stockCommitted) {
+      try {
+        await sql.begin(async pgTx => {
+          for (const snap of productSnapshots) {
+            const output = outputs.find(o => o.productId === snap.productId)!;
+            const oldStock = snap.openPO ? 'open_po' : snap.oldQty > 0 ? 'ready' : 'habis';
+            await pgTx`update products set stock_qty = ${snap.oldQty}, cost_price = ${snap.oldCost}, stock = ${oldStock}, updated_at = now() where id = ${snap.productId}`;
+            await pgTx`
+              update warehouse_stock set stock_qty = stock_qty - ${output.yieldQty}, updated_at = now()
+              where id = ${`${warehouseId}_${snap.productId}`}
+            `;
+            await writeStockLedgerEntryPg(pgTx, {
+              productId: snap.productId, productName: output.productName, warehouseId, warehouseName, type: 'out', qty: output.yieldQty,
+              note: `Kompensasi — gagal simpan produksi (${err instanceof Error ? err.message : 'error'})`,
+            });
+          }
+        });
+      } catch (compErr) {
+        console.error('CRITICAL: gagal kompensasi stok produk setelah produksi gagal tersimpan', compErr);
+      }
+    }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan produksi.' }, { status: 400 });
   }
 
   if (otherCost > 0) {
     const productNames = outputs.map(o => o.productName).join(' & ');
-    const totalYieldQty = outputs.reduce((s, o) => s + o.yieldQty, 0);
     await insertExpensePg({
       id: expenseId,
       category: 'Produksi',

@@ -1,9 +1,10 @@
 import { NextRequest, after } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
-import { readProductsForDeltas, applyStockDelta, writeStockLedgerEntry } from '@/lib/stock';
+import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
@@ -48,12 +49,14 @@ export async function GET(req: NextRequest) {
   return Response.json({ orders });
 }
 
+interface OrderItemInput { productId?: string; qty: number; [key: string]: unknown }
+
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown> & {
     transactionAt?: string; invoiceNo?: string;
-    items?: { productId?: string; qty: number }[];
+    items?: OrderItemInput[];
     warehouseId?: string; warehouseName?: string;
     isPreOrder?: boolean;
   };
@@ -65,30 +68,64 @@ export async function POST(req: NextRequest) {
   // Keuangan). Kalau tidak dikirim, pakai waktu server seperti biasa.
   const createdAt = transactionAt ? Timestamp.fromDate(new Date(transactionAt)) : FieldValue.serverTimestamp();
 
-  // Potong stok jadi bagian dari transaksi yang sama dengan penyimpanan order — tidak ada lagi
-  // celah "order tersimpan tapi stok gagal dipotong" seperti pola fetch terpisah yang lama.
   const deltas = new Map<string, number>();
   for (const item of data.items ?? []) {
     if (!item.productId || !item.qty) continue;
     deltas.set(item.productId, (deltas.get(item.productId) ?? 0) - item.qty);
   }
 
-  let orderId = '';
+  // Stok (Postgres, Tahap 9-10 Fase 2 — lihat plan gleaming-wondering-quokka.md) divalidasi &
+  // dipotong DULU di transaksi terpisah, SEBELUM dokumen order (Firestore, masih di sana untuk
+  // sementara) ditulis. Ini 2 transaksi lintas database, bukan satu — kalau langkah Firestore di
+  // bawah gagal SETELAH stok Postgres berhasil dipotong, kompensasi (kembalikan stok) dijalankan
+  // best-effort di catch block kedua.
+  const sql = getSql();
   let isPreOrder = false;
-  let pushPayload: { title: string; message: string } | null = null;
+  let itemsWithCost: OrderItemInput[] = [];
+  let stockCommitted = false;
+
   try {
-    await db.runTransaction(async tx => {
-      const { products, shortageDetails } = await readProductsForDeltas(tx, db, deltas);
+    await sql.begin(async pgTx => {
+      const { products, shortageDetails } = await readProductsForDeltasPg(pgTx, deltas);
       // "Jual sebagai PO" adalah pilihan manual kasir (lihat checkbox di PosTab.tsx), lepas dari
       // stok saat ini — sengaja TIDAK otomatis dipicu oleh stok habis, supaya kasir yang menentukan
       // kapan suatu transaksi perlu jadi PO. Kalau dicentang, pesanan disimpan sebagai 'baru' tanpa
       // memotong stok sekarang (persis pesanan Website), baru dipotong begitu admin menandai
       // Selesai di menu Pesanan (lihat PUT /api/orders/[id]). Cek `hasOpenPOItem` di sini cuma
       // jaga-jaga kalau body dikirim manual (bukan lewat UI) tanpa produk "Buka PO" sama sekali.
-      const hasOpenPOItem = [...deltas.keys()].some(pid => !!products.get(pid)?.data.openPO);
+      const hasOpenPOItem = [...deltas.keys()].some(pid => !!products.get(pid)?.openPO);
       isPreOrder = data.isPreOrder === true && hasOpenPOItem;
       if (!isPreOrder && shortageDetails.length > 0) throw new Error(`Stok tidak cukup: ${shortageDetails.map(s => s.message).join(', ')}`);
 
+      // Snapshot HPP (costPrice) tiap item saat transaksi terjadi — costPrice produk adalah
+      // rata-rata bergerak yang berubah tiap ada produksi baru, jadi HPP historis tidak bisa
+      // direkonstruksi ulang secara akurat kalau tidak disimpan di sini (dipakai Laporan Keuangan).
+      itemsWithCost = (data.items ?? []).map(item => ({
+        ...item,
+        costPrice: item.productId ? (products.get(item.productId)?.costPrice ?? 0) : 0,
+      }));
+
+      if (!isPreOrder) {
+        for (const [productId, delta] of deltas) {
+          const product = products.get(productId)!;
+          await applyStockDeltaPg(pgTx, { productId, product, warehouseId: data.warehouseId, delta });
+          await writeStockLedgerEntryPg(pgTx, {
+            productId, productName: product.name, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+            type: 'out', qty: delta,
+            note: `Penjualan Kasir - ${data.invoiceNo ?? ''}`,
+          });
+        }
+      }
+    });
+    stockCommitted = !isPreOrder && deltas.size > 0;
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan transaksi.' }, { status: 400 });
+  }
+
+  let orderId = '';
+  let pushPayload: { title: string; message: string } | null = null;
+  try {
+    await db.runTransaction(async tx => {
       // invoiceNo dibuat di klien dengan resolusi menit (INV-YYYYMMDD-HHmm), tanpa detik/counter —
       // dua transaksi kasir yang selesai dalam menit yang sama bisa kirim invoiceNo identik.
       // Server tidak pernah mengeceknya sebelum ini, jadi keduanya tersimpan dengan nomor yang
@@ -104,14 +141,6 @@ export async function POST(req: NextRequest) {
         }
         invoiceNo = candidate;
       }
-
-      // Snapshot HPP (costPrice) tiap item saat transaksi terjadi — costPrice produk adalah
-      // rata-rata bergerak yang berubah tiap ada produksi baru, jadi HPP historis tidak bisa
-      // direkonstruksi ulang secara akurat kalau tidak disimpan di sini (dipakai Laporan Keuangan).
-      const itemsWithCost = (data.items ?? []).map(item => ({
-        ...item,
-        costPrice: item.productId ? Number(products.get(item.productId)?.data.costPrice) || 0 : 0,
-      }));
 
       const ref = db.collection('orders').doc();
       orderId = ref.id;
@@ -137,25 +166,34 @@ export async function POST(req: NextRequest) {
         entityCollection: 'orders', entityId: ref.id,
         actor: guard,
       });
-
-      if (!isPreOrder) {
-        for (const [productId, delta] of deltas) {
-          const product = products.get(productId)!;
-          applyStockDelta(tx, db, { productId, product, warehouseId: data.warehouseId, delta });
-          writeStockLedgerEntry(tx, db, {
-            productId, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
-            type: 'out', qty: delta,
-            note: `Penjualan Kasir - ${data.invoiceNo ?? ''}`,
-          });
-        }
-      }
     });
   } catch (err) {
+    // Dokumen order gagal tersimpan SETELAH stok Postgres sudah dipotong — kompensasi: kembalikan
+    // stok supaya tidak "menghilang" tanpa ada order yang tercatat sama sekali.
+    if (stockCommitted) {
+      try {
+        await sql.begin(async pgTx => {
+          const reversedDeltas = new Map([...deltas].map(([id, d]) => [id, -d] as [string, number]));
+          const { products } = await readProductsForDeltasPg(pgTx, reversedDeltas);
+          for (const [productId, delta] of reversedDeltas) {
+            const product = products.get(productId)!;
+            await applyStockDeltaPg(pgTx, { productId, product, warehouseId: data.warehouseId, delta });
+            await writeStockLedgerEntryPg(pgTx, {
+              productId, productName: product.name, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+              type: 'in', qty: delta,
+              note: `Kompensasi — gagal simpan pesanan (${err instanceof Error ? err.message : 'error'})`,
+            });
+          }
+        });
+      } catch (compErr) {
+        console.error('CRITICAL: gagal kompensasi stok setelah order gagal tersimpan', compErr);
+      }
+    }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan transaksi.' }, { status: 400 });
   }
 
   if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for new order', err));
-  if (!isPreOrder && deltas.size > 0) after(() => revalidateStorefront('products'));
+  if (stockCommitted) after(() => revalidateStorefront('products'));
 
   return Response.json({ id: orderId });
 }

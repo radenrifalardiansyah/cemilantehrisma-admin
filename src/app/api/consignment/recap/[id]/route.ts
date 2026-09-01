@@ -1,9 +1,11 @@
 import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { writeHistoryEntry, logHistory } from '@/lib/history';
 import { revalidateStorefront } from '@/lib/revalidate';
+import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number }
@@ -41,6 +43,22 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   return Response.json({ ok: true });
 }
 
+interface FullSnapshot { table: 'products' | 'consignment_stock' | 'warehouse_stock'; key: string; oldValues: Record<string, unknown> }
+
+async function compensateFullSnapshots(sql: ReturnType<typeof getSql>, snapshots: FullSnapshot[]) {
+  await sql.begin(async pgTx => {
+    for (const s of snapshots) {
+      if (s.table === 'products') {
+        await pgTx`update products set stock_qty = ${s.oldValues.stockQty as number}, stock = ${s.oldValues.stock as string}, updated_at = now() where id = ${s.key}`;
+      } else if (s.table === 'consignment_stock') {
+        await pgTx`update consignment_stock set stock_qty = ${s.oldValues.stockQty as number}, updated_at = now() where id = ${s.key}`;
+      } else {
+        await pgTx`update warehouse_stock set stock_qty = ${s.oldValues.stockQty as number}, updated_at = now() where id = ${s.key}`;
+      }
+    }
+  });
+}
+
 // Hapus riwayat rekap — mengembalikan stok titip di lokasi, dan membalik stok gudang/produk
 // yang sudah ditambah dari retur. Ditolak jika stok retur tersebut sudah terpakai lebih lanjut.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
@@ -48,71 +66,82 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
+  const sql = getSql();
   const recapRef = db.collection('consignmentRecaps').doc(id);
 
-  let stockTouched = false;
+  const recapSnap = await recapRef.get();
+  if (!recapSnap.exists) return Response.json({ error: 'Riwayat rekap tidak ditemukan.' }, { status: 404 });
+  const recapFull = recapSnap.data();
+  const recap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
+  const items = recap.items ?? [];
+  const returItems = items.filter(it => it.qtyRetur > 0);
+  const stockTouched = returItems.length > 0;
+
+  const snapshots: FullSnapshot[] = [];
   try {
-    await db.runTransaction(async tx => {
-      const recapSnap = await tx.get(recapRef);
-      if (!recapSnap.exists) throw new Error('Riwayat rekap tidak ditemukan.');
-      const recapFull = recapSnap.data();
-      const recap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
-      const items = recap.items ?? [];
-      const returItems = items.filter(it => it.qtyRetur > 0);
-      stockTouched = returItems.length > 0;
+    await sql.begin(async pgTx => {
+      const stockKeys = items.map(it => `${recap.locationId}_${it.productId}`);
+      const productIds = returItems.map(it => it.productId);
+      const wsKeys = returItems.map(it => `${recap.warehouseId}_${it.productId}`);
 
-      const stockRefs   = items.map(it => db.collection('consignmentStock').doc(`${recap.locationId}_${it.productId}`));
-      const productRefs = returItems.map(it => db.collection('products').doc(it.productId));
-      const wsRefs       = returItems.map(it => db.collection('warehouse_stock').doc(`${recap.warehouseId}_${it.productId}`));
-
-      const [stockSnaps, productSnaps, wsSnaps] = await Promise.all([
-        Promise.all(stockRefs.map(r => tx.get(r))),
-        Promise.all(productRefs.map(r => tx.get(r))),
-        Promise.all(wsRefs.map(r => tx.get(r))),
+      const [stockRows, productRows, wsRows] = await Promise.all([
+        stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
+        productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
+        wsKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from warehouse_stock where id in ${pgTx(wsKeys)} order by id for update` : [],
       ]);
+      const stockById = new Map(stockRows.map(r => [r.id, r]));
+      const productById = new Map(productRows.map(r => [r.id, r]));
+      const wsById = new Map(wsRows.map(r => [r.id, r]));
 
       const shortages: string[] = [];
       returItems.forEach((it, i) => {
-        const productQty = productSnaps[i].exists ? Number(productSnaps[i].data()!.stockQty) || 0 : 0;
+        const productQty = Number(productById.get(productIds[i])?.stock_qty) || 0;
         if (productQty < it.qtyRetur) shortages.push(`${it.productName} (stok toko tersisa ${productQty}, retur ${it.qtyRetur})`);
-        const wsQty = wsSnaps[i].exists ? Number(wsSnaps[i].data()!.stockQty) || 0 : 0;
+        const wsQty = Number(wsById.get(wsKeys[i])?.stock_qty) || 0;
         if (wsQty < it.qtyRetur) shortages.push(`${it.productName} (stok gudang tujuan tersisa ${wsQty}, retur ${it.qtyRetur})`);
       });
       if (shortages.length > 0) {
         throw new Error(`Tidak bisa menghapus — stok retur dari rekap ini sudah terpakai: ${shortages.join(', ')}`);
       }
 
-      items.forEach((it, i) => {
+      for (const [i, it] of items.entries()) {
+        const key = stockKeys[i];
+        const row = stockById.get(key);
         const restore = it.qtySold + it.qtyRetur + it.qtyReject;
-        if (stockSnaps[i].exists) {
-          const stockQty = Number(stockSnaps[i].data()!.stockQty) || 0;
-          tx.update(stockRefs[i], { stockQty: stockQty + restore, updatedAt: FieldValue.serverTimestamp() });
-        } else {
-          tx.set(stockRefs[i], {
-            locationId: recap.locationId, productId: it.productId, productName: it.productName,
-            stockQty: restore, hargaTitip: it.hargaTitip ?? 0, updatedAt: FieldValue.serverTimestamp(),
-          });
-        }
-      });
+        const oldQty = row ? Number(row.stock_qty) || 0 : 0;
+        snapshots.push({ table: 'consignment_stock', key, oldValues: { stockQty: oldQty } });
+        await pgTx`
+          insert into consignment_stock (id, location_id, product_id, product_name, stock_qty, harga_titip, updated_at)
+          values (${key}, ${recap.locationId}, ${it.productId}, ${it.productName}, ${oldQty + restore}, ${it.hargaTitip ?? 0}, now())
+          on conflict (id) do update set stock_qty = ${oldQty + restore}, updated_at = now()
+        `;
+      }
 
-      returItems.forEach((it, i) => {
-        if (productSnaps[i].exists) {
-          const product = productSnaps[i].data()!;
-          const newQty = (Number(product.stockQty) || 0) - it.qtyRetur;
-          tx.update(productRefs[i], {
-            stockQty: newQty,
-            stock: product.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-            updatedAt: FieldValue.serverTimestamp(),
-          });
+      for (const [i, it] of returItems.entries()) {
+        const productRow = productById.get(productIds[i]);
+        if (productRow) {
+          const oldQty = Number(productRow.stock_qty) || 0;
+          snapshots.push({ table: 'products', key: it.productId, oldValues: { stockQty: oldQty, stock: stockLabel(productRow.open_po, oldQty) } });
+          const newQty = oldQty - it.qtyRetur;
+          await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(productRow.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
         }
-        if (wsSnaps[i].exists) {
-          const wsQty = Number(wsSnaps[i].data()!.stockQty) || 0;
-          tx.update(wsRefs[i], { stockQty: wsQty - it.qtyRetur, updatedAt: FieldValue.serverTimestamp() });
+        const wsKey = wsKeys[i];
+        const wsRow = wsById.get(wsKey);
+        if (wsRow) {
+          const oldQty = Number(wsRow.stock_qty) || 0;
+          snapshots.push({ table: 'warehouse_stock', key: wsKey, oldValues: { stockQty: oldQty } });
+          await pgTx`update warehouse_stock set stock_qty = ${oldQty - it.qtyRetur}, updated_at = now() where id = ${wsKey}`;
         }
-      });
+      }
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
+  }
 
+  try {
+    await db.runTransaction(async tx => {
+      const freshSnap = await tx.get(recapRef);
       tx.delete(recapRef);
-
       writeHistoryEntry(tx, db, {
         entity: 'consignment',
         entityCollection: 'consignmentRecaps',
@@ -120,10 +149,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         entityLabel: (recapFull?.locationName as string | undefined) || id,
         action: 'delete',
         actor: guard,
-        before: recapFull ?? null,
+        before: freshSnap.exists ? freshSnap.data() ?? null : (recapFull ?? null),
       });
     });
   } catch (err) {
+    try { await compensateFullSnapshots(sql, snapshots); }
+    catch (compErr) { console.error('CRITICAL: gagal kompensasi stok setelah hapus rekap konsinyasi gagal tersimpan', compErr); }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
   }
 
@@ -156,66 +187,78 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   const db = getDb();
+  const sql = getSql();
   const recapRef = db.collection('consignmentRecaps').doc(id);
 
-  let stockTouched = false;
+  const recapSnap = await recapRef.get();
+  if (!recapSnap.exists) return Response.json({ error: 'Riwayat rekap tidak ditemukan.' }, { status: 404 });
+  const oldRecapFull = recapSnap.data();
+  const oldRecap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
+  const oldItems = oldRecap.items ?? [];
+  const oldReturItems = oldItems.filter(it => it.qtyRetur > 0);
+  const newReturItems = newItems.filter(it => it.qtyRetur > 0);
+
+  const productIds = [...new Set([...oldReturItems.map(it => it.productId), ...newReturItems.map(it => it.productId)])];
+  const stockTouched = productIds.length > 0;
+
+  const stockMeta = new Map<string, { locationId: string; productId: string; productName: string }>();
+  oldItems.forEach(it => {
+    const key = `${oldRecap.locationId}_${it.productId}`;
+    if (!stockMeta.has(key)) stockMeta.set(key, { locationId: oldRecap.locationId, productId: it.productId, productName: it.productName });
+  });
+  newItems.forEach(it => {
+    const key = `${data.locationId}_${it.productId}`;
+    if (!stockMeta.has(key)) stockMeta.set(key, { locationId: data.locationId, productId: it.productId, productName: it.productName });
+  });
+  const stockKeys = [...stockMeta.keys()];
+
+  const wsMeta = new Map<string, { warehouseId: string; productId: string; productName: string }>();
+  oldReturItems.forEach(it => {
+    const key = `${oldRecap.warehouseId}_${it.productId}`;
+    if (!wsMeta.has(key)) wsMeta.set(key, { warehouseId: oldRecap.warehouseId ?? '', productId: it.productId, productName: it.productName });
+  });
+  newReturItems.forEach(it => {
+    const key = `${data.warehouseId}_${it.productId}`;
+    if (!wsMeta.has(key)) wsMeta.set(key, { warehouseId: data.warehouseId ?? '', productId: it.productId, productName: it.productName });
+  });
+  const wsKeys = [...wsMeta.keys()];
+
+  interface RecapItemComputed extends RecapItemInput { hargaTitip: number; revenue: number }
+  let recapItems: RecapItemComputed[] = [];
+  let totalSold = 0, totalRetur = 0, totalReject = 0, totalRevenue = 0;
+  const snapshots: FullSnapshot[] = [];
+
   try {
-    await db.runTransaction(async tx => {
-      const recapSnap = await tx.get(recapRef);
-      if (!recapSnap.exists) throw new Error('Riwayat rekap tidak ditemukan.');
-      const oldRecapFull = recapSnap.data();
-      const oldRecap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
-      const oldItems = oldRecap.items ?? [];
-      const oldReturItems = oldItems.filter(it => it.qtyRetur > 0);
-      const newReturItems = newItems.filter(it => it.qtyRetur > 0);
-
-      const productIds = [...new Set([...oldReturItems.map(it => it.productId), ...newReturItems.map(it => it.productId)])];
-      stockTouched = productIds.length > 0;
-
-      const stockMeta = new Map<string, { locationId: string; productId: string; productName: string }>();
-      oldItems.forEach(it => {
-        const key = `${oldRecap.locationId}_${it.productId}`;
-        if (!stockMeta.has(key)) stockMeta.set(key, { locationId: oldRecap.locationId, productId: it.productId, productName: it.productName });
-      });
-      newItems.forEach(it => {
-        const key = `${data.locationId}_${it.productId}`;
-        if (!stockMeta.has(key)) stockMeta.set(key, { locationId: data.locationId, productId: it.productId, productName: it.productName });
-      });
-      const stockKeys = [...stockMeta.keys()];
-
-      const wsMeta = new Map<string, { warehouseId: string; productId: string; productName: string }>();
-      oldReturItems.forEach(it => {
-        const key = `${oldRecap.warehouseId}_${it.productId}`;
-        if (!wsMeta.has(key)) wsMeta.set(key, { warehouseId: oldRecap.warehouseId ?? '', productId: it.productId, productName: it.productName });
-      });
-      newReturItems.forEach(it => {
-        const key = `${data.warehouseId}_${it.productId}`;
-        if (!wsMeta.has(key)) wsMeta.set(key, { warehouseId: data.warehouseId ?? '', productId: it.productId, productName: it.productName });
-      });
-      const wsKeys = [...wsMeta.keys()];
-
-      const productRefs = productIds.map(pid => db.collection('products').doc(pid));
-      const stockRefs   = stockKeys.map(k => db.collection('consignmentStock').doc(k));
-      const wsRefs       = wsKeys.map(k => db.collection('warehouse_stock').doc(k));
-
-      const [productSnaps, stockSnaps, wsSnaps] = await Promise.all([
-        Promise.all(productRefs.map(r => tx.get(r))),
-        Promise.all(stockRefs.map(r => tx.get(r))),
-        Promise.all(wsRefs.map(r => tx.get(r))),
+    await sql.begin(async pgTx => {
+      const [productRows, stockRows, wsRows] = await Promise.all([
+        productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
+        stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
+        wsKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from warehouse_stock where id in ${pgTx(wsKeys)} order by id for update` : [],
       ]);
+      const productById = new Map(productRows.map(r => [r.id, r]));
+      const stockById = new Map(stockRows.map(r => [r.id, r]));
+      const wsById = new Map(wsRows.map(r => [r.id, r]));
 
-      const productState = new Map(productIds.map((pid, i) => [pid, {
-        exists: productSnaps[i].exists,
-        stockQty: productSnaps[i].exists ? Number(productSnaps[i].data()!.stockQty) || 0 : 0,
-        openPO: productSnaps[i].exists ? !!productSnaps[i].data()!.openPO : false,
-      }]));
-      const stockState = new Map(stockKeys.map((k, i) => [k, {
-        stockQty: stockSnaps[i].exists ? Number(stockSnaps[i].data()!.stockQty) || 0 : 0,
-        hargaTitip: stockSnaps[i].exists ? Number(stockSnaps[i].data()!.hargaTitip) || 0 : 0,
-      }]));
-      const wsState = new Map(wsKeys.map((k, i) => [k, {
-        stockQty: wsSnaps[i].exists ? Number(wsSnaps[i].data()!.stockQty) || 0 : 0,
-      }]));
+      const productState = new Map(productIds.map(pid => {
+        const row = productById.get(pid);
+        return [pid, { exists: !!row, stockQty: row ? Number(row.stock_qty) || 0 : 0, openPO: row?.open_po ?? false }];
+      }));
+      const stockState = new Map(stockKeys.map(k => {
+        const row = stockById.get(k);
+        return [k, { stockQty: row ? Number(row.stock_qty) || 0 : 0, hargaTitip: row?.harga_titip != null ? Number(row.harga_titip) : 0 }];
+      }));
+      const wsState = new Map(wsKeys.map(k => {
+        const row = wsById.get(k);
+        return [k, { stockQty: row ? Number(row.stock_qty) || 0 : 0 }];
+      }));
+
+      // Snapshot sebelum diubah — untuk kompensasi kalau langkah Firestore setelahnya gagal.
+      productIds.forEach(pid => {
+        const st = productState.get(pid)!;
+        snapshots.push({ table: 'products', key: pid, oldValues: { stockQty: st.stockQty, stock: stockLabel(st.openPO, st.stockQty) } });
+      });
+      stockKeys.forEach(k => snapshots.push({ table: 'consignment_stock', key: k, oldValues: { stockQty: stockState.get(k)!.stockQty } }));
+      wsKeys.forEach(k => snapshots.push({ table: 'warehouse_stock', key: k, oldValues: { stockQty: wsState.get(k)!.stockQty } }));
 
       // 1) Balik efek rekap lama
       oldItems.forEach(it => {
@@ -248,16 +291,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       });
       if (shortages.length > 0) throw new Error(`Qty melebihi stok di lokasi: ${shortages.join(', ')}`);
 
-      const recapItems = newItems.map(it => {
+      recapItems = newItems.map(it => {
         const s = stockState.get(`${data.locationId}_${it.productId}`)!;
         const hargaTitip = s.hargaTitip;
         s.stockQty -= (it.qtySold + it.qtyRetur + it.qtyReject);
         return { ...it, hargaTitip, revenue: it.qtySold * hargaTitip };
       });
-      const totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
-      const totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
-      const totalReject  = recapItems.reduce((s, it) => s + it.qtyReject, 0);
-      const totalRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
+      totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
+      totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
+      totalReject  = recapItems.reduce((s, it) => s + (it.qtyReject ?? 0), 0);
+      totalRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
 
       newReturItems.forEach(it => {
         const p = productState.get(it.productId)!;
@@ -267,57 +310,54 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       });
 
       // 3) Tulis ulang state produk, stok titip & stok gudang
-      productIds.forEach(pid => {
+      for (const pid of productIds) {
         const p = productState.get(pid)!;
-        if (!p.exists) return;
+        if (!p.exists) continue;
         // Math.max(0, ...) — jaring pengaman terakhir, seharusnya tidak pernah terpakai kalau validasi
         // di atas benar, tapi mencegah stok minus tersimpan kalau ada celah lain yang belum ketahuan.
-        tx.update(db.collection('products').doc(pid), {
-          stockQty: Math.max(0, p.stockQty),
-          stock: p.openPO ? 'open_po' : p.stockQty > 0 ? 'ready' : 'habis',
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-      stockKeys.forEach(key => {
+        const qty = Math.max(0, p.stockQty);
+        await pgTx`update products set stock_qty = ${qty}, stock = ${stockLabel(p.openPO, qty)}, updated_at = now() where id = ${pid}`;
+      }
+      for (const key of stockKeys) {
         const meta = stockMeta.get(key)!;
         const s = stockState.get(key)!;
-        tx.set(db.collection('consignmentStock').doc(key), {
-          locationId: meta.locationId, productId: meta.productId, productName: meta.productName,
-          stockQty: s.stockQty, hargaTitip: s.hargaTitip, updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-      wsKeys.forEach(key => {
+        await pgTx`
+          insert into consignment_stock (id, location_id, product_id, product_name, stock_qty, harga_titip, updated_at)
+          values (${key}, ${meta.locationId}, ${meta.productId}, ${meta.productName}, ${s.stockQty}, ${s.hargaTitip}, now())
+          on conflict (id) do update set stock_qty = ${s.stockQty}, updated_at = now()
+        `;
+      }
+      for (const key of wsKeys) {
         const meta = wsMeta.get(key)!;
         const ws = wsState.get(key)!;
-        tx.set(db.collection('warehouse_stock').doc(key), {
-          warehouseId: meta.warehouseId, productId: meta.productId, productName: meta.productName,
-          stockQty: ws.stockQty, updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-      });
+        await pgTx`
+          insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
+          values (${key}, ${meta.warehouseId}, ${meta.productId}, ${meta.productName}, ${ws.stockQty}, now())
+          on conflict (id) do update set stock_qty = ${ws.stockQty}, product_name = excluded.product_name, updated_at = now()
+        `;
+      }
 
       // Log gudang baru untuk retur/reject hasil edit — log lama dari rekap sebelum diedit
       // dibiarkan sebagai riwayat historis (tidak dihapus/diubah).
-      newReturItems.forEach(it => {
-        const logRef = db.collection('stock').doc();
-        tx.set(logRef, {
-          warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
-          productId: it.productId, productName: it.productName,
-          type: 'in', qty: it.qtyRetur,
-          note: `Retur konsinyasi (diedit) – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
-          createdAt: FieldValue.serverTimestamp(),
+      for (const it of newReturItems) {
+        await writeStockLedgerEntryPg(pgTx, {
+          productId: it.productId, productName: it.productName, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+          type: 'in', qty: it.qtyRetur, note: `Retur konsinyasi (diedit) – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
         });
-      });
-      newItems.filter(it => it.qtyReject > 0).forEach(it => {
-        const logRef = db.collection('stock').doc();
-        tx.set(logRef, {
-          warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
-          productId: it.productId, productName: it.productName,
-          type: 'reject', qty: it.qtyReject,
-          note: `Reject konsinyasi (diedit) – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
-          createdAt: FieldValue.serverTimestamp(),
+      }
+      for (const it of newItems.filter(it => (it.qtyReject ?? 0) > 0)) {
+        await writeStockLedgerEntryPg(pgTx, {
+          productId: it.productId, productName: it.productName, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+          type: 'reject', qty: it.qtyReject ?? 0, note: `Reject konsinyasi (diedit) – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
         });
-      });
+      }
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah rekap.' }, { status: 400 });
+  }
 
+  try {
+    await db.runTransaction(async tx => {
       const updatePayload = {
         locationId: data.locationId, locationName: data.locationName,
         items: recapItems, totalSold, totalRetur, totalReject, totalRevenue,
@@ -344,6 +384,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       });
     });
   } catch (err) {
+    try { await compensateFullSnapshots(sql, snapshots); }
+    catch (compErr) { console.error('CRITICAL: gagal kompensasi stok setelah edit rekap konsinyasi gagal tersimpan', compErr); }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah rekap.' }, { status: 400 });
   }
 

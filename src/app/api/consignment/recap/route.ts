@@ -1,6 +1,7 @@
 import { NextRequest, after } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
@@ -8,6 +9,10 @@ import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
 import { notify, writeNotification, sendPush } from '@/lib/notifications';
 import { revalidateStorefront } from '@/lib/revalidate';
+import {
+  writeStockLedgerEntryPg, stockLabel, captureAndSetWs, compensateStock,
+  type ProductSnapshot, type WsSnapshot,
+} from '@/lib/stock-pg';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -124,18 +129,33 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
+  const sql = getSql();
   const recapRef = db.collection('consignmentRecaps').doc();
 
-  let pushPayload: { title: string; message: string } | null = null;
+  // `consignmentStock`/`products`/`warehouse_stock`/`stock_ledger` sudah pindah ke Postgres
+  // (Tahap 8-10 Fase 2) — divalidasi & dipotong DULU di sana, baru dokumen rekap (Firestore, masih
+  // di sana untuk sementara) ditulis. Kompensasi (kembalikan stok) dijalankan best-effort kalau
+  // langkah Firestore gagal setelah Postgres berhasil. Lihat pola yang sama di orders/route.ts.
+  interface RecapItemWithCost extends RecapItemInput { hargaTitip: number; revenue: number; costPrice: number; cogs: number }
+  let recapItems: RecapItemWithCost[] = [];
+  const productSnapshots: ProductSnapshot[] = [];
+  const wsSnapshots: WsSnapshot[] = [];
+  const consignmentStockSnapshots: { key: string; oldQty: number }[] = [];
+  let stockCommitted = false;
+
   try {
-    await db.runTransaction(async tx => {
-      const stockRefs = items.map(it => db.collection('consignmentStock').doc(`${data.locationId}_${it.productId}`));
-      const stockSnaps = await Promise.all(stockRefs.map(r => tx.get(r)));
+    await sql.begin(async pgTx => {
+      const stockKeys = items.map(it => `${data.locationId}_${it.productId}`);
+      const stockRows = await pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`
+        select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update
+      `;
+      const stockById = new Map(stockRows.map(r => [r.id, r]));
 
       const shortages: string[] = [];
       items.forEach((it, i) => {
-        if (!stockSnaps[i].exists) { shortages.push(`${it.productName} (tidak ada stok titip tercatat)`); return; }
-        const stockQty = Number(stockSnaps[i].data()!.stockQty) || 0;
+        const row = stockById.get(stockKeys[i]);
+        if (!row) { shortages.push(`${it.productName} (tidak ada stok titip tercatat)`); return; }
+        const stockQty = Number(row.stock_qty) || 0;
         const requested = it.qtySold + it.qtyRetur + it.qtyReject;
         if (requested > stockQty) shortages.push(`${it.productName} (stok di lokasi ${stockQty}, diminta ${requested})`);
       });
@@ -144,72 +164,67 @@ export async function POST(req: NextRequest) {
       // Snapshot HPP (costPrice) tiap produk saat rekap terjadi — dipakai Laporan Keuangan untuk
       // menghitung HPP barang konsinyasi yang benar-benar terjual (costPrice produk adalah rata-rata
       // bergerak, jadi HPP historis tidak bisa direkonstruksi ulang kalau tidak disimpan di sini).
-      const allProductRefs = items.map(it => db.collection('products').doc(it.productId));
-      const allProductSnaps = await Promise.all(allProductRefs.map(r => tx.get(r)));
+      const productIds = [...new Set(items.map(it => it.productId))];
+      const productRows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
+        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
+      `;
+      const productById = new Map(productRows.map(r => [r.id, r]));
 
-      // Retur (kondisi baik) dikreditkan ke gudang tujuan — sinkron dengan endpoint stok masuk gudang.
-      const returItems = items.filter(it => it.qtyRetur > 0);
-      const productRefs = returItems.map(it => db.collection('products').doc(it.productId));
-      const productSnaps = await Promise.all(productRefs.map(r => tx.get(r)));
-
-      const recapItems = items.map((it, i) => {
-        const hargaTitip = Number(stockSnaps[i].data()!.hargaTitip) || 0;
-        const costPrice = Number(allProductSnaps[i].data()?.costPrice) || 0;
+      recapItems = items.map((it, i) => {
+        const stockRow = stockById.get(stockKeys[i])!;
+        const hargaTitip = Number(stockRow.harga_titip) || 0;
+        const productRow = productById.get(it.productId);
+        const costPrice = productRow?.cost_price != null ? Number(productRow.cost_price) : 0;
         return { ...it, hargaTitip, revenue: it.qtySold * hargaTitip, costPrice, cogs: it.qtySold * costPrice };
       });
-      const totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
-      const totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
-      const totalReject  = recapItems.reduce((s, it) => s + it.qtyReject, 0);
-      const totalRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
 
-      items.forEach((it, i) => {
-        const stockQty = Number(stockSnaps[i].data()!.stockQty) || 0;
-        tx.update(stockRefs[i], {
-          stockQty: stockQty - it.qtySold - it.qtyRetur - it.qtyReject,
-          updatedAt: FieldValue.serverTimestamp(),
+      for (const [i, it] of items.entries()) {
+        const row = stockById.get(stockKeys[i])!;
+        const stockQty = Number(row.stock_qty) || 0;
+        consignmentStockSnapshots.push({ key: stockKeys[i], oldQty: stockQty });
+        const newQty = stockQty - it.qtySold - it.qtyRetur - it.qtyReject;
+        await pgTx`update consignment_stock set stock_qty = ${newQty}, updated_at = now() where id = ${stockKeys[i]}`;
+      }
+
+      // Retur (kondisi baik) dikreditkan ke gudang tujuan — sinkron dengan endpoint stok masuk gudang.
+      for (const it of items.filter(it => it.qtyRetur > 0)) {
+        const row = productById.get(it.productId);
+        if (!row) continue;
+        const oldQty = Number(row.stock_qty) || 0;
+        productSnapshots.push({ productId: it.productId, oldQty, oldCost: row.cost_price != null ? Number(row.cost_price) : 0, openPO: row.open_po });
+        const newQty = oldQty + it.qtyRetur;
+        await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(row.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
+
+        await captureAndSetWs(pgTx, wsSnapshots, `${data.warehouseId}_${it.productId}`, data.warehouseId!, it.productId, it.productName,
+          old => old + it.qtyRetur);
+        await writeStockLedgerEntryPg(pgTx, {
+          productId: it.productId, productName: it.productName, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+          type: 'in', qty: it.qtyRetur, note: `Retur konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
         });
-      });
-
-      returItems.forEach((it, i) => {
-        const productSnap = productSnaps[i];
-        if (!productSnap.exists) return;
-        const product = productSnap.data()!;
-        const newQty = (Number(product.stockQty) || 0) + it.qtyRetur;
-        tx.update(productRefs[i], {
-          stockQty: newQty,
-          stock: product.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-
-        const wsRef = db.collection('warehouse_stock').doc(`${data.warehouseId}_${it.productId}`);
-        tx.set(wsRef, {
-          warehouseId: data.warehouseId, productId: it.productId, productName: it.productName,
-          stockQty: FieldValue.increment(it.qtyRetur), updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        const logRef = db.collection('stock').doc();
-        tx.set(logRef, {
-          warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
-          productId: it.productId, productName: it.productName,
-          type: 'in', qty: it.qtyRetur,
-          note: `Retur konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      });
+      }
 
       // Reject (rusak/tidak layak jual) — tidak menambah stok jual, hanya tercatat sebagai kerugian
       // di riwayat gudang (badge "Reject") supaya tetap terlihat, tanpa mengubah warehouse_stock.
-      items.filter(it => it.qtyReject > 0).forEach(it => {
-        const logRef = db.collection('stock').doc();
-        tx.set(logRef, {
-          warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
-          productId: it.productId, productName: it.productName,
-          type: 'reject', qty: it.qtyReject,
-          note: `Reject konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
-          createdAt: FieldValue.serverTimestamp(),
+      for (const it of items.filter(it => it.qtyReject > 0)) {
+        await writeStockLedgerEntryPg(pgTx, {
+          productId: it.productId, productName: it.productName, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+          type: 'reject', qty: it.qtyReject, note: `Reject konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
         });
-      });
+      }
+    });
+    stockCommitted = true;
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan rekap.' }, { status: 400 });
+  }
 
+  const totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
+  const totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
+  const totalReject  = recapItems.reduce((s, it) => s + (it.qtyReject ?? 0), 0);
+  const totalRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
+
+  let pushPayload: { title: string; message: string } | null = null;
+  try {
+    await db.runTransaction(async tx => {
       const recapDoc = {
         locationId: data.locationId, locationName: data.locationName,
         items: recapItems, totalSold, totalRetur, totalReject, totalRevenue,
@@ -242,6 +257,22 @@ export async function POST(req: NextRequest) {
       });
     });
   } catch (err) {
+    // Dokumen rekap gagal tersimpan SETELAH stok Postgres sudah dipotong — kompensasi: kembalikan
+    // consignment_stock/products/warehouse_stock ke kondisi semula.
+    if (stockCommitted) {
+      try {
+        await Promise.all([
+          compensateStock(sql, productSnapshots, wsSnapshots),
+          sql.begin(async pgTx => {
+            for (const s of consignmentStockSnapshots) {
+              await pgTx`update consignment_stock set stock_qty = ${s.oldQty}, updated_at = now() where id = ${s.key}`;
+            }
+          }),
+        ]);
+      } catch (compErr) {
+        console.error('CRITICAL: gagal kompensasi stok setelah rekap konsinyasi gagal tersimpan', compErr);
+      }
+    }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan rekap.' }, { status: 400 });
   }
 

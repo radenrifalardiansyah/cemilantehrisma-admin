@@ -1,12 +1,14 @@
 import { NextRequest, after } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { writeHistoryEntry } from '@/lib/history';
 import { writeNotification, sendPush } from '@/lib/notifications';
 import { revalidateStorefront } from '@/lib/revalidate';
+import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, compensateStock, type ProductSnapshot, type WsSnapshot } from '@/lib/stock-pg';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -78,63 +80,74 @@ export async function POST(req: NextRequest) {
   if (!data.warehouseId) return Response.json({ error: 'Pilih gudang asal pengiriman.' }, { status: 400 });
 
   const db = getDb();
+  const sql = getSql();
   const shipmentRef = db.collection('consignmentShipments').doc();
 
-  let pushPayload: { title: string; message: string } | null = null;
+  // `products`/`warehouse_stock`/`stock_ledger`/`consignmentStock` sudah pindah ke Postgres
+  // (Tahap 8-10) — divalidasi & dipotong DULU di sana, baru dokumen pengiriman (Firestore, masih
+  // di sana untuk sementara) ditulis. Lihat pola yang sama di orders/route.ts.
+  const itemsWithSubtotal = items.map(it => ({ ...it, subtotal: it.qty * it.hargaTitip }));
+  const productSnapshots: ProductSnapshot[] = [];
+  const wsSnapshots: WsSnapshot[] = [];
+  const consignmentStockSnapshots: { key: string; oldQty: number }[] = [];
+  let stockCommitted = false;
+
   try {
-    await db.runTransaction(async tx => {
-      const productRefs = items.map(it => db.collection('products').doc(it.productId));
-      const stockRefs   = items.map(it => db.collection('consignmentStock').doc(`${data.locationId}_${it.productId}`));
-      const wsRefs      = items.map(it => db.collection('warehouse_stock').doc(`${data.warehouseId}_${it.productId}`));
-      const [productSnaps, stockSnaps] = await Promise.all([
-        Promise.all(productRefs.map(r => tx.get(r))),
-        Promise.all(stockRefs.map(r => tx.get(r))),
+    await sql.begin(async pgTx => {
+      const productIds = items.map(it => it.productId);
+      const stockKeys  = items.map(it => `${data.locationId}_${it.productId}`);
+      const [productRows, stockRows] = await Promise.all([
+        pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update`,
+        pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update`,
       ]);
+      const productById = new Map(productRows.map(r => [r.id, r]));
+      const stockById = new Map(stockRows.map(r => [r.id, r]));
 
       const shortages: string[] = [];
       items.forEach((it, i) => {
-        if (!productSnaps[i].exists) { shortages.push(`${it.productName} (produk tidak ditemukan)`); return; }
-        const stockQty = Number(productSnaps[i].data()!.stockQty) || 0;
+        const row = productById.get(productIds[i]);
+        if (!row) { shortages.push(`${it.productName} (produk tidak ditemukan)`); return; }
+        const stockQty = Number(row.stock_qty) || 0;
         if (stockQty < it.qty) shortages.push(`${it.productName} (stok toko ${stockQty}, butuh ${it.qty})`);
       });
       if (shortages.length > 0) throw new Error(`Stok produk tidak cukup untuk dikirim: ${shortages.join(', ')}`);
 
-      const itemsWithSubtotal = items.map(it => ({ ...it, subtotal: it.qty * it.hargaTitip }));
+      for (const [i, it] of items.entries()) {
+        const row = productById.get(productIds[i])!;
+        const oldQty = Number(row.stock_qty) || 0;
+        productSnapshots.push({ productId: it.productId, oldQty, oldCost: row.cost_price != null ? Number(row.cost_price) : 0, openPO: row.open_po });
+        const newQty = oldQty - it.qty;
+        await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(row.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
 
-      items.forEach((it, i) => {
-        const product = productSnaps[i].data()!;
-        const newQty = (Number(product.stockQty) || 0) - it.qty;
-        tx.update(productRefs[i], {
-          stockQty: newQty,
-          stock: product.openPO ? 'open_po' : newQty > 0 ? 'ready' : 'habis',
-          updatedAt: FieldValue.serverTimestamp(),
+        await captureAndSetWs(pgTx, wsSnapshots, `${data.warehouseId}_${it.productId}`, data.warehouseId, it.productId, it.productName,
+          old => old - it.qty);
+        await writeStockLedgerEntryPg(pgTx, {
+          productId: it.productId, productName: it.productName, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
+          type: 'out', qty: it.qty, note: `Kirim konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
         });
 
-        tx.set(wsRefs[i], {
-          warehouseId: data.warehouseId, productId: it.productId, productName: it.productName,
-          stockQty: FieldValue.increment(-it.qty), updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
+        const stockKey = stockKeys[i];
+        const stockRow = stockById.get(stockKey);
+        const oldStockQty = stockRow ? Number(stockRow.stock_qty) || 0 : 0;
+        const oldHarga    = stockRow?.harga_titip != null ? Number(stockRow.harga_titip) : 0;
+        consignmentStockSnapshots.push({ key: stockKey, oldQty: oldStockQty });
+        const newStockQty = oldStockQty + it.qty;
+        const newHarga = newStockQty > 0 ? (oldStockQty * oldHarga + it.qty * it.hargaTitip) / newStockQty : 0;
+        await pgTx`
+          insert into consignment_stock (id, location_id, product_id, product_name, stock_qty, harga_titip, updated_at)
+          values (${stockKey}, ${data.locationId}, ${it.productId}, ${it.productName}, ${newStockQty}, ${newHarga}, now())
+          on conflict (id) do update set stock_qty = ${newStockQty}, harga_titip = ${newHarga}, updated_at = now()
+        `;
+      }
+    });
+    stockCommitted = true;
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pengiriman.' }, { status: 400 });
+  }
 
-        const logRef = db.collection('stock').doc();
-        tx.set(logRef, {
-          warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
-          productId: it.productId, productName: it.productName,
-          type: 'out', qty: it.qty,
-          note: `Kirim konsinyasi – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-
-        const existing = stockSnaps[i].exists ? stockSnaps[i].data()! : null;
-        const oldQty   = existing ? Number(existing.stockQty) || 0 : 0;
-        const oldHarga = existing ? Number(existing.hargaTitip) || 0 : 0;
-        const newStockQty = oldQty + it.qty;
-        const newHarga = newStockQty > 0 ? (oldQty * oldHarga + it.qty * it.hargaTitip) / newStockQty : 0;
-        tx.set(stockRefs[i], {
-          locationId: data.locationId, productId: it.productId, productName: it.productName,
-          stockQty: newStockQty, hargaTitip: newHarga, updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-
+  let pushPayload: { title: string; message: string } | null = null;
+  try {
+    await db.runTransaction(async tx => {
       const shipmentDoc = {
         locationId: data.locationId, locationName: data.locationName,
         warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
@@ -164,6 +177,20 @@ export async function POST(req: NextRequest) {
       });
     });
   } catch (err) {
+    if (stockCommitted) {
+      try {
+        await Promise.all([
+          compensateStock(sql, productSnapshots, wsSnapshots),
+          sql.begin(async pgTx => {
+            for (const s of consignmentStockSnapshots) {
+              await pgTx`update consignment_stock set stock_qty = ${s.oldQty}, updated_at = now() where id = ${s.key}`;
+            }
+          }),
+        ]);
+      } catch (compErr) {
+        console.error('CRITICAL: gagal kompensasi stok setelah kirim konsinyasi gagal tersimpan', compErr);
+      }
+    }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pengiriman.' }, { status: 400 });
   }
 
