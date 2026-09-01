@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
@@ -30,27 +31,38 @@ function mergeItems(items: SendItemInput[]): SendItemInput[] {
   return [...merged.values()];
 }
 
+// Sama seperti orders/route.ts & consignment/recap/route.ts: dibaca tanpa batas tanggal oleh tab
+// Konsinyasi setiap kali dibuka (plus tiap tampilan laporan berperiode) — tanpa cache, itu scan
+// penuh koleksi `consignmentShipments` per panggilan, dan mode date-range di bawah sebelumnya
+// malah tidak dibatasi `.limit()` sama sekali. TTL pendek (15s, sama seperti orders) menjaga
+// tampilan tetap terasa langsung sambil menyerap lonjakan baca yang terjadi bersamaan.
+const getCachedShipments = unstable_cache(
+  async (from: string | null, to: string | null, limit: number) => {
+    let query: Query<DocumentData> = getDb().collection('consignmentShipments').orderBy('createdAt', 'desc');
+    if (from) query = query.where('createdAt', '>=', wibDayStart(from));
+    if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
+    if (!from && !to) query = query.limit(limit);
+
+    const snap = await query.get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      const createdAt = data.createdAt as Timestamp | undefined;
+      return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
+    });
+  },
+  ['admin-consignment-shipments-list'],
+  { revalidate: 15 },
+);
+
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'consignment', 'view');
   if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from'); // ISO yyyy-mm-dd — dipakai filter periode di tab Lokasi/Laporan
   const to   = searchParams.get('to');
+  const limit = parseInt(searchParams.get('limit') ?? '50');
 
-  let query: Query<DocumentData> = getDb().collection('consignmentShipments').orderBy('createdAt', 'desc');
-  if (from) query = query.where('createdAt', '>=', wibDayStart(from));
-  if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
-  if (!from && !to) {
-    const limit = parseInt(searchParams.get('limit') ?? '50');
-    query = query.limit(limit);
-  }
-
-  const snap = await query.get();
-  const shipments = snap.docs.map(d => {
-    const data = d.data();
-    const createdAt = data.createdAt as Timestamp | undefined;
-    return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
-  });
+  const shipments = await getCachedShipments(from, to, limit);
   return Response.json({ shipments });
 }
 
