@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 
@@ -24,7 +24,7 @@ function sourceLockMessage(sourceType: unknown): string | null {
 }
 
 function toAudit(r: ExpenseRow) {
-  return { category: r.category, description: r.description, amount: Number(r.amount), items: r.items, date: r.date, note: r.note, walletId: r.wallet_id, sourceType: r.source_type };
+  return { category: r.category, description: r.description, amount: Number(r.amount), items: parseJsonb(r.items as string | unknown[] | null), date: r.date, note: r.note, walletId: r.wallet_id, sourceType: r.source_type };
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {

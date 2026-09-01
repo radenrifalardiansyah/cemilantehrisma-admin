@@ -38,6 +38,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   let update: Record<string, unknown>;
   try {
     update = await sql.begin(async (pgTx) => {
+      // Sama seperti POST /api/wallet-transfers: kunci baris dompet asal supaya edit transfer ini
+      // tidak balapan (TOCTOU) dengan transfer lain (POST/PUT) dari dompet yang sama yang tiba
+      // hampir bersamaan — tanpa ini, lock di POST tidak berarti apa-apa karena PUT bisa
+      // menyelinap tanpa ikut menunggu giliran.
+      await pgTx`select pg_advisory_xact_lock(hashtext(${fromWalletId}))`;
       const [existing] = await pgTx<WalletTransferRow[]>`select * from wallet_transfers where id = ${id}`;
       if (!existing) throw new TransferValidationError('Transfer tidak ditemukan.');
       before = existing;

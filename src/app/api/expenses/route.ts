@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
@@ -25,7 +25,7 @@ function toExpense(r: ExpenseRow) {
     category: r.category ?? 'Lainnya',
     description: r.description ?? '',
     amount: Number(r.amount),
-    items: r.items ?? [],
+    items: parseJsonb(r.items as string | unknown[] | null) ?? [],
     date: r.date,
     note: r.note ?? '',
     walletId: r.wallet_id,
