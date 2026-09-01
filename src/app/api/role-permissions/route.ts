@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
 // Returns every role's permission matrix in one call, so the Hak Akses Role
@@ -8,10 +8,11 @@ export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'role-permissions', 'view');
   if (guard instanceof Response) return guard;
 
-  const snap = await getDb().collection('role_permissions').get();
+  const sql = getSql();
+  const rows = await sql<{ role: string; permissions: Record<string, Partial<Record<string, boolean>>> | string }[]>`
+    select role, permissions from role_permissions
+  `;
   const rolePermissions: Record<string, Record<string, Partial<Record<string, boolean>>>> = {};
-  snap.docs.forEach(d => {
-    rolePermissions[d.id] = (d.data().permissions as Record<string, Partial<Record<string, boolean>>>) ?? {};
-  });
+  rows.forEach(r => { rolePermissions[r.role] = parseJsonb(r.permissions) ?? {}; });
   return Response.json({ rolePermissions });
 }

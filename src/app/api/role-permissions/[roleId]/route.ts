@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission, ROLE_PERMISSIONS_TAG } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
 import type { Action } from '@/types/rbac';
 
@@ -27,10 +26,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (FEATURE_KEY_SET.has(key)) cleaned[key] = cell;
   }
 
-  await getDb().collection('role_permissions').doc(roleId).set(
-    { permissions: cleaned, updatedAt: FieldValue.serverTimestamp() },
-    { merge: false },
-  );
+  const sql = getSql();
+  await sql`
+    insert into role_permissions (role, permissions, updated_at) values (${roleId}, ${JSON.stringify(cleaned)}::jsonb, now())
+    on conflict (role) do update set permissions = excluded.permissions, updated_at = excluded.updated_at
+  `;
   // { expire: 0 } instead of the 'max' stale-while-revalidate default — a revoked permission
   // must apply on the very next request, not be served stale once more from cache.
   revalidateTag(ROLE_PERMISSIONS_TAG, { expire: 0 });

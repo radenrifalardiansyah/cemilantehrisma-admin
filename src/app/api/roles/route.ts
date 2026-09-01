@@ -1,14 +1,17 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+
+interface RoleRow { id: string; name: string; description: string | null; is_system: boolean; created_at: Date; updated_at: Date | null }
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'roles', 'view');
   if (guard instanceof Response) return guard;
 
-  const snap = await getDb().collection('roles').orderBy('createdAt', 'asc').get();
-  const roles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const sql = getSql();
+  const rows = await sql<RoleRow[]>`select * from roles order by created_at asc`;
+  const toTs = (d: Date | null) => d ? { seconds: Math.floor(d.getTime() / 1000), nanoseconds: 0 } : null;
+  const roles = rows.map(r => ({ id: r.id, name: r.name, description: r.description ?? '', isSystem: r.is_system, createdAt: toTs(r.created_at), updatedAt: toTs(r.updated_at) }));
   return Response.json({ roles });
 }
 
@@ -24,15 +27,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'ID role hanya boleh huruf kecil, angka, dan tanda hubung.' }, { status: 400 });
   }
 
-  const db  = getDb();
-  const ref = db.collection('roles').doc(id);
-  if ((await ref.get()).exists) {
+  const sql = getSql();
+  const [existing] = await sql`select id from roles where id = ${id}`;
+  if (existing) {
     return Response.json({ error: `Role dengan ID "${id}" sudah ada.` }, { status: 409 });
   }
 
-  const now = FieldValue.serverTimestamp();
-  await ref.set({ name, description: description ?? '', isSystem: false, createdAt: now, updatedAt: now });
-  await db.collection('role_permissions').doc(id).set({ permissions: {}, updatedAt: now });
+  await sql`insert into roles (id, name, description, is_system, created_at, updated_at) values (${id}, ${name}, ${description ?? ''}, false, now(), now())`;
+  await sql`insert into role_permissions (role, permissions, updated_at) values (${id}, '{}'::jsonb, now())`;
 
   return Response.json({ id, name, description: description ?? '' });
 }
