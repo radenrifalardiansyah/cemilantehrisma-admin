@@ -39,14 +39,6 @@ function formatDateDisplay(iso: string) {
 const WALLET_TYPE_LABEL: Record<string, string> = { cash: 'Tunai', bank: 'Bank', ewallet: 'E-Wallet', other: 'Lainnya' };
 const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other'] as const;
 
-interface IncomeRow { amount: number; walletId?: string | null }
-interface ExpenseRow { amount: number; walletId?: string | null }
-interface CapitalRow { type: 'modal' | 'prive'; amount: number; walletId?: string | null }
-interface OrderRow {
-  total?: number; source?: 'kasir' | 'portal'; status?: string;
-  paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
-}
-interface RecapRow { totalRevenue?: number; paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null }
 interface Transfer { id: string; fromWalletId: string; toWalletId: string; amount: number; date: string; note?: string }
 
 type WalletForm = { name: string; type: WalletDoc['type']; icon: string; color: string; initialBalance: string };
@@ -122,58 +114,28 @@ export default function WalletsTab({ creds }: { creds: string }) {
   // pemanggil di bawah); dua aksi yang dipicu cepat berurutan bisa membuat dua `load()` tumpang
   // tindih, dan tanpa penjaga ini yang datang belakangan belum tentu yang paling baru.
   const loadIdRef = useRef(0);
+  // Saldo per dompet + "Belum Ditentukan" dihitung server-side lewat /api/wallets/balances
+  // (Tahap 6 migrasi, lihat plan gleaming-wondering-quokka.md) — dulu di sini fetch 5 endpoint
+  // histori penuh (income/expenses/capital/orders/consignment-recap) lalu hitung sendiri di client.
   const load = async () => {
     const myLoadId = ++loadIdRef.current;
     setLoading(true);
-    const qs = 'from=2000-01-01';
-    const [wRes, iRes, eRes, cRes, oRes, rRes, tRes] = await Promise.all([
+    const [wRes, bRes, tRes] = await Promise.all([
       fetch(`${API}/api/wallets`, { headers }),
-      fetch(`${API}/api/income?${qs}`, { headers }),
-      fetch(`${API}/api/expenses?${qs}`, { headers }),
-      fetch(`${API}/api/capital?${qs}`, { headers }),
-      fetch(`${API}/api/orders?${qs}`, { headers }),
-      fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
+      fetch(`${API}/api/wallets/balances`, { headers }),
       fetch(`${API}/api/wallet-transfers`, { headers }),
     ]);
     const walletList: WalletDoc[] = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
-    const income: IncomeRow[] = iRes.ok ? (await iRes.json() as { income: IncomeRow[] }).income : [];
-    const expenses: ExpenseRow[] = eRes.ok ? (await eRes.json() as { expenses: ExpenseRow[] }).expenses : [];
-    const capital: CapitalRow[] = cRes.ok ? (await cRes.json() as { entries: CapitalRow[] }).entries : [];
-    const orders: OrderRow[] = oRes.ok ? (await oRes.json() as { orders: OrderRow[] }).orders : [];
-    const recaps: RecapRow[] = rRes.ok ? (await rRes.json() as { recaps: RecapRow[] }).recaps : [];
+    const { balances: nextBalances, unassigned: nextUnassigned } = bRes.ok
+      ? await bRes.json() as { balances: Record<string, number>; unassigned: number }
+      : { balances: {}, unassigned: 0 };
     const transferList: Transfer[] = tRes.ok ? (await tRes.json() as { transfers: Transfer[] }).transfers : [];
     if (myLoadId !== loadIdRef.current) return;
-
-    // Sama persis dengan definisi "uang masuk terhitung" di IncomeTab/FinanceReportTab.
-    const countedOrders = orders.filter(o =>
-      (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
-    const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
-
-    // Transfer antar dompet tidak masuk hitungan "Belum Ditentukan" — selalu antara 2 dompet
-    // nyata, jadi tidak pernah relevan untuk bucket null.
-    const balanceOf = (walletId: string | null) => {
-      const match = (v: { walletId?: string | null }) => (v.walletId ?? null) === walletId;
-      const wallet = walletId ? walletList.find(w => w.id === walletId) : undefined;
-      const transfersIn = walletId ? transferList.filter(t => t.toWalletId === walletId).reduce((s, t) => s + t.amount, 0) : 0;
-      const transfersOut = walletId ? transferList.filter(t => t.fromWalletId === walletId).reduce((s, t) => s + t.amount, 0) : 0;
-      return (wallet?.initialBalance ?? 0)
-        + income.filter(match).reduce((s, i) => s + i.amount, 0)
-        + countedOrders.filter(match).reduce((s, o) => s + (o.total ?? 0), 0)
-        + countedRecaps.filter(match).reduce((s, r) => s + (r.totalRevenue ?? 0), 0)
-        + transfersIn
-        - expenses.filter(match).reduce((s, e) => s + e.amount, 0)
-        + capital.filter(c => match(c) && c.type === 'modal').reduce((s, c) => s + c.amount, 0)
-        - capital.filter(c => match(c) && c.type === 'prive').reduce((s, c) => s + c.amount, 0)
-        - transfersOut;
-    };
-
-    const nextBalances: Record<string, number> = {};
-    walletList.forEach(w => { nextBalances[w.id] = balanceOf(w.id); });
 
     setWallets(walletList);
     setTransfers(transferList);
     setBalances(nextBalances);
-    setUnassigned(balanceOf(null));
+    setUnassigned(nextUnassigned);
     setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
