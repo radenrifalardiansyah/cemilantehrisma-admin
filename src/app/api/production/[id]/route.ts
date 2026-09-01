@@ -45,9 +45,20 @@ async function findLaterProductionProductIds(db: FirebaseFirestore.Firestore, cr
 // akurat karena unit yang mau direvert sudah tidak fungibel lagi dengan sisa stok saat ini (lihat
 // komentar di atas). `stock_ledger` (Postgres, Tahap 8-10) adalah ledger append-only yang dipakai
 // SEMUA penulis stok sejak migrasi.
+//
+// Dikecualikan: entri 'out' yang ditulis endpoint produksi INI SENDIRI ("Koreksi edit produksi" saat
+// pindah gudang/ubah output, "Hapus batch produksi" saat batch lain dihapus) — keduanya lewat
+// reverseProductState/applyProductState yang sama persis dengan revert di atas, jadi secara matematis
+// tetap presisi walau ada beberapa kali koreksi di antaranya (rata-rata tertimbang bersifat asosiatif
+// untuk operasi produksi apa pun). Tanpa pengecualian ini, mengedit gudang/output sebuah batch lalu
+// mencoba edit/hapus batch (yang sama atau produk yang sama) berikutnya akan salah ditolak seolah-olah
+// stoknya "sudah terjual", padahal cuma koreksi internal produksi — bukan konsumsi eksternal beneran
+// (order/konsinyasi) yang memang wajib diblokir.
 async function findConsumedSinceProductIdsPg(sql: ReturnType<typeof getSql>, createdAt: Date) {
   const rows = await sql<{ product_id: string }[]>`
-    select distinct product_id from stock_ledger where created_at > ${createdAt} and type = 'out'
+    select distinct product_id from stock_ledger
+    where created_at > ${createdAt} and type = 'out'
+      and note not like 'Koreksi edit produksi%' and note <> 'Hapus batch produksi'
   `;
   return new Set(rows.map(r => r.product_id));
 }
