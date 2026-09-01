@@ -1,29 +1,58 @@
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
-import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
+import { unstable_cache, revalidateTag } from 'next/cache';
+import { randomUUID } from 'crypto';
+import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue, Query, DocumentData } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 
-// Dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab setiap kali ada
-// transaksi baru — cache waktu murni (bukan revalidateTag) karena koleksi ini juga ditulis dari
-// banyak endpoint lain di luar folder ini (Pembelian Bahan Baku, Produksi), jadi invalidasi
-// manual di SEMUA titik tulis berisiko ada yang kelewat. Lihat komentar serupa di
-// src/app/api/orders/route.ts.
+interface ExpenseRow {
+  id: string; category: string | null; description: string | null; amount: string;
+  items: unknown; date: string; note: string | null; wallet_id: string | null;
+  source_type: string | null; source_id: string | null;
+  created_at: Date; updated_at: Date | null;
+}
+
+function toTimestamp(d: Date | null) {
+  if (!d) return null;
+  return { seconds: Math.floor(d.getTime() / 1000), nanoseconds: 0 };
+}
+
+function toExpense(r: ExpenseRow) {
+  return {
+    id: r.id,
+    category: r.category ?? 'Lainnya',
+    description: r.description ?? '',
+    amount: Number(r.amount),
+    items: r.items ?? [],
+    date: r.date,
+    note: r.note ?? '',
+    walletId: r.wallet_id,
+    sourceType: r.source_type,
+    sourceId: r.source_id,
+    createdAt: toTimestamp(r.created_at),
+    updatedAt: toTimestamp(r.updated_at),
+  };
+}
+
+// Migrated dari Firestore ke Postgres (Tahap 5 migrasi) — lihat plan gleaming-wondering-quokka.md.
+// Ditulis juga dari material-purchases & production (lihat src/lib/expenses-pg.ts) — tag di sini
+// mencakup jalur tulis itu juga, karena mereka sama-sama INSERT/UPDATE/DELETE ke tabel yang sama.
 const getCachedExpenses = unstable_cache(
   async (from: string | null, to: string | null) => {
-    let query: Query<DocumentData> = getDb().collection('expenses').orderBy('date', 'desc');
-    if (from) query = query.where('date', '>=', from);
-    if (to)   query = query.where('date', '<=', to);
-    const snap = await query.get();
-    return snap.docs.map(d => {
-      const data = d.data();
-      return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-    });
+    const sql = getSql();
+    const rows = await (from && to
+      ? sql<ExpenseRow[]>`select * from expenses where date >= ${from} and date <= ${to} order by date desc`
+      : from
+      ? sql<ExpenseRow[]>`select * from expenses where date >= ${from} order by date desc`
+      : to
+      ? sql<ExpenseRow[]>`select * from expenses where date <= ${to} order by date desc`
+      : sql<ExpenseRow[]>`select * from expenses order by date desc`);
+    return rows.map(toExpense);
   },
   ['admin-expenses-list'],
-  { revalidate: 15 },
+  { revalidate: 15, tags: ['admin-expenses'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -43,25 +72,26 @@ export async function POST(req: NextRequest) {
   const data = await req.json() as Record<string, unknown>;
   const amount = Number(data.amount) || 0;
   if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
-  const db = getDb();
   const payload = {
-    category: data.category ?? 'Lainnya',
-    description: data.description ?? '',
+    category: (data.category as string | undefined) ?? 'Lainnya',
+    description: (data.description as string | undefined) ?? '',
     amount,
     items: Array.isArray(data.items) ? data.items : [],
-    date: data.date,
-    note: data.note ?? '',
-    walletId: data.walletId ?? null,
+    date: String(data.date ?? ''),
+    note: (data.note as string | undefined) ?? '',
+    walletId: (data.walletId as string | null | undefined) ?? null,
   };
-  const ref = await db.collection('expenses').add({
-    ...payload,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  const id = randomUUID();
+  const sql = getSql();
+  await sql`
+    insert into expenses (id, category, description, amount, items, date, note, wallet_id, created_at, updated_at)
+    values (${id}, ${payload.category}, ${payload.description}, ${payload.amount}, ${JSON.stringify(payload.items)}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
+  `;
+  const db = getDb();
   try {
     await logHistory(db, {
       entity: 'expenses',
-      entityId: ref.id,
+      entityId: id,
       entityLabel: `${payload.description || payload.category || 'Pengeluaran'} - Rp ${(payload.amount ?? 0).toLocaleString('id-ID')}`,
       action: 'create',
       actor: guard,
@@ -76,11 +106,12 @@ export async function POST(req: NextRequest) {
       title: 'Pengeluaran baru',
       message: `${guard.username} mencatat pengeluaran ${payload.description || payload.category || ''} Rp${(payload.amount ?? 0).toLocaleString('id-ID')}.`,
       link: 'expenses',
-      entityCollection: 'expenses', entityId: ref.id,
+      entityCollection: 'expenses', entityId: id,
       actor: guard,
     });
   } catch (err) {
     console.error('Failed to write notification for expenses create', err);
   }
-  return Response.json({ id: ref.id });
+  revalidateTag('admin-expenses', { expire: 0 });
+  return Response.json({ id });
 }

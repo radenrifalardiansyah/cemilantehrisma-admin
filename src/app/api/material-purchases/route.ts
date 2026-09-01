@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server';
+import { randomUUID } from 'crypto';
+import { revalidateTag } from 'next/cache';
 import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
+import { insertExpensePg } from '@/lib/expenses-pg';
 
 interface PurchaseItemInput {
   materialId: string; materialName: string; unit: string;
@@ -36,7 +39,10 @@ export async function POST(req: NextRequest) {
 
   const db = getDb();
   const purchaseRef = db.collection('materialPurchases').doc();
-  const expenseRef  = db.collection('expenses').doc();
+  const expenseId = randomUUID();
+  let willCreateExpense = false;
+  let expenseTotal = 0;
+  let expenseItemNames: string[] = [];
 
   try {
     await db.runTransaction(async tx => {
@@ -61,7 +67,9 @@ export async function POST(req: NextRequest) {
       // Catat otomatis sebagai Pengeluaran (uang keluar beneran saat beli bahan baku) — cuma kalau
       // sudah lunas. Kalau belum lunas, pengeluaran baru dicatat saat ditandai lunas (lihat [id]/route.ts),
       // supaya Jurnal Kas/Laba Rugi tidak menghitung uang yang belum benar-benar keluar.
-      const willCreateExpense = total > 0 && paymentStatus === 'lunas';
+      willCreateExpense = total > 0 && paymentStatus === 'lunas';
+      expenseTotal = total;
+      expenseItemNames = itemsWithSubtotal.map(it => it.materialName);
 
       const purchaseData = {
         supplierId: data.supplierId ?? null,
@@ -70,7 +78,7 @@ export async function POST(req: NextRequest) {
         total,
         date,
         paymentStatus,
-        expenseId: willCreateExpense ? expenseRef.id : null,
+        expenseId: willCreateExpense ? expenseId : null,
         note: data.note ?? '',
         walletId: data.walletId ?? null,
         createdAt: FieldValue.serverTimestamp(),
@@ -85,24 +93,25 @@ export async function POST(req: NextRequest) {
         actor: guard,
         after: purchaseData,
       });
-
-      if (willCreateExpense) {
-        tx.set(expenseRef, {
-          category: 'Bahan Baku',
-          description: `Pembelian bahan baku - ${data.supplierName || 'Tanpa nama'}`,
-          amount: total,
-          date,
-          note: `Otomatis dari pembelian bahan baku (${itemsWithSubtotal.map(it => it.materialName).join(', ')})`,
-          sourceType: 'material-purchase',
-          sourceId: purchaseRef.id,
-          walletId: data.walletId ?? null,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
+      // Expense ditulis ke Postgres SETELAH transaksi Firestore ini commit — lihat src/lib/expenses-pg.ts.
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pembelian.' }, { status: 400 });
+  }
+
+  if (willCreateExpense) {
+    await insertExpensePg({
+      id: expenseId,
+      category: 'Bahan Baku',
+      description: `Pembelian bahan baku - ${data.supplierName || 'Tanpa nama'}`,
+      amount: expenseTotal,
+      date,
+      note: `Otomatis dari pembelian bahan baku (${expenseItemNames.join(', ')})`,
+      sourceType: 'material-purchase',
+      sourceId: purchaseRef.id,
+      walletId: data.walletId ?? null,
+    });
+    revalidateTag('admin-expenses', { expire: 0 });
   }
 
   return Response.json({ id: purchaseRef.id });

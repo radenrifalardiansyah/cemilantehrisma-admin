@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
+import { getExpensePg, deleteExpensePg } from '@/lib/expenses-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,6 +20,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const { note } = await req.json().catch(() => ({})) as { note?: string };
   const db = getDb();
   const purchaseRef = db.collection('materialPurchases').doc(id);
+  let expenseIdToDelete: string | null = null;
 
   try {
     await db.runTransaction(async tx => {
@@ -26,9 +29,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const purchase = snap.data()!;
       if (purchase.voided) throw new Error('Pembelian ini sudah dibatalkan sebelumnya.');
 
+      // expenses sudah pindah ke Postgres (Tahap 5) — baca di sini best-effort, dihapus SETELAH
+      // transaksi Firestore ini commit (lihat src/lib/expenses-pg.ts).
       const expenseId = purchase.expenseId as string | null | undefined;
-      const expenseSnap = expenseId ? await tx.get(db.collection('expenses').doc(expenseId)) : null;
-      if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
+      const expenseRow = expenseId ? await getExpensePg(expenseId) : null;
+      if (expenseRow) expenseIdToDelete = expenseId!;
 
       const purchaseUpdate = {
         voided: true,
@@ -52,6 +57,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal membatalkan pembelian.' }, { status: 400 });
+  }
+
+  if (expenseIdToDelete) {
+    await deleteExpensePg(expenseIdToDelete);
+    revalidateTag('admin-expenses', { expire: 0 });
   }
 
   return Response.json({ ok: true });

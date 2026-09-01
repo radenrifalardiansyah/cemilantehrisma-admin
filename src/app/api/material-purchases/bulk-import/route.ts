@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server';
+import { randomUUID } from 'crypto';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { insertExpensePg } from '@/lib/expenses-pg';
 
 interface ImportRow {
   materialId: string; materialName: string; unit: string; qty: number; price: number;
@@ -31,7 +34,9 @@ export async function POST(req: NextRequest) {
     const date = row.date || new Date().toISOString().slice(0, 10);
     const materialRef = db.collection('rawMaterials').doc(row.materialId);
     const purchaseRef = db.collection('materialPurchases').doc();
-    const expenseRef  = db.collection('expenses').doc();
+    const expenseId = randomUUID();
+    let willCreateExpense = false;
+    let subtotal = 0;
 
     try {
       await db.runTransaction(async tx => {
@@ -45,8 +50,8 @@ export async function POST(req: NextRequest) {
         const newAvg = newQty > 0 ? (oldQty * oldAvg + qty * price) / newQty : 0;
         tx.update(materialRef, { stockQty: newQty, avgCost: newAvg, updatedAt: FieldValue.serverTimestamp() });
 
-        const subtotal = qty * price;
-        const willCreateExpense = subtotal > 0 && paymentStatus === 'lunas';
+        subtotal = qty * price;
+        willCreateExpense = subtotal > 0 && paymentStatus === 'lunas';
 
         tx.set(purchaseRef, {
           supplierId: null,
@@ -55,25 +60,24 @@ export async function POST(req: NextRequest) {
           total: subtotal,
           date,
           paymentStatus,
-          expenseId: willCreateExpense ? expenseRef.id : null,
+          expenseId: willCreateExpense ? expenseId : null,
           note: (row.note ?? '').toString().trim(),
           createdAt: FieldValue.serverTimestamp(),
         });
-
-        if (willCreateExpense) {
-          tx.set(expenseRef, {
-            category: 'Bahan Baku',
-            description: `Pembelian bahan baku - ${row.supplierName || 'Tanpa nama'}`,
-            amount: subtotal,
-            date,
-            note: `Otomatis dari pembelian bahan baku (${row.materialName})`,
-            sourceType: 'material-purchase',
-            sourceId: purchaseRef.id,
-            createdAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-        }
+        // Expense ditulis ke Postgres SETELAH transaksi Firestore ini commit — lihat src/lib/expenses-pg.ts.
       });
+      if (willCreateExpense) {
+        await insertExpensePg({
+          id: expenseId,
+          category: 'Bahan Baku',
+          description: `Pembelian bahan baku - ${row.supplierName || 'Tanpa nama'}`,
+          amount: subtotal,
+          date,
+          note: `Otomatis dari pembelian bahan baku (${row.materialName})`,
+          sourceType: 'material-purchase',
+          sourceId: purchaseRef.id,
+        });
+      }
       created++;
     } catch {
       skippedInvalid++;
@@ -93,5 +97,6 @@ export async function POST(req: NextRequest) {
     // kegagalan menulis audit log tidak boleh menggagalkan hasil impor yang sudah terjadi
   }
 
+  if (created > 0) revalidateTag('admin-expenses', { expire: 0 });
   return Response.json({ created, skippedInvalid });
 }

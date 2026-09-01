@@ -34,7 +34,7 @@ const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
     const sql = getSql();
-    const [orderSnap, recapSnap, incomeRows, expenseSnap, materialSnap, productSnap] = await Promise.all([
+    const [orderSnap, recapSnap, incomeRows, expenseRows, materialSnap, productSnap] = await Promise.all([
       db.collection('orders')
         .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
       db.collection('consignmentRecaps')
@@ -43,7 +43,10 @@ const getRawAnalytics = unstable_cache(
       sql<{ category: string | null; amount: string; date: string }[]>`
         select category, amount, date from income where date >= ${from} and date <= ${to}
       `,
-      db.collection('expenses').where('date', '>=', from).where('date', '<=', to).get(),
+      // expenses pindah ke Postgres (Tahap 5 migrasi)
+      sql<{ category: string | null; amount: string; date: string; source_type: string | null }[]>`
+        select category, amount, date, source_type from expenses where date >= ${from} and date <= ${to}
+      `,
       db.collection('rawMaterials').get(),
       db.collection('products').get(),
     ]);
@@ -60,7 +63,7 @@ const getRawAnalytics = unstable_cache(
         return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
       }),
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
-      expenses: expenseSnap.docs.map(d => d.data() as ExpenseDoc),
+      expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined }) as ExpenseDoc),
       materials: materialSnap.docs.map(d => ({ id: d.id, ...d.data() }) as MaterialDoc),
       productCosts: productSnap.docs.map(d => [d.id, Number(d.data().costPrice) || 0] as const),
     };
@@ -85,24 +88,25 @@ const getAllTimeCash = unstable_cache(
   async () => {
     const db = getDb();
     const sql = getSql();
-    const [orderSnap, recapSnap, expenseSnap, [totals]] = await Promise.all([
+    const [orderSnap, recapSnap, [totals]] = await Promise.all([
       db.collection('orders').get(),
       db.collection('consignmentRecaps').get(),
-      db.collection('expenses').get(),
-      // capitalEntries & income pindah ke Postgres (Tahap 2 & 4 migrasi) — agregat langsung di
-      // SQL, bukan tarik semua baris lalu jumlah di JS seperti koleksi Firestore lainnya di atas.
-      sql<{ total_modal: string; total_prive: string; total_income: string }[]>`
+      // capitalEntries, income & expenses pindah ke Postgres (Tahap 2, 4 & 5 migrasi) — agregat
+      // langsung di SQL, bukan tarik semua baris lalu jumlah di JS seperti koleksi Firestore
+      // lainnya di atas.
+      sql<{ total_modal: string; total_prive: string; total_income: string; total_expenses: string }[]>`
         select
           coalesce((select sum(amount) filter (where type = 'modal') from capital_entries), 0) as total_modal,
           coalesce((select sum(amount) filter (where type = 'prive') from capital_entries), 0) as total_prive,
-          coalesce((select sum(amount) from income), 0) as total_income
+          coalesce((select sum(amount) from income), 0) as total_income,
+          coalesce((select sum(amount) from expenses), 0) as total_expenses
       `,
     ]);
     return {
       orders: orderSnap.docs.map(d => d.data() as OrderCashDoc),
       recaps: recapSnap.docs.map(d => d.data() as RecapCashDoc),
       totalIncome: Number(totals.total_income) || 0,
-      expenses: expenseSnap.docs.map(d => d.data() as ExpenseDoc),
+      totalExpenses: Number(totals.total_expenses) || 0,
       capital: { totalModal: Number(totals.total_modal) || 0, totalPrive: Number(totals.total_prive) || 0 },
     };
   },
@@ -172,7 +176,7 @@ export async function GET(req: NextRequest) {
     allTimeCountedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0) +
     allTime.totalIncome +
     allTime.capital.totalModal -
-    allTime.expenses.reduce((s, e) => s + (e.amount ?? 0), 0) -
+    allTime.totalExpenses -
     allTime.capital.totalPrive;
 
   // ── Bahan baku — snapshot kondisi saat ini (bukan per-periode) ──

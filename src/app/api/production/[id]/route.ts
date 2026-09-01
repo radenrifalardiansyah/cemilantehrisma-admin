@@ -1,9 +1,12 @@
 import { NextRequest, after } from 'next/server';
+import { randomUUID } from 'crypto';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
 import { revalidateStorefront } from '@/lib/revalidate';
+import { getExpensePg, deleteExpensePg, applyExpensePgAction, type ExpensePgAction } from '@/lib/expenses-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -96,7 +99,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const db = getDb();
   const batchRef = db.collection('productionBatches').doc(id);
-  const newExpenseRef = db.collection('expenses').doc();
+  const newExpenseId = randomUUID();
+  // expenses sudah pindah ke Postgres (Tahap 5) — mutasi sesungguhnya dijalankan SETELAH transaksi
+  // Firestore ini commit (lihat src/lib/expenses-pg.ts), disimpan dulu sebagai deskripsi di sini.
+  let pgAction: ExpensePgAction = { type: 'none' };
 
   try {
     await db.runTransaction(async tx => {
@@ -134,7 +140,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const materialIds = [...new Set([...oldMaterialsUsed.map(m => m.materialId), ...newMaterialsUsed.map(m => m.materialId)])];
       const materialRefs = materialIds.map(mid => db.collection('rawMaterials').doc(mid));
       const productRefs = productIds.map(pid => db.collection('products').doc(pid));
-      const oldExpenseSnap = oldExpenseId ? await tx.get(db.collection('expenses').doc(oldExpenseId)) : null;
+      const oldExpenseRow = oldExpenseId ? await getExpensePg(oldExpenseId) : null;
       const oldWsRefs = oldWarehouseId
         ? oldOutputs.map(o => db.collection('warehouse_stock').doc(`${oldWarehouseId}_${o.productId}`))
         : [];
@@ -243,29 +249,22 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       }
 
       // Sinkronkan Pengeluaran otomatis biaya lain dengan nilai terbaru.
-      const oldExpenseExists = !!oldExpenseSnap?.exists;
+      const oldExpenseExists = !!oldExpenseRow;
       let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
       const productNames = newOutputs.map(o => o.productName).join(' & ');
       if (newOtherCost > 0) {
         if (oldExpenseExists && oldExpenseId) {
-          tx.update(db.collection('expenses').doc(oldExpenseId), {
-            description: `Biaya produksi - ${productNames}`,
-            amount: newOtherCost, date, updatedAt: FieldValue.serverTimestamp(),
-          });
+          pgAction = { type: 'update', id: oldExpenseId, description: `Biaya produksi - ${productNames}`, amount: newOtherCost, date };
         } else {
-          tx.set(newExpenseRef, {
-            category: 'Produksi',
-            description: `Biaya produksi - ${productNames}`,
-            amount: newOtherCost, date,
+          pgAction = {
+            type: 'insert', id: newExpenseId, category: 'Produksi', description: `Biaya produksi - ${productNames}`, amount: newOtherCost, date,
             note: `Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`,
-            sourceType: 'production',
-            sourceId: id,
-            createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
-          });
-          expenseIdToStore = newExpenseRef.id;
+            sourceType: 'production', sourceId: id,
+          };
+          expenseIdToStore = newExpenseId;
         }
       } else if (oldExpenseExists && oldExpenseId) {
-        tx.delete(db.collection('expenses').doc(oldExpenseId));
+        pgAction = { type: 'delete', id: oldExpenseId };
         expenseIdToStore = null;
       }
 
@@ -288,6 +287,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan perubahan.' }, { status: 400 });
   }
 
+  if (await applyExpensePgAction(pgAction)) revalidateTag('admin-expenses', { expire: 0 });
+
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
@@ -298,6 +299,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const db = getDb();
   const batchRef = db.collection('productionBatches').doc(id);
+  let expenseIdToDelete: string | null = null;
 
   try {
     await db.runTransaction(async tx => {
@@ -326,7 +328,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
       const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
       const productRefs  = outputs.map(o => db.collection('products').doc(o.productId));
-      const expenseSnap = expenseId ? await tx.get(db.collection('expenses').doc(expenseId)) : null;
+      const expenseRow = expenseId ? await getExpensePg(expenseId) : null;
+      if (expenseRow) expenseIdToDelete = expenseId!;
       const warehouseId = batch.warehouseId as string | undefined;
       const wsRefs = warehouseId
         ? outputs.map(o => db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`))
@@ -374,7 +377,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         });
       }
 
-      if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
       tx.delete(batchRef);
       writeHistoryEntry(tx, db, {
         entity: 'production', entityId: id,
@@ -384,6 +386,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus batch produksi.' }, { status: 400 });
+  }
+
+  if (expenseIdToDelete) {
+    await deleteExpensePg(expenseIdToDelete);
+    revalidateTag('admin-expenses', { expire: 0 });
   }
 
   after(() => revalidateStorefront('products'));

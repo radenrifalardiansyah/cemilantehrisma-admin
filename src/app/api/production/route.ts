@@ -1,4 +1,6 @@
 import { NextRequest, after } from 'next/server';
+import { randomUUID } from 'crypto';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
@@ -6,6 +8,7 @@ import { writeHistoryEntry } from '@/lib/history';
 import { writeNotification, sendPush } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 import { revalidateStorefront } from '@/lib/revalidate';
+import { insertExpensePg } from '@/lib/expenses-pg';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
@@ -130,7 +133,7 @@ export async function POST(req: NextRequest) {
   const productRefs = outputs.map(o => db.collection('products').doc(o.productId));
   const warehouseStockRefs = outputs.map(o => db.collection('warehouse_stock').doc(`${warehouseId}_${o.productId}`));
   const stockLogRefs = outputs.map(() => db.collection('stock').doc());
-  const expenseRef  = db.collection('expenses').doc();
+  const expenseId = randomUUID();
 
   const pushPayloads: { title: string; message: string }[] = [];
   try {
@@ -225,7 +228,7 @@ export async function POST(req: NextRequest) {
         materialCost, otherCost, totalCost, totalYieldQty, costPerPcs,
         warehouseId, warehouseName,
         note: data.note ?? '',
-        expenseId: otherCost > 0 ? expenseRef.id : null,
+        expenseId: otherCost > 0 ? expenseId : null,
         createdAt: FieldValue.serverTimestamp(),
       };
       tx.set(batchRef, batchData);
@@ -234,26 +237,26 @@ export async function POST(req: NextRequest) {
         entityLabel: `Produksi ${date} - ${outputsWithCost.map(o => o.productName).join(' & ') || batchRef.id}`,
         action: 'create', actor: guard, after: batchData,
       });
-
-      // Catat otomatis sebagai Pengeluaran — hanya biaya lain (tenaga kerja/overhead), pakai tanggal produksi
-      // yang diisi manual (bisa mundur). Biaya bahan baku TIDAK ikut karena sudah tercatat saat pembelian bahan baku.
-      if (otherCost > 0) {
-        const productNames = outputs.map(o => o.productName).join(' & ');
-        tx.set(expenseRef, {
-          category: 'Produksi',
-          description: `Biaya produksi - ${productNames}`,
-          amount: otherCost,
-          date,
-          note: `Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`,
-          sourceType: 'production',
-          sourceId: batchRef.id,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
+      // Expense (biaya lain) ditulis ke Postgres SETELAH transaksi ini commit — lihat src/lib/expenses-pg.ts.
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan produksi.' }, { status: 400 });
+  }
+
+  if (otherCost > 0) {
+    const productNames = outputs.map(o => o.productName).join(' & ');
+    const totalYieldQty = outputs.reduce((s, o) => s + o.yieldQty, 0);
+    await insertExpensePg({
+      id: expenseId,
+      category: 'Produksi',
+      description: `Biaya produksi - ${productNames}`,
+      amount: otherCost,
+      date,
+      note: `Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`,
+      sourceType: 'production',
+      sourceId: batchRef.id,
+    });
+    revalidateTag('admin-expenses', { expire: 0 });
   }
 
   await Promise.all(pushPayloads.map(p => sendPush(db, p))).catch(err => console.error('Failed to send push for low stock', err));

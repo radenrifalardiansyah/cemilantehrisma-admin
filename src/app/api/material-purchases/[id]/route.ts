@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server';
+import { randomUUID } from 'crypto';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { writeHistoryEntry } from '@/lib/history';
+import { getExpensePg, deleteExpensePg, applyExpensePgAction, type ExpensePgAction } from '@/lib/expenses-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -30,7 +33,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const db = getDb();
   const purchaseRef  = db.collection('materialPurchases').doc(id);
-  const newExpenseRef = db.collection('expenses').doc();
+  const newExpenseId = randomUUID();
+  // expenses sudah pindah ke Postgres (Tahap 5) — mutasi sesungguhnya dijalankan SETELAH transaksi
+  // Firestore ini commit (lihat src/lib/expenses-pg.ts), disimpan dulu sebagai deskripsi di sini.
+  let pgAction: ExpensePgAction = { type: 'none' };
 
   try {
     await db.runTransaction(async tx => {
@@ -43,7 +49,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // Baca dulu expense lama (kalau ada) sebelum tulis apa pun — supaya tahu apakah masih ada
       // (bisa saja sudah dihapus manual dari menu Pengeluaran) sebelum memutuskan update vs buat baru.
       const oldExpenseId = purchase.expenseId as string | null | undefined;
-      const oldExpenseSnap = oldExpenseId ? await tx.get(db.collection('expenses').doc(oldExpenseId)) : null;
+      const oldExpenseRow = oldExpenseId ? await getExpensePg(oldExpenseId) : null;
 
       let itemsWithSubtotal = oldItems.map(it => ({ ...it, subtotal: it.qty * it.price }));
       let total = Number(purchase.total) || 0;
@@ -113,34 +119,27 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       // Sinkronkan Pengeluaran otomatis dengan status pembayaran & total terbaru. Expense lama
       // dianggap "ada" hanya kalau benar-benar masih ada di database (bisa saja sudah dihapus
-      // manual dari menu Pengeluaran) — kalau sudah tidak ada, dibuatkan baru, bukan tx.update
-      // yang akan gagal karena dokumennya tidak ada.
-      const oldExpenseExists = !!oldExpenseSnap?.exists;
+      // manual dari menu Pengeluaran) — kalau sudah tidak ada, dibuatkan baru, bukan update
+      // yang akan gagal karena baris-nya tidak ada.
+      const oldExpenseExists = !!oldExpenseRow;
       let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
       const supplierName = data.supplierName ?? purchase.supplierName ?? '';
       const walletId = data.walletId !== undefined ? data.walletId : (purchase.walletId ?? null);
 
       if (newPaymentStatus === 'lunas') {
         if (oldExpenseExists && oldExpenseId) {
-          tx.update(db.collection('expenses').doc(oldExpenseId), {
-            description: `Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`,
-            amount: total, date, walletId, updatedAt: FieldValue.serverTimestamp(),
-          });
+          pgAction = { type: 'update', id: oldExpenseId, description: `Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`, amount: total, date, walletId };
         } else {
-          tx.set(newExpenseRef, {
-            category: 'Bahan Baku',
-            description: `Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`,
-            amount: total, date,
+          pgAction = {
+            type: 'insert', id: newExpenseId, category: 'Bahan Baku', description: `Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`,
+            amount: total, date, walletId,
             note: `Otomatis dari pembelian bahan baku (${itemsWithSubtotal.map(it => it.materialName).join(', ')})`,
-            sourceType: 'material-purchase',
-            sourceId: id,
-            walletId,
-            createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
-          });
-          expenseIdToStore = newExpenseRef.id;
+            sourceType: 'material-purchase', sourceId: id,
+          };
+          expenseIdToStore = newExpenseId;
         }
       } else if (oldExpenseExists && oldExpenseId) {
-        tx.delete(db.collection('expenses').doc(oldExpenseId));
+        pgAction = { type: 'delete', id: oldExpenseId };
         expenseIdToStore = null;
       }
 
@@ -172,6 +171,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan perubahan.' }, { status: 400 });
   }
 
+  if (await applyExpensePgAction(pgAction)) revalidateTag('admin-expenses', { expire: 0 });
+
   return Response.json({ ok: true });
 }
 
@@ -185,6 +186,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const db = getDb();
   const purchaseRef = db.collection('materialPurchases').doc(id);
+  let expenseIdToDelete: string | null = null;
 
   try {
     await db.runTransaction(async tx => {
@@ -214,7 +216,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const materialRefs = items.map(it => db.collection('rawMaterials').doc(it.materialId));
       const materialSnaps = await Promise.all(materialRefs.map(r => tx.get(r)));
       const expenseId = purchase.expenseId as string | null | undefined;
-      const expenseSnap = expenseId ? await tx.get(db.collection('expenses').doc(expenseId)) : null;
+      const expenseRow = expenseId ? await getExpensePg(expenseId) : null;
+      if (expenseRow) expenseIdToDelete = expenseId!;
 
       items.forEach((it, i) => {
         if (!materialSnaps[i].exists) return;
@@ -231,7 +234,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         });
       });
 
-      if (expenseSnap?.exists) tx.delete(expenseSnap.ref);
       tx.delete(purchaseRef);
 
       if (purchase) {
@@ -247,6 +249,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus pembelian.' }, { status: 400 });
+  }
+
+  if (expenseIdToDelete) {
+    await deleteExpensePg(expenseIdToDelete);
+    revalidateTag('admin-expenses', { expire: 0 });
   }
 
   return Response.json({ ok: true });
