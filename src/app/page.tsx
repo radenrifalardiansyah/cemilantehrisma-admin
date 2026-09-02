@@ -1140,14 +1140,14 @@ export default function AdminPage() {
               <div className="card p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Pageview 7 Hari</p>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Pageview {webRange} Hari</p>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Kunjungan halaman per hari</p>
                   </div>
                   <span className="badge" style={{ background: '#EFF6FF', color: '#0284C7' }}>
                     Hari ini: {todayViews}
                   </span>
                 </div>
-                <PageviewChart data={ws.daily.slice(-7)} />
+                <PageviewChart data={ws.daily} />
               </div>
             )}
 

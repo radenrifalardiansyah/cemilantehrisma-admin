@@ -30,9 +30,13 @@ import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
 import { toDataUri } from '@/lib/pdf/logo';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
 const API = '';
 const HEADER_BTN_H = 34;
+// Locations' load also re-fetches per-location stock (N+1, uncached) — longer than Kasir/
+// Pesanan's interval since this one is pricier per tick.
+const CONSIGNMENT_POLL_MS = 45_000;
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -1174,6 +1178,18 @@ _${storeHeader.name}_`.trim();
     setRecapsLoading(false);
   };
   useEffect(() => { loadRecaps(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh — only the sub-tab currently in view (skips the pricier N+1 location/stock
+  // fetch entirely while looking at Kirim/Rekap/Analitik). Each `loadX` already guards its
+  // "loading" spinner with `&& list.length === 0`, so a background reload here doesn't
+  // re-trigger the full-page placeholder once data has loaded once.
+  const pollActiveSubTab = () => {
+    if (subTab === 'lokasi') loadLocations();
+    else if (subTab === 'kirim') loadShipments();
+    else if (subTab === 'rekap') loadRecaps();
+    else if (subTab === 'analitik') fetchAnalytics();
+  };
+  useVisiblePolling(pollActiveSubTab, CONSIGNMENT_POLL_MS, [subTab]);
 
   const loadRecapStock = async (locationId: string) => {
     setRecapStockLoading(true);

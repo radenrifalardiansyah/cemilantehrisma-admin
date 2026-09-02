@@ -19,9 +19,13 @@ import TopbarPortal from '@/components/TopbarPortal';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
 const API = '';
 const HEADER_BTN_H = 34;
+// Warehouse list's active-count check also re-fetches per-warehouse stock (N+1, uncached) —
+// longer interval than Kasir/Pesanan since this one is pricier per tick.
+const STOCK_POLL_MS = 45_000;
 
 type SubTab = 'stok' | 'masuk' | 'keluar' | 'transfer';
 
@@ -619,8 +623,10 @@ export default function StockTab({
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
-  const loadWarehouses = async () => {
-    setLoading(true);
+  // `silent` skips the loading flip so the background auto-refresh poll below doesn't
+  // re-trigger the full-page spinner these two gate on every tick.
+  const loadWarehouses = async (silent = false) => {
+    if (!silent) setLoading(true);
     const r = await fetch(`${API}/api/warehouses`, { headers });
     if (r.ok) {
       const { warehouses: w } = await r.json() as { warehouses: WarehouseData[] };
@@ -634,7 +640,7 @@ export default function StockTab({
       }));
       setActiveWarehouseCount(active.filter(Boolean).length);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   const loadTx = async () => {
@@ -647,14 +653,14 @@ export default function StockTab({
     setTxLoading(false);
   };
 
-  const loadStock = async (warehouseId: string) => {
-    setStockLoading(true);
+  const loadStock = async (warehouseId: string, silent = false) => {
+    if (!silent) setStockLoading(true);
     const r = await fetch(`${API}/api/warehouses/${warehouseId}/stock`, { headers });
     if (r.ok) {
       const { stocks: s } = await r.json() as { stocks: ProductStock[] };
       setStocks(s);
     }
-    setStockLoading(false);
+    if (!silent) setStockLoading(false);
   };
 
   // ── Kosongkan stok ──
@@ -699,6 +705,20 @@ export default function StockTab({
   useEffect(() => {
     if (subTab !== 'stok') loadTx();
   }, [subTab]);
+
+  // Auto-refresh — only the sub-tab/view currently in front: the selected warehouse's stock
+  // list, the warehouses overview (skipping the pricier N+1 active-count check otherwise), or
+  // the Masuk/Keluar/Transfer history. `loadTx`'s spinner is already guarded by
+  // `&& list.length === 0`, so a background reload there won't flash a full-page loader either.
+  const pollActiveView = () => {
+    if (subTab === 'stok') {
+      if (stokView === 'stock' && selectedWarehouse) loadStock(selectedWarehouse.id, true);
+      else loadWarehouses(true);
+    } else {
+      loadTx();
+    }
+  };
+  useVisiblePolling(pollActiveView, STOCK_POLL_MS, [subTab, stokView, selectedWarehouse?.id]);
 
   // ── Warehouse actions ──
   const openWarehouse = async (w: WarehouseData) => {
@@ -915,7 +935,7 @@ export default function StockTab({
           <div className="p-4 lg:p-6 animate-fade-up">
             <TopbarPortal>
               <Tooltip label="Refresh">
-                <button onClick={loadWarehouses} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+                <button onClick={() => loadWarehouses()} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
                   <RefreshCw size={14} />
                 </button>
               </Tooltip>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import { getToken } from 'firebase/messaging';
@@ -134,6 +134,30 @@ export default function AppShell({
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
+  const [moreDragY,  setMoreDragY]  = useState(0);
+  const moreDragStartY = useRef<number | null>(null);
+  const moreDragging = useRef(false);
+  const moreTouchedOnce = useRef(false);
+
+  const handleMoreDragStart = (e: React.TouchEvent) => {
+    moreDragStartY.current = e.touches[0].clientY;
+    moreDragging.current = true;
+    moreTouchedOnce.current = true;
+  };
+  const handleMoreDragMove = (e: React.TouchEvent) => {
+    if (!moreDragging.current || moreDragStartY.current === null) return;
+    const delta = e.touches[0].clientY - moreDragStartY.current;
+    if (delta > 0) setMoreDragY(delta);
+  };
+  const handleMoreDragEnd = () => {
+    if (moreDragY > 80) {
+      setMoreOpen(false);
+      setMoreQuery('');
+    }
+    setMoreDragY(0);
+    moreDragStartY.current = null;
+    moreDragging.current = false;
+  };
   const [sidebarQuery, setSidebarQuery] = useState('');
   const [aboutOpen,  setAboutOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -699,7 +723,7 @@ export default function AppShell({
             const moreBadgeTotal = MORE_TABS_DISPLAY.reduce((s, t) => s + (badges[t.id] ?? 0), 0);
             return (
           <button
-            onClick={() => setMoreOpen(true)}
+            onClick={() => { moreTouchedOnce.current = false; setMoreDragY(0); setMoreOpen(true); }}
             className="flex flex-col items-center justify-center gap-1 flex-1 relative pb-1"
             aria-label={isMoreActive ? (currentTab?.label ?? 'Lainnya') : 'Lainnya'}
           >
@@ -742,20 +766,29 @@ export default function AppShell({
             onClick={() => { setMoreOpen(false); setMoreQuery(''); }}
           />
           <div
-            className="lg:hidden fixed left-0 right-0 z-50 animate-slide-up"
+            className={`lg:hidden fixed left-0 right-0 z-50 flex flex-col ${moreTouchedOnce.current ? '' : 'animate-slide-up'}`}
             style={{
               bottom: 0,
+              maxHeight: 'calc(100dvh - env(safe-area-inset-top) - 48px)',
               background: 'var(--surface)',
               borderRadius: '20px 20px 0 0',
               boxShadow: '0 -8px 40px rgba(30,16,8,0.14)',
               paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+              transform: moreDragY ? `translateY(${moreDragY}px)` : undefined,
+              transition: moreDragging.current ? 'none' : 'transform 0.2s ease-out',
             }}
           >
-            <div className="flex justify-center pt-3 pb-5">
+            <div
+              className="flex justify-center pt-3 pb-5 shrink-0"
+              style={{ touchAction: 'none' }}
+              onTouchStart={handleMoreDragStart}
+              onTouchMove={handleMoreDragMove}
+              onTouchEnd={handleMoreDragEnd}
+            >
               <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} />
             </div>
 
-            <div className="px-5">
+            <div className="px-5 overflow-y-auto flex-1 min-h-0">
               <div style={{ position: 'relative', marginBottom: 14 }}>
                 <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                 <input

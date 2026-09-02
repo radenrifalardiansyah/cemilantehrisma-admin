@@ -13,6 +13,7 @@ import NumberInput from '@/components/NumberInput';
 import SearchSelect from '@/components/SearchSelect';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -23,6 +24,8 @@ import { activeWalletOptions, type WalletDoc } from '@/lib/useWallets';
 
 const API = '';
 const HEADER_BTN_H = 34;
+// wallets/balances/transfers are all Postgres-backed and cheap to re-fetch — safe to poll.
+const WALLETS_POLL_MS = 30_000;
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -117,9 +120,11 @@ export default function WalletsTab({ creds }: { creds: string }) {
   // Saldo per dompet + "Belum Ditentukan" dihitung server-side lewat /api/wallets/balances
   // (Tahap 6 migrasi, lihat plan gleaming-wondering-quokka.md) — dulu di sini fetch 5 endpoint
   // histori penuh (income/expenses/capital/orders/consignment-recap) lalu hitung sendiri di client.
-  const load = async () => {
+  // `silent` skips the `loading` flip so the background auto-refresh poll below doesn't
+  // replace the whole tab with the full-page spinner every tick.
+  const load = async (silent = false) => {
     const myLoadId = ++loadIdRef.current;
-    setLoading(true);
+    if (!silent) setLoading(true);
     const [wRes, bRes, tRes] = await Promise.all([
       fetch(`${API}/api/wallets`, { headers }),
       fetch(`${API}/api/wallets/balances`, { headers }),
@@ -136,9 +141,13 @@ export default function WalletsTab({ creds }: { creds: string }) {
     setTransfers(transferList);
     setBalances(nextBalances);
     setUnassigned(nextUnassigned);
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // /api/wallets & /api/wallet-transfers are Postgres-backed — safe to poll for balances/
+  // transfers made from another device/session while this tab stays open.
+  useVisiblePolling(() => load(true), WALLETS_POLL_MS, []);
 
   const walletOptions = activeWalletOptions(wallets, balances);
   const walletName = (id: string) => wallets.find(w => w.id === id)?.name ?? '(dompet dihapus)';
@@ -508,7 +517,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     <>
     <TopbarPortal>
       <Tooltip label="Refresh">
-        <button onClick={load} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+        <button onClick={() => load()} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
       </Tooltip>

@@ -16,9 +16,15 @@ import SearchSelect from '@/components/SearchSelect';
 import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
 const API = '';
 const HEADER_BTN_H = 34;
+
+// /api/orders is Postgres-backed and cached 15s server-side, so polling for new orders here
+// is safe. 30s (vs Kasir's 20s) — this list is the full order history, not just a product
+// catalog, so each tick moves more data over the wire.
+const ORDERS_POLL_MS = 30_000;
 
 interface OrderItem { productId?: string; name: string; weight: string; qty: number; price: number; subtotal: number; }
 interface Order {
@@ -164,6 +170,17 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  // Auto-refresh in the background — deliberately not reusing `load()`, which flips `loading`
+  // and replaces the whole tab with a full-page spinner (fine for the initial load, jarring
+  // every 30s in the background).
+  const reloadSilently = async () => {
+    try {
+      const r = await fetch(`${API}/api/orders?from=2000-01-01`, { headers });
+      if (r.ok) { const { orders: o } = await r.json() as { orders: Order[] }; setOrders(o); }
+    } catch { /* polling — transient failures are ignored, next tick retries */ }
+  };
+  useVisiblePolling(reloadSilently, ORDERS_POLL_MS, []);
 
   // Pesanan yang belum ditandai selesai (Website, atau Kasir berisi item "Buka PO") — dipakai
   // buat badge notifikasi di menu sidebar.

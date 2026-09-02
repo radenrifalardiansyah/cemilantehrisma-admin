@@ -23,10 +23,15 @@ import { recognizeTransferAmount } from '@/lib/receipt-ocr';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { resolveScannedProductId } from '@/lib/scan';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
+
+// /api/products is Postgres-backed and cached 15s server-side, so polling here just keeps
+// the register's stock/harga fresh while Kasir stays open — no Firestore quota to worry about.
+const STOCK_POLL_MS = 20_000;
 
 const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
@@ -661,10 +666,10 @@ export default function PosTab({
     }).catch(() => setShiftLoaded(true));
   }, [isActive, creds, shiftLoaded]);
 
-  // ── Refresh stok otomatis setiap kali tab Kasir dibuka ──
-  useEffect(() => {
-    if (isActive) Promise.resolve(onRefreshStock()).catch(() => {});
-  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Refresh stok otomatis: langsung saat tab Kasir dibuka, lalu tiap STOCK_POLL_MS
+  // selama tab masih aktif & jendela browser terlihat (auto-pause di tab background) ──
+  const pollStock = () => { if (isActive) Promise.resolve(onRefreshStock()).catch(() => {}); };
+  useVisiblePolling(pollStock, STOCK_POLL_MS, [isActive]);
 
   // ── Proses transaksi ──────────────────────────────────────
   const processTransaction = async () => {
