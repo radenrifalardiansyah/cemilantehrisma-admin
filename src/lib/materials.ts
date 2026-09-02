@@ -7,9 +7,10 @@ import { getSql, parseJsonb } from '@/lib/db';
 // setelahnya TIDAK benar-benar mengembalikan stok material itu, tanpa peringatan apa pun ke user.
 export async function referencedMaterialIds(): Promise<Set<string>> {
   const sql = getSql();
-  const [purchaseRows, batchRows] = await Promise.all([
+  const [purchaseRows, batchRows, adjustmentRows] = await Promise.all([
     sql<{ items: unknown }[]>`select items from material_purchases`,
     sql<{ materials_used: unknown }[]>`select materials_used from production_batches`,
+    sql<{ material_id: string }[]>`select distinct material_id from material_adjustments`,
   ]);
   const ids = new Set<string>();
   purchaseRows.forEach(r => {
@@ -18,5 +19,6 @@ export async function referencedMaterialIds(): Promise<Set<string>> {
   batchRows.forEach(r => {
     ((parseJsonb(r.materials_used) as { materialId: string }[] | null) ?? []).forEach(m => ids.add(m.materialId));
   });
+  adjustmentRows.forEach(r => ids.add(r.material_id));
   return ids;
 }

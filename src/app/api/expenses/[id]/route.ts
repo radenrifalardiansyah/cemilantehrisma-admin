@@ -20,6 +20,9 @@ function sourceLockMessage(sourceType: unknown): string | null {
   if (sourceType === 'material-purchase') {
     return 'Entri ini otomatis dari Pembelian Bahan Baku — edit atau hapus dari menu Bahan Baku > Pembelian supaya stok & status bayar tetap sinkron.';
   }
+  if (sourceType === 'production') {
+    return 'Entri ini otomatis dari Produksi — edit atau hapus dari menu Produksi supaya biaya & catatan produksi tetap sinkron.';
+  }
   return null;
 }
 
@@ -82,7 +85,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const lockMsg = sourceLockMessage(before?.source_type);
   if (lockMsg) return Response.json({ error: lockMsg }, { status: 400 });
 
-  await sql`delete from expenses where id = ${id}`;
+  try {
+    await sql`delete from expenses where id = ${id}`;
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23503') {
+      return Response.json({ error: 'Tidak bisa dihapus — entri ini masih dipakai sumber lain.' }, { status: 400 });
+    }
+    throw err;
+  }
   try {
     const db = getDb();
     await logHistory(db, {

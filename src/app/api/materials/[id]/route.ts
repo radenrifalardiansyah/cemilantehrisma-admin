@@ -37,7 +37,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   const sql = getSql();
-  await sql`delete from raw_materials where id = ${id}`;
+  try {
+    await sql`delete from raw_materials where id = ${id}`;
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23503') {
+      return Response.json({ error: 'Bahan baku ini masih dipakai di riwayat pembelian atau produksi — tidak bisa dihapus.' }, { status: 400 });
+    }
+    throw err;
+  }
   revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ ok: true });
 }

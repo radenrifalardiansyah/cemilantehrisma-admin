@@ -16,9 +16,20 @@ export async function POST(req: NextRequest) {
   const skippedInUse = ids.length - deletable.length;
 
   const sql = getSql();
-  if (deletable.length > 0) {
-    await sql`delete from raw_materials where id in ${sql(deletable)}`;
-    revalidateTag('admin-materials', { expire: 0 });
+  let deletedCount = 0;
+  let skippedFk = 0;
+  for (const id of deletable) {
+    try {
+      await sql`delete from raw_materials where id = ${id}`;
+      deletedCount++;
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23503') {
+        skippedFk++;
+        continue;
+      }
+      throw err;
+    }
   }
-  return Response.json({ deleted: deletable.length, skippedInUse });
+  if (deletedCount > 0) revalidateTag('admin-materials', { expire: 0 });
+  return Response.json({ deleted: deletedCount, skippedInUse: skippedInUse + skippedFk });
 }

@@ -55,18 +55,40 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const sql = getSql();
 
-  // Tolak kalau masih ada stok titip tersisa di lokasi ini — kalau dibolehkan, stok itu jadi
-  // yatim permanen (tidak bisa direkap lagi karena lokasinya sudah tidak ada untuk dipilih).
-  const [{ count }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_stock where location_id = ${id} and stock_qty > 0`;
-  if (Number(count) > 0) {
+  // Tolak kalau lokasi ini masih punya riwayat apapun — stok titip (termasuk yang sudah 0),
+  // pengiriman, atau rekap. Kalau dibolehkan, riwayat itu jadi yatim permanen (tidak bisa
+  // ditelusuri lagi karena lokasinya sudah tidak ada untuk dipilih).
+  const [{ count: stockCount }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_stock where location_id = ${id}`;
+  if (Number(stockCount) > 0) {
     return Response.json(
-      { error: 'Lokasi ini masih punya stok titip tersisa — rekap atau kosongkan dulu sebelum menghapus.' },
+      { error: 'Lokasi ini masih punya catatan stok titip — rekap atau kosongkan dulu sebelum menghapus.' },
+      { status: 400 },
+    );
+  }
+  const [{ count: shipmentCount }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_shipments where location_id = ${id}`;
+  if (Number(shipmentCount) > 0) {
+    return Response.json(
+      { error: 'Lokasi ini masih punya riwayat pengiriman — tidak bisa dihapus.' },
+      { status: 400 },
+    );
+  }
+  const [{ count: recapCount }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_recaps where location_id = ${id}`;
+  if (Number(recapCount) > 0) {
+    return Response.json(
+      { error: 'Lokasi ini masih punya riwayat rekap — tidak bisa dihapus.' },
       { status: 400 },
     );
   }
 
   const [before] = await sql<LocationRow[]>`select name, code, contact_name, contact_phone, address, note from consignment_locations where id = ${id}`;
-  await sql`delete from consignment_locations where id = ${id}`;
+  try {
+    await sql`delete from consignment_locations where id = ${id}`;
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23503') {
+      return Response.json({ error: 'Tidak bisa dihapus — lokasi ini masih direferensikan data lain.' }, { status: 400 });
+    }
+    throw err;
+  }
   try {
     await logHistory(db, {
       entity: 'consignment',

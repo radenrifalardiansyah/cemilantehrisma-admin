@@ -79,7 +79,25 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     }, { status: 500 });
   }
 
-  await sql`delete from warehouses where id = ${id}`;
+  // Hapus dulu baris warehouse_stock gudang ini (sekarang sudah bernilai 0 lewat
+  // clearWarehouseProductStock di atas, atau memang sudah 0 sebelumnya) SEBELUM menghapus
+  // baris warehouses — urutan terbalik akan selalu gagal karena warehouse_stock masih
+  // mereferensikan warehouse_id ini.
+  await sql`delete from warehouse_stock where warehouse_id = ${id}`;
+
+  try {
+    await sql`delete from warehouses where id = ${id}`;
+  } catch (err) {
+    // FK ke stock_ledger/production_batches/orders/consignment_shipments sengaja TIDAK cascade —
+    // gudang yang sudah punya riwayat mutasi stok/produksi/order/konsinyasi tidak boleh hilang
+    // begitu saja (merusak jejak audit & laporan).
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23503') {
+      return Response.json({
+        error: 'Tidak bisa dihapus — gudang ini sudah punya riwayat mutasi stok, produksi, order, atau konsinyasi. Stok di gudang ini sudah dikosongkan, tapi gudangnya sendiri tidak bisa dihapus permanen.',
+      }, { status: 400 });
+    }
+    throw err;
+  }
 
   try {
     await logHistory(db, {
@@ -94,10 +112,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   } catch {
     // audit log failure must never fail the business request
   }
-
-  // Hapus sisa baris warehouse_stock untuk gudang ini (sekarang sudah bernilai 0 lewat
-  // clearWarehouseProductStock di atas, atau memang sudah 0 sebelumnya).
-  await sql`delete from warehouse_stock where warehouse_id = ${id}`;
 
   return Response.json({ ok: true });
 }
