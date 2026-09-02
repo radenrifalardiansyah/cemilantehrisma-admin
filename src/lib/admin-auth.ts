@@ -23,8 +23,8 @@ export function getAuthUser(request: Request): AuthUser | null {
 }
 
 // Only a same-or-lesser gate than requirePermission/requireSuperAdmin: still blocks a
-// not-yet-changed temporary password, since the routes using this (seed, seed-rbac, upload)
-// are mutating/admin-ish and must not be reachable on a token that hasn't completed that flow.
+// not-yet-changed temporary password, since the routes using this (seed, upload) are
+// mutating/admin-ish and must not be reachable on a token that hasn't completed that flow.
 export function validateAdminAuth(request: Request): boolean {
   const user = getAuthUser(request);
   return user !== null && !user.mustChangePassword;

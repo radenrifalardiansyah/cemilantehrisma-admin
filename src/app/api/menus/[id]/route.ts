@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
-import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,16 +9,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'menus', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const data   = await req.json() as Record<string, unknown>;
+  const data = await req.json() as {
+    moduleId?: string; parentId?: string | null; featureKey?: string; label?: string; icon?: string; isActive?: boolean;
+  };
 
   if (typeof data.featureKey === 'string' && !FEATURE_KEY_SET.has(data.featureKey)) {
     return Response.json({ error: `Screen "${data.featureKey}" tidak dikenal.` }, { status: 400 });
   }
 
-  const db  = getDb();
-  const ref = db.collection('menus').doc(id);
-  const current = await ref.get();
-  if (!current.exists) return Response.json({ error: 'Menu tidak ditemukan.' }, { status: 404 });
+  const sql = getSql();
+  const [current] = await sql<{ feature_key: string; is_active: boolean; parent_id: string | null }[]>`select feature_key, is_active, parent_id from menus where id = ${id}`;
+  if (!current) return Response.json({ error: 'Menu tidak ditemukan.' }, { status: 404 });
 
   // Tolak parentId yang bikin siklus — perlindungan ini sebelumnya cuma ada di klien (menyaring
   // dropdown pemilihan induk), yang bisa dilewati lewat panggilan API langsung. Kalau sampai
@@ -29,8 +29,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (data.parentId === id) {
       return Response.json({ error: 'Menu tidak bisa menjadi induk dirinya sendiri.' }, { status: 400 });
     }
-    const allMenusSnap = await db.collection('menus').get();
-    const parentById = new Map(allMenusSnap.docs.map(d => [d.id, d.data().parentId as string | null | undefined]));
+    const allMenus = await sql<{ id: string; parent_id: string | null }[]>`select id, parent_id from menus`;
+    const parentById = new Map(allMenus.map(r => [r.id, r.parent_id]));
     const seen = new Set<string>();
     let cursor: string | null | undefined = data.parentId;
     while (cursor) {
@@ -43,21 +43,30 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     }
   }
 
-  const featureKey = (data.featureKey as string | undefined) ?? current.data()!.featureKey;
-  const nextActive = (data.isActive as boolean | undefined) ?? current.data()!.isActive;
+  const featureKey = data.featureKey ?? current.feature_key;
+  const nextActive = data.isActive ?? current.is_active;
   if (nextActive) {
-    const dupe = await db.collection('menus')
-      .where('featureKey', '==', featureKey).where('isActive', '==', true).get();
-    const conflict = dupe.docs.find(d => d.id !== id);
+    const [conflict] = await sql<{ id: string; label: string }[]>`select id, label from menus where feature_key = ${featureKey} and is_active = true and id != ${id} limit 1`;
     if (conflict) {
       return Response.json(
-        { error: `Screen "${featureKey}" sudah punya menu aktif ("${conflict.data().label}").` },
+        { error: `Screen "${featureKey}" sudah punya menu aktif ("${conflict.label}").` },
         { status: 409 },
       );
     }
   }
 
-  await ref.update({ ...data, updatedAt: FieldValue.serverTimestamp() });
+  const nextParentId = data.parentId !== undefined ? (data.parentId || null) : current.parent_id;
+  await sql`
+    update menus set
+      module_id = coalesce(${data.moduleId ?? null}, module_id),
+      parent_id = ${nextParentId},
+      feature_key = coalesce(${data.featureKey ?? null}, feature_key),
+      label = coalesce(${data.label ?? null}, label),
+      icon = coalesce(${data.icon ?? null}, icon),
+      is_active = coalesce(${data.isActive ?? null}, is_active),
+      updated_at = now()
+    where id = ${id}
+  `;
   return Response.json({ ok: true });
 }
 
@@ -65,16 +74,16 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'menus', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const db     = getDb();
+  const sql = getSql();
 
-  const children = await db.collection('menus').where('parentId', '==', id).get();
-  if (!children.empty) {
+  const [{ count }] = await sql<{ count: number }[]>`select count(*)::int as count from menus where parent_id = ${id}`;
+  if (count > 0) {
     return Response.json(
-      { error: `Tidak bisa dihapus — ${children.size} sub-menu masih menggunakan menu ini sebagai induk.` },
+      { error: `Tidak bisa dihapus — ${count} sub-menu masih menggunakan menu ini sebagai induk.` },
       { status: 409 },
     );
   }
 
-  await db.collection('menus').doc(id).delete();
+  await sql`delete from menus where id = ${id}`;
   return Response.json({ ok: true });
 }

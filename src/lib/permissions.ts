@@ -10,7 +10,7 @@ const CRUD: Action[] = ['view', 'create', 'edit', 'delete'];
 
 // Single source of truth for every permission scope in the app. Used by:
 // route guards (src/lib/rbac.ts), the Struktur Menu featureKey picker,
-// the Hak Akses Role matrix, and seed-rbac.
+// and the Hak Akses Role matrix.
 export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'dashboard',       label: 'Analitik',           actions: ['view'] },
   { key: 'pos',              label: 'Kasir',              actions: ['view', 'create'] },
@@ -63,11 +63,10 @@ export function fullAccessPermissions(): Record<string, Partial<Record<Action, b
   return perms;
 }
 
-// RBAC-management scopes — kept together for seeding decisions (see
-// src/app/api/seed-rbac/route.ts): 'admin' role is granted full access to
-// these too (matching the full access every existing user already has
-// today), 'super-admin' is additionally a hardcoded bypass regardless of
-// what these rows say.
+// RBAC-management scopes — kept together for bootstrap/seed role-permission decisions:
+// 'admin' role is granted full access to these too (matching the full access every
+// existing user already has today), 'super-admin' is additionally a hardcoded bypass
+// regardless of what these rows say.
 export const RBAC_MANAGEMENT_KEYS = ['users', 'roles', 'modules', 'menus', 'role-permissions'];
 
 // Confirmed cross-feature reads: these API routes are consumed by more than

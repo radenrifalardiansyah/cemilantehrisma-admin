@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+import { rowToModule, type ModuleRow } from '@/lib/nav-pg';
 
 export async function GET(req: NextRequest) {
   // Both the Modul screen (`modules`) and the Struktur Menu screen (`menus`,
@@ -9,9 +9,9 @@ export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, ['modules', 'menus'], 'view');
   if (guard instanceof Response) return guard;
 
-  const snap = await getDb().collection('modules').orderBy('order', 'asc').get();
-  const modules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return Response.json({ modules });
+  const sql = getSql();
+  const rows = await sql<ModuleRow[]>`select * from modules order by "order" asc`;
+  return Response.json({ modules: rows.map(rowToModule) });
 }
 
 export async function POST(req: NextRequest) {
@@ -24,18 +24,17 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'ID modul hanya boleh huruf kecil, angka, dan tanda hubung.' }, { status: 400 });
   }
 
-  const db  = getDb();
-  const ref = db.collection('modules').doc(id);
-  if ((await ref.get()).exists) {
+  const sql = getSql();
+  const [existing] = await sql<{ id: string }[]>`select id from modules where id = ${id}`;
+  if (existing) {
     return Response.json({ error: `Modul dengan ID "${id}" sudah ada.` }, { status: 409 });
   }
 
-  // max(order)+1, bukan jumlah dokumen — count menyusut tiap ada modul yang dihapus, jadi modul
+  // max(order)+1, bukan jumlah baris — count menyusut tiap ada modul yang dihapus, jadi modul
   // baru bisa dapat `order` yang bentrok dengan modul lain yang masih ada (lihat komentar sama di
   // api/menus/route.ts POST).
-  const siblingSnap = await db.collection('modules').get();
-  const nextOrder = siblingSnap.docs.reduce((max, d) => Math.max(max, Number(d.data().order) || 0), -1) + 1;
-  const now = FieldValue.serverTimestamp();
-  await ref.set({ name, icon, order: nextOrder, isActive: true, createdAt: now, updatedAt: now });
+  const [{ maxOrder }] = await sql<{ maxOrder: number | null }[]>`select max("order") as "maxOrder" from modules`;
+  const nextOrder = (maxOrder ?? -1) + 1;
+  await sql`insert into modules (id, name, icon, "order", is_active, created_at, updated_at) values (${id}, ${name}, ${icon}, ${nextOrder}, true, now(), now())`;
   return Response.json({ id, name, icon });
 }

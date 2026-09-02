@@ -1,29 +1,26 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { hasPermission, getRolePermissionsMap, checkPermission } from '@/lib/rbac';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
-import { FieldValue } from 'firebase-admin/firestore';
+import { rowToModule, rowToMenu, type ModuleRow, type MenuRow } from '@/lib/nav-pg';
 
 // Every logged-in session fetches this once on mount (sidebar build) — was two raw
 // collection scans on every session, now collapsed across concurrent sessions for 20s.
 // Struktur Menu/Modul edits are rare and a few seconds of staleness here is cosmetic
 // (permission filtering below is always fresh via getRolePermissionsMap), so a plain
 // TTL is enough — no tag/invalidation wiring needed, same tradeoff as getAllUsernames.
+// (Tahap 24 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
 const getModulesAndMenus = unstable_cache(
   async () => {
-    const db = getDb();
-    const [modSnap, menuSnap] = await Promise.all([
-      db.collection('modules').orderBy('order', 'asc').get(),
-      db.collection('menus').orderBy('order', 'asc').get(),
+    const sql = getSql();
+    const [modRows, menuRows] = await Promise.all([
+      sql<ModuleRow[]>`select * from modules order by "order" asc`,
+      sql<MenuRow[]>`select * from menus order by "order" asc`,
     ]);
-    return {
-      modules: modSnap.docs.map(d => ({ id: d.id, ...d.data() })) as { id: string; isActive: boolean }[],
-      menus: menuSnap.docs.map(d => ({ id: d.id, ...d.data() })) as {
-        id: string; moduleId: string; featureKey: string; isActive: boolean;
-      }[],
-    };
+    return { modules: modRows.map(rowToModule), menus: menuRows.map(rowToMenu) };
   },
   ['modules-and-menus'],
   { revalidate: 20 },
@@ -88,30 +85,26 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `Screen "${featureKey}" tidak dikenal.` }, { status: 400 });
   }
 
-  const db = getDb();
+  const sql = getSql();
   const active = isActive ?? true;
   if (active) {
-    const dupe = await db.collection('menus')
-      .where('featureKey', '==', featureKey).where('isActive', '==', true).get();
-    if (!dupe.empty) {
+    const [dupe] = await sql<{ label: string }[]>`select label from menus where feature_key = ${featureKey} and is_active = true limit 1`;
+    if (dupe) {
       return Response.json(
-        { error: `Screen "${featureKey}" sudah punya menu aktif ("${dupe.docs[0].data().label}").` },
+        { error: `Screen "${featureKey}" sudah punya menu aktif ("${dupe.label}").` },
         { status: 409 },
       );
     }
   }
 
-  // max(order)+1, bukan jumlah dokumen — count menyusut tiap ada menu yang dihapus, jadi menu
-  // baru bisa dapat `order` yang bentrok dengan menu lain yang masih ada di modul ini (Firestore
-  // memutus dasi urutan yang sama lewat id dokumen, bukan urutan pembuatan, jadi posisi sidebar
-  // jadi tidak terduga setiap kali siklus hapus-lalu-buat terjadi).
-  const siblingSnap = await db.collection('menus').where('moduleId', '==', moduleId).get();
-  const nextOrder = siblingSnap.docs.reduce((max, d) => Math.max(max, Number(d.data().order) || 0), -1) + 1;
-  const now = FieldValue.serverTimestamp();
-  const ref = db.collection('menus').doc();
-  await ref.set({
-    moduleId, parentId: parentId ?? null, featureKey, label, icon,
-    order: nextOrder, isActive: active, createdAt: now, updatedAt: now,
-  });
-  return Response.json({ id: ref.id });
+  // max(order)+1, bukan jumlah baris — count menyusut tiap ada menu yang dihapus, jadi menu
+  // baru bisa dapat `order` yang bentrok dengan menu lain yang masih ada di modul ini.
+  const [{ maxOrder }] = await sql<{ maxOrder: number | null }[]>`select max("order") as "maxOrder" from menus where module_id = ${moduleId}`;
+  const nextOrder = (maxOrder ?? -1) + 1;
+  const id = randomUUID();
+  await sql`
+    insert into menus (id, module_id, parent_id, feature_key, label, icon, "order", is_active, created_at, updated_at)
+    values (${id}, ${moduleId}, ${parentId ?? null}, ${featureKey}, ${label}, ${icon}, ${nextOrder}, ${active}, now(), now())
+  `;
+  return Response.json({ id });
 }
