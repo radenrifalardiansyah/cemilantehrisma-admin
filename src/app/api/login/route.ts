@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { recordLogin } from '@/lib/login-history';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
@@ -65,7 +64,7 @@ export async function POST(req: NextRequest) {
   const token = jwt.sign(user, process.env.JWT_SECRET!, { expiresIn: '7d' });
 
   try {
-    await recordLogin(getDb(), { username: user.username, role: user.role, ip, userAgent: req.headers.get('user-agent') || 'unknown' });
+    await recordLogin({ username: user.username, role: user.role, ip, userAgent: req.headers.get('user-agent') || 'unknown' });
   } catch {
     // Best-effort — gagal mencatat riwayat login tidak boleh menggagalkan login yang sudah valid.
   }

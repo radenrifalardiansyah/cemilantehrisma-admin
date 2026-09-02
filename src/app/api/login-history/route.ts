@@ -1,7 +1,5 @@
 import { NextRequest } from 'next/server';
-import { Timestamp } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 
 const HISTORY_DAYS = 7;
@@ -17,24 +15,22 @@ export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
   if (!authUser) return unauthorized();
 
-  const db = getDb();
   const sql = getSql();
-  const since = Timestamp.fromMillis(Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000);
+  const since = new Date(Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000);
 
-  const [[profile], historySnap] = await Promise.all([
+  const [[profile], historyRows] = await Promise.all([
     sql<{ last_login_at: Date | null }[]>`select last_login_at from profiles where username = ${authUser.username}`,
-    db.collection('login_history')
-      .where('username', '==', authUser.username)
-      .where('createdAt', '>=', since)
-      .orderBy('createdAt', 'desc')
-      .get(),
+    sql<{ id: string; ip: string | null; user_agent: string | null; created_at: Date }[]>`
+      select id, ip, user_agent, created_at from login_history
+      where username = ${authUser.username} and created_at >= ${since}
+      order by created_at desc
+    `,
   ]);
 
   const lastLoginAt = toTimestamp(profile?.last_login_at);
-  const history = historySnap.docs.map(d => {
-    const data = d.data() as { ip?: string; userAgent?: string; createdAt?: Timestamp };
-    return { id: d.id, ip: data.ip ?? null, userAgent: data.userAgent ?? null, createdAt: serializeTimestamp(data.createdAt) };
-  });
+  const history = historyRows.map(r => ({
+    id: r.id, ip: r.ip ?? null, userAgent: r.user_agent ?? null, createdAt: toTimestamp(r.created_at),
+  }));
 
   return Response.json({ lastLoginAt, history });
 }
