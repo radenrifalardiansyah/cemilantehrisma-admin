@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { canAccessRoom } from '@/lib/chat';
 
 type Ctx = { params: Promise<{ roomId: string }> };
@@ -21,14 +20,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   // pernah menampilkannya, membuat badge unread untuk pesan itu salah tersembunyi.
   const { upTo } = await req.json().catch(() => ({ upTo: undefined })) as { upTo?: string };
   const upToDate = upTo ? new Date(upTo) : null;
-  const lastReadAt = upToDate && !isNaN(upToDate.getTime())
-    ? Timestamp.fromDate(upToDate)
-    : FieldValue.serverTimestamp();
+  const lastReadAt = upToDate && !isNaN(upToDate.getTime()) ? upToDate : new Date();
 
-  await getDb()
-    .collection('chatRooms').doc(roomId)
-    .collection('reads').doc(authUser.username)
-    .set({ lastReadAt }, { merge: true });
+  const sql = getSql();
+  await sql`
+    insert into chat_reads (room_id, username, last_read_at) values (${roomId}, ${authUser.username}, ${lastReadAt})
+    on conflict (room_id, username) do update set last_read_at = ${lastReadAt}
+  `;
 
   return Response.json({ ok: true });
 }

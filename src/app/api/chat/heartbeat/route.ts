@@ -1,15 +1,15 @@
 import { NextRequest } from 'next/server';
-import { FieldValue } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   const authUser = getAuthUser(req);
   if (!authUser) return unauthorized();
 
-  await getDb().collection('presence').doc('status').set(
-    { [authUser.username]: { lastSeen: FieldValue.serverTimestamp() } },
-    { merge: true },
-  );
+  const sql = getSql();
+  await sql`
+    insert into presence (username, last_seen) values (${authUser.username}, now())
+    on conflict (username) do update set last_seen = now()
+  `;
   return Response.json({ ok: true });
 }

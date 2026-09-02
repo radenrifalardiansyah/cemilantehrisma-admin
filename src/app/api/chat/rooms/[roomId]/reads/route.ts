@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { Timestamp } from 'firebase-admin/firestore';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { canAccessRoom } from '@/lib/chat';
 import { getRoomRecipients } from '@/lib/chat-server';
 
@@ -21,9 +20,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const recipients = await getRoomRecipients(roomId, authUser.username);
   if (recipients.length === 0) return Response.json({ readWatermark: null });
 
-  const readsSnap = await getDb().collection('chatRooms').doc(roomId).collection('reads').get();
-  const lastReadAtByUser = new Map(readsSnap.docs.map(d => [d.id, d.data().lastReadAt as Timestamp | undefined]));
-  const minMs = Math.min(...recipients.map(u => lastReadAtByUser.get(u)?.toMillis() ?? 0));
+  const sql = getSql();
+  const readRows = await sql<{ username: string; last_read_at: Date | null }[]>`select username, last_read_at from chat_reads where room_id = ${roomId}`;
+  const lastReadAtByUser = new Map(readRows.map(r => [r.username, r.last_read_at]));
+  const minMs = Math.min(...recipients.map(u => lastReadAtByUser.get(u)?.getTime() ?? 0));
 
   return Response.json({ readWatermark: minMs > 0 ? new Date(minMs).toISOString() : null });
 }
