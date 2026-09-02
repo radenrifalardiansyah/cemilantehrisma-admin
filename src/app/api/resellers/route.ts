@@ -1,9 +1,11 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { resolveCustomerId, RESELLER_STATUSES, ManualCustomer, ResellerStatus } from '@/lib/resellers';
+import { rowToCustomer, type ResellerRow, type CustomerRow } from '@/lib/customers-pg';
+import { toTimestamp } from '@/lib/orders-pg';
 
 type ResellerBody = {
   customerId?: string;
@@ -14,20 +16,22 @@ type ResellerBody = {
 
 const getCachedResellers = unstable_cache(
   async () => {
-    const db = getDb();
-    const snap = await db.collection('resellers').orderBy('createdAt', 'desc').get();
-    const resellers = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<Record<string, unknown> & { id: string; customerId?: string }>;
+    const sql = getSql();
+    const rows = await sql<ResellerRow[]>`select * from resellers order by created_at desc`;
 
-    const customerIds = [...new Set(resellers.map(r => r.customerId).filter((v): v is string => !!v))];
-    const customerDocs = customerIds.length
-      ? await db.getAll(...customerIds.map(id => db.collection('customers').doc(id)))
+    const customerIds = [...new Set(rows.map(r => r.customer_id).filter((v): v is string => !!v))];
+    const customerRows = customerIds.length > 0
+      ? await sql<CustomerRow[]>`select * from customers where id in ${sql(customerIds)}`
       : [];
-    const customerMap = new Map(customerDocs.map(d => [d.id, d.data()]));
+    const customerMap = new Map(customerRows.map(r => [r.id, rowToCustomer(r)]));
 
-    const merged = resellers.map(r => {
-      const c = r.customerId ? customerMap.get(r.customerId) : undefined;
+    const merged = rows.map(r => {
+      const c = r.customer_id ? customerMap.get(r.customer_id) : undefined;
       return {
-        ...r,
+        id: r.id, customerId: r.customer_id,
+        bankName: r.bank_name ?? '', bankAccount: r.bank_account ?? '', bankHolder: r.bank_holder ?? '',
+        status: r.status,
+        createdAt: toTimestamp(r.created_at), updatedAt: toTimestamp(r.updated_at),
         name: c?.name ?? '(Pelanggan dihapus)',
         phone: c?.phone ?? '',
         code: c?.code ?? '',
@@ -55,25 +59,21 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'resellers', 'create');
   if (guard instanceof Response) return guard;
   const body = await req.json() as ResellerBody;
-  const db = getDb();
 
-  const resolved = await resolveCustomerId(db, body);
+  const resolved = await resolveCustomerId(body);
   if ('error' in resolved) return Response.json({ error: resolved.error }, { status: resolved.status });
 
-  const existing = await db.collection('resellers').where('customerId', '==', resolved.customerId).limit(1).get();
-  if (!existing.empty) {
+  const sql = getSql();
+  const [existing] = await sql<{ id: string }[]>`select id from resellers where customer_id = ${resolved.customerId} limit 1`;
+  if (existing) {
     return Response.json({ error: 'Pelanggan ini sudah terdaftar sebagai reseller.' }, { status: 409 });
   }
 
   const status = RESELLER_STATUSES.includes(body.status as ResellerStatus) ? body.status! : 'pending';
-  const ref = await db.collection('resellers').add({
-    customerId: resolved.customerId,
-    bankName: body.bankName?.trim() ?? '',
-    bankAccount: body.bankAccount?.trim() ?? '',
-    bankHolder: body.bankHolder?.trim() ?? '',
-    status,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  return Response.json({ id: ref.id, customerId: resolved.customerId });
+  const id = randomUUID();
+  await sql`
+    insert into resellers (id, customer_id, bank_name, bank_account, bank_holder, status, created_at, updated_at)
+    values (${id}, ${resolved.customerId}, ${body.bankName?.trim() ?? ''}, ${body.bankAccount?.trim() ?? ''}, ${body.bankHolder?.trim() ?? ''}, ${status}, now(), now())
+  `;
+  return Response.json({ id, customerId: resolved.customerId });
 }

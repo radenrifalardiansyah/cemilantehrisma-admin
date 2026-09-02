@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { resolveCustomerId, RESELLER_STATUSES, ManualCustomer, ResellerStatus } from '@/lib/resellers';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -17,30 +16,35 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const body = await req.json() as ResellerBody;
-  const db = getDb();
+  const sql = getSql();
 
-  const doc = await db.collection('resellers').doc(id).get();
-  if (!doc.exists) return Response.json({ error: 'Reseller tidak ditemukan.' }, { status: 404 });
+  const [row] = await sql<{ id: string }[]>`select id from resellers where id = ${id}`;
+  if (!row) return Response.json({ error: 'Reseller tidak ditemukan.' }, { status: 404 });
 
-  const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
-
+  let customerId: string | undefined;
   if (body.customerId || body.customer) {
-    const resolved = await resolveCustomerId(db, body);
+    const resolved = await resolveCustomerId(body);
     if ('error' in resolved) return Response.json({ error: resolved.error }, { status: resolved.status });
 
-    const existing = await db.collection('resellers').where('customerId', '==', resolved.customerId).limit(2).get();
-    if (existing.docs.some(d => d.id !== id)) {
+    const [existing] = await sql<{ id: string }[]>`select id from resellers where customer_id = ${resolved.customerId} and id != ${id} limit 1`;
+    if (existing) {
       return Response.json({ error: 'Pelanggan ini sudah terdaftar sebagai reseller.' }, { status: 409 });
     }
-    update.customerId = resolved.customerId;
+    customerId = resolved.customerId;
   }
 
-  if (body.bankName    !== undefined) update.bankName    = body.bankName.trim();
-  if (body.bankAccount !== undefined) update.bankAccount = body.bankAccount.trim();
-  if (body.bankHolder  !== undefined) update.bankHolder  = body.bankHolder.trim();
-  if (body.status && RESELLER_STATUSES.includes(body.status)) update.status = body.status;
+  const status = body.status && RESELLER_STATUSES.includes(body.status) ? body.status : undefined;
 
-  await db.collection('resellers').doc(id).update(update);
+  await sql`
+    update resellers set
+      customer_id = coalesce(${customerId ?? null}, customer_id),
+      bank_name = coalesce(${body.bankName !== undefined ? body.bankName.trim() : null}, bank_name),
+      bank_account = coalesce(${body.bankAccount !== undefined ? body.bankAccount.trim() : null}, bank_account),
+      bank_holder = coalesce(${body.bankHolder !== undefined ? body.bankHolder.trim() : null}, bank_holder),
+      status = coalesce(${status ?? null}, status),
+      updated_at = now()
+    where id = ${id}
+  `;
   return Response.json({ ok: true });
 }
 
@@ -48,6 +52,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'resellers', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  await getDb().collection('resellers').doc(id).delete();
+  const sql = getSql();
+  await sql`delete from resellers where id = ${id}`;
   return Response.json({ ok: true });
 }

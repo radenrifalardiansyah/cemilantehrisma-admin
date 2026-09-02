@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+import { rowToCustomer, type CustomerRow } from '@/lib/customers-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -9,9 +9,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'customers', 'view');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const doc = await getDb().collection('customers').doc(id).get();
-  if (!doc.exists) return Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json({ id: doc.id, ...doc.data() });
+  const sql = getSql();
+  const [row] = await sql<CustomerRow[]>`select * from customers where id = ${id}`;
+  if (!row) return Response.json({ error: 'Not found' }, { status: 404 });
+  return Response.json(rowToCustomer(row));
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -31,29 +32,26 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: 'Nama wajib diisi.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const sql = getSql();
   const [phoneDup, codeDup] = await Promise.all([
-    phoneTrim
-      ? db.collection('customers').where('phone', '==', phoneTrim).limit(2).get()
-      : null,
-    codeTrim
-      ? db.collection('customers').where('code', '==', codeTrim).limit(2).get()
-      : null,
+    phoneTrim ? sql<{ id: string }[]>`select id from customers where phone = ${phoneTrim} and id != ${id} limit 1` : Promise.resolve([]),
+    codeTrim ? sql<{ id: string }[]>`select id from customers where code = ${codeTrim} and id != ${id} limit 1` : Promise.resolve([]),
   ]);
-  if (phoneDup && phoneDup.docs.some(d => d.id !== id)) {
+  if (phoneDup.length > 0) {
     return Response.json({ error: `No. HP "${phoneTrim}" sudah digunakan pelanggan lain.` }, { status: 409 });
   }
-  if (codeDup && codeDup.docs.some(d => d.id !== id)) {
+  if (codeDup.length > 0) {
     return Response.json({ error: `Kode "${codeTrim}" sudah digunakan pelanggan lain.` }, { status: 409 });
   }
 
-  await db.collection('customers').doc(id).update({
-    name: name.trim(), phone: phoneTrim, code: codeTrim,
-    type: type === 'company' ? 'company' : 'personal',
-    email: email?.trim() ?? '', address: address?.trim() ?? '',
-    city: city?.trim() ?? '', notes: notes?.trim() ?? '',
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  await sql`
+    update customers set
+      name = ${name.trim()}, phone = ${phoneTrim}, code = ${codeTrim},
+      type = ${type === 'company' ? 'company' : 'personal'},
+      email = ${email?.trim() ?? ''}, address = ${address?.trim() ?? ''}, city = ${city?.trim() ?? ''},
+      notes = ${notes?.trim() ?? ''}, updated_at = now()
+    where id = ${id}
+  `;
   return Response.json({ ok: true });
 }
 
@@ -61,18 +59,18 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'customers', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const db = getDb();
+  const sql = getSql();
 
   // Tolak kalau pelanggan ini masih terhubung ke akun reseller — kalau dibolehkan,
-  // resellers.customerId jadi menunjuk ke dokumen yang sudah tidak ada.
-  const resellerRef = await db.collection('resellers').where('customerId', '==', id).limit(1).get();
-  if (!resellerRef.empty) {
+  // resellers.customer_id jadi menunjuk ke baris yang sudah tidak ada.
+  const [{ exists }] = await sql<{ exists: boolean }[]>`select exists(select 1 from resellers where customer_id = ${id}) as exists`;
+  if (exists) {
     return Response.json(
       { error: 'Pelanggan ini masih terhubung ke akun reseller — lepaskan tautannya dulu sebelum menghapus.' },
       { status: 400 },
     );
   }
 
-  await db.collection('customers').doc(id).delete();
+  await sql`delete from customers where id = ${id}`;
   return Response.json({ ok: true });
 }

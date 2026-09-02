@@ -1,13 +1,15 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+import { rowToCustomer, type CustomerRow } from '@/lib/customers-pg';
 
 const getCachedCustomers = unstable_cache(
   async () => {
-    const snap = await getDb().collection('customers').orderBy('createdAt', 'desc').get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sql = getSql();
+    const rows = await sql<CustomerRow[]>`select * from customers order by created_at desc`;
+    return rows.map(rowToCustomer);
   },
   ['admin-customers'],
   { revalidate: 15 }
@@ -36,29 +38,25 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Nama wajib diisi.' }, { status: 400 });
   }
 
-  const db = getDb();
+  const sql = getSql();
   const [phoneDup, codeDup] = await Promise.all([
-    phoneTrim
-      ? db.collection('customers').where('phone', '==', phoneTrim).limit(1).get()
-      : null,
-    codeTrim
-      ? db.collection('customers').where('code', '==', codeTrim).limit(1).get()
-      : null,
+    phoneTrim ? sql<{ id: string }[]>`select id from customers where phone = ${phoneTrim} limit 1` : Promise.resolve([]),
+    codeTrim ? sql<{ id: string }[]>`select id from customers where code = ${codeTrim} limit 1` : Promise.resolve([]),
   ]);
-  if (phoneDup && !phoneDup.empty) {
+  if (phoneDup.length > 0) {
     return Response.json({ error: `No. HP "${phoneTrim}" sudah digunakan pelanggan lain.` }, { status: 409 });
   }
-  if (codeDup && !codeDup.empty) {
+  if (codeDup.length > 0) {
     return Response.json({ error: `Kode "${codeTrim}" sudah digunakan pelanggan lain.` }, { status: 409 });
   }
 
-  const ref = await db.collection('customers').add({
-    name: name.trim(), phone: phoneTrim, code: codeTrim,
-    type: type === 'company' ? 'company' : 'personal',
-    email: email?.trim() ?? '', address: address?.trim() ?? '',
-    city: city?.trim() ?? '', notes: notes?.trim() ?? '',
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  return Response.json({ id: ref.id });
+  const id = randomUUID();
+  await sql`
+    insert into customers (id, name, phone, code, type, email, address, city, notes, created_at, updated_at)
+    values (
+      ${id}, ${name.trim()}, ${phoneTrim}, ${codeTrim}, ${type === 'company' ? 'company' : 'personal'},
+      ${email?.trim() ?? ''}, ${address?.trim() ?? ''}, ${city?.trim() ?? ''}, ${notes?.trim() ?? ''}, now(), now()
+    )
+  `;
+  return Response.json({ id });
 }

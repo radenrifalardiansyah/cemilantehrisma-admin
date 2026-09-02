@@ -1,14 +1,12 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 
 interface ImportRow {
   name: string; phone: string; code?: string; type?: 'personal' | 'company';
   email?: string; address?: string; city?: string; notes?: string;
 }
-
-const BATCH_LIMIT = 400;
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'customers', 'create');
@@ -18,20 +16,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Tidak ada data pelanggan untuk diimpor.' }, { status: 400 });
   }
 
-  const db = getDb();
-  const existingSnap = await db.collection('customers').get();
-  const existingPhones = new Set(
-    existingSnap.docs.map(d => ((d.data().phone as string) ?? '').trim()).filter(Boolean),
-  );
-  const existingCodes = new Set(
-    existingSnap.docs.map(d => ((d.data().code as string) ?? '').trim()).filter(Boolean),
-  );
+  const sql = getSql();
+  const existingRows = await sql<{ phone: string; code: string | null }[]>`select phone, code from customers`;
+  const existingPhones = new Set(existingRows.map(r => (r.phone ?? '').trim()).filter(Boolean));
+  const existingCodes = new Set(existingRows.map(r => (r.code ?? '').trim()).filter(Boolean));
   const seenPhones = new Set<string>();
   const seenCodes  = new Set<string>();
 
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
-  let batch = db.batch();
-  let opsInBatch = 0;
 
   for (const row of customers) {
     const name  = (row.name  ?? '').toString().trim();
@@ -43,27 +35,21 @@ export async function POST(req: NextRequest) {
 
     seenPhones.add(phone);
     if (code) seenCodes.add(code);
-    const ref = db.collection('customers').doc();
-    batch.set(ref, {
-      name, phone, code,
-      type:    row.type === 'company' ? 'company' : 'personal',
-      email:   (row.email   ?? '').toString().trim(),
-      address: (row.address ?? '').toString().trim(),
-      city:    (row.city    ?? '').toString().trim(),
-      notes:   (row.notes   ?? '').toString().trim(),
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    created++;
-    opsInBatch++;
-
-    if (opsInBatch >= BATCH_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      opsInBatch = 0;
+    try {
+      await sql`
+        insert into customers (id, name, phone, code, type, email, address, city, notes, created_at, updated_at)
+        values (
+          ${randomUUID()}, ${name}, ${phone}, ${code}, ${row.type === 'company' ? 'company' : 'personal'},
+          ${(row.email ?? '').toString().trim()}, ${(row.address ?? '').toString().trim()},
+          ${(row.city ?? '').toString().trim()}, ${(row.notes ?? '').toString().trim()}, now(), now()
+        )
+      `;
+      created++;
+    } catch (err) {
+      console.error('Bulk import pelanggan: gagal menyimpan baris', name, err);
+      skippedInvalid++;
     }
   }
-  if (opsInBatch > 0) await batch.commit();
 
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }
