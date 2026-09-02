@@ -4,22 +4,20 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
-import { writeNotification, sendPush } from '@/lib/notifications';
+import { logHistory } from '@/lib/history';
+import { notify } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 import { revalidateStorefront } from '@/lib/revalidate';
-import { insertExpensePg } from '@/lib/expenses-pg';
 import { writeStockLedgerEntryPg } from '@/lib/stock-pg';
+import { rowToBatch, type ProductionBatchRow } from '@/lib/materials-pg';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
-interface BatchWithMeta { id: string; warehouseId?: string; outputs?: { productId: string; yieldQty: number }[]; createdAt?: Timestamp }
 
-// Gabungkan baris dengan id yang sama SEBELUM dipakai untuk tx.get/tx.update — tanpa ini, dua
-// baris bahan (atau dua baris hasil) untuk material/produk yang sama masing-masing menghitung
-// delta dari snapshot awal yang sama lalu tx.update dengan nilai literal, sehingga baris kedua
-// menimpa (bukan menambah) hasil baris pertama dan stok jadi kurang terpotong/kurang bertambah.
+// Gabungkan baris dengan id yang sama SEBELUM dipakai untuk update — tanpa ini, dua baris bahan
+// (atau dua baris hasil) untuk material/produk yang sama masing-masing menghitung delta dari
+// snapshot awal yang sama lalu ditimpa dengan nilai literal, sehingga baris kedua menimpa (bukan
+// menambah) hasil baris pertama dan stok jadi kurang terpotong/kurang bertambah.
 function mergeMaterialsUsed(rows: MaterialUsedInput[]): MaterialUsedInput[] {
   const merged = new Map<string, MaterialUsedInput>();
   for (const r of rows) {
@@ -47,10 +45,9 @@ export async function GET(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
-  const db = getDb();
   const sql = getSql();
-  const snap = await db.collection('productionBatches').orderBy('createdAt', 'desc').limit(limit).get();
-  const batches = snap.docs.map(d => ({ id: d.id, ...d.data() })) as BatchWithMeta[];
+  const rows = await sql<ProductionBatchRow[]>`select * from production_batches order by created_at desc limit ${limit}`;
+  const batches = rows.map(rowToBatch);
 
   // "Closed" = stok hasil produksi batch ini di gudang tujuannya dianggap sudah habis. Tidak ada lot
   // tracking per-batch di penulisan stok, jadi dihitung ulang di sini dengan asumsi FIFO: stok yang
@@ -61,7 +58,7 @@ export async function GET(req: NextRequest) {
   const wsKeys = new Set<string>();
   batches.forEach(b => {
     if (!b.warehouseId) return;
-    (b.outputs ?? []).forEach(o => wsKeys.add(`${b.warehouseId}_${o.productId}`));
+    b.outputs.forEach(o => wsKeys.add(`${b.warehouseId}_${o.productId}`));
   });
   const wsKeyList = [...wsKeys];
   const wsRows = wsKeyList.length > 0
@@ -76,10 +73,10 @@ export async function GET(req: NextRequest) {
   const lotsByKey = new Map<string, { batchId: string; yieldQty: number; createdAt: number }[]>();
   batches.forEach(b => {
     if (!b.warehouseId) return;
-    (b.outputs ?? []).forEach(o => {
+    b.outputs.forEach(o => {
       const key = `${b.warehouseId}_${o.productId}`;
       const list = lotsByKey.get(key) ?? [];
-      list.push({ batchId: b.id, yieldQty: o.yieldQty, createdAt: b.createdAt?.toMillis() ?? 0 });
+      list.push({ batchId: b.id, yieldQty: o.yieldQty, createdAt: b.createdAt?.seconds ?? 0 });
       lotsByKey.set(key, list);
     });
   });
@@ -98,7 +95,7 @@ export async function GET(req: NextRequest) {
   // (remaining == yieldQty — belum tersentuh sama sekali). Level batch: ada satu output "mixed" saja
   // sudah cukup bikin status batch jadi "mixed"; baru dianggap "closed" kalau SEMUA output closed.
   const batchesWithStatus = batches.map(b => {
-    const outputs = b.outputs ?? [];
+    const outputs = b.outputs;
     if (!b.warehouseId || outputs.length === 0) return { ...b, closed: false, mixed: false };
 
     const outputStates = outputs.map(o => {
@@ -134,54 +131,53 @@ export async function POST(req: NextRequest) {
 
   const db = getDb();
   const sql = getSql();
-  const batchRef    = db.collection('productionBatches').doc();
-  const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
+  const batchId = randomUUID();
   const expenseId = randomUUID();
 
-  // `rawMaterials` masih di Firestore (di luar cakupan Fase 2), sedang `products`/`warehouse_stock`/
-  // `stock_ledger` sudah pindah ke Postgres (Tahap 8-10). Biaya bahan baku (materialCost) dibutuhkan
-  // untuk hitung costPrice produk (Postgres) SEBELUM materialnya sendiri divalidasi & dipotong secara
-  // otentik (Firestore, transaksional) — jadi urutannya di sini kebalikan dari checkout: baca material
-  // biasa dulu (sekadar untuk avgCost, bukan pengecekan stok otoritatif) → kunci & update produk di
-  // Postgres → baru validasi+potong material & tulis dokumen batch di Firestore (di sinilah pengecekan
-  // stok bahan baku yang SEBENARNYA terjadi, dengan tx.get segar). Kalau langkah Firestore gagal
-  // setelah Postgres berhasil, kompensasi (kembalikan produk ke kondisi semula) dijalankan.
-  const materialSnaps = await db.getAll(...materialRefs);
-  const shortages: string[] = [];
-  materialsUsed.forEach((m, i) => {
-    if (!materialSnaps[i].exists) { shortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
-    const stockQty = Number(materialSnaps[i].data()!.stockQty) || 0;
-    if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
-  });
-  if (shortages.length > 0) return Response.json({ error: `Stok bahan baku tidak cukup: ${shortages.join(', ')}` }, { status: 400 });
-
-  const materialsWithCost = materialsUsed.map((m, i) => {
-    const costPerUnit = Number(materialSnaps[i].data()!.avgCost) || 0;
-    return { ...m, costPerUnit, cost: costPerUnit * m.qty };
-  });
-  const materialCost  = materialsWithCost.reduce((s, m) => s + m.cost, 0);
-  const totalCost     = materialCost + otherCost;
-  const totalYieldQty = outputs.reduce((s, o) => s + o.yieldQty, 0);
-  // Biaya dari satu batch bahan baku dibagi rata per pcs ke semua produk hasil
-  // (mis. Ori & Pedas dari adonan yang sama) — HPP/pcs dianggap seragam antar varian.
-  const costPerPcs = totalCost / totalYieldQty;
-  const outputsWithCost = outputs.map(o => ({ ...o, costPerPcs }));
-
-  interface ProductSnapshot { productId: string; oldQty: number; oldCost: number; openPO: boolean }
-  const productSnapshots: ProductSnapshot[] = [];
-  let stockCommitted = false;
+  // `products`/`warehouse_stock`/`stock_ledger` (Tahap 8-10) DAN `rawMaterials`/`productionBatches`/
+  // `expenses` (Tahap 18b) sekarang sama-sama di Postgres, jadi digabung jadi SATU transaksi atomic —
+  // tidak ada lagi kompensasi cross-database seperti versi Firestore sebelumnya (lihat pola yang sama
+  // di orders/route.ts Tahap 12 & consignment/send/route.ts Tahap 18a).
+  const lowStockCrossings: { materialName: string; materialId: string; newQty: number; unit: string; minStock: number }[] = [];
+  let batchData: Record<string, unknown> = {};
 
   try {
     await sql.begin(async pgTx => {
-      const productIds = outputs.map(o => o.productId);
-      const rows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
-        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
+      const materialIds = materialsUsed.map(m => m.materialId);
+      const materialRows = await pgTx<{ id: string; stock_qty: string; avg_cost: string; min_stock: string }[]>`
+        select id, stock_qty, avg_cost, min_stock from raw_materials where id in ${pgTx(materialIds)} order by id for update
       `;
-      const byId = new Map(rows.map(r => [r.id, r]));
-      outputs.forEach(o => { if (!byId.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
+      const materialById = new Map(materialRows.map(r => [r.id, r]));
+
+      const shortages: string[] = [];
+      materialsUsed.forEach(m => {
+        const row = materialById.get(m.materialId);
+        if (!row) { shortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
+        const stockQty = Number(row.stock_qty) || 0;
+        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+      });
+      if (shortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${shortages.join(', ')}`);
+
+      const materialsWithCost = materialsUsed.map(m => {
+        const costPerUnit = Number(materialById.get(m.materialId)!.avg_cost) || 0;
+        return { ...m, costPerUnit, cost: costPerUnit * m.qty };
+      });
+      const materialCost  = materialsWithCost.reduce((s, m) => s + m.cost, 0);
+      const totalCost     = materialCost + otherCost;
+      const totalYieldQty = outputs.reduce((s, o) => s + o.yieldQty, 0);
+      // Biaya dari satu batch bahan baku dibagi rata per pcs ke semua produk hasil
+      // (mis. Ori & Pedas dari adonan yang sama) — HPP/pcs dianggap seragam antar varian.
+      const costPerPcs = totalCost / totalYieldQty;
+      const outputsWithCost = outputs.map(o => ({ ...o, costPerPcs }));
+
+      const productRows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
+        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(outputs.map(o => o.productId))} order by id for update
+      `;
+      const productById = new Map(productRows.map(r => [r.id, r]));
+      outputs.forEach(o => { if (!productById.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
 
       for (const o of outputs) {
-        const row = byId.get(o.productId)!;
+        const row = productById.get(o.productId)!;
         const oldQty  = Number(row.stock_qty) || 0;
         const oldCost = row.cost_price != null ? Number(row.cost_price) : 0;
         const newQty  = oldQty + o.yieldQty;
@@ -201,109 +197,71 @@ export async function POST(req: NextRequest) {
           productId: o.productId, productName: o.productName, warehouseId, warehouseName, type: 'in', qty: o.yieldQty,
           note: `Hasil produksi${data.note ? ` - ${data.note}` : ''}`,
         });
-
-        productSnapshots.push({ productId: o.productId, oldQty, oldCost, openPO: row.open_po });
       }
-    });
-    stockCommitted = true;
-  } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan produksi.' }, { status: 400 });
-  }
 
-  const pushPayloads: { title: string; message: string }[] = [];
-  try {
-    await db.runTransaction(async tx => {
-      const freshMaterialSnaps = await Promise.all(materialRefs.map(r => tx.get(r)));
-      const freshShortages: string[] = [];
-      materialsUsed.forEach((m, i) => {
-        if (!freshMaterialSnaps[i].exists) { freshShortages.push(`${m.materialName} (bahan baku tidak ditemukan)`); return; }
-        const stockQty = Number(freshMaterialSnaps[i].data()!.stockQty) || 0;
-        if (stockQty < m.qty) freshShortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
-      });
-      if (freshShortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${freshShortages.join(', ')}`);
-
-      materialsUsed.forEach((m, i) => {
-        const material = freshMaterialSnaps[i].data()!;
-        const oldQty = Number(material.stockQty) || 0;
+      for (const m of materialsUsed) {
+        const row = materialById.get(m.materialId)!;
+        const oldQty = Number(row.stock_qty) || 0;
         const newQty = oldQty - m.qty;
-        const minStock = Number(material.minStock) || 0;
-        tx.update(materialRefs[i], { stockQty: newQty, updatedAt: FieldValue.serverTimestamp() });
+        const minStock = Number(row.min_stock) || 0;
+        await pgTx`update raw_materials set stock_qty = ${newQty}, updated_at = now() where id = ${m.materialId}`;
 
         // Notifikasi hanya saat baru MELEWATI ambang minimum, bukan tiap kali produksi jalan
         // selagi stoknya sudah rendah — supaya tidak spam.
         if (!isMaterialLowStock({ stockQty: oldQty, minStock }) && isMaterialLowStock({ stockQty: newQty, minStock })) {
-          pushPayloads.push(writeNotification(tx, db, {
-            type: 'stock_low',
-            title: 'Stok bahan baku menipis',
-            message: `${m.materialName} tersisa ${newQty} ${m.unit} (batas minimum ${minStock} ${m.unit}) — dari produksi oleh ${guard.username}.`,
-            link: 'materials',
-            entityCollection: 'rawMaterials', entityId: materialRefs[i].id,
-            actor: guard,
-          }));
+          lowStockCrossings.push({ materialName: m.materialName, materialId: m.materialId, newQty, unit: m.unit, minStock });
         }
-      });
+      }
 
-      const batchData = {
-        date, outputs: outputsWithCost,
-        materialsUsed: materialsWithCost,
+      batchData = {
+        date, outputs: outputsWithCost, materialsUsed: materialsWithCost,
         materialCost, otherCost, totalCost, totalYieldQty, costPerPcs,
-        warehouseId, warehouseName,
-        note: data.note ?? '',
+        warehouseId, warehouseName, note: data.note ?? '',
         expenseId: otherCost > 0 ? expenseId : null,
-        createdAt: FieldValue.serverTimestamp(),
       };
-      tx.set(batchRef, batchData);
-      writeHistoryEntry(tx, db, {
-        entity: 'production', entityId: batchRef.id,
-        entityLabel: `Produksi ${date} - ${outputsWithCost.map(o => o.productName).join(' & ') || batchRef.id}`,
-        action: 'create', actor: guard, after: batchData,
-      });
-      // Expense (biaya lain) ditulis ke Postgres SETELAH transaksi ini commit — lihat src/lib/expenses-pg.ts.
+      await pgTx`
+        insert into production_batches (
+          id, date, outputs, materials_used, material_cost, other_cost, total_cost, total_yield_qty, cost_per_pcs,
+          warehouse_id, warehouse_name, note, expense_id, created_at
+        ) values (
+          ${batchId}, ${date}, ${JSON.stringify(outputsWithCost)}, ${JSON.stringify(materialsWithCost)},
+          ${materialCost}, ${otherCost}, ${totalCost}, ${totalYieldQty}, ${costPerPcs},
+          ${warehouseId}, ${warehouseName}, ${data.note ?? ''}, ${otherCost > 0 ? expenseId : null}, now()
+        )
+      `;
+
+      if (otherCost > 0) {
+        const productNames = outputs.map(o => o.productName).join(' & ');
+        await pgTx`
+          insert into expenses (id, category, description, amount, date, note, source_type, source_id, created_at, updated_at)
+          values (${expenseId}, 'Produksi', ${`Biaya produksi - ${productNames}`}, ${otherCost}, ${date}, ${`Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`}, 'production', ${batchId}, now(), now())
+        `;
+      }
     });
   } catch (err) {
-    // Dokumen batch/material gagal tersimpan SETELAH stok produk Postgres sudah diperbarui —
-    // kompensasi: kembalikan produk ke kondisi (qty/cost) semula sebelum produksi ini.
-    if (stockCommitted) {
-      try {
-        await sql.begin(async pgTx => {
-          for (const snap of productSnapshots) {
-            const output = outputs.find(o => o.productId === snap.productId)!;
-            const oldStock = snap.openPO ? 'open_po' : snap.oldQty > 0 ? 'ready' : 'habis';
-            await pgTx`update products set stock_qty = ${snap.oldQty}, cost_price = ${snap.oldCost}, stock = ${oldStock}, updated_at = now() where id = ${snap.productId}`;
-            await pgTx`
-              update warehouse_stock set stock_qty = stock_qty - ${output.yieldQty}, updated_at = now()
-              where id = ${`${warehouseId}_${snap.productId}`}
-            `;
-            await writeStockLedgerEntryPg(pgTx, {
-              productId: snap.productId, productName: output.productName, warehouseId, warehouseName, type: 'out', qty: output.yieldQty,
-              note: `Kompensasi — gagal simpan produksi (${err instanceof Error ? err.message : 'error'})`,
-            });
-          }
-        });
-      } catch (compErr) {
-        console.error('CRITICAL: gagal kompensasi stok produk setelah produksi gagal tersimpan', compErr);
-      }
-    }
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan produksi.' }, { status: 400 });
   }
 
-  if (otherCost > 0) {
-    const productNames = outputs.map(o => o.productName).join(' & ');
-    await insertExpensePg({
-      id: expenseId,
-      category: 'Produksi',
-      description: `Biaya produksi - ${productNames}`,
-      amount: otherCost,
-      date,
-      note: `Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`,
-      sourceType: 'production',
-      sourceId: batchRef.id,
+  try {
+    await logHistory(db, {
+      entity: 'production', entityId: batchId,
+      entityLabel: `Produksi ${date} - ${outputs.map(o => o.productName).join(' & ') || batchId}`,
+      action: 'create', actor: guard, after: batchData,
     });
-    revalidateTag('admin-expenses', { expire: 0 });
+  } catch (err) {
+    console.error('Failed to write history for production create', err);
   }
+  await Promise.all(lowStockCrossings.map(m => notify(db, {
+    type: 'stock_low',
+    title: 'Stok bahan baku menipis',
+    message: `${m.materialName} tersisa ${m.newQty} ${m.unit} (batas minimum ${m.minStock} ${m.unit}) — dari produksi oleh ${guard.username}.`,
+    link: 'materials',
+    entityCollection: 'rawMaterials', entityId: m.materialId,
+    actor: guard,
+  }))).catch(err => console.error('Failed to send push for low stock', err));
 
-  await Promise.all(pushPayloads.map(p => sendPush(db, p))).catch(err => console.error('Failed to send push for low stock', err));
+  if (otherCost > 0) revalidateTag('admin-expenses', { expire: 0 });
   after(() => revalidateStorefront('products'));
 
-  return Response.json({ id: batchRef.id });
+  return Response.json({ id: batchId });
 }

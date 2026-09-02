@@ -2,10 +2,10 @@ import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
-import { insertExpensePg } from '@/lib/expenses-pg';
+import { logHistory } from '@/lib/history';
+import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,60 +17,49 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
-  const purchaseRef = db.collection('materialPurchases').doc(id);
+  const sql = getSql();
   const expenseId = randomUUID();
-  let expensePayload: { amount: number; date: string; supplierName: string; itemNames: string[]; walletId: string | null } | null = null;
+
+  let before: ReturnType<typeof rowToPurchase>;
+  let didMark: boolean;
 
   try {
-    await db.runTransaction(async tx => {
-      const snap = await tx.get(purchaseRef);
-      if (!snap.exists) throw new Error('Pembelian tidak ditemukan.');
-      const purchase = snap.data()!;
-      if (purchase.paymentStatus !== 'belum_lunas') return; // sudah lunas, tidak perlu apa-apa
+    ({ before, didMark } = await sql.begin(async pgTx => {
+      const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
+      if (!row) throw new Error('Pembelian tidak ditemukan.');
+      const purchase = rowToPurchase(row);
+      if (purchase.paymentStatus !== 'belum_lunas') return { before: purchase, didMark: false }; // sudah lunas, tidak perlu apa-apa
 
-      const purchaseUpdate = { paymentStatus: 'lunas', expenseId, updatedAt: FieldValue.serverTimestamp() };
-      tx.update(purchaseRef, purchaseUpdate);
-      const total = Number(purchase.total) || 0;
-      if (total > 0) {
-        const items = (purchase.items as { materialName: string }[] | undefined) ?? [];
-        const date = (purchase.date as string | undefined) || new Date().toISOString().slice(0, 10);
-        expensePayload = {
-          amount: total, date,
-          supplierName: purchase.supplierName || 'Tanpa nama',
-          itemNames: items.map(it => it.materialName),
-          walletId: purchase.walletId ?? null,
-        };
+      await pgTx`update material_purchases set payment_status = 'lunas', expense_id = ${expenseId}, updated_at = now() where id = ${id}`;
+
+      if (purchase.total > 0) {
+        const itemNames = purchase.items.map(it => it.materialName).join(', ');
+        await pgTx`
+          insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
+          values (${expenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${purchase.supplierName || 'Tanpa nama'}`}, ${purchase.total}, ${purchase.date}, ${`Otomatis dari pembelian bahan baku (${itemNames}) — ditandai lunas`}, ${purchase.walletId}, 'material-purchase', ${id}, now(), now())
+        `;
       }
-
-      writeHistoryEntry(tx, db, {
-        entity: 'material-purchases',
-        entityId: id,
-        entityLabel: `${purchase.supplierName?.toString().trim() || 'Tanpa nama'} - Rp${total}`,
-        action: 'update',
-        actor: guard,
-        before: purchase,
-        after: { ...purchase, ...purchaseUpdate },
-      });
-      // Expense ditulis ke Postgres SETELAH transaksi Firestore ini commit — lihat src/lib/expenses-pg.ts.
-    });
+      return { before: purchase, didMark: true };
+    }));
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menandai lunas.' }, { status: 400 });
   }
 
-  if (expensePayload) {
-    const p = expensePayload as { amount: number; date: string; supplierName: string; itemNames: string[]; walletId: string | null };
-    await insertExpensePg({
-      id: expenseId,
-      category: 'Bahan Baku',
-      description: `Pembelian bahan baku - ${p.supplierName}`,
-      amount: p.amount,
-      date: p.date,
-      note: `Otomatis dari pembelian bahan baku (${p.itemNames.join(', ')}) — ditandai lunas`,
-      sourceType: 'material-purchase',
-      sourceId: id,
-      walletId: p.walletId,
-    });
-    revalidateTag('admin-expenses', { expire: 0 });
+  if (didMark) {
+    try {
+      await logHistory(db, {
+        entity: 'material-purchases',
+        entityId: id,
+        entityLabel: `${before.supplierName?.trim() || 'Tanpa nama'} - Rp${before.total}`,
+        action: 'update',
+        actor: guard,
+        before,
+        after: { ...before, paymentStatus: 'lunas', expenseId },
+      });
+    } catch (err) {
+      console.error('Failed to write history for material purchase mark-lunas', err);
+    }
+    if (before.total > 0) revalidateTag('admin-expenses', { expire: 0 });
   }
 
   return Response.json({ ok: true });

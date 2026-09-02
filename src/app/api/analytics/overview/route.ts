@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
@@ -31,9 +30,8 @@ const isCogsSourcedExpense = (e: ExpenseDoc) => e.sourceType === 'material-purch
 // (orders, consignment).
 const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
-    const db = getDb();
     const sql = getSql();
-    const [orderRows, recapRows, incomeRows, expenseRows, materialSnap, productRows] = await Promise.all([
+    const [orderRows, recapRows, incomeRows, expenseRows, materialRows, productRows] = await Promise.all([
       // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
       sql<{ total: string; source: string; status: string; payment_status: string; created_at: Date; items: unknown }[]>`
         select total, source, status, payment_status, created_at, items from orders
@@ -52,7 +50,10 @@ const getRawAnalytics = unstable_cache(
       sql<{ category: string | null; amount: string; date: string; source_type: string | null }[]>`
         select category, amount, date, source_type from expenses where date >= ${from} and date <= ${to}
       `,
-      db.collection('rawMaterials').get(),
+      // `rawMaterials` pindah ke Postgres (Tahap 18b migrasi Fase 2).
+      sql<{ id: string; name: string; unit: string; stock_qty: string; avg_cost: string; min_stock: string }[]>`
+        select id, name, unit, stock_qty, avg_cost, min_stock from raw_materials
+      `,
       sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
     ]);
 
@@ -70,7 +71,10 @@ const getRawAnalytics = unstable_cache(
       })),
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
       expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined }) as ExpenseDoc),
-      materials: materialSnap.docs.map(d => ({ id: d.id, ...d.data() }) as MaterialDoc),
+      materials: materialRows.map((r): MaterialDoc => ({
+        id: r.id, name: r.name, unit: r.unit,
+        stockQty: Number(r.stock_qty), avgCost: Number(r.avg_cost), minStock: Number(r.min_stock),
+      })),
       productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
     };
   },

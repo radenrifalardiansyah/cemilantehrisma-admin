@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -27,9 +28,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const db = getDb();
 
   // Tolak kalau supplier ini masih punya riwayat pembelian bahan baku — kalau dibolehkan,
-  // materialPurchases.supplierId jadi menunjuk ke dokumen yang sudah tidak ada.
-  const purchaseRef = await db.collection('materialPurchases').where('supplierId', '==', id).limit(1).get();
-  if (!purchaseRef.empty) {
+  // material_purchases.supplier_id jadi menunjuk ke baris yang sudah tidak ada.
+  // (material_purchases pindah ke Postgres, Tahap 18b migrasi Fase 2.)
+  const sql = getSql();
+  const [{ exists }] = await sql<{ exists: boolean }[]>`select exists(select 1 from material_purchases where supplier_id = ${id}) as exists`;
+  if (exists) {
     return Response.json(
       { error: 'Supplier ini masih punya riwayat pembelian bahan baku — tidak bisa dihapus.' },
       { status: 400 },

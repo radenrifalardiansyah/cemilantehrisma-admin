@@ -1,15 +1,18 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache, revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+import { rowToMaterial, type MaterialRow } from '@/lib/materials-pg';
 
 // Was the one uncached GET in the dashboard's fetch fan-out (products/customers/resellers
-// etc. already use this same pattern) — fires on every session restore.
+// etc. already use this same pattern) — fires on every session restore. (Tahap 18b migrasi
+// Fase 2 — lihat plan gleaming-wondering-quokka.md.)
 const getCachedMaterials = unstable_cache(
   async () => {
-    const snap = await getDb().collection('rawMaterials').orderBy('createdAt', 'asc').get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sql = getSql();
+    const rows = await sql<MaterialRow[]>`select * from raw_materials order by created_at asc`;
+    return rows.map(rowToMaterial);
   },
   ['admin-materials'],
   { revalidate: 15, tags: ['admin-materials'] },
@@ -26,16 +29,12 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
-  const db = getDb();
-  const ref = await db.collection('rawMaterials').add({
-    name: data.name,
-    unit: data.unit ?? '',
-    minStock: Number(data.minStock) || 0,
-    stockQty: 0,
-    avgCost: 0,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  const sql = getSql();
+  const id = randomUUID();
+  await sql`
+    insert into raw_materials (id, name, unit, min_stock, stock_qty, avg_cost, created_at, updated_at)
+    values (${id}, ${data.name as string}, ${(data.unit as string) ?? ''}, ${Number(data.minStock) || 0}, 0, 0, now(), now())
+  `;
   revalidateTag('admin-materials', { expire: 0 });
-  return Response.json({ id: ref.id });
+  return Response.json({ id });
 }

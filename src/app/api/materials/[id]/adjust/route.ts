@@ -1,8 +1,10 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
+import { logHistory } from '@/lib/history';
+import { rowToMaterial, type MaterialRow } from '@/lib/materials-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,49 +19,46 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!data.note?.trim()) return Response.json({ error: 'Catatan/alasan koreksi wajib diisi.' }, { status: 400 });
 
   const db = getDb();
-  const materialRef   = db.collection('rawMaterials').doc(id);
-  const adjustmentRef = db.collection('materialAdjustments').doc();
+  const sql = getSql();
+  const adjustmentId = randomUUID();
+
+  let before: ReturnType<typeof rowToMaterial>;
+  let after: { stockQty: number; avgCost: number };
 
   try {
-    await db.runTransaction(async tx => {
-      const snap = await tx.get(materialRef);
-      if (!snap.exists) throw new Error('Bahan baku tidak ditemukan.');
-      const m = snap.data()!;
-      const oldStockQty = Number(m.stockQty) || 0;
-      const oldAvgCost  = Number(m.avgCost) || 0;
-      const newStockQty = data.newStockQty != null ? Number(data.newStockQty) : oldStockQty;
-      const newAvgCost  = data.newAvgCost  != null ? Number(data.newAvgCost)  : oldAvgCost;
+    ({ before, after } = await sql.begin(async pgTx => {
+      const [row] = await pgTx<MaterialRow[]>`select * from raw_materials where id = ${id} for update`;
+      if (!row) throw new Error('Bahan baku tidak ditemukan.');
+      const m = rowToMaterial(row);
+      const oldStockQty = m.stockQty;
+      const oldAvgCost = m.avgCost;
+      const newStockQty = Math.max(0, data.newStockQty != null ? Number(data.newStockQty) : oldStockQty);
+      const newAvgCost = Math.max(0, data.newAvgCost != null ? Number(data.newAvgCost) : oldAvgCost);
 
-      tx.update(materialRef, {
-        stockQty: Math.max(0, newStockQty),
-        avgCost: Math.max(0, newAvgCost),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-
-      tx.set(adjustmentRef, {
-        materialId: id, materialName: m.name ?? '', unit: m.unit ?? '',
-        oldStockQty, newStockQty, oldAvgCost, newAvgCost,
-        note: data.note.trim(),
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      writeHistoryEntry(tx, db, {
-        entity: 'materials',
-        entityId: id,
-        entityLabel: (m.name as string) ?? id,
-        action: 'update',
-        actor: guard,
-        before: m,
-        after: {
-          ...m,
-          stockQty: Math.max(0, newStockQty),
-          avgCost: Math.max(0, newAvgCost),
-        },
-        meta: { adjustQty: newStockQty - oldStockQty, note: data.note.trim() },
-      });
-    });
+      await pgTx`update raw_materials set stock_qty = ${newStockQty}, avg_cost = ${newAvgCost}, updated_at = now() where id = ${id}`;
+      await pgTx`
+        insert into material_adjustments (id, material_id, material_name, unit, old_stock_qty, new_stock_qty, old_avg_cost, new_avg_cost, note, created_at)
+        values (${adjustmentId}, ${id}, ${m.name}, ${m.unit}, ${oldStockQty}, ${newStockQty}, ${oldAvgCost}, ${newAvgCost}, ${data.note.trim()}, now())
+      `;
+      return { before: m, after: { stockQty: newStockQty, avgCost: newAvgCost } };
+    }));
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan koreksi.' }, { status: 400 });
+  }
+
+  try {
+    await logHistory(db, {
+      entity: 'materials',
+      entityId: id,
+      entityLabel: before.name,
+      action: 'update',
+      actor: guard,
+      before,
+      after: { ...before, ...after },
+      meta: { adjustQty: after.stockQty - before.stockQty, note: data.note.trim() },
+    });
+  } catch (err) {
+    console.error('Failed to write history for material adjust', err);
   }
 
   return Response.json({ ok: true });

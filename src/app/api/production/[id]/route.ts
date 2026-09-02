@@ -2,24 +2,22 @@ import { NextRequest, after } from 'next/server';
 import { randomUUID } from 'crypto';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
+import { logHistory } from '@/lib/history';
 import { revalidateStorefront } from '@/lib/revalidate';
-import { getExpensePg, deleteExpensePg, applyExpensePgAction, type ExpensePgAction } from '@/lib/expenses-pg';
-import {
-  writeStockLedgerEntryPg, stockLabel, captureAndSetWs, compensateStock,
-  type ProductSnapshot, type WsSnapshot,
-} from '@/lib/stock-pg';
+import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
+import { rowToBatch, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
-interface StoredOutput { productId: string; productName: string; yieldQty: number; costPerPcs: number }
-interface StoredMaterialUsed { materialId: string; materialName: string; unit: string; qty: number; costPerUnit: number; cost: number }
 interface ProductRow { stock_qty: string; cost_price: string | null; open_po: boolean }
+
+function outputSignature(outputs: { productId: string; yieldQty: number }[]) {
+  return outputs.map(o => `${o.productId}:${o.yieldQty}`).sort().join('|');
+}
 
 // Reversal & re-terapan untuk bahan baku aman dilakukan kapan pun — avgCost bahan baku TIDAK
 // dipengaruhi produksi (hanya stockQty), jadi tambah-balik lalu kurangi-baru selalu tepat secara
@@ -31,42 +29,6 @@ interface ProductRow { stock_qty: string; cost_price: string | null; open_po: bo
 // batch ini — makanya hanya diblokir kalau ada batch produksi LAIN yang lebih baru menyentuh produk yang
 // sama; kalau produk sudah terjual/berpindah stok, edit/hapus tetap dijalankan (best-effort) — cek &
 // koreksi manual lewat Edit Produk kalau HPP hasil akhirnya terasa tidak pas.
-async function findLaterProductionProductIds(db: FirebaseFirestore.Firestore, createdAt: FirebaseFirestore.Timestamp) {
-  const snap = await db.collection('productionBatches').where('createdAt', '>', createdAt).get();
-  const ids = new Set<string>();
-  snap.docs.forEach(d => {
-    ((d.data().outputs as StoredOutput[] | undefined) ?? []).forEach(o => ids.add(o.productId));
-  });
-  return ids;
-}
-
-// Deteksi produk yang stoknya sudah "keluar" (terjual/kasir, pesanan online, transfer, konsinyasi, dsb)
-// sejak batch ini dibuat — kalau iya, revert stok/HPP produk (weighted-average) di atas tidak lagi
-// akurat karena unit yang mau direvert sudah tidak fungibel lagi dengan sisa stok saat ini (lihat
-// komentar di atas). `stock_ledger` (Postgres, Tahap 8-10) adalah ledger append-only yang dipakai
-// SEMUA penulis stok sejak migrasi.
-//
-// Dikecualikan: entri 'out' yang ditulis endpoint produksi INI SENDIRI ("Koreksi edit produksi" saat
-// pindah gudang/ubah output, "Hapus batch produksi" saat batch lain dihapus) — keduanya lewat
-// reverseProductState/applyProductState yang sama persis dengan revert di atas, jadi secara matematis
-// tetap presisi walau ada beberapa kali koreksi di antaranya (rata-rata tertimbang bersifat asosiatif
-// untuk operasi produksi apa pun). Tanpa pengecualian ini, mengedit gudang/output sebuah batch lalu
-// mencoba edit/hapus batch (yang sama atau produk yang sama) berikutnya akan salah ditolak seolah-olah
-// stoknya "sudah terjual", padahal cuma koreksi internal produksi — bukan konsumsi eksternal beneran
-// (order/konsinyasi) yang memang wajib diblokir.
-async function findConsumedSinceProductIdsPg(sql: ReturnType<typeof getSql>, createdAt: Date) {
-  const rows = await sql<{ product_id: string }[]>`
-    select distinct product_id from stock_ledger
-    where created_at > ${createdAt} and type = 'out'
-      and note not like 'Koreksi edit produksi%' and note <> 'Hapus batch produksi'
-  `;
-  return new Set(rows.map(r => r.product_id));
-}
-
-function outputSignature(outputs: { productId: string; yieldQty: number }[]) {
-  return outputs.map(o => `${o.productId}:${o.yieldQty}`).sort().join('|');
-}
-
 function reverseProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
   const newQty = curQty - yieldQty;
   const newCost = newQty > 0 ? (curCost * curQty - yieldQty * costPerPcs) / newQty : 0;
@@ -99,95 +61,108 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const db = getDb();
   const sql = getSql();
-  const batchRef = db.collection('productionBatches').doc(id);
   const newExpenseId = randomUUID();
-  let pgAction: ExpensePgAction = { type: 'none' };
 
-  const snap = await batchRef.get();
-  if (!snap.exists) return Response.json({ error: 'Batch produksi tidak ditemukan.' }, { status: 404 });
-  const batch = snap.data()!;
-  const oldOutputs = (batch.outputs as StoredOutput[] | undefined) ?? [];
-  const oldMaterialsUsed = (batch.materialsUsed as StoredMaterialUsed[] | undefined) ?? [];
-  const oldExpenseId = batch.expenseId as string | null | undefined;
-  const oldWarehouseId = batch.warehouseId as string | undefined;
-  const oldWarehouseName = (batch.warehouseName as string | undefined) ?? '';
-  const createdAt = batch.createdAt as FirebaseFirestore.Timestamp;
-
-  const productIds = [...new Set([...oldOutputs.map(o => o.productId), ...newOutputs.map(o => o.productId)])];
-  const outputsChanged   = outputSignature(oldOutputs) !== outputSignature(newOutputs);
-  const warehouseChanged = (oldWarehouseId ?? '') !== newWarehouseId;
-
-  const [laterTouched, consumedSince] = await Promise.all([
-    findLaterProductionProductIds(db, createdAt),
-    (outputsChanged || warehouseChanged) ? findConsumedSinceProductIdsPg(sql, createdAt.toDate()) : Promise.resolve(new Set<string>()),
-  ]);
-  const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
-  if (blockedByLaterProduction.length > 0) {
-    const names = [...oldOutputs, ...newOutputs].filter(o => blockedByLaterProduction.includes(o.productId)).map(o => o.productName);
-    return Response.json({ error: `Tidak bisa diedit — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.` }, { status: 400 });
-  }
-  const blockedByConsumption = productIds.filter(pid => consumedSince.has(pid));
-  if (blockedByConsumption.length > 0) {
-    const names = [...oldOutputs, ...newOutputs].filter(o => blockedByConsumption.includes(o.productId)).map(o => o.productName);
-    return Response.json({ error: `Tidak bisa mengubah jumlah produk atau gudang tujuan — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}. Tanggal, catatan, dan biaya lain tetap bisa diedit tanpa mengubah jumlah/gudang.` }, { status: 400 });
-  }
-
-  const materialIds = [...new Set([...oldMaterialsUsed.map(m => m.materialId), ...newMaterialsUsed.map(m => m.materialId)])];
-  const materialRefs = materialIds.map(mid => db.collection('rawMaterials').doc(mid));
-  const oldExpenseRow = oldExpenseId ? await getExpensePg(oldExpenseId) : null;
-  const materialSnaps = await db.getAll(...materialRefs);
-
-  for (const m of newMaterialsUsed) {
-    const idx = materialIds.indexOf(m.materialId);
-    if (!materialSnaps[idx].exists) return Response.json({ error: `Bahan baku "${m.materialName}" tidak ditemukan.` }, { status: 400 });
-  }
-
-  // Bahan baku: kembalikan dulu qty batch lama, lalu cek kecukupan stok memakai qty batch baru
-  // (preliminary — pengecekan sungguhan pakai baca segar di transaksi Firestore final di bawah).
-  const materialState = new Map<string, number>();
-  materialIds.forEach((mid, i) => materialState.set(mid, Number(materialSnaps[i].data()!.stockQty) || 0));
-  oldMaterialsUsed.forEach(m => materialState.set(m.materialId, (materialState.get(m.materialId) ?? 0) + m.qty));
-
-  const shortages: string[] = [];
-  newMaterialsUsed.forEach(m => {
-    const stockQty = materialState.get(m.materialId) ?? 0;
-    if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
-  });
-  if (shortages.length > 0) return Response.json({ error: `Stok bahan baku tidak cukup: ${shortages.join(', ')}` }, { status: 400 });
-
-  const materialsWithCost: StoredMaterialUsed[] = newMaterialsUsed.map(m => {
-    const idx = materialIds.indexOf(m.materialId);
-    const costPerUnit = Number(materialSnaps[idx].data()!.avgCost) || 0;
-    return { ...m, costPerUnit, cost: costPerUnit * m.qty };
-  });
-  const materialCost  = materialsWithCost.reduce((s, m) => s + m.cost, 0);
-  const totalCost     = materialCost + newOtherCost;
-  const totalYieldQty = newOutputs.reduce((s, o) => s + o.yieldQty, 0);
-  const costPerPcs    = totalCost / totalYieldQty;
-
-  const productSnapshots: ProductSnapshot[] = [];
-  const wsSnapshots: WsSnapshot[] = [];
-  const outputsWithCost: StoredOutput[] = [];
-  let stockCommitted = false;
+  // `products`/`warehouse_stock`/`stock_ledger`/`rawMaterials`/`productionBatches`/`expenses` semuanya
+  // Postgres sekarang (Tahap 18b) — digabung jadi SATU transaksi atomic, tidak perlu lagi kompensasi
+  // cross-database seperti versi Firestore sebelumnya.
+  let before: ReturnType<typeof rowToBatch>;
+  let batchUpdate: Record<string, unknown>;
+  let expenseChanged: boolean;
 
   try {
-    await sql.begin(async pgTx => {
-      const rows = await pgTx<(ProductRow & { id: string })[]>`
+    ({ before, batchUpdate, expenseChanged } = await sql.begin(async pgTx => {
+      const [row] = await pgTx<ProductionBatchRow[]>`select * from production_batches where id = ${id} for update`;
+      if (!row) throw new Error('Batch produksi tidak ditemukan.');
+      const batch = rowToBatch(row);
+      let expenseChangedLocal = false;
+      const oldOutputs = batch.outputs;
+      const oldMaterialsUsed = batch.materialsUsed;
+      const oldExpenseId = batch.expenseId;
+      const oldWarehouseId = batch.warehouseId ?? '';
+      const oldWarehouseName = batch.warehouseName;
+
+      const productIds = [...new Set([...oldOutputs.map(o => o.productId), ...newOutputs.map(o => o.productId)])];
+      const outputsChanged   = outputSignature(oldOutputs) !== outputSignature(newOutputs);
+      const warehouseChanged = oldWarehouseId !== newWarehouseId;
+
+      // Perbandingan lewat subquery (bukan JS Date yang dibaca balik dari `row.created_at`) supaya
+      // presisi mikrodetik asli `timestamptz` tidak hilang — lihat komentar sama di
+      // material-purchases/[id]/route.ts.
+      const laterBatchRows = await pgTx<{ outputs: unknown }[]>`select outputs from production_batches where created_at > (select created_at from production_batches where id = ${id}) and id != ${id}`;
+      const laterTouched = new Set<string>();
+      laterBatchRows.forEach(r => {
+        ((parseJsonb(r.outputs) as BatchOutputRow[] | null) ?? []).forEach(o => laterTouched.add(o.productId));
+      });
+      const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
+      if (blockedByLaterProduction.length > 0) {
+        const names = [...oldOutputs, ...newOutputs].filter(o => blockedByLaterProduction.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa diedit — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.`);
+      }
+
+      if (outputsChanged || warehouseChanged) {
+        const consumedRows = await pgTx<{ product_id: string }[]>`
+          select distinct product_id from stock_ledger
+          where created_at > (select created_at from production_batches where id = ${id}) and type = 'out'
+            and note not like 'Koreksi edit produksi%' and note <> 'Hapus batch produksi'
+        `;
+        const consumedSince = new Set(consumedRows.map(r => r.product_id));
+        const blockedByConsumption = productIds.filter(pid => consumedSince.has(pid));
+        if (blockedByConsumption.length > 0) {
+          const names = [...oldOutputs, ...newOutputs].filter(o => blockedByConsumption.includes(o.productId)).map(o => o.productName);
+          throw new Error(`Tidak bisa mengubah jumlah produk atau gudang tujuan — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}. Tanggal, catatan, dan biaya lain tetap bisa diedit tanpa mengubah jumlah/gudang.`);
+        }
+      }
+
+      const materialIds = [...new Set([...oldMaterialsUsed.map(m => m.materialId), ...newMaterialsUsed.map(m => m.materialId)])];
+      const materialRows = await pgTx<{ id: string; stock_qty: string; avg_cost: string }[]>`
+        select id, stock_qty, avg_cost from raw_materials where id in ${pgTx(materialIds)} order by id for update
+      `;
+      const materialById = new Map(materialRows.map(r => [r.id, r]));
+      newMaterialsUsed.forEach(m => { if (!materialById.has(m.materialId)) throw new Error(`Bahan baku "${m.materialName}" tidak ditemukan.`); });
+
+      // Bahan baku: kembalikan dulu qty batch lama, lalu cek kecukupan stok memakai qty batch baru.
+      const materialState = new Map<string, number>();
+      materialIds.forEach(mid => materialState.set(mid, Number(materialById.get(mid)?.stock_qty) || 0));
+      oldMaterialsUsed.forEach(m => materialState.set(m.materialId, (materialState.get(m.materialId) ?? 0) + m.qty));
+
+      const shortages: string[] = [];
+      newMaterialsUsed.forEach(m => {
+        const stockQty = materialState.get(m.materialId) ?? 0;
+        if (stockQty < m.qty) shortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
+      });
+      if (shortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${shortages.join(', ')}`);
+
+      const materialsWithCost: BatchMaterialUsedRow[] = newMaterialsUsed.map(m => {
+        const costPerUnit = Number(materialById.get(m.materialId)!.avg_cost) || 0;
+        return { ...m, costPerUnit, cost: costPerUnit * m.qty };
+      });
+      const materialCost  = materialsWithCost.reduce((s, m) => s + m.cost, 0);
+      const totalCost     = materialCost + newOtherCost;
+      const totalYieldQty = newOutputs.reduce((s, o) => s + o.yieldQty, 0);
+      const costPerPcs    = totalCost / totalYieldQty;
+
+      materialIds.forEach(mid => materialState.set(mid, materialState.get(mid)! - (newMaterialsUsed.find(m => m.materialId === mid)?.qty ?? 0)));
+      for (const mid of materialIds) {
+        await pgTx`update raw_materials set stock_qty = ${Math.max(0, materialState.get(mid) ?? 0)}, updated_at = now() where id = ${mid}`;
+      }
+
+      const productRows = await pgTx<(ProductRow & { id: string })[]>`
         select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
       `;
-      const byId = new Map(rows.map(r => [r.id, r]));
+      const byId = new Map(productRows.map(r => [r.id, r]));
       newOutputs.forEach(o => { if (!byId.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
 
       // Produk hasil: kembalikan dulu efek output batch lama (rata-rata tertimbang bersifat asosiatif),
       // lalu terapkan output batch baru dengan HPP/pcs yang baru dihitung.
       const productState = new Map<string, { qty: number; cost: number }>();
       productIds.forEach(pid => {
-        const row = byId.get(pid);
-        const qty = row ? Number(row.stock_qty) || 0 : 0;
-        const cost = row?.cost_price != null ? Number(row.cost_price) : 0;
+        const row2 = byId.get(pid);
+        const qty = row2 ? Number(row2.stock_qty) || 0 : 0;
+        const cost = row2?.cost_price != null ? Number(row2.cost_price) : 0;
         productState.set(pid, { qty, cost });
-        productSnapshots.push({ productId: pid, oldQty: qty, oldCost: cost, openPO: row?.open_po ?? false });
       });
+      const outputsWithCost: BatchOutputRow[] = [];
       oldOutputs.forEach(o => {
         const st = productState.get(o.productId)!;
         productState.set(o.productId, reverseProductState(st.qty, st.cost, o.yieldQty, o.costPerPcs));
@@ -209,8 +184,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (outputsChanged || warehouseChanged) {
         if (oldWarehouseId) {
           for (const o of oldOutputs) {
-            await captureAndSetWs(pgTx, wsSnapshots, `${oldWarehouseId}_${o.productId}`, oldWarehouseId, o.productId, o.productName,
-              old => Math.max(0, old - o.yieldQty));
+            await pgTx`
+              update warehouse_stock set stock_qty = greatest(0, stock_qty - ${o.yieldQty}), updated_at = now()
+              where id = ${`${oldWarehouseId}_${o.productId}`}
+            `;
             await writeStockLedgerEntryPg(pgTx, {
               productId: o.productId, productName: o.productName, warehouseId: oldWarehouseId, warehouseName: oldWarehouseName,
               type: 'out', qty: o.yieldQty, note: 'Koreksi edit produksi (batch lama)',
@@ -218,84 +195,71 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           }
         }
         for (const o of newOutputs) {
-          await captureAndSetWs(pgTx, wsSnapshots, `${newWarehouseId}_${o.productId}`, newWarehouseId, o.productId, o.productName,
-            old => old + o.yieldQty);
+          await pgTx`
+            insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
+            values (${`${newWarehouseId}_${o.productId}`}, ${newWarehouseId}, ${o.productId}, ${o.productName}, ${o.yieldQty}, now())
+            on conflict (id) do update set stock_qty = warehouse_stock.stock_qty + excluded.stock_qty, product_name = excluded.product_name, updated_at = now()
+          `;
           await writeStockLedgerEntryPg(pgTx, {
             productId: o.productId, productName: o.productName, warehouseId: newWarehouseId, warehouseName: newWarehouseName,
             type: 'in', qty: o.yieldQty, note: 'Koreksi edit produksi (batch baru)',
           });
         }
       }
-    });
-    stockCommitted = true;
+
+      // Sinkronkan Pengeluaran otomatis biaya lain dengan nilai terbaru.
+      const [oldExpenseRow] = oldExpenseId ? await pgTx<{ id: string }[]>`select id from expenses where id = ${oldExpenseId}` : [];
+      const oldExpenseExists = !!oldExpenseRow;
+      let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
+      const productNames = newOutputs.map(o => o.productName).join(' & ');
+      if (newOtherCost > 0) {
+        expenseChangedLocal = true;
+        if (oldExpenseExists && oldExpenseId) {
+          await pgTx`update expenses set description = ${`Biaya produksi - ${productNames}`}, amount = ${newOtherCost}, date = ${date}, updated_at = now() where id = ${oldExpenseId}`;
+        } else {
+          expenseIdToStore = newExpenseId;
+          await pgTx`
+            insert into expenses (id, category, description, amount, date, note, source_type, source_id, created_at, updated_at)
+            values (${newExpenseId}, 'Produksi', ${`Biaya produksi - ${productNames}`}, ${newOtherCost}, ${date}, ${`Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`}, 'production', ${id}, now(), now())
+          `;
+        }
+      } else if (oldExpenseExists && oldExpenseId) {
+        expenseChangedLocal = true;
+        await pgTx`delete from expenses where id = ${oldExpenseId}`;
+        expenseIdToStore = null;
+      }
+
+      const batchUpdateLocal = {
+        date, outputs: outputsWithCost, materialsUsed: materialsWithCost,
+        materialCost, otherCost: newOtherCost, totalCost, totalYieldQty, costPerPcs,
+        warehouseId: newWarehouseId, warehouseName: newWarehouseName,
+        note: data.note ?? '', expenseId: expenseIdToStore,
+      };
+      await pgTx`
+        update production_batches set
+          date = ${date}, outputs = ${JSON.stringify(outputsWithCost)}, materials_used = ${JSON.stringify(materialsWithCost)},
+          material_cost = ${materialCost}, other_cost = ${newOtherCost}, total_cost = ${totalCost},
+          total_yield_qty = ${totalYieldQty}, cost_per_pcs = ${costPerPcs},
+          warehouse_id = ${newWarehouseId}, warehouse_name = ${newWarehouseName}, note = ${data.note ?? ''},
+          expense_id = ${expenseIdToStore}, updated_at = now()
+        where id = ${id}
+      `;
+      return { before: batch, batchUpdate: batchUpdateLocal, expenseChanged: expenseChangedLocal };
+    }));
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan perubahan.' }, { status: 400 });
   }
 
   try {
-    await db.runTransaction(async tx => {
-      const freshMaterialSnaps = await Promise.all(materialRefs.map(r => tx.get(r)));
-      materialIds.forEach((mid, i) => {
-        if (!freshMaterialSnaps[i].exists) throw new Error('Bahan baku tidak ditemukan.');
-      });
-      const freshMaterialState = new Map<string, number>();
-      materialIds.forEach((mid, i) => freshMaterialState.set(mid, Number(freshMaterialSnaps[i].data()!.stockQty) || 0));
-      oldMaterialsUsed.forEach(m => freshMaterialState.set(m.materialId, (freshMaterialState.get(m.materialId) ?? 0) + m.qty));
-      const freshShortages: string[] = [];
-      newMaterialsUsed.forEach(m => {
-        const stockQty = freshMaterialState.get(m.materialId) ?? 0;
-        if (stockQty < m.qty) freshShortages.push(`${m.materialName} (stok ${Math.round(stockQty * 100) / 100} ${m.unit}, butuh ${m.qty} ${m.unit})`);
-      });
-      if (freshShortages.length > 0) throw new Error(`Stok bahan baku tidak cukup: ${freshShortages.join(', ')}`);
-      newMaterialsUsed.forEach(m => freshMaterialState.set(m.materialId, (freshMaterialState.get(m.materialId) ?? 0) - m.qty));
-      materialIds.forEach((mid, i) => {
-        tx.update(materialRefs[i], { stockQty: Math.max(0, freshMaterialState.get(mid) ?? 0), updatedAt: FieldValue.serverTimestamp() });
-      });
-
-      // Sinkronkan Pengeluaran otomatis biaya lain dengan nilai terbaru.
-      const oldExpenseExists = !!oldExpenseRow;
-      let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
-      const productNames = newOutputs.map(o => o.productName).join(' & ');
-      if (newOtherCost > 0) {
-        if (oldExpenseExists && oldExpenseId) {
-          pgAction = { type: 'update', id: oldExpenseId, description: `Biaya produksi - ${productNames}`, amount: newOtherCost, date };
-        } else {
-          pgAction = {
-            type: 'insert', id: newExpenseId, category: 'Produksi', description: `Biaya produksi - ${productNames}`, amount: newOtherCost, date,
-            note: `Otomatis dari biaya lain (tenaga kerja/overhead) produksi ${totalYieldQty} pcs (${productNames})`,
-            sourceType: 'production', sourceId: id,
-          };
-          expenseIdToStore = newExpenseId;
-        }
-      } else if (oldExpenseExists && oldExpenseId) {
-        pgAction = { type: 'delete', id: oldExpenseId };
-        expenseIdToStore = null;
-      }
-
-      const batchUpdate = {
-        date, outputs: outputsWithCost, materialsUsed: materialsWithCost,
-        materialCost, otherCost: newOtherCost, totalCost, totalYieldQty, costPerPcs,
-        warehouseId: newWarehouseId, warehouseName: newWarehouseName,
-        note: data.note ?? '',
-        expenseId: expenseIdToStore,
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      tx.update(batchRef, batchUpdate);
-      writeHistoryEntry(tx, db, {
-        entity: 'production', entityId: id,
-        entityLabel: `Produksi ${date} - ${outputsWithCost.map(o => o.productName).join(' & ') || id}`,
-        action: 'update', actor: guard, before: batch, after: batchUpdate,
-      });
+    await logHistory(db, {
+      entity: 'production', entityId: id,
+      entityLabel: `Produksi ${date} - ${newOutputs.map(o => o.productName).join(' & ') || id}`,
+      action: 'update', actor: guard, before, after: batchUpdate,
     });
   } catch (err) {
-    if (stockCommitted) {
-      try { await compensateStock(sql, productSnapshots, wsSnapshots); }
-      catch (compErr) { console.error('CRITICAL: gagal kompensasi stok produk setelah edit produksi gagal tersimpan', compErr); }
-    }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan perubahan.' }, { status: 400 });
+    console.error('Failed to write history for production update', err);
   }
-
-  if (await applyExpensePgAction(pgAction)) revalidateTag('admin-expenses', { expire: 0 });
+  if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
 
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
@@ -307,104 +271,116 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const db = getDb();
   const sql = getSql();
-  const batchRef = db.collection('productionBatches').doc(id);
 
-  const snap = await batchRef.get();
-  if (!snap.exists) return Response.json({ error: 'Batch produksi tidak ditemukan.' }, { status: 404 });
-  const batch = snap.data()!;
-  const outputs = (batch.outputs as StoredOutput[] | undefined) ?? [];
-  const materialsUsed = (batch.materialsUsed as StoredMaterialUsed[] | undefined) ?? [];
-  const expenseId = batch.expenseId as string | null | undefined;
-  const warehouseId = batch.warehouseId as string | undefined;
-  const warehouseName = (batch.warehouseName as string | undefined) ?? '';
-  const createdAt = batch.createdAt as FirebaseFirestore.Timestamp;
-
-  const productIds = outputs.map(o => o.productId);
-  const [laterTouched, consumedSince] = await Promise.all([
-    findLaterProductionProductIds(db, createdAt),
-    findConsumedSinceProductIdsPg(sql, createdAt.toDate()),
-  ]);
-  const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
-  if (blockedByLaterProduction.length > 0) {
-    const names = outputs.filter(o => blockedByLaterProduction.includes(o.productId)).map(o => o.productName);
-    return Response.json({ error: `Tidak bisa dihapus — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.` }, { status: 400 });
-  }
-  const blockedByConsumption = productIds.filter(pid => consumedSince.has(pid));
-  if (blockedByConsumption.length > 0) {
-    const names = outputs.filter(o => blockedByConsumption.includes(o.productId)).map(o => o.productName);
-    return Response.json({ error: `Tidak bisa dihapus — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}.` }, { status: 400 });
-  }
-
-  const materialRefs = materialsUsed.map(m => db.collection('rawMaterials').doc(m.materialId));
-  const expenseRow = expenseId ? await getExpensePg(expenseId) : null;
-  const expenseIdToDelete: string | null = expenseRow ? expenseId! : null;
-
-  const productSnapshots: ProductSnapshot[] = [];
-  const wsSnapshots: WsSnapshot[] = [];
-  let stockCommitted = false;
+  let before: ReturnType<typeof rowToBatch>;
+  let expenseDeleted: boolean;
 
   try {
-    await sql.begin(async pgTx => {
-      const rows = await pgTx<(ProductRow & { id: string })[]>`
+    ({ before, expenseDeleted } = await sql.begin(async pgTx => {
+      const [row] = await pgTx<ProductionBatchRow[]>`select * from production_batches where id = ${id} for update`;
+      if (!row) throw new Error('Batch produksi tidak ditemukan.');
+      const batch = rowToBatch(row);
+      let deleted = false;
+      const outputs = batch.outputs;
+      const materialsUsed = batch.materialsUsed;
+      const warehouseId = batch.warehouseId ?? '';
+      const warehouseName = batch.warehouseName;
+
+      const productIds = outputs.map(o => o.productId);
+
+      // Perbandingan lewat subquery (bukan JS Date yang dibaca balik dari `row.created_at`) supaya
+      // presisi mikrodetik asli `timestamptz` tidak hilang — lihat komentar sama di
+      // material-purchases/[id]/route.ts.
+      const laterBatchRows = await pgTx<{ outputs: unknown }[]>`select outputs from production_batches where created_at > (select created_at from production_batches where id = ${id}) and id != ${id}`;
+      const laterTouched = new Set<string>();
+      laterBatchRows.forEach(r => {
+        ((parseJsonb(r.outputs) as BatchOutputRow[] | null) ?? []).forEach(o => laterTouched.add(o.productId));
+      });
+      const blockedByLaterProduction = productIds.filter(pid => laterTouched.has(pid));
+      if (blockedByLaterProduction.length > 0) {
+        const names = outputs.filter(o => blockedByLaterProduction.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa dihapus — produk sudah diproduksi lagi setelah batch ini: ${[...new Set(names)].join(', ')}.`);
+      }
+
+      const consumedRows = await pgTx<{ product_id: string }[]>`
+        select distinct product_id from stock_ledger
+        where created_at > (select created_at from production_batches where id = ${id}) and type = 'out'
+          and note not like 'Koreksi edit produksi%' and note <> 'Hapus batch produksi'
+      `;
+      const consumedSince = new Set(consumedRows.map(r => r.product_id));
+      const blockedByConsumption = productIds.filter(pid => consumedSince.has(pid));
+      if (blockedByConsumption.length > 0) {
+        const names = outputs.filter(o => blockedByConsumption.includes(o.productId)).map(o => o.productName);
+        throw new Error(`Tidak bisa dihapus — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}.`);
+      }
+
+      const productRows = await pgTx<(ProductRow & { id: string })[]>`
         select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
       `;
-      const byId = new Map(rows.map(r => [r.id, r]));
+      const byId = new Map(productRows.map(r => [r.id, r]));
 
       for (const o of outputs) {
-        const row = byId.get(o.productId);
-        if (!row) continue;
-        const curQty  = Number(row.stock_qty) || 0;
-        const curCost = row.cost_price != null ? Number(row.cost_price) : 0;
-        productSnapshots.push({ productId: o.productId, oldQty: curQty, oldCost: curCost, openPO: row.open_po });
+        const row2 = byId.get(o.productId);
+        if (!row2) continue;
+        const curQty  = Number(row2.stock_qty) || 0;
+        const curCost = row2.cost_price != null ? Number(row2.cost_price) : 0;
         const { qty, cost } = reverseProductState(curQty, curCost, o.yieldQty, o.costPerPcs);
-        await pgTx`update products set stock_qty = ${qty}, cost_price = ${cost}, stock = ${stockLabel(row.open_po, qty)}, updated_at = now() where id = ${o.productId}`;
+        await pgTx`update products set stock_qty = ${qty}, cost_price = ${cost}, stock = ${stockLabel(row2.open_po, qty)}, updated_at = now() where id = ${o.productId}`;
       }
 
       // Kembalikan stok gudang tujuan batch ini (batch lama sebelum fitur ini tidak punya warehouseId).
       if (warehouseId) {
         for (const o of outputs) {
-          await captureAndSetWs(pgTx, wsSnapshots, `${warehouseId}_${o.productId}`, warehouseId, o.productId, o.productName,
-            old => Math.max(0, old - o.yieldQty));
+          await pgTx`
+            update warehouse_stock set stock_qty = greatest(0, stock_qty - ${o.yieldQty}), updated_at = now()
+            where id = ${`${warehouseId}_${o.productId}`}
+          `;
           await writeStockLedgerEntryPg(pgTx, {
             productId: o.productId, productName: o.productName, warehouseId, warehouseName,
             type: 'out', qty: o.yieldQty, note: 'Hapus batch produksi',
           });
         }
       }
-    });
-    stockCommitted = true;
+
+      const materialIds = materialsUsed.map(m => m.materialId);
+      if (materialIds.length > 0) {
+        const materialRows = await pgTx<{ id: string; stock_qty: string }[]>`
+          select id, stock_qty from raw_materials where id in ${pgTx(materialIds)} order by id for update
+        `;
+        const materialById = new Map(materialRows.map(r => [r.id, r]));
+        for (const m of materialsUsed) {
+          const mrow = materialById.get(m.materialId);
+          if (!mrow) continue;
+          const stockQty = Number(mrow.stock_qty) || 0;
+          await pgTx`update raw_materials set stock_qty = ${stockQty + m.qty}, updated_at = now() where id = ${m.materialId}`;
+        }
+      }
+
+      if (batch.expenseId) {
+        const [expenseRow] = await pgTx<{ id: string }[]>`select id from expenses where id = ${batch.expenseId}`;
+        if (expenseRow) {
+          await pgTx`delete from expenses where id = ${batch.expenseId}`;
+          deleted = true;
+        }
+      }
+
+      await pgTx`delete from production_batches where id = ${id}`;
+      return { before: batch, expenseDeleted: deleted };
+    }));
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus batch produksi.' }, { status: 400 });
   }
 
   try {
-    await db.runTransaction(async tx => {
-      const freshMaterialSnaps = await Promise.all(materialRefs.map(r => tx.get(r)));
-      materialsUsed.forEach((m, i) => {
-        if (!freshMaterialSnaps[i].exists) return;
-        const stockQty = Number(freshMaterialSnaps[i].data()!.stockQty) || 0;
-        tx.update(materialRefs[i], { stockQty: stockQty + m.qty, updatedAt: FieldValue.serverTimestamp() });
-      });
-
-      tx.delete(batchRef);
-      writeHistoryEntry(tx, db, {
-        entity: 'production', entityId: id,
-        entityLabel: `Produksi ${batch.date ?? id} - ${outputs.map(o => o.productName).join(' & ') || id}`,
-        action: 'delete', actor: guard, before: batch,
-      });
+    await logHistory(db, {
+      entity: 'production', entityId: id,
+      entityLabel: `Produksi ${before.date} - ${before.outputs.map(o => o.productName).join(' & ') || id}`,
+      action: 'delete', actor: guard, before,
     });
   } catch (err) {
-    if (stockCommitted) {
-      try { await compensateStock(sql, productSnapshots, wsSnapshots); }
-      catch (compErr) { console.error('CRITICAL: gagal kompensasi stok produk setelah hapus produksi gagal tersimpan', compErr); }
-    }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus batch produksi.' }, { status: 400 });
+    console.error('Failed to write history for production delete', err);
   }
-
-  if (expenseIdToDelete) {
-    await deleteExpensePg(expenseIdToDelete);
-    revalidateTag('admin-expenses', { expire: 0 });
-  }
+  if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
 
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });

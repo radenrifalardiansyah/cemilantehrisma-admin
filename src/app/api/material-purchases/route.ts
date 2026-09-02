@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { revalidateTag } from 'next/cache';
-import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
+import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
-import { insertExpensePg } from '@/lib/expenses-pg';
+import { logHistory } from '@/lib/history';
+import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 
 interface PurchaseItemInput {
   materialId: string; materialName: string; unit: string;
@@ -17,12 +17,9 @@ export async function GET(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
   const limit = parseInt(searchParams.get('limit') ?? '50');
-  const snap = await getDb().collection('materialPurchases').orderBy('createdAt', 'desc').limit(limit).get();
-  const purchases = snap.docs.map(d => {
-    const data = d.data();
-    return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-  });
-  return Response.json({ purchases });
+  const sql = getSql();
+  const rows = await sql<PurchaseRow[]>`select * from material_purchases order by created_at desc limit ${limit}`;
+  return Response.json({ purchases: rows.map(rowToPurchase) });
 }
 
 export async function POST(req: NextRequest) {
@@ -38,81 +35,79 @@ export async function POST(req: NextRequest) {
   const date = data.date || new Date().toISOString().slice(0, 10);
 
   const db = getDb();
-  const purchaseRef = db.collection('materialPurchases').doc();
+  const sql = getSql();
+  const purchaseId = randomUUID();
   const expenseId = randomUUID();
-  let willCreateExpense = false;
-  let expenseTotal = 0;
-  let expenseItemNames: string[] = [];
+  let purchaseData: Record<string, unknown> = {};
 
+  // Bahan baku (Tahap 18b) DAN dokumen pembelian & pengeluaran otomatis (expenses, Tahap 5)
+  // sekarang sama-sama di Postgres, jadi digabung jadi SATU transaksi atomic — tidak ada lagi
+  // "expense ditulis setelah transaksi Firestore commit" seperti versi sebelumnya.
   try {
-    await db.runTransaction(async tx => {
-      const materialRefs = items.map(it => db.collection('rawMaterials').doc(it.materialId));
-      const materialSnaps = await Promise.all(materialRefs.map(r => tx.get(r)));
+    await sql.begin(async pgTx => {
+      const materialIds = items.map(it => it.materialId);
+      const materialRows = await pgTx<{ id: string; stock_qty: string; avg_cost: string }[]>`
+        select id, stock_qty, avg_cost from raw_materials where id in ${pgTx(materialIds)} order by id for update
+      `;
+      const materialById = new Map(materialRows.map(r => [r.id, r]));
+      items.forEach(it => { if (!materialById.has(it.materialId)) throw new Error(`Bahan baku "${it.materialName}" tidak ditemukan.`); });
 
-      const itemsWithSubtotal = items.map((it, i) => {
-        if (!materialSnaps[i].exists) throw new Error(`Bahan baku "${it.materialName}" tidak ditemukan.`);
-        return { ...it, subtotal: it.qty * it.price };
-      });
+      const itemsWithSubtotal = items.map(it => ({ ...it, subtotal: it.qty * it.price }));
       const total = itemsWithSubtotal.reduce((s, it) => s + it.subtotal, 0);
 
-      items.forEach((it, i) => {
-        const m = materialSnaps[i].data()!;
-        const oldQty = Number(m.stockQty) || 0;
-        const oldAvg = Number(m.avgCost) || 0;
+      for (const it of items) {
+        const m = materialById.get(it.materialId)!;
+        const oldQty = Number(m.stock_qty) || 0;
+        const oldAvg = Number(m.avg_cost) || 0;
         const newQty = oldQty + it.qty;
         const newAvg = newQty > 0 ? (oldQty * oldAvg + it.qty * it.price) / newQty : 0;
-        tx.update(materialRefs[i], { stockQty: newQty, avgCost: newAvg, updatedAt: FieldValue.serverTimestamp() });
-      });
+        await pgTx`update raw_materials set stock_qty = ${newQty}, avg_cost = ${newAvg}, updated_at = now() where id = ${it.materialId}`;
+      }
 
       // Catat otomatis sebagai Pengeluaran (uang keluar beneran saat beli bahan baku) — cuma kalau
-      // sudah lunas. Kalau belum lunas, pengeluaran baru dicatat saat ditandai lunas (lihat [id]/route.ts),
-      // supaya Jurnal Kas/Laba Rugi tidak menghitung uang yang belum benar-benar keluar.
-      willCreateExpense = total > 0 && paymentStatus === 'lunas';
-      expenseTotal = total;
-      expenseItemNames = itemsWithSubtotal.map(it => it.materialName);
+      // sudah lunas. Kalau belum lunas, pengeluaran baru dicatat saat ditandai lunas (lihat
+      // [id]/mark-lunas/route.ts), supaya Jurnal Kas/Laba Rugi tidak menghitung uang yang belum
+      // benar-benar keluar.
+      const willCreateExpense = total > 0 && paymentStatus === 'lunas';
 
-      const purchaseData = {
+      purchaseData = {
         supplierId: data.supplierId ?? null,
         supplierName: data.supplierName ?? '',
         items: itemsWithSubtotal,
-        total,
-        date,
-        paymentStatus,
+        total, date, paymentStatus,
         expenseId: willCreateExpense ? expenseId : null,
-        note: data.note ?? '',
-        walletId: data.walletId ?? null,
-        createdAt: FieldValue.serverTimestamp(),
+        note: data.note ?? '', walletId: data.walletId ?? null,
       };
-      tx.set(purchaseRef, purchaseData);
+      await pgTx`
+        insert into material_purchases (id, supplier_id, supplier_name, items, total, date, payment_status, expense_id, note, wallet_id, created_at)
+        values (${purchaseId}, ${data.supplierId ?? null}, ${data.supplierName ?? ''}, ${JSON.stringify(itemsWithSubtotal)}, ${total}, ${date}, ${paymentStatus}, ${willCreateExpense ? expenseId : null}, ${data.note ?? ''}, ${data.walletId ?? null}, now())
+      `;
 
-      writeHistoryEntry(tx, db, {
-        entity: 'material-purchases',
-        entityId: purchaseRef.id,
-        entityLabel: `${data.supplierName?.trim() || 'Tanpa nama'} - Rp${total}`,
-        action: 'create',
-        actor: guard,
-        after: purchaseData,
-      });
-      // Expense ditulis ke Postgres SETELAH transaksi Firestore ini commit — lihat src/lib/expenses-pg.ts.
+      if (willCreateExpense) {
+        const itemNames = itemsWithSubtotal.map(it => it.materialName).join(', ');
+        await pgTx`
+          insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
+          values (${expenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${data.supplierName || 'Tanpa nama'}`}, ${total}, ${date}, ${`Otomatis dari pembelian bahan baku (${itemNames})`}, ${data.walletId ?? null}, 'material-purchase', ${purchaseId}, now(), now())
+        `;
+      }
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pembelian.' }, { status: 400 });
   }
 
-  if (willCreateExpense) {
-    await insertExpensePg({
-      id: expenseId,
-      category: 'Bahan Baku',
-      description: `Pembelian bahan baku - ${data.supplierName || 'Tanpa nama'}`,
-      amount: expenseTotal,
-      date,
-      note: `Otomatis dari pembelian bahan baku (${expenseItemNames.join(', ')})`,
-      sourceType: 'material-purchase',
-      sourceId: purchaseRef.id,
-      walletId: data.walletId ?? null,
+  try {
+    await logHistory(db, {
+      entity: 'material-purchases',
+      entityId: purchaseId,
+      entityLabel: `${data.supplierName?.trim() || 'Tanpa nama'} - Rp${purchaseData.total}`,
+      action: 'create',
+      actor: guard,
+      after: purchaseData,
     });
-    revalidateTag('admin-expenses', { expire: 0 });
+  } catch (err) {
+    console.error('Failed to write history for material purchase create', err);
   }
+  if (purchaseData.expenseId) revalidateTag('admin-expenses', { expire: 0 });
 
-  return Response.json({ id: purchaseRef.id });
+  return Response.json({ id: purchaseId });
 }
