@@ -16,10 +16,11 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dependencies (postgres client only)
-        run: npm install postgres --no-save
+      - name: Install dependencies (postgres + firebase-admin only)
+        run: npm install postgres firebase-admin --no-save
 
-      - name: Ping Supabase database
+      - name: Ping Supabase database + catat notifikasi
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node scripts/supabase-keepalive.mjs

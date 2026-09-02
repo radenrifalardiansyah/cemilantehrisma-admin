@@ -14,6 +14,7 @@ export const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   income_new: 'Pemasukan',
   expense_new: 'Pengeluaran',
   capital_new: 'Modal & Prive',
+  system: 'Sistem',
 };
 
 export function fullTime(n: NotificationDoc): string {
