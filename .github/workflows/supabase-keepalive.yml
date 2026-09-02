@@ -1,0 +1,25 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    # Setiap Senin jam 03:00 UTC (~10:00 WIB) — di bawah batas idle 7 hari Supabase free tier
+    - cron: '0 3 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies (postgres client only)
+        run: npm install postgres --no-save
+
+      - name: Ping Supabase database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/supabase-keepalive.mjs
