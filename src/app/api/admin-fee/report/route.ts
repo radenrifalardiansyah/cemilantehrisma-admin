@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
 import { requireSuperAdmin } from '@/lib/rbac';
 import { computeReport } from '@/lib/admin-fee';
 
@@ -11,6 +10,6 @@ export async function GET(req: NextRequest) {
   const to = searchParams.get('to');
   if (!from || !to) return Response.json({ error: 'Parameter from dan to wajib diisi.' }, { status: 400 });
 
-  const report = await computeReport(getDb(), from, to);
+  const report = await computeReport(from, to);
   return Response.json(report);
 }

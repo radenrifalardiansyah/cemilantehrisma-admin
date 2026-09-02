@@ -1,20 +1,17 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { randomUUID } from 'crypto';
+import { getSql } from '@/lib/db';
 import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { computeReport, collectTransactionIds } from '@/lib/admin-fee';
+import { computeReport, collectTransactionIds, serializeInvoiceRow, type AdminFeeInvoiceRow } from '@/lib/admin-fee';
 
 // Cached unfiltered — role-based filtering below stays outside the cache (per-request, not
 // baked into the shared cached value) since which rows `admin` may see depends on the caller.
 const getCachedInvoices = unstable_cache(
   async () => {
-    const snap = await getDb().collection('adminFeeInvoices').orderBy('createdAt', 'desc').get();
-    return snap.docs.map(d => {
-      const data = d.data();
-      const createdAt = data.createdAt as Timestamp | undefined;
-      return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
-    });
+    const sql = getSql();
+    const rows = await sql<AdminFeeInvoiceRow[]>`select * from admin_fee_invoices order by created_at desc`;
+    return rows.map(serializeInvoiceRow);
   },
   ['admin-fee-invoices'],
   { revalidate: 20 },
@@ -28,7 +25,7 @@ export async function GET(req: NextRequest) {
     // `admin` (pemilik usaha yang ditagih) cuma boleh lihat invoice yang sudah benar-benar
     // ditagihkan — draft masih internal RMedia Solutions dan belum tentu final, dan yang
     // dibatalkan bukan lagi tagihan aktif.
-    .filter(d => guard.role === 'super-admin' || !['draft', 'cancelled'].includes((d as { status?: string }).status ?? ''));
+    .filter(d => guard.role === 'super-admin' || !['draft', 'cancelled'].includes(d.status ?? ''));
   return Response.json({ invoices });
 }
 
@@ -42,31 +39,31 @@ export async function POST(req: NextRequest) {
   const { from, to } = data;
   if (!from || !to) return Response.json({ error: 'Periode (from/to) wajib diisi.' }, { status: 400 });
 
-  const db = getDb();
-  const ref = db.collection('adminFeeInvoices').doc();
-  const invoiceNo = `INV-ADM-${ref.id.slice(0, 8).toUpperCase()}`;
+  const sql = getSql();
+  const id = randomUUID();
+  const invoiceNo = `INV-ADM-${id.slice(0, 8).toUpperCase()}`;
 
-  // computeReport (yang menentukan transaksi "belum ditagih") dan penulisan invoice ini harus
-  // satu transaksi — lihat komentar di lib/admin-fee.ts.
-  await db.runTransaction(async tx => {
-    const report = await computeReport(db, from, to, tx);
-    tx.set(ref, {
-      invoiceNo,
-      periodFrom: report.from,
-      periodTo: report.to,
-      breakdown: report.breakdown,
-      transactionIds: collectTransactionIds(report),
-      totalRevenue: report.totalRevenue,
-      totalFee: report.totalFee,
-      status: 'draft',
-      // Catatan bebas dari superadmin untuk invoice ini (mis. penjelasan penyesuaian rate,
-      // permintaan khusus) — ikut tampil di halaman Tagihan admin & di PDF, bukan cuma internal.
-      note: data.note?.trim() || null,
-      dueDate: data.dueDate || null,
-      createdAt: FieldValue.serverTimestamp(),
-      createdBy: guard.username,
-    });
+  // computeReport (yang menentukan transaksi "belum ditagih") dan penulisan invoice ini sekarang
+  // satu transaksi Postgres (sejak adminFeeInvoices juga pindah ke Postgres, Tahap 17 migrasi
+  // Fase 2 — lihat plan gleaming-wondering-quokka.md) — sebelumnya ini transaksi Firestore.
+  // pg_advisory_xact_lock menyerialkan pembuatan invoice (mirip pola wallet-transfers) supaya dua
+  // invoice dengan periode tumpang tindih yang dibuat hampir bersamaan tidak sama-sama menagih
+  // transaksi yang sama (TOCTOU).
+  await sql.begin(async (pgTx) => {
+    await pgTx`select pg_advisory_xact_lock(hashtext('admin_fee_invoice_create'))`;
+    const report = await computeReport(from, to, pgTx);
+    await pgTx`
+      insert into admin_fee_invoices (
+        id, invoice_no, period_from, period_to, breakdown, transaction_ids,
+        total_revenue, total_fee, status, note, due_date, created_at, created_by
+      ) values (
+        ${id}, ${invoiceNo}, ${report.from}, ${report.to},
+        ${JSON.stringify(report.breakdown)}, ${JSON.stringify(collectTransactionIds(report))},
+        ${report.totalRevenue}, ${report.totalFee}, 'draft',
+        ${data.note?.trim() || null}, ${data.dueDate || null}, now(), ${guard.username}
+      )
+    `;
   });
 
-  return Response.json({ id: ref.id, invoiceNo });
+  return Response.json({ id, invoiceNo });
 }

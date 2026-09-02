@@ -1,24 +1,22 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { randomUUID } from 'crypto';
+import { getSql } from '@/lib/db';
 import { requireSuperAdmin } from '@/lib/rbac';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { wibDayStart, wibDateKey } from '@/lib/date';
 import {
   ADMIN_FEE_CHANNELS, getAllRateHistories, type AdminFeeChannel, type AdminFeeType,
 } from '@/lib/admin-fee';
 
-// Timestamp Firestore tidak serialize rapi lewat Response.json() — dikonversi ke
-// {seconds,nanoseconds} biasa, mengikuti konvensi orders/consignment-recap route.
-const serializeTs = (t: Timestamp | undefined) => t ? { seconds: t.seconds, nanoseconds: t.nanoseconds } : null;
+const toTs = (d: Date) => ({ seconds: Math.floor(d.getTime() / 1000), nanoseconds: 0 });
 
 export async function GET(req: NextRequest) {
   const guard = await requireSuperAdmin(req);
   if (guard instanceof Response) return guard;
-  const rates = await getAllRateHistories(getDb());
+  const rates = await getAllRateHistories();
   const serialized = Object.fromEntries(
     ADMIN_FEE_CHANNELS.map(channel => [
       channel,
-      rates[channel].map(r => ({ ...r, effectiveFrom: serializeTs(r.effectiveFrom), createdAt: serializeTs(r.createdAt) })),
+      rates[channel].map(r => ({ ...r, effectiveFrom: toTs(r.effectiveFrom), createdAt: toTs(r.createdAt) })),
     ]),
   );
   return Response.json({ rates: serialized });
@@ -42,19 +40,16 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Nilai biaya tidak valid.' }, { status: 400 });
   }
 
-  const db = getDb();
-  // Selalu dinormalkan ke tengah malam WIB (bukan Timestamp.now() mentah) — effectiveFrom
+  const sql = getSql();
+  // Selalu dinormalkan ke tengah malam WIB (bukan waktu sekarang mentah) — effectiveFrom
   // dibandingkan per hari di admin-fee.ts, jadi menyimpan momen presisi-detik di sini cuma bikin
   // data mentah membingungkan kalau diperiksa langsung, walau perbandingannya sendiri sudah aman.
   const effectiveFrom = wibDayStart(data.effectiveFrom ?? wibDateKey(new Date()));
-  const ref = await db.collection('adminFeeRates').add({
-    channel: data.channel,
-    type: data.type,
-    value: data.value,
-    effectiveFrom,
-    createdAt: FieldValue.serverTimestamp(),
-    createdBy: guard.username,
-  });
+  const id = randomUUID();
+  await sql`
+    insert into admin_fee_rates (id, channel, type, value, effective_from, created_at, created_by)
+    values (${id}, ${data.channel}, ${data.type}, ${data.value}, ${effectiveFrom.toDate()}, now(), ${guard.username})
+  `;
 
-  return Response.json({ id: ref.id });
+  return Response.json({ id });
 }

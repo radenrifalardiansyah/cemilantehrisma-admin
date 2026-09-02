@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requireAdminOrSuperAdmin } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 
 // Aksi "Bayar" milik `admin` (pemilik usaha) atas invoice Biaya Admin yang sudah ditagihkan
 // superadmin — pembayaran manual (transfer di luar sistem, lalu konfirmasi di sini), bukan
@@ -14,21 +13,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const body = await req.json().catch(() => ({})) as { note?: string };
 
-  const ref = getDb().collection('adminFeeInvoices').doc(id);
-  const snap = await ref.get();
-  if (!snap.exists) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
-  const data = snap.data()!;
-  if (data.status !== 'invoiced') {
+  const sql = getSql();
+  const [row] = await sql<{ status: string }[]>`select status from admin_fee_invoices where id = ${id}`;
+  if (!row) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
+  if (row.status !== 'invoiced') {
     return Response.json({ error: 'Invoice ini belum ditagihkan atau sudah dibayar.' }, { status: 400 });
   }
 
-  await ref.update({
-    status: 'paid',
-    paidAt: FieldValue.serverTimestamp(),
-    paidBy: guard.username,
-    paymentNote: body.note?.trim() || null,
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  await sql`
+    update admin_fee_invoices set
+      status = 'paid', paid_at = now(), paid_by = ${guard.username},
+      payment_note = ${body.note?.trim() || null}, updated_at = now()
+    where id = ${id}
+  `;
 
   return Response.json({ ok: true });
 }
