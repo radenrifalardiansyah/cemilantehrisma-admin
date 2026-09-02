@@ -10,30 +10,29 @@ import { getSql } from '@/lib/db';
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type PgClient = postgres.ISql<{}>;
 
-// `capitalEntries`, `walletTransfers`, `income`, `expenses`, `orders` & `consignmentRecaps` pindah
-// ke Postgres (Tahap 2-5, 12 & 13 migrasi, lihat plan gleaming-wondering-quokka.md) —
-// `materialPurchases` satu-satunya yang masih Firestore di sini.
-const WALLET_ID_COLLECTIONS = ['materialPurchases'];
+// `capitalEntries`, `walletTransfers`, `income`, `expenses`, `orders`, `consignmentRecaps` &
+// `materialPurchases` semuanya sudah di Postgres (Tahap 2-5, 12, 13 & 18b migrasi, lihat plan
+// gleaming-wondering-quokka.md) — `db` (Firestore) di bawah dipertahankan di signature untuk
+// kompatibilitas pemanggil lama, tapi tidak lagi dipakai untuk membaca apa pun di sini.
 
 // Dipakai oleh DELETE satuan dan bulk-delete dompet — dompet dengan riwayat transaksi (termasuk
 // jadi asal/tujuan transfer) tidak boleh dihapus permanen, harus dinonaktifkan saja, supaya
 // dokumen lama yang masih menyimpan walletId ini tidak jadi anak yatim.
 export async function walletHasReferences(db: Firestore, walletId: string): Promise<boolean> {
+  void db;
   const sql = getSql();
-  const [checks, [row]] = await Promise.all([
-    Promise.all(WALLET_ID_COLLECTIONS.map(col => db.collection(col).where('walletId', '==', walletId).limit(1).get())),
-    sql<{ exists: boolean }[]>`
-      select
-        exists(select 1 from capital_entries where wallet_id = ${walletId})
-        or exists(select 1 from wallet_transfers where from_wallet_id = ${walletId} or to_wallet_id = ${walletId})
-        or exists(select 1 from income where wallet_id = ${walletId})
-        or exists(select 1 from expenses where wallet_id = ${walletId})
-        or exists(select 1 from orders where wallet_id = ${walletId})
-        or exists(select 1 from consignment_recaps where wallet_id = ${walletId})
-        as exists
-    `,
-  ]);
-  return checks.some(snap => !snap.empty) || Boolean(row.exists);
+  const [row] = await sql<{ exists: boolean }[]>`
+    select
+      exists(select 1 from capital_entries where wallet_id = ${walletId})
+      or exists(select 1 from wallet_transfers where from_wallet_id = ${walletId} or to_wallet_id = ${walletId})
+      or exists(select 1 from income where wallet_id = ${walletId})
+      or exists(select 1 from expenses where wallet_id = ${walletId})
+      or exists(select 1 from orders where wallet_id = ${walletId})
+      or exists(select 1 from consignment_recaps where wallet_id = ${walletId})
+      or exists(select 1 from material_purchases where wallet_id = ${walletId})
+      as exists
+  `;
+  return Boolean(row.exists);
 }
 
 // Satu-satunya tempat menghitung saldo dompet di server — dipakai untuk validasi Transfer
