@@ -1,4 +1,5 @@
-import { Firestore, Query, Timestamp, Transaction } from 'firebase-admin/firestore';
+import { Firestore, Timestamp, Transaction } from 'firebase-admin/firestore';
+import { getSql } from '@/lib/db';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 
 // "Efektif Sejak" di UI adalah date-picker (hari, bukan jam) — semua perbandingan effectiveFrom
@@ -140,16 +141,29 @@ async function getInvoicedTransactionMap(db: Firestore, tx?: Transaction): Promi
 // sebagai "belum ditagih" dan sama-sama menagihnya (TOCTOU). Dengan `tx`, Firestore otomatis
 // me-retry salah satu begitu invoice pesaingnya lebih dulu commit.
 export async function computeReport(db: Firestore, from: string, to: string, tx?: Transaction): Promise<AdminFeeReport> {
-  const read = <T>(q: Query<T>) => (tx ? tx.get(q) : q.get());
-  const [orderSnap, recapSnap, rateHistories, invoicedMap] = await Promise.all([
-    read(db.collection('orders').where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to))),
-    read(db.collection('consignmentRecaps').where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to))),
+  interface OrderRow { id: string; total: string; source: string; status: string; payment_status: string; created_at: Date; invoice_no: string | null; customer_name: string }
+  interface RecapRow { id: string; total_revenue: string; payment_status: string; created_at: Date; location_name: string }
+  const sql = getSql();
+  const [orderRows, recapRows, rateHistories, invoicedMap] = await Promise.all([
+    // `orders` & `consignment_recaps` pindah ke Postgres (Tahap 12 & 13 migrasi Fase 2 — lihat
+    // plan gleaming-wondering-quokka.md) — dibaca lewat pool biasa (bukan `tx` Firestore), sama
+    // seperti orders sejak Tahap 12; proteksi TOCTOU "belum ditagih" di sini jadi best-effort untuk
+    // kedua sumber ini (aksi manual superadmin, jarang terjadi bersamaan), bukan lagi atomic penuh
+    // seperti versi lama yang seluruhnya Firestore.
+    sql<OrderRow[]>`select id, total, source, status, payment_status, created_at, invoice_no, customer_name from orders where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
+    sql<RecapRow[]>`select id, total_revenue, payment_status, created_at, location_name from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
     getAllRateHistories(db),
     getInvoicedTransactionMap(db, tx),
   ]);
 
-  const orders = orderSnap.docs.map(d => ({ id: d.id, ...(d.data() as OrderDoc) })).filter(isCountedOrder);
-  const recaps = recapSnap.docs.map(d => ({ id: d.id, ...(d.data() as RecapDoc) })).filter(isCountedRecap);
+  const orders = orderRows.map((r): OrderDoc & { id: string } => ({
+    id: r.id, total: Number(r.total), source: r.source, status: r.status, paymentStatus: r.payment_status,
+    createdAt: Timestamp.fromDate(r.created_at), invoiceNo: r.invoice_no ?? undefined, customerName: r.customer_name,
+  })).filter(isCountedOrder);
+  const recaps = recapRows.map((r): RecapDoc & { id: string } => ({
+    id: r.id, totalRevenue: Number(r.total_revenue), paymentStatus: r.payment_status,
+    createdAt: Timestamp.fromDate(r.created_at), locationName: r.location_name,
+  })).filter(isCountedRecap);
   const now = Timestamp.now();
 
   const breakdown: AdminFeeChannelBreakdown[] = ADMIN_FEE_CHANNELS.map(channel => {

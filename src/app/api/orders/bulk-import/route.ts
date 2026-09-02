@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
+import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 
 interface ImportRow {
@@ -9,19 +10,17 @@ interface ImportRow {
   itemsText?: string; subtotal?: number; discount?: number; total: number; status?: string;
 }
 
-const BATCH_LIMIT = 400;
-
-function parseDate(v: string): Timestamp | null {
+function parseDate(v: string): Date | null {
   const trimmed = v.trim();
   if (!trimmed) return null;
   const ddmmyyyy = trimmed.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
   if (ddmmyyyy) {
     const [, d, m, y] = ddmmyyyy;
     const dt = new Date(Number(y), Number(m) - 1, Number(d));
-    if (!isNaN(dt.getTime())) return Timestamp.fromDate(dt);
+    if (!isNaN(dt.getTime())) return dt;
   }
   const dt = new Date(trimmed);
-  return isNaN(dt.getTime()) ? null : Timestamp.fromDate(dt);
+  return isNaN(dt.getTime()) ? null : dt;
 }
 
 export async function POST(req: NextRequest) {
@@ -33,15 +32,14 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
-  const existingSnap = await db.collection('orders').get();
-  const existingInvoices = new Set(
-    existingSnap.docs.map(d => ((d.data().invoiceNo as string) ?? '').trim()).filter(Boolean),
-  );
+  const sql = getSql();
+  // Impor massal tidak menyentuh stok (item hanya teks bebas, tanpa productId) — insert biasa,
+  // tanpa transaksi, sama seperti checkout storefront.
+  const existingRows = await sql<{ invoice_no: string }[]>`select invoice_no from orders where invoice_no is not null`;
+  const existingInvoices = new Set(existingRows.map(r => r.invoice_no.trim()).filter(Boolean));
   const seenInvoices = new Set<string>();
 
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
-  let batch = db.batch();
-  let opsInBatch = 0;
 
   for (let i = 0; i < orders.length; i++) {
     const row = orders[i];
@@ -60,30 +58,22 @@ export async function POST(req: NextRequest) {
     const discountAmount = Number(row.discount) || 0;
     const itemsText = (row.itemsText ?? '').toString().trim();
     const parsedDate = parseDate((row.date ?? '').toString());
+    const items = itemsText ? [{ name: itemsText, weight: '-', qty: 1, price: subtotal, subtotal }] : [];
+    const discount = discountAmount > 0 ? { amount: discountAmount, label: 'Diskon' } : null;
 
-    const ref = db.collection('orders').doc();
-    batch.set(ref, {
-      invoiceNo,
-      date: (row.date ?? '').toString().trim(),
-      customerName,
-      customerPhone: (row.customerPhone ?? '').toString().trim(),
-      items: itemsText ? [{ name: itemsText, weight: '-', qty: 1, price: subtotal, subtotal }] : [],
-      subtotal,
-      discount: discountAmount > 0 ? { amount: discountAmount, label: 'Diskon' } : null,
-      total,
-      status: (row.status ?? '').toString().trim() || 'selesai',
-      createdAt: parsedDate ?? FieldValue.serverTimestamp(),
-    });
+    await sql`
+      insert into orders (
+        id, invoice_no, date, customer_name, customer_phone, items, subtotal, discount, total, status, source, created_at
+      ) values (
+        ${randomUUID()}, ${invoiceNo}, ${(row.date ?? '').toString().trim()},
+        ${customerName}, ${(row.customerPhone ?? '').toString().trim()},
+        ${JSON.stringify(items)}, ${subtotal}, ${discount ? JSON.stringify(discount) : null}, ${total},
+        ${(row.status ?? '').toString().trim() || 'selesai'}, 'kasir',
+        ${parsedDate ?? new Date()}
+      )
+    `;
     created++;
-    opsInBatch++;
-
-    if (opsInBatch >= BATCH_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      opsInBatch = 0;
-    }
   }
-  if (opsInBatch > 0) await batch.commit();
 
   try {
     await logHistory(db, {

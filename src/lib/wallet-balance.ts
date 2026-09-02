@@ -1,4 +1,4 @@
-import type { Firestore, Query, Transaction } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import type postgres from 'postgres';
 import { getSql } from '@/lib/db';
 
@@ -10,10 +10,10 @@ import { getSql } from '@/lib/db';
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type PgClient = postgres.ISql<{}>;
 
-// `capitalEntries`, `walletTransfers`, `income` & `expenses` pindah ke Postgres (Tahap 2-5
-// migrasi, lihat plan gleaming-wondering-quokka.md) — makanya dicek terpisah dari koleksi
-// Firestore lain di bawah.
-const WALLET_ID_COLLECTIONS = ['materialPurchases', 'orders', 'consignmentRecaps'];
+// `capitalEntries`, `walletTransfers`, `income`, `expenses`, `orders` & `consignmentRecaps` pindah
+// ke Postgres (Tahap 2-5, 12 & 13 migrasi, lihat plan gleaming-wondering-quokka.md) —
+// `materialPurchases` satu-satunya yang masih Firestore di sini.
+const WALLET_ID_COLLECTIONS = ['materialPurchases'];
 
 // Dipakai oleh DELETE satuan dan bulk-delete dompet — dompet dengan riwayat transaksi (termasuk
 // jadi asal/tujuan transfer) tidak boleh dihapus permanen, harus dinonaktifkan saja, supaya
@@ -28,6 +28,8 @@ export async function walletHasReferences(db: Firestore, walletId: string): Prom
         or exists(select 1 from wallet_transfers where from_wallet_id = ${walletId} or to_wallet_id = ${walletId})
         or exists(select 1 from income where wallet_id = ${walletId})
         or exists(select 1 from expenses where wallet_id = ${walletId})
+        or exists(select 1 from orders where wallet_id = ${walletId})
+        or exists(select 1 from consignment_recaps where wallet_id = ${walletId})
         as exists
     `,
   ]);
@@ -35,21 +37,16 @@ export async function walletHasReferences(db: Firestore, walletId: string): Prom
 }
 
 // Satu-satunya tempat menghitung saldo dompet di server — dipakai untuk validasi Transfer
-// Antar Dompet (supaya tidak bisa transfer melebihi saldo yang benar-benar ada). Sengaja hanya
-// query `where('walletId', '==', ...)` (single-field, otomatis ter-index Firestore) lalu filter
-// status/tipe di JS, supaya tidak perlu index komposit tambahan — sama seperti pola agregasi
-// client-side yang sudah dipakai WalletsTab.tsx & FinanceReportTab.tsx.
+// Antar Dompet (supaya tidak bisa transfer melebihi saldo yang benar-benar ada).
 //
-// `tx`: bila diberikan, query Firestore (income/expenses/orders/consignmentRecaps — yang belum
-// pindah ke Postgres) dibaca lewat `tx.get()` alih-alih `.get()` biasa, supaya pemanggil bisa
-// membungkus pengecekan saldo + penulisan dalam SATU transaksi Firestore.
+// `pgTx`: bila diberikan (dari `sql.begin(...)` di caller), seluruh query dijalankan di dalam
+// transaksi Postgres itu alih-alih koneksi pool biasa — dipakai wallet-transfers route untuk
+// mengunci baris (`pg_advisory_xact_lock`) supaya dua transfer keluar yang tiba bersamaan dari
+// dompet yang sama tidak lolos validasi berdasarkan saldo yang sama (TOCTOU).
 //
-// `pgTx`: bila diberikan (dari `sql.begin(...)` di caller), query capital_entries/wallet_transfers
-// dijalankan di dalam transaksi Postgres itu alih-alih koneksi pool biasa — dipakai wallet-transfers
-// route untuk mengunci baris (`pg_advisory_xact_lock`) supaya dua transfer keluar yang tiba
-// bersamaan dari dompet yang sama tidak lolos validasi berdasarkan saldo yang sama (TOCTOU).
-// Tanpa `pgTx`, baca capital/transfer ini best-effort di luar transaksi manapun — trade-off yang
-// diterima untuk kombinasi data yang masih tersebar Firestore+Postgres selama migrasi bertahap.
+// `tx`/`db` (Firestore) dipertahankan di signature untuk kompatibilitas pemanggil lama, tapi
+// sejak Tahap 13 tidak lagi dipakai untuk membaca apa pun di sini — semua sumber saldo
+// (capital/transfer/income/expenses/orders/consignmentRecaps) sudah di Postgres.
 export async function computeWalletBalance(
   db: Firestore,
   walletId: string,
@@ -58,34 +55,26 @@ export async function computeWalletBalance(
   tx?: Transaction,
   pgTx?: PgClient,
 ): Promise<number> {
-  const read = <T>(q: Query<T>) => (tx ? tx.get(q) : q.get());
+  void tx;
   const sql = pgTx ?? getSql();
-  const [[pgTotals], ordersSnap, recapsSnap] = await Promise.all([
-    sql<{ total_modal: string; total_prive: string; total_in: string; total_out: string; total_income: string; total_expenses: string }[]>`
-      select
-        coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal'), 0) as total_modal,
-        coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive'), 0) as total_prive,
-        coalesce((select sum(amount) from wallet_transfers where to_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_in,
-        coalesce((select sum(amount) from wallet_transfers where from_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_out,
-        coalesce((select sum(amount) from income where wallet_id = ${walletId}), 0) as total_income,
-        coalesce((select sum(amount) from expenses where wallet_id = ${walletId}), 0) as total_expenses
-    `,
-    read(db.collection('orders').where('walletId', '==', walletId)),
-    read(db.collection('consignmentRecaps').where('walletId', '==', walletId)),
-  ]);
+  const [pgTotals] = await sql<{ total_modal: string; total_prive: string; total_in: string; total_out: string; total_income: string; total_expenses: string; total_orders: string; total_recaps: string }[]>`
+    select
+      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal'), 0) as total_modal,
+      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive'), 0) as total_prive,
+      coalesce((select sum(amount) from wallet_transfers where to_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_in,
+      coalesce((select sum(amount) from wallet_transfers where from_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_out,
+      coalesce((select sum(amount) from income where wallet_id = ${walletId}), 0) as total_income,
+      coalesce((select sum(amount) from expenses where wallet_id = ${walletId}), 0) as total_expenses,
+      coalesce((select sum(total) from orders where wallet_id = ${walletId} and status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'), 0) as total_orders,
+      coalesce((select sum(total_revenue) from consignment_recaps where wallet_id = ${walletId} and payment_status != 'belum_lunas'), 0) as total_recaps
+  `;
 
   const totalIncome = Number(pgTotals.total_income) || 0;
   const totalExpenses = Number(pgTotals.total_expenses) || 0;
   const totalModal = Number(pgTotals.total_modal) || 0;
   const totalPrive = Number(pgTotals.total_prive) || 0;
-  const totalOrders = ordersSnap.docs
-    .map(d => d.data())
-    .filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan')
-    .reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const totalRecaps = recapsSnap.docs
-    .map(d => d.data())
-    .filter(r => r.paymentStatus !== 'belum_lunas')
-    .reduce((s, r) => s + (Number(r.totalRevenue) || 0), 0);
+  const totalOrders = Number(pgTotals.total_orders) || 0;
+  const totalRecaps = Number(pgTotals.total_recaps) || 0;
   const totalTransfersIn = Number(pgTotals.total_in) || 0;
   const totalTransfersOut = Number(pgTotals.total_out) || 0;
 

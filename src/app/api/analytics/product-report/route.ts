@@ -1,9 +1,8 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
-import { Timestamp } from 'firebase-admin/firestore';
 
 interface OrderItemDoc { productId?: string; name?: string; qty: number; price?: number; subtotal?: number }
 interface OrderDoc {
@@ -38,23 +37,31 @@ function eachDay(from: string, to: string): string[] {
 // query Firestore fresh tiap kali (endpoint ini dulu tidak di-cache sama sekali).
 const getRawProductReport = unstable_cache(
   async (from: string, to: string) => {
-    const db = getDb();
-    const [orderSnap, recapSnap] = await Promise.all([
-      db.collection('orders')
-        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-      db.collection('consignmentRecaps')
-        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+    const sql = getSql();
+    const [orderRows, recapRows] = await Promise.all([
+      // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
+      sql<{ source: string; status: string; payment_status: string; items: unknown; subtotal: string; total: string; created_at: Date }[]>`
+        select source, status, payment_status, items, subtotal, total, created_at from orders
+        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      `,
+      // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
+      sql<{ payment_status: string; items: unknown; created_at: Date }[]>`
+        select payment_status, items, created_at from consignment_recaps
+        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      `,
     ]);
-    const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
     return {
-      orders: orderSnap.docs.map(d => {
-        const data = d.data();
-        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as OrderDoc;
-      }),
-      recaps: recapSnap.docs.map(d => {
-        const data = d.data();
-        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
-      }),
+      orders: orderRows.map((r): OrderDoc => ({
+        source: r.source as 'kasir' | 'portal', status: r.status, paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+        items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
+        subtotal: Number(r.subtotal), total: Number(r.total),
+        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+      })),
+      recaps: recapRows.map((r): RecapDoc => ({
+        paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+        items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
+        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+      })),
     };
   },
   ['admin-analytics-product-report'],

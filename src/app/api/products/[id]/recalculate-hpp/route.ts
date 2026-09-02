@@ -1,12 +1,10 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
-
-const BATCH_LIMIT = 450; // di bawah limit 500 op/batch Firestore
 
 // Timpa HPP (costPrice) yang SUDAH tersimpan di semua order & rekap konsinyasi lama yang
 // mengandung produk ini dengan Harga Modal terkini — dipakai saat HPP lama diketahui salah input
@@ -27,44 +25,32 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const costPrice = productRow.cost_price != null ? Number(productRow.cost_price) : 0;
   const productName = productRow.name ?? '';
 
-  const [ordersSnap, recapsSnap] = await Promise.all([
-    db.collection('orders').get(),
-    db.collection('consignmentRecaps').get(),
+  // `orders` & `consignment_recaps` sudah di Postgres (Tahap 12 & 13 migrasi Fase 2 — lihat plan
+  // gleaming-wondering-quokka.md) — jumlah baris masih kecil, jadi cukup scan semua & filter di JS,
+  // sama seperti pola lama.
+  const [orderRows, recapRows] = await Promise.all([
+    sql<{ id: string; items: unknown }[]>`select id, items from orders`,
+    sql<{ id: string; items: unknown }[]>`select id, items from consignment_recaps`,
   ]);
 
   let updatedOrders = 0;
   let updatedRecaps = 0;
-  let batch = db.batch();
-  let opsInBatch = 0;
-  const commits: Promise<unknown>[] = [];
-  const queueUpdate = (ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) => {
-    batch.update(ref, data);
-    opsInBatch++;
-    if (opsInBatch >= BATCH_LIMIT) {
-      commits.push(batch.commit());
-      batch = db.batch();
-      opsInBatch = 0;
-    }
-  };
 
-  for (const doc of ordersSnap.docs) {
-    const items = doc.data().items as { productId?: string; costPrice?: number }[] | undefined;
+  for (const row of orderRows) {
+    const items = parseJsonb(row.items) as { productId?: string; costPrice?: number }[] | null;
     if (!items?.some(it => it.productId === id)) continue;
     const newItems = items.map(it => (it.productId === id ? { ...it, costPrice } : it));
-    queueUpdate(doc.ref, { items: newItems });
+    await sql`update orders set items = ${JSON.stringify(newItems)}, updated_at = now() where id = ${row.id}`;
     updatedOrders++;
   }
 
-  for (const doc of recapsSnap.docs) {
-    const items = doc.data().items as { productId?: string; costPrice?: number; qtySold?: number }[] | undefined;
+  for (const row of recapRows) {
+    const items = parseJsonb(row.items) as { productId?: string; costPrice?: number; qtySold?: number }[] | null;
     if (!items?.some(it => it.productId === id)) continue;
     const newItems = items.map(it => (it.productId === id ? { ...it, costPrice, cogs: (it.qtySold ?? 0) * costPrice } : it));
-    queueUpdate(doc.ref, { items: newItems });
+    await sql`update consignment_recaps set items = ${JSON.stringify(newItems)}, updated_at = now() where id = ${row.id}`;
     updatedRecaps++;
   }
-
-  if (opsInBatch > 0) commits.push(batch.commit());
-  await Promise.all(commits);
 
   await logHistory(db, {
     entity: 'products',

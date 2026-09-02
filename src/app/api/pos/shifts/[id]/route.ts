@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
@@ -19,11 +20,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const shift = snap.data()!;
   if (shift.status !== 'open') return Response.json({ error: 'Sesi kasir sudah ditutup.' }, { status: 409 });
 
-  const ordersSnap = await db.collection('orders').where('shiftId', '==', id).get();
-  const cashSalesTotal = ordersSnap.docs
-    .map(d => d.data())
-    .filter(o => o.paymentMethod === 'cash')
-    .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
+  const sql = getSql();
+  const [{ total }] = await sql<{ total: string }[]>`
+    select coalesce(sum(total), 0) as total from orders where shift_id = ${id} and payment_method = 'cash'
+  `;
+  const cashSalesTotal = Number(total) || 0;
 
   const openingBalance = Number(shift.openingBalance) || 0;
   const expectedBalance = openingBalance + cashSalesTotal;

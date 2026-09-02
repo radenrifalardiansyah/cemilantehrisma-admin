@@ -2,10 +2,10 @@ import { NextRequest, after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { writeHistoryEntry, logHistory } from '@/lib/history';
+import { logHistory } from '@/lib/history';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
+import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number }
@@ -19,65 +19,41 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json().catch(() => ({})) as { walletId?: string | null };
   const db = getDb();
-  const recapRef = db.collection('consignmentRecaps').doc(id);
-  const beforeSnap = await recapRef.get();
-  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
-  const payload = {
-    paymentStatus: 'lunas',
-    walletId: data.walletId ?? null,
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  await recapRef.update(payload);
+  const sql = getSql();
+  const [before] = await sql<RecapRow[]>`select * from consignment_recaps where id = ${id}`;
+  await sql`update consignment_recaps set payment_status = 'lunas', wallet_id = ${data.walletId ?? null}, updated_at = now() where id = ${id}`;
   try {
     await logHistory(db, {
       entity: 'consignment',
       entityCollection: 'consignmentRecaps',
       entityId: id,
-      entityLabel: (before?.locationName as string | undefined) || id,
+      entityLabel: before?.location_name || id,
       action: 'update',
       actor: guard,
-      before,
-      after: { ...before, ...payload },
+      before: before ? rowToRecap(before) : null,
+      after: before ? { ...rowToRecap(before), paymentStatus: 'lunas', walletId: data.walletId ?? null } : null,
     });
   } catch {}
   return Response.json({ ok: true });
 }
 
-interface FullSnapshot { table: 'products' | 'consignment_stock' | 'warehouse_stock'; key: string; oldValues: Record<string, unknown> }
-
-async function compensateFullSnapshots(sql: ReturnType<typeof getSql>, snapshots: FullSnapshot[]) {
-  await sql.begin(async pgTx => {
-    for (const s of snapshots) {
-      if (s.table === 'products') {
-        await pgTx`update products set stock_qty = ${s.oldValues.stockQty as number}, stock = ${s.oldValues.stock as string}, updated_at = now() where id = ${s.key}`;
-      } else if (s.table === 'consignment_stock') {
-        await pgTx`update consignment_stock set stock_qty = ${s.oldValues.stockQty as number}, updated_at = now() where id = ${s.key}`;
-      } else {
-        await pgTx`update warehouse_stock set stock_qty = ${s.oldValues.stockQty as number}, updated_at = now() where id = ${s.key}`;
-      }
-    }
-  });
-}
-
 // Hapus riwayat rekap — mengembalikan stok titip di lokasi, dan membalik stok gudang/produk
 // yang sudah ditambah dari retur. Ditolak jika stok retur tersebut sudah terpakai lebih lanjut.
+// Stok DAN dokumen rekap sekarang sama-sama di Postgres (Tahap 13) — satu transaksi sudah cukup.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const sql = getSql();
-  const recapRef = db.collection('consignmentRecaps').doc(id);
 
-  const recapSnap = await recapRef.get();
-  if (!recapSnap.exists) return Response.json({ error: 'Riwayat rekap tidak ditemukan.' }, { status: 404 });
-  const recapFull = recapSnap.data();
-  const recap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
-  const items = recap.items ?? [];
+  const [recapRow] = await sql<RecapRow[]>`select * from consignment_recaps where id = ${id}`;
+  if (!recapRow) return Response.json({ error: 'Riwayat rekap tidak ditemukan.' }, { status: 404 });
+  const recap = rowToRecap(recapRow);
+  const items = recap.items as RecapItem[];
   const returItems = items.filter(it => it.qtyRetur > 0);
   const stockTouched = returItems.length > 0;
 
-  const snapshots: FullSnapshot[] = [];
   try {
     await sql.begin(async pgTx => {
       const stockKeys = items.map(it => `${recap.locationId}_${it.productId}`);
@@ -109,7 +85,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         const row = stockById.get(key);
         const restore = it.qtySold + it.qtyRetur + it.qtyReject;
         const oldQty = row ? Number(row.stock_qty) || 0 : 0;
-        snapshots.push({ table: 'consignment_stock', key, oldValues: { stockQty: oldQty } });
         await pgTx`
           insert into consignment_stock (id, location_id, product_id, product_name, stock_qty, harga_titip, updated_at)
           values (${key}, ${recap.locationId}, ${it.productId}, ${it.productName}, ${oldQty + restore}, ${it.hargaTitip ?? 0}, now())
@@ -121,7 +96,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         const productRow = productById.get(productIds[i]);
         if (productRow) {
           const oldQty = Number(productRow.stock_qty) || 0;
-          snapshots.push({ table: 'products', key: it.productId, oldValues: { stockQty: oldQty, stock: stockLabel(productRow.open_po, oldQty) } });
           const newQty = oldQty - it.qtyRetur;
           await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(productRow.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
         }
@@ -129,33 +103,28 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         const wsRow = wsById.get(wsKey);
         if (wsRow) {
           const oldQty = Number(wsRow.stock_qty) || 0;
-          snapshots.push({ table: 'warehouse_stock', key: wsKey, oldValues: { stockQty: oldQty } });
           await pgTx`update warehouse_stock set stock_qty = ${oldQty - it.qtyRetur}, updated_at = now() where id = ${wsKey}`;
         }
       }
+
+      await pgTx`delete from consignment_recaps where id = ${id}`;
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
   }
 
   try {
-    await db.runTransaction(async tx => {
-      const freshSnap = await tx.get(recapRef);
-      tx.delete(recapRef);
-      writeHistoryEntry(tx, db, {
-        entity: 'consignment',
-        entityCollection: 'consignmentRecaps',
-        entityId: id,
-        entityLabel: (recapFull?.locationName as string | undefined) || id,
-        action: 'delete',
-        actor: guard,
-        before: freshSnap.exists ? freshSnap.data() ?? null : (recapFull ?? null),
-      });
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentRecaps',
+      entityId: id,
+      entityLabel: recap.locationName || id,
+      action: 'delete',
+      actor: guard,
+      before: recap,
     });
   } catch (err) {
-    try { await compensateFullSnapshots(sql, snapshots); }
-    catch (compErr) { console.error('CRITICAL: gagal kompensasi stok setelah hapus rekap konsinyasi gagal tersimpan', compErr); }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
+    console.error('Failed to write history for consignment recap delete', err);
   }
 
   if (stockTouched) after(() => revalidateStorefront('products'));
@@ -188,13 +157,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const db = getDb();
   const sql = getSql();
-  const recapRef = db.collection('consignmentRecaps').doc(id);
 
-  const recapSnap = await recapRef.get();
-  if (!recapSnap.exists) return Response.json({ error: 'Riwayat rekap tidak ditemukan.' }, { status: 404 });
-  const oldRecapFull = recapSnap.data();
-  const oldRecap = recapSnap.data()! as { locationId: string; warehouseId?: string; items: RecapItem[] };
-  const oldItems = oldRecap.items ?? [];
+  const [oldRecapRowPeek] = await sql<RecapRow[]>`select * from consignment_recaps where id = ${id}`;
+  if (!oldRecapRowPeek) return Response.json({ error: 'Riwayat rekap tidak ditemukan.' }, { status: 404 });
+  const oldRecap = rowToRecap(oldRecapRowPeek);
+  const oldItems = oldRecap.items as RecapItem[];
   const oldReturItems = oldItems.filter(it => it.qtyRetur > 0);
   const newReturItems = newItems.filter(it => it.qtyRetur > 0);
 
@@ -226,10 +193,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   interface RecapItemComputed extends RecapItemInput { hargaTitip: number; revenue: number }
   let recapItems: RecapItemComputed[] = [];
   let totalSold = 0, totalRetur = 0, totalReject = 0, totalRevenue = 0;
-  const snapshots: FullSnapshot[] = [];
 
   try {
     await sql.begin(async pgTx => {
+      // Kunci baris rekap ini SEBELUM baca ulang state produk/stok — cegah dua edit bersamaan
+      // pada rekap yang sama saling menimpa.
+      await pgTx`select id from consignment_recaps where id = ${id} for update`;
+
       const [productRows, stockRows, wsRows] = await Promise.all([
         productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
         stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
@@ -251,14 +221,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const row = wsById.get(k);
         return [k, { stockQty: row ? Number(row.stock_qty) || 0 : 0 }];
       }));
-
-      // Snapshot sebelum diubah — untuk kompensasi kalau langkah Firestore setelahnya gagal.
-      productIds.forEach(pid => {
-        const st = productState.get(pid)!;
-        snapshots.push({ table: 'products', key: pid, oldValues: { stockQty: st.stockQty, stock: stockLabel(st.openPO, st.stockQty) } });
-      });
-      stockKeys.forEach(k => snapshots.push({ table: 'consignment_stock', key: k, oldValues: { stockQty: stockState.get(k)!.stockQty } }));
-      wsKeys.forEach(k => snapshots.push({ table: 'warehouse_stock', key: k, oldValues: { stockQty: wsState.get(k)!.stockQty } }));
 
       // 1) Balik efek rekap lama
       oldItems.forEach(it => {
@@ -351,42 +313,38 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           type: 'reject', qty: it.qtyReject ?? 0, note: `Reject konsinyasi (diedit) – ${data.locationName}${data.note ? `: ${data.note}` : ''}`,
         });
       }
+
+      // overdue_notified_at direset — biar bisa dinotifikasi ulang kalau dueDate/status berubah.
+      await pgTx`
+        update consignment_recaps set
+          location_id = ${data.locationId}, location_name = ${data.locationName},
+          items = ${JSON.stringify(recapItems)}, total_sold = ${totalSold}, total_retur = ${totalRetur},
+          total_reject = ${totalReject}, total_revenue = ${totalRevenue}, payment_status = ${paymentStatus},
+          warehouse_id = ${data.warehouseId ?? null}, warehouse_name = ${data.warehouseName ?? null},
+          note = ${data.note ?? null}, wallet_id = ${data.walletId ?? null},
+          created_at = ${data.date ? new Date(data.date) : oldRecapRowPeek.created_at},
+          due_date = ${data.dueDate ? new Date(data.dueDate) : null},
+          overdue_notified_at = null, updated_at = now()
+        where id = ${id}
+      `;
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah rekap.' }, { status: 400 });
   }
 
   try {
-    await db.runTransaction(async tx => {
-      const updatePayload = {
-        locationId: data.locationId, locationName: data.locationName,
-        items: recapItems, totalSold, totalRetur, totalReject, totalRevenue,
-        paymentStatus,
-        warehouseId: data.warehouseId ?? '', warehouseName: data.warehouseName ?? '',
-        note: data.note ?? '',
-        walletId: data.walletId ?? null,
-        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
-        dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate)) : null,
-        overdueNotifiedAt: null, // reset flag idempoten — biar bisa dinotifikasi ulang kalau dueDate/status berubah
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      tx.update(recapRef, updatePayload);
-
-      writeHistoryEntry(tx, db, {
-        entity: 'consignment',
-        entityCollection: 'consignmentRecaps',
-        entityId: id,
-        entityLabel: `${data.locationName ?? oldRecapFull?.locationName ?? id}${data.date ? ` - ${data.date}` : ''}`,
-        action: 'update',
-        actor: guard,
-        before: oldRecapFull ?? null,
-        after: { ...oldRecapFull, ...updatePayload },
-      });
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentRecaps',
+      entityId: id,
+      entityLabel: `${data.locationName ?? oldRecap.locationName ?? id}${data.date ? ` - ${data.date}` : ''}`,
+      action: 'update',
+      actor: guard,
+      before: oldRecap,
+      after: { ...oldRecap, locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, paymentStatus },
     });
   } catch (err) {
-    try { await compensateFullSnapshots(sql, snapshots); }
-    catch (compErr) { console.error('CRITICAL: gagal kompensasi stok setelah edit rekap konsinyasi gagal tersimpan', compErr); }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah rekap.' }, { status: 400 });
+    console.error('Failed to write history for consignment recap update', err);
   }
 
   if (stockTouched) after(() => revalidateStorefront('products'));

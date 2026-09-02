@@ -1,10 +1,9 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
-import { Timestamp } from 'firebase-admin/firestore';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 
 interface OrderDoc {
@@ -34,11 +33,17 @@ const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
     const sql = getSql();
-    const [orderSnap, recapSnap, incomeRows, expenseRows, materialSnap, productRows] = await Promise.all([
-      db.collection('orders')
-        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-      db.collection('consignmentRecaps')
-        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+    const [orderRows, recapRows, incomeRows, expenseRows, materialSnap, productRows] = await Promise.all([
+      // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
+      sql<{ total: string; source: string; status: string; payment_status: string; created_at: Date; items: unknown }[]>`
+        select total, source, status, payment_status, created_at, items from orders
+        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      `,
+      // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
+      sql<{ total_revenue: string; payment_status: string; created_at: Date; items: unknown }[]>`
+        select total_revenue, payment_status, created_at, items from consignment_recaps
+        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      `,
       // income pindah ke Postgres (Tahap 4 migrasi)
       sql<{ category: string | null; amount: string; date: string }[]>`
         select category, amount, date from income where date >= ${from} and date <= ${to}
@@ -51,17 +56,18 @@ const getRawAnalytics = unstable_cache(
       sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
     ]);
 
-    const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
-
     return {
-      orders: orderSnap.docs.map(d => {
-        const data = d.data();
-        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as OrderDoc;
-      }),
-      recaps: recapSnap.docs.map(d => {
-        const data = d.data();
-        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
-      }),
+      orders: orderRows.map((r): OrderDoc => ({
+        total: Number(r.total), source: r.source as 'kasir' | 'portal', status: r.status,
+        paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+        items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
+      })),
+      recaps: recapRows.map((r): RecapDoc => ({
+        totalRevenue: Number(r.total_revenue), paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+        items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
+      })),
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
       expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined }) as ExpenseDoc),
       materials: materialSnap.docs.map(d => ({ id: d.id, ...d.data() }) as MaterialDoc),
@@ -72,39 +78,29 @@ const getRawAnalytics = unstable_cache(
   { revalidate: 180 }
 );
 
-interface OrderCashDoc { total?: number; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas' }
-interface RecapCashDoc { totalRevenue?: number; paymentStatus?: 'lunas' | 'belum_lunas' }
-
 // Saldo kas riil sejak awal pencatatan — independen dari filter periode di atas, sama seperti
 // "Saldo Kas Saat Ini" di FinanceReportTab. Query terpisah (bukan ikut getRawAnalytics) karena
 // tidak butuh direfetch tiap ganti periode dashboard, cukup di-cache sendiri.
 //
-// Ini satu-satunya query di app yang scan SELURUH riwayat orders/recaps/income/expenses/capital
-// tanpa batas tanggal — biayanya membesar seiring bertambahnya data dari bulan ke bulan, beda
-// dari getRawAnalytics di atas yang dibatasi rentang from/to. 10 menit (bukan 60 detik) karena
-// ini angka ringkasan dashboard, bukan penghitung real-time — akurasinya tetap 100% sama persis,
-// cuma dihitung ulang lebih jarang.
+// Semua sumber (capitalEntries, income, expenses, orders & consignment_recaps — Tahap 2, 4, 5,
+// 12 & 13 migrasi) sudah di Postgres, diagregat langsung di SQL. Tetap di-cache 10 menit (bukan
+// dihitung tiap request) karena ini scan SELURUH riwayat tanpa batas tanggal, biayanya membesar
+// seiring bertambahnya data — angka ringkasan dashboard, bukan penghitung real-time.
 const getAllTimeCash = unstable_cache(
   async () => {
-    const db = getDb();
     const sql = getSql();
-    const [orderSnap, recapSnap, [totals]] = await Promise.all([
-      db.collection('orders').get(),
-      db.collection('consignmentRecaps').get(),
-      // capitalEntries, income & expenses pindah ke Postgres (Tahap 2, 4 & 5 migrasi) — agregat
-      // langsung di SQL, bukan tarik semua baris lalu jumlah di JS seperti koleksi Firestore
-      // lainnya di atas.
-      sql<{ total_modal: string; total_prive: string; total_income: string; total_expenses: string }[]>`
-        select
-          coalesce((select sum(amount) filter (where type = 'modal') from capital_entries), 0) as total_modal,
-          coalesce((select sum(amount) filter (where type = 'prive') from capital_entries), 0) as total_prive,
-          coalesce((select sum(amount) from income), 0) as total_income,
-          coalesce((select sum(amount) from expenses), 0) as total_expenses
-      `,
-    ]);
+    const [totals] = await sql<{ total_modal: string; total_prive: string; total_income: string; total_expenses: string; total_orders: string; total_recaps: string }[]>`
+      select
+        coalesce((select sum(amount) filter (where type = 'modal') from capital_entries), 0) as total_modal,
+        coalesce((select sum(amount) filter (where type = 'prive') from capital_entries), 0) as total_prive,
+        coalesce((select sum(amount) from income), 0) as total_income,
+        coalesce((select sum(amount) from expenses), 0) as total_expenses,
+        coalesce((select sum(total) from orders where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'), 0) as total_orders,
+        coalesce((select sum(total_revenue) from consignment_recaps where payment_status != 'belum_lunas'), 0) as total_recaps
+    `;
     return {
-      orders: orderSnap.docs.map(d => d.data() as OrderCashDoc),
-      recaps: recapSnap.docs.map(d => d.data() as RecapCashDoc),
+      totalOrdersRevenue: Number(totals.total_orders) || 0,
+      totalRecapsRevenue: Number(totals.total_recaps) || 0,
       totalIncome: Number(totals.total_income) || 0,
       totalExpenses: Number(totals.total_expenses) || 0,
       capital: { totalModal: Number(totals.total_modal) || 0, totalPrive: Number(totals.total_prive) || 0 },
@@ -169,11 +165,9 @@ export async function GET(req: NextRequest) {
   // ── Saldo kas — snapshot sejak awal pencatatan (bukan per-periode), sama rumusnya dengan
   // loadAllTimeSaldo di FinanceReportTab ──
   const allTime = await getAllTimeCash();
-  const allTimeCountedOrders = allTime.orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
-  const allTimeCountedRecaps = allTime.recaps.filter(r => r.paymentStatus !== 'belum_lunas');
   const allTimeTxSaldo =
-    allTimeCountedOrders.reduce((s, o) => s + (o.total ?? 0), 0) +
-    allTimeCountedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0) +
+    allTime.totalOrdersRevenue +
+    allTime.totalRecapsRevenue +
     allTime.totalIncome +
     allTime.capital.totalModal -
     allTime.totalExpenses -

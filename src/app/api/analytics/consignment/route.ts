@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -30,12 +30,16 @@ const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
     const sql = getSql();
-    const [locSnap, shipSnap, recapSnap, stockRows] = await Promise.all([
+    const [locSnap, shipSnap, recapRows, stockRows] = await Promise.all([
       db.collection('consignmentLocations').get(),
       db.collection('consignmentShipments')
         .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
-      db.collection('consignmentRecaps')
-        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+      // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
+      sql<{ location_id: string; location_name: string; payment_status: string; created_at: Date; total_sold: string; total_retur: string; total_reject: string; total_revenue: string; items: unknown }[]>`
+        select location_id, location_name, payment_status, created_at, total_sold, total_retur, total_reject, total_revenue, items
+        from consignment_recaps
+        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      `,
       sql<{ location_id: string | null; product_id: string | null; stock_qty: string; harga_titip: string | null }[]>`
         select location_id, product_id, stock_qty, harga_titip from consignment_stock
       `,
@@ -49,10 +53,14 @@ const getRawConsignmentAnalytics = unstable_cache(
         const data = d.data();
         return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as ShipmentDoc;
       }),
-      recaps: recapSnap.docs.map(d => {
-        const data = d.data();
-        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as RecapDoc;
-      }),
+      recaps: recapRows.map((r): RecapDoc => ({
+        locationId: r.location_id, locationName: r.location_name,
+        paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+        totalSold: Number(r.total_sold), totalRetur: Number(r.total_retur),
+        totalReject: Number(r.total_reject), totalRevenue: Number(r.total_revenue),
+        items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
+      })),
       stock: stockRows.map(r => ({
         locationId: r.location_id ?? undefined, productId: r.product_id ?? undefined,
         stockQty: Number(r.stock_qty) || 0, hargaTitip: r.harga_titip != null ? Number(r.harga_titip) : 0,
