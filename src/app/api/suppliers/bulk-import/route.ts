@@ -1,11 +1,10 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+import { nextSupplierCode } from '@/lib/suppliers-pg';
 
 interface ImportRow { name: string; phone?: string; address?: string; note?: string }
-
-const BATCH_LIMIT = 400;
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'suppliers', 'create');
@@ -15,16 +14,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Tidak ada data supplier untuk diimpor.' }, { status: 400 });
   }
 
-  const db = getDb();
-  const existingSnap = await db.collection('suppliers').get();
-  const existingPhones = new Set(
-    existingSnap.docs.map(d => ((d.data().phone as string) ?? '').trim()).filter(Boolean),
-  );
+  const sql = getSql();
+  const existingRows = await sql<{ phone: string; code: string | null }[]>`select phone, code from suppliers`;
+  const existingPhones = new Set(existingRows.map(r => (r.phone ?? '').trim()).filter(Boolean));
   const seenPhones = new Set<string>();
+  const codePool = existingRows.map(r => r.code ?? '').filter(Boolean);
 
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
-  let batch = db.batch();
-  let opsInBatch = 0;
 
   for (const row of suppliers) {
     const name  = (row.name  ?? '').toString().trim();
@@ -33,24 +29,19 @@ export async function POST(req: NextRequest) {
     if (phone && (existingPhones.has(phone) || seenPhones.has(phone))) { skippedDuplicate++; continue; }
 
     if (phone) seenPhones.add(phone);
-    const ref = db.collection('suppliers').doc();
-    batch.set(ref, {
-      name, phone,
-      address: (row.address ?? '').toString().trim(),
-      note:    (row.note    ?? '').toString().trim(),
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    created++;
-    opsInBatch++;
-
-    if (opsInBatch >= BATCH_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      opsInBatch = 0;
+    const code = nextSupplierCode(codePool);
+    codePool.push(code);
+    try {
+      await sql`
+        insert into suppliers (id, code, name, phone, address, note, created_at, updated_at)
+        values (${randomUUID()}, ${code}, ${name}, ${phone}, ${(row.address ?? '').toString().trim()}, ${(row.note ?? '').toString().trim()}, now(), now())
+      `;
+      created++;
+    } catch (err) {
+      console.error('Bulk import supplier: gagal menyimpan baris', name, err);
+      skippedInvalid++;
     }
   }
-  if (opsInBatch > 0) await batch.commit();
 
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

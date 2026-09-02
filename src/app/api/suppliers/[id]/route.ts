@@ -1,8 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,13 +9,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as Record<string, unknown>;
-  await getDb().collection('suppliers').doc(id).update({
-    name: data.name,
-    phone: data.phone ?? '',
-    address: data.address ?? '',
-    note: data.note ?? '',
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  const sql = getSql();
+  await sql`
+    update suppliers set name = ${data.name as string}, phone = ${(data.phone as string) ?? ''},
+      address = ${(data.address as string) ?? ''}, note = ${(data.note as string) ?? ''}, updated_at = now()
+    where id = ${id}
+  `;
   return Response.json({ ok: true });
 }
 
@@ -25,12 +22,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'suppliers', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const db = getDb();
+  const sql = getSql();
 
   // Tolak kalau supplier ini masih punya riwayat pembelian bahan baku — kalau dibolehkan,
   // material_purchases.supplier_id jadi menunjuk ke baris yang sudah tidak ada.
-  // (material_purchases pindah ke Postgres, Tahap 18b migrasi Fase 2.)
-  const sql = getSql();
   const [{ exists }] = await sql<{ exists: boolean }[]>`select exists(select 1 from material_purchases where supplier_id = ${id}) as exists`;
   if (exists) {
     return Response.json(
@@ -39,6 +34,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     );
   }
 
-  await db.collection('suppliers').doc(id).delete();
+  await sql`delete from suppliers where id = ${id}`;
   return Response.json({ ok: true });
 }

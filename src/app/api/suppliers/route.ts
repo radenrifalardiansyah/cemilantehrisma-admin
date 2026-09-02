@@ -1,49 +1,36 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
-
-const SUPPLIER_CODE_PREFIX = 'SUP';
+import { rowToSupplier, nextSupplierCode, type SupplierRow } from '@/lib/suppliers-pg';
 
 // Opened whenever the Supplier tab is opened, not on every session — plain TTL (no
 // invalidation tag) is enough here, same tradeoff as getAllUsernames/modules-and-menus.
+// (Tahap 20 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
 const getCachedSuppliers = unstable_cache(
   async () => {
-    const db = getDb();
-    const snap = await db.collection('suppliers').orderBy('createdAt', 'asc').get();
-    const suppliers: Record<string, unknown>[] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sql = getSql();
+    const rows = await sql<SupplierRow[]>`select * from suppliers order by created_at asc`;
 
+    // Backfill kode utk baris lama (mis. hasil impor Firestore) yang belum punya `code`.
     let maxCode = 0;
-    for (const s of suppliers) {
-      const m = new RegExp(`^${SUPPLIER_CODE_PREFIX}(\\d+)$`, 'i').exec(typeof s.code === 'string' ? s.code.trim() : '');
+    for (const r of rows) {
+      const m = /^SUP(\d+)$/i.exec((r.code ?? '').trim());
       if (m) maxCode = Math.max(maxCode, parseInt(m[1], 10));
     }
-    const missing = suppliers.filter(s => !(typeof s.code === 'string' && s.code.trim()));
-    if (missing.length > 0) {
-      const batch = db.batch();
-      for (const s of missing) {
-        maxCode += 1;
-        const code = `${SUPPLIER_CODE_PREFIX}${String(maxCode).padStart(3, '0')}`;
-        s.code = code;
-        batch.update(db.collection('suppliers').doc(s.id as string), { code });
-      }
-      await batch.commit();
+    const missing = rows.filter(r => !(r.code ?? '').trim());
+    for (const r of missing) {
+      maxCode += 1;
+      r.code = `SUP${String(maxCode).padStart(3, '0')}`;
+      await sql`update suppliers set code = ${r.code} where id = ${r.id}`;
     }
-    return suppliers;
+
+    return rows.map(rowToSupplier);
   },
   ['admin-suppliers'],
   { revalidate: 20 },
 );
-
-function nextSupplierCode(existingCodes: string[]) {
-  let max = 0;
-  for (const c of existingCodes) {
-    const m = new RegExp(`^${SUPPLIER_CODE_PREFIX}(\\d+)$`, 'i').exec(c.trim());
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  }
-  return `${SUPPLIER_CODE_PREFIX}${String(max + 1).padStart(3, '0')}`;
-}
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'suppliers', 'view');
@@ -56,18 +43,13 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'suppliers', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
-  const db = getDb();
-  const existingSnap = await db.collection('suppliers').get();
-  const existingCodes = existingSnap.docs.map(d => ((d.data().code as string) ?? '').trim()).filter(Boolean);
-  const code = nextSupplierCode(existingCodes);
-  const ref = await db.collection('suppliers').add({
-    code,
-    name: data.name,
-    phone: data.phone ?? '',
-    address: data.address ?? '',
-    note: data.note ?? '',
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  return Response.json({ id: ref.id, code });
+  const sql = getSql();
+  const existingRows = await sql<{ code: string | null }[]>`select code from suppliers`;
+  const code = nextSupplierCode(existingRows.map(r => r.code ?? '').filter(Boolean));
+  const id = randomUUID();
+  await sql`
+    insert into suppliers (id, code, name, phone, address, note, created_at, updated_at)
+    values (${id}, ${code}, ${data.name as string}, ${(data.phone as string) ?? ''}, ${(data.address as string) ?? ''}, ${(data.note as string) ?? ''}, now(), now())
+  `;
+  return Response.json({ id, code });
 }
