@@ -1,10 +1,8 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
-import { Timestamp } from 'firebase-admin/firestore';
 
 interface LocationDoc { id: string; name?: string; code?: string }
 interface ShipmentDoc {
@@ -28,12 +26,15 @@ const CONSIGNMENT_ANALYTICS_VIEW_KEYS = ['consignment', 'dashboard'];
 // getRawAnalytics di /api/analytics/overview.
 const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
-    const db = getDb();
     const sql = getSql();
-    const [locRows, shipSnap, recapRows, stockRows] = await Promise.all([
+    const [locRows, shipRows, recapRows, stockRows] = await Promise.all([
       sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from consignment_locations`,
-      db.collection('consignmentShipments')
-        .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
+      // `consignment_shipments` pindah ke Postgres (Tahap 18a migrasi Fase 2).
+      sql<{ location_id: string | null; location_name: string | null; created_at: Date; items: unknown }[]>`
+        select location_id, location_name, created_at, items
+        from consignment_shipments
+        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
       sql<{ location_id: string; location_name: string; payment_status: string; created_at: Date; total_sold: string; total_retur: string; total_reject: string; total_revenue: string; items: unknown }[]>`
         select location_id, location_name, payment_status, created_at, total_sold, total_retur, total_reject, total_revenue, items
@@ -45,14 +46,13 @@ const getRawConsignmentAnalytics = unstable_cache(
       `,
     ]);
 
-    const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
-
     return {
       locations: locRows.map(r => ({ id: r.id, name: r.name, code: r.code ?? undefined }) as LocationDoc),
-      shipments: shipSnap.docs.map(d => {
-        const data = d.data();
-        return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as ShipmentDoc;
-      }),
+      shipments: shipRows.map((r): ShipmentDoc => ({
+        locationId: r.location_id ?? undefined, locationName: r.location_name ?? undefined,
+        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+        items: (parseJsonb(r.items) as ShipmentDoc['items']) ?? [],
+      })),
       recaps: recapRows.map((r): RecapDoc => ({
         locationId: r.location_id, locationName: r.location_name,
         paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',

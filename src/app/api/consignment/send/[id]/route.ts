@@ -3,48 +3,32 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { writeHistoryEntry } from '@/lib/history';
+import { logHistory } from '@/lib/history';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
+import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
-interface ShipmentItem { productId: string; productName: string; qty: number }
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
-interface FullSnapshot { table: 'products' | 'consignment_stock' | 'warehouse_stock'; key: string; oldValues: Record<string, unknown> }
 
-async function compensateFullSnapshots(sql: ReturnType<typeof getSql>, snapshots: FullSnapshot[]) {
-  await sql.begin(async pgTx => {
-    for (const s of snapshots) {
-      if (s.table === 'products') {
-        await pgTx`update products set stock_qty = ${s.oldValues.stockQty as number}, stock = ${s.oldValues.stock as string}, updated_at = now() where id = ${s.key}`;
-      } else if (s.table === 'consignment_stock') {
-        await pgTx`update consignment_stock set stock_qty = ${s.oldValues.stockQty as number}, updated_at = now() where id = ${s.key}`;
-      } else {
-        await pgTx`update warehouse_stock set stock_qty = ${s.oldValues.stockQty as number}, updated_at = now() where id = ${s.key}`;
-      }
-    }
-  });
-}
-
-// Hapus riwayat kirim — mengembalikan stok toko & stok gudang asal, dan mengurangi stok titip di lokasi.
-// Ditolak jika stok titip sudah terpakai (terjual/direkap) sehingga tidak cukup untuk dibalik.
+// Hapus riwayat kirim — mengembalikan stok toko & stok gudang asal, dan mengurangi stok titip di
+// lokasi, lalu menghapus dokumen pengiriman itu sendiri, semuanya dalam SATU transaksi Postgres
+// (Tahap 18a — stok & dokumen sama-sama Postgres, tidak perlu lagi kompensasi cross-database
+// seperti versi Firestore sebelumnya). Ditolak jika stok titip sudah terpakai (terjual/direkap)
+// sehingga tidak cukup untuk dibalik.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
   const sql = getSql();
-  const shipmentRef = db.collection('consignmentShipments').doc(id);
 
-  const shipmentSnap = await shipmentRef.get();
-  if (!shipmentSnap.exists) return Response.json({ error: 'Riwayat kirim tidak ditemukan.' }, { status: 404 });
-  const shipmentFull = shipmentSnap.data();
-  const shipment = shipmentSnap.data()! as { locationId: string; warehouseId?: string; items: ShipmentItem[] };
-  const items = shipment.items ?? [];
+  const [shipmentRow] = await sql<ShipmentRow[]>`select * from consignment_shipments where id = ${id}`;
+  if (!shipmentRow) return Response.json({ error: 'Riwayat kirim tidak ditemukan.' }, { status: 404 });
+  const shipment = rowToShipment(shipmentRow);
+  const items = shipment.items;
 
-  const snapshots: FullSnapshot[] = [];
   try {
     await sql.begin(async pgTx => {
       const productIds = items.map(it => it.productId);
@@ -69,13 +53,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         const productRow = productById.get(productIds[i]);
         if (productRow) {
           const oldQty = Number(productRow.stock_qty) || 0;
-          snapshots.push({ table: 'products', key: it.productId, oldValues: { stockQty: oldQty, stock: stockLabel(productRow.open_po, oldQty) } });
           const newQty = oldQty + it.qty;
           await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(productRow.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
         }
         const stockKey = stockKeys[i];
         const stockQty = Number(stockById.get(stockKey)?.stock_qty) || 0;
-        snapshots.push({ table: 'consignment_stock', key: stockKey, oldValues: { stockQty } });
         await pgTx`update consignment_stock set stock_qty = ${stockQty - it.qty}, updated_at = now() where id = ${stockKey}`;
 
         // Kiriman lama (sebelum fitur gudang asal) tidak pernah mengurangi warehouse_stock — jangan dibalik.
@@ -83,7 +65,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
           const wsKey = `${shipment.warehouseId}_${it.productId}`;
           const wsRows = await pgTx<{ stock_qty: string }[]>`select stock_qty from warehouse_stock where id = ${wsKey} for update`;
           const oldWsQty = wsRows[0] ? Number(wsRows[0].stock_qty) || 0 : 0;
-          snapshots.push({ table: 'warehouse_stock', key: wsKey, oldValues: { stockQty: oldWsQty } });
           await pgTx`
             insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
             values (${wsKey}, ${shipment.warehouseId}, ${it.productId}, ${it.productName}, ${oldWsQty + it.qty}, now())
@@ -91,29 +72,25 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
           `;
         }
       }
+
+      await pgTx`delete from consignment_shipments where id = ${id}`;
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat kirim.' }, { status: 400 });
   }
 
   try {
-    await db.runTransaction(async tx => {
-      const freshSnap = await tx.get(shipmentRef);
-      tx.delete(shipmentRef);
-      writeHistoryEntry(tx, db, {
-        entity: 'consignment',
-        entityCollection: 'consignmentShipments',
-        entityId: id,
-        entityLabel: (shipmentFull?.locationName as string | undefined) || id,
-        action: 'delete',
-        actor: guard,
-        before: freshSnap.exists ? freshSnap.data() ?? null : (shipmentFull ?? null),
-      });
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentShipments',
+      entityId: id,
+      entityLabel: shipment.locationName || id,
+      action: 'delete',
+      actor: guard,
+      before: shipmentRow,
     });
   } catch (err) {
-    try { await compensateFullSnapshots(sql, snapshots); }
-    catch (compErr) { console.error('CRITICAL: gagal kompensasi stok setelah hapus riwayat kirim gagal tersimpan', compErr); }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat kirim.' }, { status: 400 });
+    console.error('Failed to write history for consignment send delete', err);
   }
 
   revalidateTag(shipmentPdfTag(id), 'max');
@@ -122,8 +99,9 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 }
 
 // Edit riwayat kirim — membalik efek stok yang lama (termasuk stok gudang asal lama, jika ada),
-// lalu menerapkan efek stok yang baru dalam satu transaksi. Ditolak jika stok lama sudah terpakai
-// atau stok toko tidak cukup. Log gudang lama dibiarkan sebagai riwayat historis.
+// menerapkan efek stok yang baru, dan menulis ulang dokumen pengiriman, semuanya dalam SATU
+// transaksi Postgres (Tahap 18a). Ditolak jika stok lama sudah terpakai atau stok toko tidak
+// cukup. Log gudang lama dibiarkan sebagai riwayat historis.
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'edit');
   if (guard instanceof Response) return guard;
@@ -138,13 +116,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const db = getDb();
   const sql = getSql();
-  const shipmentRef = db.collection('consignmentShipments').doc(id);
 
-  const shipmentSnap = await shipmentRef.get();
-  if (!shipmentSnap.exists) return Response.json({ error: 'Riwayat kirim tidak ditemukan.' }, { status: 404 });
-  const oldShipmentFull = shipmentSnap.data();
-  const oldShipment = shipmentSnap.data()! as { locationId: string; warehouseId?: string; items: ShipmentItem[] };
-  const oldItems = oldShipment.items ?? [];
+  const [shipmentRow] = await sql<ShipmentRow[]>`select * from consignment_shipments where id = ${id}`;
+  if (!shipmentRow) return Response.json({ error: 'Riwayat kirim tidak ditemukan.' }, { status: 404 });
+  const oldShipment = rowToShipment(shipmentRow);
+  const oldItems = oldShipment.items;
 
   const productIds = [...new Set([...oldItems.map(it => it.productId), ...newItems.map(it => it.productId)])];
   const productNameByPid = new Map<string, string>();
@@ -153,7 +129,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const stockMeta = new Map<string, { locationId: string; productId: string; productName: string }>();
   oldItems.forEach(it => {
     const key = `${oldShipment.locationId}_${it.productId}`;
-    if (!stockMeta.has(key)) stockMeta.set(key, { locationId: oldShipment.locationId, productId: it.productId, productName: it.productName });
+    if (!stockMeta.has(key)) stockMeta.set(key, { locationId: oldShipment.locationId ?? '', productId: it.productId, productName: it.productName });
   });
   newItems.forEach(it => {
     const key = `${data.locationId}_${it.productId}`;
@@ -161,8 +137,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   });
   const stockKeys = [...stockMeta.keys()];
 
-  const snapshots: FullSnapshot[] = [];
   let itemsWithSubtotal: (SendItemInput & { subtotal: number })[] = [];
+  // Sama seperti versi Firestore lama: createdAt cuma ditimpa kalau tanggal baru diberikan,
+  // kalau tidak dipertahankan (bukan direset ke waktu edit terjadi).
+  const newCreatedAt = data.date ? new Date(data.date) : shipmentRow.created_at;
 
   try {
     await sql.begin(async pgTx => {
@@ -181,13 +159,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const row = stockById.get(k);
         return [k, { stockQty: row ? Number(row.stock_qty) || 0 : 0, hargaTitip: row?.harga_titip != null ? Number(row.harga_titip) : 0 }];
       }));
-
-      // Snapshot sebelum diubah — untuk kompensasi kalau langkah Firestore setelahnya gagal.
-      productIds.forEach(pid => {
-        const st = productState.get(pid)!;
-        snapshots.push({ table: 'products', key: pid, oldValues: { stockQty: st.stockQty, stock: stockLabel(st.openPO, st.stockQty) } });
-      });
-      stockKeys.forEach(k => snapshots.push({ table: 'consignment_stock', key: k, oldValues: { stockQty: stockState.get(k)!.stockQty } }));
 
       // key = doc id `${warehouseId}_${productId}` — kept alongside the parsed pair so we never
       // have to split it back apart (warehouse/product IDs could theoretically contain '_').
@@ -264,7 +235,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (delta === 0) continue;
         const rows = await pgTx<{ stock_qty: string }[]>`select stock_qty from warehouse_stock where id = ${key} for update`;
         const oldQty = rows[0] ? Number(rows[0].stock_qty) || 0 : 0;
-        snapshots.push({ table: 'warehouse_stock', key, oldValues: { stockQty: oldQty } });
         const newQty = oldQty + delta;
         await pgTx`
           insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
@@ -283,37 +253,37 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       }
 
       itemsWithSubtotal = newItems.map(it => ({ ...it, subtotal: it.qty * it.hargaTitip }));
+
+      await pgTx`
+        update consignment_shipments set
+          location_id = ${data.locationId}, location_name = ${data.locationName},
+          warehouse_id = ${data.warehouseId}, warehouse_name = ${data.warehouseName ?? ''},
+          items = ${JSON.stringify(itemsWithSubtotal)}, note = ${data.note ?? ''},
+          created_at = ${newCreatedAt}, updated_at = now()
+        where id = ${id}
+      `;
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah pengiriman.' }, { status: 400 });
   }
 
   try {
-    await db.runTransaction(async tx => {
-      const updatePayload = {
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentShipments',
+      entityId: id,
+      entityLabel: `${data.locationName ?? oldShipment.locationName ?? id}${data.date ? ` - ${data.date}` : ''}`,
+      action: 'update',
+      actor: guard,
+      before: shipmentRow,
+      after: {
         locationId: data.locationId, locationName: data.locationName,
         warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
         items: itemsWithSubtotal, note: data.note ?? '',
-        ...(data.date ? { createdAt: Timestamp.fromDate(new Date(data.date)) } : {}),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      tx.update(shipmentRef, updatePayload);
-
-      writeHistoryEntry(tx, db, {
-        entity: 'consignment',
-        entityCollection: 'consignmentShipments',
-        entityId: id,
-        entityLabel: `${data.locationName ?? oldShipmentFull?.locationName ?? id}${data.date ? ` - ${data.date}` : ''}`,
-        action: 'update',
-        actor: guard,
-        before: oldShipmentFull ?? null,
-        after: { ...oldShipmentFull, ...updatePayload },
-      });
+      },
     });
   } catch (err) {
-    try { await compensateFullSnapshots(sql, snapshots); }
-    catch (compErr) { console.error('CRITICAL: gagal kompensasi stok setelah edit riwayat kirim gagal tersimpan', compErr); }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah pengiriman.' }, { status: 400 });
+    console.error('Failed to write history for consignment send update', err);
   }
 
   revalidateTag(shipmentPdfTag(id), 'max');

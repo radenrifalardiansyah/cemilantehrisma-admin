@@ -5,6 +5,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { getSettings } from '@/lib/settings-pg';
+import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 import ShipmentNotePDF, { type ShipmentNoteData, type StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
 
@@ -43,11 +44,11 @@ function renderShipmentPdf(id: string) {
   return unstable_cache(
     async (): Promise<string | null> => {
       const db = getDb();
-      const shipDoc = await db.collection('consignmentShipments').doc(id).get();
-      if (!shipDoc.exists) return null;
-      const shipment = shipDoc.data()!;
-
       const sql = getSql();
+      const [shipmentRow] = await sql<ShipmentRow[]>`select * from consignment_shipments where id = ${id}`;
+      if (!shipmentRow) return null;
+      const shipment = rowToShipment(shipmentRow);
+
       const [locationRows, settingsRaw] = await Promise.all([
         shipment.locationId
           ? sql<{ code: string | null; contact_name: string | null; contact_phone: string | null; address: string | null }[]>`
@@ -66,8 +67,7 @@ function renderShipmentPdf(id: string) {
         whatsapp?: string; logo?: string;
       };
 
-      const createdAt = shipment.createdAt as { seconds?: number } | undefined;
-      const items = (shipment.items ?? []) as ShipmentNoteData['items'];
+      const items = shipment.items as ShipmentNoteData['items'];
       const total = items.reduce((sum, it) => sum + it.subtotal, 0);
 
       const store: StoreHeader = {
@@ -82,13 +82,13 @@ function renderShipmentPdf(id: string) {
       };
 
       const data: ShipmentNoteData = {
-        locationName: shipment.locationName,
+        locationName: shipment.locationName ?? '',
         locationCode: location?.code || undefined,
         contactName: location?.contactName || undefined,
         contactPhone: location?.contactPhone || undefined,
         address: location?.address || undefined,
         warehouseName: shipment.warehouseName || undefined,
-        date: formatDate(createdAt?.seconds),
+        date: formatDate(shipment.createdAt?.seconds),
         printedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         docNo: `KRM-${id.slice(-6).toUpperCase()}`,
         note: shipment.note || undefined,

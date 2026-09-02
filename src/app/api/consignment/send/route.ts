@@ -1,14 +1,15 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue, Timestamp, Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
-import { writeHistoryEntry } from '@/lib/history';
-import { writeNotification, sendPush } from '@/lib/notifications';
+import { logHistory } from '@/lib/history';
+import { notify } from '@/lib/notifications';
 import { revalidateStorefront } from '@/lib/revalidate';
-import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, compensateStock, type ProductSnapshot, type WsSnapshot } from '@/lib/stock-pg';
+import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, type WsSnapshot } from '@/lib/stock-pg';
+import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
 
@@ -34,23 +35,23 @@ function mergeItems(items: SendItemInput[]): SendItemInput[] {
 }
 
 // Sama seperti orders/route.ts & consignment/recap/route.ts: dibaca tanpa batas tanggal oleh tab
-// Konsinyasi setiap kali dibuka (plus tiap tampilan laporan berperiode) — tanpa cache, itu scan
-// penuh koleksi `consignmentShipments` per panggilan, dan mode date-range di bawah sebelumnya
-// malah tidak dibatasi `.limit()` sama sekali. TTL pendek (15s, sama seperti orders) menjaga
-// tampilan tetap terasa langsung sambil menyerap lonjakan baca yang terjadi bersamaan.
+// Konsinyasi setiap kali dibuka (plus tiap tampilan laporan berperiode). TTL pendek (15s, sama
+// seperti orders) menjaga tampilan tetap terasa langsung sambil menyerap lonjakan baca yang
+// terjadi bersamaan. (Tahap 18a migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
 const getCachedShipments = unstable_cache(
   async (from: string | null, to: string | null, limit: number) => {
-    let query: Query<DocumentData> = getDb().collection('consignmentShipments').orderBy('createdAt', 'desc');
-    if (from) query = query.where('createdAt', '>=', wibDayStart(from));
-    if (to)   query = query.where('createdAt', '<=', wibDayEnd(to));
-    if (!from && !to) query = query.limit(limit);
-
-    const snap = await query.get();
-    return snap.docs.map(d => {
-      const data = d.data();
-      const createdAt = data.createdAt as Timestamp | undefined;
-      return { id: d.id, ...data, createdAt: createdAt ? { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds } : null };
-    });
+    const sql = getSql();
+    let rows: ShipmentRow[];
+    if (from && to) {
+      rows = await sql<ShipmentRow[]>`select * from consignment_shipments where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+    } else if (from) {
+      rows = await sql<ShipmentRow[]>`select * from consignment_shipments where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+    } else if (to) {
+      rows = await sql<ShipmentRow[]>`select * from consignment_shipments where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+    } else {
+      rows = await sql<ShipmentRow[]>`select * from consignment_shipments order by created_at desc limit ${limit}`;
+    }
+    return rows.map(rowToShipment);
   },
   ['admin-consignment-shipments-list'],
   { revalidate: 15 },
@@ -81,16 +82,14 @@ export async function POST(req: NextRequest) {
 
   const db = getDb();
   const sql = getSql();
-  const shipmentRef = db.collection('consignmentShipments').doc();
+  const shipmentId = randomUUID();
 
-  // `products`/`warehouse_stock`/`stock_ledger`/`consignmentStock` sudah pindah ke Postgres
-  // (Tahap 8-10) — divalidasi & dipotong DULU di sana, baru dokumen pengiriman (Firestore, masih
-  // di sana untuk sementara) ditulis. Lihat pola yang sama di orders/route.ts.
+  // Stok (products/warehouse_stock/stock_ledger/consignmentStock, Tahap 8-10) DAN dokumen
+  // pengiriman (Tahap 18a) sekarang sama-sama di Postgres, jadi digabung jadi SATU transaksi
+  // atomic — tidak ada lagi kompensasi cross-database seperti versi sebelumnya. Lihat pola yang
+  // sama di orders/route.ts (Tahap 12) & consignment/recap/route.ts (Tahap 13).
   const itemsWithSubtotal = items.map(it => ({ ...it, subtotal: it.qty * it.hargaTitip }));
-  const productSnapshots: ProductSnapshot[] = [];
-  const wsSnapshots: WsSnapshot[] = [];
-  const consignmentStockSnapshots: { key: string; oldQty: number }[] = [];
-  let stockCommitted = false;
+  const createdAt = data.date ? new Date(data.date) : new Date();
 
   try {
     await sql.begin(async pgTx => {
@@ -112,10 +111,10 @@ export async function POST(req: NextRequest) {
       });
       if (shortages.length > 0) throw new Error(`Stok produk tidak cukup untuk dikirim: ${shortages.join(', ')}`);
 
+      const wsSnapshots: WsSnapshot[] = [];
       for (const [i, it] of items.entries()) {
         const row = productById.get(productIds[i])!;
         const oldQty = Number(row.stock_qty) || 0;
-        productSnapshots.push({ productId: it.productId, oldQty, oldCost: row.cost_price != null ? Number(row.cost_price) : 0, openPO: row.open_po });
         const newQty = oldQty - it.qty;
         await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(row.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
 
@@ -130,7 +129,6 @@ export async function POST(req: NextRequest) {
         const stockRow = stockById.get(stockKey);
         const oldStockQty = stockRow ? Number(stockRow.stock_qty) || 0 : 0;
         const oldHarga    = stockRow?.harga_titip != null ? Number(stockRow.harga_titip) : 0;
-        consignmentStockSnapshots.push({ key: stockKey, oldQty: oldStockQty });
         const newStockQty = oldStockQty + it.qty;
         const newHarga = newStockQty > 0 ? (oldStockQty * oldHarga + it.qty * it.hargaTitip) / newStockQty : 0;
         await pgTx`
@@ -139,63 +137,51 @@ export async function POST(req: NextRequest) {
           on conflict (id) do update set stock_qty = ${newStockQty}, harga_titip = ${newHarga}, updated_at = now()
         `;
       }
+
+      await pgTx`
+        insert into consignment_shipments (id, location_id, location_name, warehouse_id, warehouse_name, items, note, created_at)
+        values (${shipmentId}, ${data.locationId}, ${data.locationName}, ${data.warehouseId}, ${data.warehouseName ?? ''}, ${JSON.stringify(itemsWithSubtotal)}, ${data.note ?? ''}, ${createdAt})
+      `;
     });
-    stockCommitted = true;
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pengiriman.' }, { status: 400 });
   }
 
-  let pushPayload: { title: string; message: string } | null = null;
+  // History/notifikasi tetap Firestore (di luar cakupan Tahap 18a) — best-effort setelah
+  // transaksi Postgres commit, sama pola dengan orders/route.ts & consignment/recap/route.ts.
+  const shipmentDoc = {
+    locationId: data.locationId, locationName: data.locationName,
+    warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
+    items: itemsWithSubtotal, note: data.note ?? '',
+  };
   try {
-    await db.runTransaction(async tx => {
-      const shipmentDoc = {
-        locationId: data.locationId, locationName: data.locationName,
-        warehouseId: data.warehouseId, warehouseName: data.warehouseName ?? '',
-        items: itemsWithSubtotal, note: data.note ?? '',
-        createdAt: data.date ? Timestamp.fromDate(new Date(data.date)) : FieldValue.serverTimestamp(),
-      };
-      tx.set(shipmentRef, shipmentDoc);
-
-      const totalQty = itemsWithSubtotal.reduce((s, it) => s + it.qty, 0);
-      pushPayload = writeNotification(tx, db, {
-        type: 'consignment_send',
-        title: 'Kirim stok konsinyasi',
-        message: `${totalQty} pcs dikirim ke ${data.locationName} — oleh ${guard.username}.`,
-        link: 'consignment',
-        entityCollection: 'consignmentShipments', entityId: shipmentRef.id,
-        actor: guard,
-      });
-
-      writeHistoryEntry(tx, db, {
-        entity: 'consignment',
-        entityCollection: 'consignmentShipments',
-        entityId: shipmentRef.id,
-        entityLabel: `${data.locationName ?? 'Kirim Konsinyasi'}${data.date ? ` - ${data.date}` : ''}`,
-        action: 'create',
-        actor: guard,
-        after: shipmentDoc,
-      });
+    await logHistory(db, {
+      entity: 'consignment',
+      entityCollection: 'consignmentShipments',
+      entityId: shipmentId,
+      entityLabel: `${data.locationName ?? 'Kirim Konsinyasi'}${data.date ? ` - ${data.date}` : ''}`,
+      action: 'create',
+      actor: guard,
+      after: shipmentDoc,
     });
   } catch (err) {
-    if (stockCommitted) {
-      try {
-        await Promise.all([
-          compensateStock(sql, productSnapshots, wsSnapshots),
-          sql.begin(async pgTx => {
-            for (const s of consignmentStockSnapshots) {
-              await pgTx`update consignment_stock set stock_qty = ${s.oldQty}, updated_at = now() where id = ${s.key}`;
-            }
-          }),
-        ]);
-      } catch (compErr) {
-        console.error('CRITICAL: gagal kompensasi stok setelah kirim konsinyasi gagal tersimpan', compErr);
-      }
-    }
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan pengiriman.' }, { status: 400 });
+    console.error('Failed to write history for consignment send create', err);
+  }
+  const totalQty = itemsWithSubtotal.reduce((s, it) => s + it.qty, 0);
+  try {
+    await notify(db, {
+      type: 'consignment_send',
+      title: 'Kirim stok konsinyasi',
+      message: `${totalQty} pcs dikirim ke ${data.locationName} — oleh ${guard.username}.`,
+      link: 'consignment',
+      entityCollection: 'consignmentShipments', entityId: shipmentId,
+      actor: guard,
+    });
+  } catch (err) {
+    console.error('Failed to send notification for consignment send', err);
   }
 
-  if (pushPayload) await sendPush(db, pushPayload).catch(err => console.error('Failed to send push for consignment send', err));
   after(() => revalidateStorefront('products'));
 
-  return Response.json({ id: shipmentRef.id });
+  return Response.json({ id: shipmentId });
 }
