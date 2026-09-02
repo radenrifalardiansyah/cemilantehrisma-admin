@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
@@ -29,62 +28,66 @@ import { requirePermission } from '@/lib/rbac';
 
 interface PgTotalsRow {
   wallet_id: string | null;
+  initial: string | null;
   income: string | null; expense: string | null;
   modal: string | null; prive: string | null;
   transfer_in: string | null; transfer_out: string | null;
   order_revenue: string | null; recap_revenue: string | null;
 }
-interface WalletTotals { income: number; expense: number; modal: number; prive: number; transferIn: number; transferOut: number; orderRevenue: number; recapRevenue: number }
+interface WalletTotals { initial: number; income: number; expense: number; modal: number; prive: number; transferIn: number; transferOut: number; orderRevenue: number; recapRevenue: number }
 
-const EMPTY_TOTALS: WalletTotals = { income: 0, expense: 0, modal: 0, prive: 0, transferIn: 0, transferOut: 0, orderRevenue: 0, recapRevenue: 0 };
+const EMPTY_TOTALS: WalletTotals = { initial: 0, income: 0, expense: 0, modal: 0, prive: 0, transferIn: 0, transferOut: 0, orderRevenue: 0, recapRevenue: 0 };
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'wallets', 'view');
   if (guard instanceof Response) return guard;
 
-  const db = getDb();
   const sql = getSql();
 
-  const [walletsSnap, pgRows] = await Promise.all([
-    db.collection('wallets').get(),
-    sql<PgTotalsRow[]>`
-      select
-        wallet_id,
-        sum(amount) filter (where kind = 'income') as income,
-        sum(amount) filter (where kind = 'expense') as expense,
-        sum(amount) filter (where kind = 'modal') as modal,
-        sum(amount) filter (where kind = 'prive') as prive,
-        sum(amount) filter (where kind = 'transfer_in') as transfer_in,
-        sum(amount) filter (where kind = 'transfer_out') as transfer_out,
-        sum(amount) filter (where kind = 'order_revenue') as order_revenue,
-        sum(amount) filter (where kind = 'recap_revenue') as recap_revenue
-      from (
-        select wallet_id, amount, 'income' as kind from income
-        union all
-        select wallet_id, amount, 'expense' as kind from expenses
-        union all
-        select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal'
-        union all
-        select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive'
-        union all
-        select to_wallet_id as wallet_id, amount, 'transfer_in' as kind from wallet_transfers
-        union all
-        select from_wallet_id as wallet_id, amount, 'transfer_out' as kind from wallet_transfers
-        union all
-        select wallet_id, total as amount, 'order_revenue' as kind from orders
-          where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
-        union all
-        select wallet_id, total_revenue as amount, 'recap_revenue' as kind from consignment_recaps
-          where payment_status != 'belum_lunas'
-      ) combined
-      group by wallet_id
-    `,
-  ]);
+  // `wallets.initial_balance` digabung jadi salah satu "kind" di UNION ALL yang sama (bukan
+  // query terpisah) — supaya SETIAP dompet (bahkan yang belum ada transaksi sama sekali) tetap
+  // muncul di hasil group-by, dan tidak perlu lagi query daftar dompet secara terpisah.
+  const pgRows = await sql<PgTotalsRow[]>`
+    select
+      wallet_id,
+      sum(amount) filter (where kind = 'initial') as initial,
+      sum(amount) filter (where kind = 'income') as income,
+      sum(amount) filter (where kind = 'expense') as expense,
+      sum(amount) filter (where kind = 'modal') as modal,
+      sum(amount) filter (where kind = 'prive') as prive,
+      sum(amount) filter (where kind = 'transfer_in') as transfer_in,
+      sum(amount) filter (where kind = 'transfer_out') as transfer_out,
+      sum(amount) filter (where kind = 'order_revenue') as order_revenue,
+      sum(amount) filter (where kind = 'recap_revenue') as recap_revenue
+    from (
+      select id as wallet_id, initial_balance as amount, 'initial' as kind from wallets
+      union all
+      select wallet_id, amount, 'income' as kind from income
+      union all
+      select wallet_id, amount, 'expense' as kind from expenses
+      union all
+      select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal'
+      union all
+      select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive'
+      union all
+      select to_wallet_id as wallet_id, amount, 'transfer_in' as kind from wallet_transfers
+      union all
+      select from_wallet_id as wallet_id, amount, 'transfer_out' as kind from wallet_transfers
+      union all
+      select wallet_id, total as amount, 'order_revenue' as kind from orders
+        where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
+      union all
+      select wallet_id, total_revenue as amount, 'recap_revenue' as kind from consignment_recaps
+        where payment_status != 'belum_lunas'
+    ) combined
+    group by wallet_id
+  `;
 
   const pgByWallet = new Map<string, WalletTotals>();
   let pgUnassigned: WalletTotals = EMPTY_TOTALS;
   pgRows.forEach(r => {
     const totals: WalletTotals = {
+      initial: Number(r.initial) || 0,
       income: Number(r.income) || 0, expense: Number(r.expense) || 0,
       modal: Number(r.modal) || 0, prive: Number(r.prive) || 0,
       transferIn: Number(r.transfer_in) || 0, transferOut: Number(r.transfer_out) || 0,
@@ -95,11 +98,8 @@ export async function GET(req: NextRequest) {
   });
 
   const balances: Record<string, number> = {};
-  walletsSnap.docs.forEach(d => {
-    const id = d.id;
-    const initialBalance = Number(d.data().initialBalance) || 0;
-    const t = pgByWallet.get(id) ?? EMPTY_TOTALS;
-    balances[id] = initialBalance
+  pgByWallet.forEach((t, id) => {
+    balances[id] = t.initial
       + t.income + t.modal + t.transferIn + t.orderRevenue + t.recapRevenue
       - t.expense - t.prive - t.transferOut;
   });

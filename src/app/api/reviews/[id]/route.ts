@@ -1,5 +1,5 @@
 import { NextRequest, after } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { revalidateStorefront } from '@/lib/revalidate';
 
@@ -14,7 +14,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: 'Field "approved" wajib berupa boolean.' }, { status: 400 });
   }
 
-  await getDb().collection('reviews').doc(id).update({ approved });
+  const sql = getSql();
+  await sql`update reviews set approved = ${approved}, updated_at = now() where id = ${id}`;
   after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
 }
@@ -24,7 +25,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
 
-  await getDb().collection('reviews').doc(id).delete();
+  const sql = getSql();
+  await sql`delete from reviews where id = ${id}`;
   after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
 }

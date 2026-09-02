@@ -1,19 +1,19 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getDb, serializeTimestamp } from '@/lib/firebase-admin';
+import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+import { rowToWallet, type WalletRow } from '@/lib/wallets-pg';
 
 // Opened whenever the Dompet tab (or any dropdown showing wallet balances) is opened,
 // not on every session — plain TTL is enough.
 const getCachedWallets = unstable_cache(
   async () => {
-    const snap = await getDb().collection('wallets').orderBy('order', 'asc').get();
-    return snap.docs.map(d => {
-      const data = d.data();
-      return { id: d.id, ...data, createdAt: serializeTimestamp(data.createdAt), updatedAt: serializeTimestamp(data.updatedAt) };
-    });
+    const sql = getSql();
+    const rows = await sql<WalletRow[]>`select * from wallets order by sort_order asc`;
+    return rows.map(rowToWallet);
   },
   ['admin-wallets'],
   { revalidate: 15 },
@@ -31,31 +31,32 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
+  const sql = getSql();
   if (!data.name || typeof data.name !== 'string' || !data.name.trim()) {
     return Response.json({ error: 'Nama dompet wajib diisi.' }, { status: 400 });
   }
 
-  const existingSnap = await db.collection('wallets').orderBy('order', 'desc').limit(1).get();
-  const nextOrder = existingSnap.empty ? 0 : (Number(existingSnap.docs[0].data().order) || 0) + 1;
+  const [{ max_order }] = await sql<{ max_order: number | null }[]>`select max(sort_order) as max_order from wallets`;
+  const nextOrder = (max_order ?? -1) + 1;
 
   const payload = {
     name: data.name.trim(),
-    type: ['cash', 'bank', 'ewallet', 'other'].includes(data.type as string) ? data.type : 'cash',
+    type: ['cash', 'bank', 'ewallet', 'other'].includes(data.type as string) ? data.type as string : 'cash',
     icon: typeof data.icon === 'string' && data.icon ? data.icon : 'Wallet',
     color: typeof data.color === 'string' && data.color ? data.color : '#D4691E',
     initialBalance: Number(data.initialBalance) || 0,
     isActive: true,
     order: nextOrder,
   };
-  const ref = await db.collection('wallets').add({
-    ...payload,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  const id = randomUUID();
+  await sql`
+    insert into wallets (id, name, type, icon, color, initial_balance, is_active, sort_order, created_at, updated_at)
+    values (${id}, ${payload.name}, ${payload.type}, ${payload.icon}, ${payload.color}, ${payload.initialBalance}, ${payload.isActive}, ${payload.order}, now(), now())
+  `;
   try {
     await logHistory(db, {
       entity: 'wallets',
-      entityId: ref.id,
+      entityId: id,
       entityLabel: payload.name,
       action: 'create',
       actor: guard,
@@ -64,5 +65,5 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write history for wallets create', err);
   }
-  return Response.json({ id: ref.id });
+  return Response.json({ id });
 }

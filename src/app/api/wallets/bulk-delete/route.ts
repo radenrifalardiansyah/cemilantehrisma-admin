@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { walletHasReferences } from '@/lib/wallet-balance';
 
@@ -11,14 +12,15 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'ids required' }, { status: 400 });
 
   const db = getDb();
+  const sql = getSql();
   // Dompet dengan riwayat transaksi tidak boleh ikut dihapus massal — lewati saja, sama seperti
   // aturan DELETE satuan, supaya dokumen lama yang masih menyimpan walletId ini tidak jadi anak yatim.
   const referenced = await Promise.all(ids.map(id => walletHasReferences(db, id)));
   const deletableIds = ids.filter((_, i) => !referenced[i]);
   const skipped = ids.length - deletableIds.length;
 
-  const batch = db.batch();
-  deletableIds.forEach(id => batch.delete(db.collection('wallets').doc(id)));
-  await batch.commit();
+  if (deletableIds.length > 0) {
+    await sql`delete from wallets where id in ${sql(deletableIds)}`;
+  }
   return Response.json({ deleted: deletableIds.length, skipped });
 }

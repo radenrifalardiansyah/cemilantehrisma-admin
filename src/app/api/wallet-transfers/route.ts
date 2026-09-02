@@ -65,17 +65,16 @@ export async function POST(req: NextRequest) {
   if (fromWalletId === toWalletId) return Response.json({ error: 'Dompet asal dan tujuan tidak boleh sama.' }, { status: 400 });
   if (amount <= 0) return Response.json({ error: 'Jumlah transfer harus lebih dari 0.' }, { status: 400 });
 
-  // Dompet sendiri masih di Firestore (belum dipindah) — cukup baca biasa (bukan transaksi),
-  // karena satu-satunya tulisan di route ini sekarang ke Postgres (wallet_transfers), bukan
-  // Firestore lagi.
-  const [fromSnap, toSnap] = await Promise.all([
-    db.collection('wallets').doc(fromWalletId).get(),
-    db.collection('wallets').doc(toWalletId).get(),
+  const sql = getSql();
+  const [fromRow, toRow] = await Promise.all([
+    sql<{ name: string; initial_balance: string }[]>`select name, initial_balance from wallets where id = ${fromWalletId}`,
+    sql<{ name: string }[]>`select name from wallets where id = ${toWalletId}`,
   ]);
-  if (!fromSnap.exists) return Response.json({ error: 'Dompet asal tidak ditemukan.' }, { status: 400 });
-  if (!toSnap.exists) return Response.json({ error: 'Dompet tujuan tidak ditemukan.' }, { status: 400 });
-  const fromName = fromSnap.data()?.name ?? fromWalletId;
-  const toName = toSnap.data()?.name ?? toWalletId;
+  if (!fromRow[0]) return Response.json({ error: 'Dompet asal tidak ditemukan.' }, { status: 400 });
+  if (!toRow[0]) return Response.json({ error: 'Dompet tujuan tidak ditemukan.' }, { status: 400 });
+  const fromName = fromRow[0].name ?? fromWalletId;
+  const toName = toRow[0].name ?? toWalletId;
+  const fromInitialBalance = Number(fromRow[0].initial_balance) || 0;
 
   const payload = {
     fromWalletId, toWalletId, amount,
@@ -84,18 +83,15 @@ export async function POST(req: NextRequest) {
   };
 
   let transferId: string;
-  const sql = getSql();
   try {
     // Kunci baris via pg_advisory_xact_lock(hashtext(fromWalletId)) supaya dua transfer keluar
     // dari dompet yang sama yang tiba hampir bersamaan tidak lolos validasi berdasarkan saldo yang
-    // sama (TOCTOU) — transaksi kedua menunggu transaksi pertama commit sebelum hitung ulang saldo,
-    // beda dari mekanisme retry otomatis Firestore, tapi mencegah race yang sama. Ini HANYA
-    // melindungi porsi data yang sudah di Postgres (capital_entries, wallet_transfers); porsi
-    // Firestore (income/expenses/orders/consignmentRecaps) tetap dibaca best-effort di luar
-    // transaksi ini — trade-off yang diterima selama migrasi bertahap, lihat plan.
+    // sama (TOCTOU) — transaksi kedua menunggu transaksi pertama commit sebelum hitung ulang saldo.
+    // Sejak Tahap 12/13/16, computeWalletBalance seluruhnya baca Postgres (tidak ada lagi porsi
+    // Firestore best-effort di luar transaksi ini seperti versi lama).
     transferId = await sql.begin(async (pgTx) => {
       await pgTx`select pg_advisory_xact_lock(hashtext(${fromWalletId}))`;
-      const fromBalance = await computeWalletBalance(db, fromWalletId, Number(fromSnap.data()?.initialBalance) || 0, undefined, undefined, pgTx);
+      const fromBalance = await computeWalletBalance(db, fromWalletId, fromInitialBalance, undefined, undefined, pgTx);
       if (amount > fromBalance) {
         throw new TransferValidationError(`Saldo "${fromName}" tidak cukup (saldo saat ini Rp${Math.round(fromBalance).toLocaleString('id-ID')}).`);
       }

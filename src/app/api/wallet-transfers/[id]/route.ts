@@ -24,16 +24,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (fromWalletId === toWalletId) return Response.json({ error: 'Dompet asal dan tujuan tidak boleh sama.' }, { status: 400 });
   if (amount <= 0) return Response.json({ error: 'Jumlah transfer harus lebih dari 0.' }, { status: 400 });
 
-  const [fromSnap, toSnap] = await Promise.all([
-    db.collection('wallets').doc(fromWalletId).get(),
-    db.collection('wallets').doc(toWalletId).get(),
-  ]);
-  if (!fromSnap.exists) return Response.json({ error: 'Dompet asal tidak ditemukan.' }, { status: 400 });
-  if (!toSnap.exists) return Response.json({ error: 'Dompet tujuan tidak ditemukan.' }, { status: 400 });
-  const fromName = fromSnap.data()?.name ?? fromWalletId;
-  const toName = toSnap.data()?.name ?? toWalletId;
-
   const sql = getSql();
+  const [fromRow, toRow] = await Promise.all([
+    sql<{ name: string; initial_balance: string }[]>`select name, initial_balance from wallets where id = ${fromWalletId}`,
+    sql<{ name: string }[]>`select name from wallets where id = ${toWalletId}`,
+  ]);
+  if (!fromRow[0]) return Response.json({ error: 'Dompet asal tidak ditemukan.' }, { status: 400 });
+  if (!toRow[0]) return Response.json({ error: 'Dompet tujuan tidak ditemukan.' }, { status: 400 });
+  const fromName = fromRow[0].name ?? fromWalletId;
+  const toName = toRow[0].name ?? toWalletId;
+  const fromInitialBalance = Number(fromRow[0].initial_balance) || 0;
   let before: WalletTransferRow | undefined;
   let update: Record<string, unknown>;
   try {
@@ -49,7 +49,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       // Hitung saldo dompet asal TANPA transfer ini (excludeTransferId) — supaya edit transfer
       // yang sama (mis. cuma ganti catatan) tidak keblokir oleh kontribusi transfer itu sendiri.
-      const fromBalance = await computeWalletBalance(db, fromWalletId, Number(fromSnap.data()?.initialBalance) || 0, id, undefined, pgTx);
+      const fromBalance = await computeWalletBalance(db, fromWalletId, fromInitialBalance, id, undefined, pgTx);
       if (amount > fromBalance) {
         throw new TransferValidationError(`Saldo "${fromName}" tidak cukup (saldo saat ini Rp${Math.round(fromBalance).toLocaleString('id-ID')}).`);
       }
