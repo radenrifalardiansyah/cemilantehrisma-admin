@@ -894,29 +894,6 @@ export default function PosTab({
                 <ShoppingCart size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada item. Pilih produk di sebelah kiri.</p>
               </div>
-              {showCustomItemForm ? (
-                <div className="space-y-2 text-left">
-                  <input type="text" value={customItemName} onChange={e => setCustomItemName(e.target.value)}
-                    className="input" placeholder="Nama item / keterangan (mis. Ongkir, Bungkus kado)" autoFocus />
-                  <NumberInput value={customItemPriceRaw} onChange={setCustomItemPriceRaw} placeholder="Nominal (Rp)" />
-                  <div className="flex gap-2">
-                    <button onClick={() => { setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw(''); }}
-                      className="btn-ghost flex-1 justify-center py-2 text-xs font-semibold">
-                      Batal
-                    </button>
-                    <button onClick={addCustomItem} disabled={!customItemName.trim() || !(parseFloat(customItemPriceRaw) > 0)}
-                      className="btn-primary flex-1 justify-center py-2 text-xs disabled:opacity-40">
-                      Tambah
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button onClick={() => setShowCustomItemForm(true)}
-                  className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold"
-                  style={{ color: 'var(--accent)', background: 'var(--accent-bg)' }}>
-                  <Plus size={12} /> Tambah Item / Nominal Lain
-                </button>
-              )}
             </div>
           ) : (
             <>
