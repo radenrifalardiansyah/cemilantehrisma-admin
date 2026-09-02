@@ -1,5 +1,5 @@
 import { unstable_cache } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
+import { getSettings } from '@/lib/settings-pg';
 import { ADMIN_APP_NAME, BRAND_NAME, THEME_COLOR, THEME_BACKGROUND_COLOR } from '@/lib/branding';
 
 interface SettingsDoc {
@@ -30,8 +30,7 @@ const DEFAULT_ADMIN_BRANDING: AdminBranding = {
 export const getCachedAdminBranding = unstable_cache(
   async (): Promise<AdminBranding> => {
     try {
-      const doc = await getDb().collection('settings').doc('main').get();
-      const s = (doc.exists ? doc.data() : {}) as SettingsDoc;
+      const s = (await getSettings()) as SettingsDoc;
       return {
         appName: s.adminAppName || ADMIN_APP_NAME,
         storeName: s.storeName || BRAND_NAME,

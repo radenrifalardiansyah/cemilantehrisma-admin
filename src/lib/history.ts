@@ -1,10 +1,14 @@
+import { randomUUID } from 'crypto';
+import { after } from 'next/server';
 import { FieldValue, Firestore, Transaction, DocumentData } from 'firebase-admin/firestore';
+import { getSql } from '@/lib/db';
 import type { AuthUser } from '@/lib/admin-auth';
 
 // Audit trail generik lintas entitas — mencatat siapa membuat/mengubah/menghapus data transaksi
-// apa dan kapan, disimpan di koleksi `audit_log`. Mengikuti konvensi `writeStockLedgerEntry`
-// (lihat src/lib/stock.ts): dipanggil di dalam transaksi milik caller, tepat setelah
-// tx.set/update/delete pada dokumen bisnisnya, supaya penulisan log atomik dengan mutasinya.
+// apa dan kapan, disimpan di tabel Postgres `audit_log` (Tahap 15 migrasi Fase 2, lihat plan
+// gleaming-wondering-quokka.md). `tx`/`db` (Firestore) dipertahankan di kedua signature di bawah
+// untuk kompatibilitas ~90 titik panggil yang sudah ada — sejak migrasi ini keduanya tidak lagi
+// dipakai untuk menyimpan apa pun, cuma parameter kosong yang diabaikan.
 
 export type AuditAction = 'create' | 'update' | 'delete';
 
@@ -45,7 +49,14 @@ export function diffFields(before: DocumentData | null, after: DocumentData | nu
   return changed;
 }
 
-function buildAuditDoc(opts: HistoryOpts) {
+interface AuditDoc {
+  entity: string; entityCollection: string; entityId: string; entityLabel: string;
+  action: AuditAction; actorUsername: string; actorRole: string;
+  before: DocumentData | null; after: DocumentData | null;
+  changedFields: string[] | null; meta: Record<string, unknown>;
+}
+
+function buildAuditDoc(opts: HistoryOpts): AuditDoc {
   const before = sanitizeForAudit(opts.before);
   const after = sanitizeForAudit(opts.after);
   return {
@@ -60,19 +71,41 @@ function buildAuditDoc(opts: HistoryOpts) {
     after,
     changedFields: opts.action === 'update' ? diffFields(before, after) : null,
     meta: opts.meta ?? {},
-    createdAt: FieldValue.serverTimestamp(),
   };
 }
 
-// Untuk route yang sudah pakai db.runTransaction — panggil tepat setelah tx.set/update/delete
-// pada dokumen bisnisnya, di dalam transaksi yang sama.
+async function insertAuditLog(doc: AuditDoc): Promise<void> {
+  const sql = getSql();
+  await sql`
+    insert into audit_log (
+      id, entity, entity_collection, entity_id, entity_label, action, actor_username, actor_role,
+      before, after, changed_fields, meta, created_at
+    ) values (
+      ${randomUUID()}, ${doc.entity}, ${doc.entityCollection}, ${doc.entityId}, ${doc.entityLabel}, ${doc.action},
+      ${doc.actorUsername}, ${doc.actorRole}, ${JSON.stringify(doc.before)}, ${JSON.stringify(doc.after)},
+      ${JSON.stringify(doc.changedFields)}, ${JSON.stringify(doc.meta)}, now()
+    )
+  `;
+}
+
+// Untuk route yang sudah pakai db.runTransaction — dipanggil tepat setelah tx.set/update/delete
+// pada dokumen bisnisnya, DI DALAM transaksi Firestore yang sama. `tx`/`db` diabaikan (sisi
+// bisnis banyak yang sudah bukan Firestore lagi juga); penulisan audit dijadwalkan lewat
+// `after()` supaya tetap "fire and forget" seperti semula (signature ini tetap `void`, ~90 titik
+// panggil tidak butuh berubah jadi `await`), dijalankan setelah response terkirim tapi sebelum
+// fungsi request benar-benar berhenti. Catatan: kalau transaksi Firestore pembungkusnya retry
+// (konflik), `after()` bisa terpanggil lebih dari sekali — audit log best-effort, entri dobel
+// sesekali dianggap trade-off yang bisa diterima (lihat komentar sama di logHistory di bawah).
 export function writeHistoryEntry(tx: Transaction, db: Firestore, opts: HistoryOpts): void {
-  tx.set(db.collection('audit_log').doc(), buildAuditDoc(opts));
+  void tx; void db;
+  const doc = buildAuditDoc(opts);
+  after(() => insertAuditLog(doc).catch(err => console.error('Failed to write audit log', err)));
 }
 
 // Untuk route sederhana yang tidak membuka transaksi sendiri (capital, expenses, income,
 // warehouses, pos/shifts). Panggil setelah mutasi berhasil, dibungkus try/catch di call site —
 // kegagalan menulis audit log tidak boleh menggagalkan mutasi bisnis yang sudah terjadi.
 export async function logHistory(db: Firestore, opts: HistoryOpts): Promise<void> {
-  await db.collection('audit_log').add(buildAuditDoc(opts));
+  void db;
+  await insertAuditLog(buildAuditDoc(opts));
 }

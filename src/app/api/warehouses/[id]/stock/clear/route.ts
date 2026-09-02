@@ -21,11 +21,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const { cleared, failed } = await clearWarehouseStockForProducts(warehouseId, productIds, 'Kosongkan semua stok gudang');
 
   try {
-    const warehouseSnap = await db.collection('warehouses').doc(warehouseId).get();
+    const [warehouseRow] = await sql<{ name: string }[]>`select name from warehouses where id = ${warehouseId}`;
     await logHistory(db, {
       entity: 'stock',
       entityId: warehouseId,
-      entityLabel: (warehouseSnap.data()?.name as string) ?? warehouseId,
+      entityLabel: warehouseRow?.name ?? warehouseId,
       action: 'delete',
       actor: guard,
       meta: { clearedProductCount: cleared.length, failedProductCount: failed.length },

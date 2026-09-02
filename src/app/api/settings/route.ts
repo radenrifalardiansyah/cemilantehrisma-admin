@@ -1,17 +1,14 @@
 import { NextRequest, after } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
+import { getSettings, setSettings } from '@/lib/settings-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
-
-const DOC = 'main';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'settings', 'view');
   if (guard instanceof Response) return guard;
-  const doc = await getDb().collection('settings').doc(DOC).get();
-  return Response.json({ settings: doc.exists ? doc.data() : {} });
+  const settings = await getSettings();
+  return Response.json({ settings });
 }
 
 export async function PUT(req: NextRequest) {
@@ -23,10 +20,7 @@ export async function PUT(req: NextRequest) {
   // bisa menyimpan nilai negatif.
   if (data.freeShippingMin !== undefined) data.freeShippingMin = Math.max(0, Number(data.freeShippingMin) || 0);
   if (data.resellerDiscount !== undefined) data.resellerDiscount = Math.max(0, Number(data.resellerDiscount) || 0);
-  await getDb().collection('settings').doc(DOC).set(
-    { ...data, updatedAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
+  await setSettings(data);
   // Nota kirim ke mitra (via WA) di-cache 1 jam per shipment — invalidasi begitu
   // ada perubahan settings (logo/alamat/ttd/dll) supaya tidak menampilkan data basi.
   revalidateTag('settings', 'max');

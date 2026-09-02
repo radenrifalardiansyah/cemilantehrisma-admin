@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { productUrl } from '@/lib/branding';
+import { getSettings } from '@/lib/settings-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { revalidateTag } from 'next/cache';
 
@@ -21,11 +21,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Tidak ada data produk untuk diimpor.' }, { status: 400 });
   }
 
-  const db = getDb();
   const sql = getSql();
-  const [existingRows, settingsSnap] = await Promise.all([
+  const [existingRows, settings] = await Promise.all([
     sql<{ code: string | null }[]>`select code from products`,
-    db.collection('settings').doc('main').get(),
+    getSettings(),
   ]);
   const existingCodes = new Set(existingRows.map(r => (r.code ?? '').trim()).filter(Boolean));
   const seenCodes = new Set<string>();
@@ -36,7 +35,6 @@ export async function POST(req: NextRequest) {
   // dengan total global (lihat lib/stock-pg.ts). Kalau belum dikonfigurasi, produk tetap diimpor
   // tapi stoknya di-nolkan (bukan diam-diam "tersedia" tanpa jejak di gudang manapun) — jumlah
   // yang di-nolkan dikembalikan di respons supaya UI bisa memperingatkan penggunanya.
-  const settings = settingsSnap.data() ?? {};
   const warehouseId = settings.posWarehouseId as string | undefined;
   const warehouseName = (settings.posWarehouseName as string | undefined) ?? '';
 

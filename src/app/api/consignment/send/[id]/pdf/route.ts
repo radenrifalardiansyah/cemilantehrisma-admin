@@ -3,6 +3,8 @@ import { unstable_cache } from 'next/cache';
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
+import { getSettings } from '@/lib/settings-pg';
 import ShipmentNotePDF, { type ShipmentNoteData, type StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
 
@@ -45,14 +47,24 @@ function renderShipmentPdf(id: string) {
       if (!shipDoc.exists) return null;
       const shipment = shipDoc.data()!;
 
-      const [locationDoc, settingsDoc] = await Promise.all([
+      const sql = getSql();
+      const [locationRows, settingsRaw] = await Promise.all([
         shipment.locationId
-          ? db.collection('consignmentLocations').doc(shipment.locationId).get()
-          : Promise.resolve(null),
-        db.collection('settings').doc('main').get(),
+          ? sql<{ code: string | null; contact_name: string | null; contact_phone: string | null; address: string | null }[]>`
+              select code, contact_name, contact_phone, address from consignment_locations where id = ${shipment.locationId}
+            `
+          : Promise.resolve([]),
+        getSettings(),
       ]);
-      const location = locationDoc?.exists ? locationDoc.data()! : null;
-      const settings = settingsDoc.exists ? settingsDoc.data()! : {};
+      const locationRow = locationRows[0];
+      const location = locationRow
+        ? { code: locationRow.code, contactName: locationRow.contact_name, contactPhone: locationRow.contact_phone, address: locationRow.address }
+        : null;
+      const settings = settingsRaw as {
+        storeName?: string; storeTagline?: string; ownerName?: string;
+        ownerSignature?: string; ownerStamp?: string; address?: string; city?: string;
+        whatsapp?: string; logo?: string;
+      };
 
       const createdAt = shipment.createdAt as { seconds?: number } | undefined;
       const items = (shipment.items ?? []) as ShipmentNoteData['items'];

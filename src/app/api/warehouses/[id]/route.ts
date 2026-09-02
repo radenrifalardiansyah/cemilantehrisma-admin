@@ -2,19 +2,20 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 import { clearWarehouseStockForProducts } from '@/lib/warehouse-stock';
 
 type Ctx = { params: Promise<{ id: string }> };
+interface WarehouseRow { id: string; name: string; location: string | null; description: string | null }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'settings', 'view');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const doc = await getDb().collection('warehouses').doc(id).get();
-  if (!doc.exists) return Response.json({ error: 'Not found' }, { status: 404 });
-  return Response.json({ warehouse: { id: doc.id, ...doc.data() } });
+  const sql = getSql();
+  const [row] = await sql<WarehouseRow[]>`select id, name, location, description from warehouses where id = ${id}`;
+  if (!row) return Response.json({ error: 'Not found' }, { status: 404 });
+  return Response.json({ warehouse: { id: row.id, name: row.name, location: row.location ?? '', description: row.description ?? '' } });
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -23,23 +24,22 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
+  const sql = getSql();
 
-  const beforeSnap = await db.collection('warehouses').doc(id).get();
-  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
+  const [before] = await sql<WarehouseRow[]>`select id, name, location, description from warehouses where id = ${id}`;
 
   const after = {
-    name: data.name,
-    location: data.location ?? '',
-    description: data.description ?? '',
-    updatedAt: FieldValue.serverTimestamp(),
+    name: data.name as string,
+    location: (data.location as string) ?? '',
+    description: (data.description as string) ?? '',
   };
-  await db.collection('warehouses').doc(id).update(after);
+  await sql`update warehouses set name = ${after.name}, location = ${after.location}, description = ${after.description}, updated_at = now() where id = ${id}`;
 
   try {
     await logHistory(db, {
       entity: 'warehouses',
       entityId: id,
-      entityLabel: (data.name as string) ?? (before?.name as string) ?? id,
+      entityLabel: after.name ?? before?.name ?? id,
       action: 'update',
       actor: guard,
       before,
@@ -59,8 +59,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const sql = getSql();
 
-  const beforeSnap = await db.collection('warehouses').doc(id).get();
-  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
+  const [before] = await sql<WarehouseRow[]>`select id, name, location, description from warehouses where id = ${id}`;
 
   // Kembalikan dulu stok tiap produk di gudang ini ke `products.stockQty` global SEBELUM baris
   // warehouse_stock-nya dihapus — kalau dihapus langsung tanpa lewat sini, stockQty global tetap
@@ -80,13 +79,13 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     }, { status: 500 });
   }
 
-  await db.collection('warehouses').doc(id).delete();
+  await sql`delete from warehouses where id = ${id}`;
 
   try {
     await logHistory(db, {
       entity: 'warehouses',
       entityId: id,
-      entityLabel: (before?.name as string) ?? id,
+      entityLabel: before?.name ?? id,
       action: 'delete',
       actor: guard,
       before,

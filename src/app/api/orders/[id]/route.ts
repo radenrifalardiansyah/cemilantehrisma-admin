@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/rbac';
 import { restoreOrderStockInTxPg, RestorableOrderItem } from '@/lib/order-stock-pg';
 import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { logHistory } from '@/lib/history';
+import { getSettings } from '@/lib/settings-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { rowToOrder, OrderRow } from '@/lib/orders-pg';
 
@@ -181,8 +182,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       // Pesanan (online ATAU kasir "Buka PO") ditandai selesai → baru sekarang stoknya dipotong.
       if (status === 'selesai' && !order.stockCut) {
-        const settingsSnap = await db.collection('settings').doc('main').get();
-        const settings = settingsSnap.data() ?? {};
+        const settings = await getSettings();
         const warehouseId = settings.posWarehouseId as string | undefined;
         const warehouseName = settings.posWarehouseName as string | undefined;
 

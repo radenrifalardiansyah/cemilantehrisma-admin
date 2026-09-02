@@ -1,10 +1,9 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { getAuthUser } from '@/lib/admin-auth';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { rowToProduct, productPatchFromBody, type ProductRow } from '@/lib/products-pg';
 
@@ -30,26 +29,21 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   delete data.stockQty;
   delete data.stock;
 
-  const db = getDb();
   const sql = getSql();
   const patch = productPatchFromBody(data);
   if (Object.keys(patch).length === 0) return Response.json({ ok: true });
 
-  // Catat riwayat perubahan harga jual (audit trail, tetap di Firestore) supaya kalau ada
-  // transaksi dengan harga yang beda dari harga sekarang, bisa ditelusuri siapa & kapan harga
-  // produk ini pernah diubah — tanpa perlu mengubah alur update produk yang lain.
+  // Catat riwayat perubahan harga jual (audit trail) supaya kalau ada transaksi dengan harga
+  // yang beda dari harga sekarang, bisa ditelusuri siapa & kapan harga produk ini pernah diubah
+  // — tanpa perlu mengubah alur update produk yang lain.
   if (typeof data.price === 'number') {
     const [before] = await sql<{ price: string | null; name: string | null }[]>`select price, name from products where id = ${id}`;
     const oldPrice = before?.price != null ? Number(before.price) : undefined;
     if (typeof oldPrice === 'number' && oldPrice !== data.price) {
-      await db.collection('price_history').add({
-        productId: id,
-        productName: before?.name ?? '',
-        oldPrice,
-        newPrice: data.price,
-        changedBy: getAuthUser(req)?.username ?? '',
-        createdAt: FieldValue.serverTimestamp(),
-      });
+      await sql`
+        insert into price_history (id, product_id, product_name, old_price, new_price, changed_by, created_at)
+        values (${randomUUID()}, ${id}, ${before?.name ?? ''}, ${oldPrice}, ${data.price}, ${getAuthUser(req)?.username ?? ''}, now())
+      `;
     }
   }
 

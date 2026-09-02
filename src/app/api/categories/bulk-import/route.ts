@@ -1,7 +1,6 @@
 import { NextRequest, after } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 interface ImportRow {
@@ -12,8 +11,6 @@ function slugify(s: string) {
   return s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
-const BATCH_LIMIT = 400;
-
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'categories', 'create');
   if (guard instanceof Response) return guard;
@@ -22,16 +19,15 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Tidak ada data kategori untuk diimpor.' }, { status: 400 });
   }
 
-  const db = getDb();
-  const existingSnap = await db.collection('categories').get();
-  const existingSlugs = new Set(existingSnap.docs.map(d => d.id));
+  const sql = getSql();
+  const existingRows = await sql<{ id: string }[]>`select id from categories`;
+  const existingSlugs = new Set(existingRows.map(r => r.id));
   const seenSlugs = new Set<string>();
   // max(order)+1, bukan jumlah dokumen — lihat komentar sama di api/categories/route.ts POST.
-  let nextOrder = existingSnap.docs.reduce((max, d) => Math.max(max, Number(d.data().order) || 0), -1) + 1;
+  const [{ max_order }] = await sql<{ max_order: number | null }[]>`select max(sort_order) as max_order from categories`;
+  let nextOrder = (max_order ?? -1) + 1;
 
   let created = 0, skippedInvalid = 0, skippedDuplicate = 0;
-  let batch = db.batch();
-  let opsInBatch = 0;
 
   for (const row of categories) {
     const name = (row.name ?? '').toString().trim();
@@ -40,24 +36,12 @@ export async function POST(req: NextRequest) {
     if (!slug || existingSlugs.has(slug) || seenSlugs.has(slug)) { skippedDuplicate++; continue; }
 
     seenSlugs.add(slug);
-    const ref = db.collection('categories').doc(slug);
-    batch.set(ref, {
-      name, emoji: (row.emoji ?? '').toString().trim() || '🏷️',
-      description: (row.description ?? '').toString().trim(),
-      order: nextOrder++, bannerUrl: '',
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    await sql`
+      insert into categories (id, name, emoji, description, sort_order, banner_url, created_at, updated_at)
+      values (${slug}, ${name}, ${(row.emoji ?? '').toString().trim() || '🏷️'}, ${(row.description ?? '').toString().trim()}, ${nextOrder++}, '', now(), now())
+    `;
     created++;
-    opsInBatch++;
-
-    if (opsInBatch >= BATCH_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      opsInBatch = 0;
-    }
   }
-  if (opsInBatch > 0) await batch.commit();
 
   if (created > 0) after(() => revalidateStorefront('categories'));
   return Response.json({ created, skippedInvalid, skippedDuplicate });

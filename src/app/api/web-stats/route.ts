@@ -35,17 +35,17 @@ const getRawWebStats = unstable_cache(
       return wibDateKey(d);
     });
 
-    const [snapshots, prodRows, catSnap] = await Promise.all([
+    const [snapshots, prodRows, catRows] = await Promise.all([
       Promise.all(days.map(day => db.collection('analytics').doc(day).get())),
       sql<{ id: string; name: string | null; emoji: string | null; bg_color: string | null }[]>`select id, name, emoji, bg_color from products`,
-      db.collection('categories').get(),
+      sql<{ id: string; name: string; emoji: string | null }[]>`select id, name, emoji from categories`,
     ]);
 
     return {
       days,
       analyticsData: snapshots.map(s => s.exists ? s.data()! : null),
       products: prodRows.map(r => ({ id: r.id, data: { name: r.name, emoji: r.emoji, bgColor: r.bg_color } })),
-      categories: catSnap.docs.map(d => ({ id: d.id, data: d.data() })),
+      categories: catRows.map(r => ({ id: r.id, data: { name: r.name, emoji: r.emoji } })),
     };
   },
   ['admin-web-stats'],

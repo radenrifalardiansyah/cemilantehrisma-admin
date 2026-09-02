@@ -30,8 +30,8 @@ const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const db = getDb();
     const sql = getSql();
-    const [locSnap, shipSnap, recapRows, stockRows] = await Promise.all([
-      db.collection('consignmentLocations').get(),
+    const [locRows, shipSnap, recapRows, stockRows] = await Promise.all([
+      sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from consignment_locations`,
       db.collection('consignmentShipments')
         .where('createdAt', '>=', wibDayStart(from)).where('createdAt', '<=', wibDayEnd(to)).get(),
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
@@ -48,7 +48,7 @@ const getRawConsignmentAnalytics = unstable_cache(
     const toSeconds = (ts: unknown) => ts instanceof Timestamp ? ts.seconds : null;
 
     return {
-      locations: locSnap.docs.map(d => ({ id: d.id, ...d.data() }) as LocationDoc),
+      locations: locRows.map(r => ({ id: r.id, name: r.name, code: r.code ?? undefined }) as LocationDoc),
       shipments: shipSnap.docs.map(d => {
         const data = d.data();
         return { ...data, createdAtSeconds: toSeconds(data.createdAt) } as ShipmentDoc;

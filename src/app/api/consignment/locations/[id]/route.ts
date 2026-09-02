@@ -2,10 +2,10 @@ import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
+interface LocationRow { name: string; code: string | null; contact_name: string | null; contact_phone: string | null; address: string | null; note: string | null }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'edit');
@@ -13,32 +13,32 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
+  const sql = getSql();
   const codeTrim = typeof data.code === 'string' ? data.code.trim() : '';
   if (codeTrim) {
-    const dup = await db.collection('consignmentLocations').where('code', '==', codeTrim).limit(1).get();
-    if (!dup.empty && dup.docs[0].id !== id) {
+    const [dup] = await sql<{ id: string }[]>`select id from consignment_locations where code = ${codeTrim} limit 1`;
+    if (dup && dup.id !== id) {
       return Response.json({ error: `Kode "${codeTrim}" sudah digunakan lokasi lain.` }, { status: 409 });
     }
   }
-  const locationRef = db.collection('consignmentLocations').doc(id);
-  const beforeSnap = await locationRef.get();
-  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
+  const [before] = await sql<LocationRow[]>`select name, code, contact_name, contact_phone, address, note from consignment_locations where id = ${id}`;
   const payload = {
-    name: data.name,
-    code: codeTrim,
-    contactName: data.contactName ?? '',
-    contactPhone: data.contactPhone ?? '',
-    address: data.address ?? '',
-    note: data.note ?? '',
-    updatedAt: FieldValue.serverTimestamp(),
+    name: data.name as string, code: codeTrim,
+    contactName: (data.contactName as string) ?? '', contactPhone: (data.contactPhone as string) ?? '',
+    address: (data.address as string) ?? '', note: (data.note as string) ?? '',
   };
-  await locationRef.update(payload);
+  await sql`
+    update consignment_locations set
+      name = ${payload.name}, code = ${payload.code}, contact_name = ${payload.contactName},
+      contact_phone = ${payload.contactPhone}, address = ${payload.address}, note = ${payload.note}, updated_at = now()
+    where id = ${id}
+  `;
   try {
     await logHistory(db, {
       entity: 'consignment',
       entityCollection: 'consignmentLocations',
       entityId: id,
-      entityLabel: (typeof data.name === 'string' && data.name) || (before?.name as string | undefined) || id,
+      entityLabel: (typeof data.name === 'string' && data.name) || before?.name || id,
       action: 'update',
       actor: guard,
       before,
@@ -53,10 +53,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const db = getDb();
+  const sql = getSql();
 
   // Tolak kalau masih ada stok titip tersisa di lokasi ini — kalau dibolehkan, stok itu jadi
   // yatim permanen (tidak bisa direkap lagi karena lokasinya sudah tidak ada untuk dipilih).
-  const sql = getSql();
   const [{ count }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_stock where location_id = ${id} and stock_qty > 0`;
   if (Number(count) > 0) {
     return Response.json(
@@ -65,16 +65,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     );
   }
 
-  const locationRef = db.collection('consignmentLocations').doc(id);
-  const beforeSnap = await locationRef.get();
-  const before = beforeSnap.exists ? beforeSnap.data() ?? null : null;
-  await locationRef.delete();
+  const [before] = await sql<LocationRow[]>`select name, code, contact_name, contact_phone, address, note from consignment_locations where id = ${id}`;
+  await sql`delete from consignment_locations where id = ${id}`;
   try {
     await logHistory(db, {
       entity: 'consignment',
       entityCollection: 'consignmentLocations',
       entityId: id,
-      entityLabel: (before?.name as string | undefined) || id,
+      entityLabel: before?.name || id,
       action: 'delete',
       actor: guard,
       before,

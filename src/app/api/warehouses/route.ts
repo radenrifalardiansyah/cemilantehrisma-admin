@@ -1,16 +1,26 @@
+import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { WAREHOUSES_LIST_VIEW_KEYS } from '@/lib/permissions';
-import { FieldValue } from 'firebase-admin/firestore';
 import { logHistory } from '@/lib/history';
+
+interface WarehouseRow { id: string; name: string; location: string | null; description: string | null; created_at: Date; updated_at: Date | null }
+function rowToWarehouse(r: WarehouseRow) {
+  return {
+    id: r.id, name: r.name, location: r.location ?? '', description: r.description ?? '',
+    createdAt: r.created_at.toISOString(), updatedAt: r.updated_at ? r.updated_at.toISOString() : null,
+  };
+}
 
 // Opened whenever the Gudang tab is opened, not on every session — plain TTL is enough.
 const getCachedWarehouses = unstable_cache(
   async () => {
-    const snap = await getDb().collection('warehouses').orderBy('createdAt', 'asc').get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sql = getSql();
+    const rows = await sql<WarehouseRow[]>`select * from warehouses order by created_at asc`;
+    return rows.map(rowToWarehouse);
   },
   ['admin-warehouses'],
   { revalidate: 20 },
@@ -28,20 +38,19 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
   const db = getDb();
-  const payload = {
-    name: data.name,
-    location: data.location ?? '',
-    description: data.description ?? '',
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  const ref = await db.collection('warehouses').add(payload);
+  const sql = getSql();
+  const id = randomUUID();
+  const payload = { name: data.name as string, location: (data.location as string) ?? '', description: (data.description as string) ?? '' };
+  await sql`
+    insert into warehouses (id, name, location, description, created_at, updated_at)
+    values (${id}, ${payload.name}, ${payload.location}, ${payload.description}, now(), now())
+  `;
 
   try {
     await logHistory(db, {
       entity: 'warehouses',
-      entityId: ref.id,
-      entityLabel: (data.name as string) ?? ref.id,
+      entityId: id,
+      entityLabel: payload.name ?? id,
       action: 'create',
       actor: guard,
       after: payload,
@@ -50,5 +59,5 @@ export async function POST(req: NextRequest) {
     // audit log failure must never fail the business request
   }
 
-  return Response.json({ id: ref.id });
+  return Response.json({ id });
 }

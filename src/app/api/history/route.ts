@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getDb } from '@/lib/firebase-admin';
+import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { Query, DocumentData } from 'firebase-admin/firestore';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 
 // Riwayat satu record spesifik (dipakai tombol "Riwayat" di tiap baris menu transaksi) digerbangi
@@ -14,15 +13,34 @@ const ENTITY_FEATURE_KEY: Record<string, string> = {
   warehouses: 'settings', pos: 'pos', capital: 'capital', income: 'income', expenses: 'expenses',
 };
 
-function entrySeconds(entry: DocumentData) {
-  const ts = entry.createdAt as { seconds?: number; _seconds?: number } | undefined;
-  return ts?.seconds ?? ts?._seconds ?? 0;
+interface AuditRow {
+  id: string; entity: string; entity_collection: string | null; entity_id: string; entity_label: string;
+  action: string; actor_username: string; actor_role: string;
+  before: unknown; after: unknown; changed_fields: unknown; meta: unknown; created_at: Date;
+}
+function rowToEntry(r: AuditRow) {
+  return {
+    id: r.id,
+    entity: r.entity,
+    entityCollection: r.entity_collection,
+    entityId: r.entity_id,
+    entityLabel: r.entity_label,
+    action: r.action,
+    actorUsername: r.actor_username,
+    actorRole: r.actor_role,
+    before: parseJsonb(r.before),
+    after: parseJsonb(r.after),
+    changedFields: parseJsonb(r.changed_fields),
+    meta: parseJsonb(r.meta) ?? {},
+    createdAt: { seconds: Math.floor(r.created_at.getTime() / 1000), nanoseconds: 0 },
+  };
 }
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const entity   = searchParams.get('entity');
   const entityId = searchParams.get('entityId');
+  const sql = getSql();
 
   // Mode 1: riwayat satu record spesifik — dipakai oleh tombol "Riwayat" per baris di masing-masing menu.
   if (entityId) {
@@ -30,28 +48,36 @@ export async function GET(req: NextRequest) {
     const featureKey = ENTITY_FEATURE_KEY[entity] ?? 'history';
     const guard = await requirePermission(req, featureKey, 'view');
     if (guard instanceof Response) return guard;
-    const snap = await getDb().collection('audit_log')
-      .where('entity', '==', entity).where('entityId', '==', entityId).get();
-    const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => entrySeconds(b) - entrySeconds(a));
-    return Response.json({ entries });
+    const rows = await sql<AuditRow[]>`
+      select * from audit_log where entity = ${entity} and entity_id = ${entityId} order by created_at desc
+    `;
+    return Response.json({ entries: rows.map(rowToEntry) });
   }
 
-  // Mode 2: jelajah lintas-modul (halaman Riwayat) — hanya satu equality filter (`entity`) selain
-  // rentang tanggal, supaya tidak perlu composite index untuk tiap kombinasi filter. Filter
-  // `actorUsername`/`action` diterapkan client-side di atas batch yang sudah difetch.
+  // Mode 2: jelajah lintas-modul (halaman Riwayat).
   const guard = await requirePermission(req, 'history', 'view');
   if (guard instanceof Response) return guard;
   const from = searchParams.get('from'); // ISO yyyy-mm-dd
   const to   = searchParams.get('to');
 
-  let query: Query<DocumentData> = getDb().collection('audit_log').orderBy('createdAt', 'desc');
-  if (entity) query = query.where('entity', '==', entity);
-  if (from)   query = query.where('createdAt', '>=', wibDayStart(from));
-  if (to)     query = query.where('createdAt', '<=', wibDayEnd(to));
-  if (!from && !to) query = query.limit(300);
+  let rows: AuditRow[];
+  if (entity && from && to) {
+    rows = await sql<AuditRow[]>`select * from audit_log where entity = ${entity} and created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else if (entity && from) {
+    rows = await sql<AuditRow[]>`select * from audit_log where entity = ${entity} and created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+  } else if (entity && to) {
+    rows = await sql<AuditRow[]>`select * from audit_log where entity = ${entity} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else if (entity) {
+    rows = await sql<AuditRow[]>`select * from audit_log where entity = ${entity} order by created_at desc limit 300`;
+  } else if (from && to) {
+    rows = await sql<AuditRow[]>`select * from audit_log where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else if (from) {
+    rows = await sql<AuditRow[]>`select * from audit_log where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+  } else if (to) {
+    rows = await sql<AuditRow[]>`select * from audit_log where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else {
+    rows = await sql<AuditRow[]>`select * from audit_log order by created_at desc limit 300`;
+  }
 
-  const snap = await query.get();
-  const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return Response.json({ entries });
+  return Response.json({ entries: rows.map(rowToEntry) });
 }
