@@ -1,9 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import OrderInvoicePDF, { type OrderInvoiceData } from '@/lib/pdf/OrderInvoicePDF';
+import { toDataUri } from '@/lib/pdf/logo';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -98,6 +101,11 @@ function formatDate(o: Order) {
   return o.date ?? '–';
 }
 
+function normalizePhone(raw: string) {
+  const d = raw.replace(/\D/g, '');
+  return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
+}
+
 // Format Date lokal ke value <input type="datetime-local"> ("YYYY-MM-DDTHH:mm") tanpa lewat UTC
 // (beda dengan toISOString(), yang menggeser jam sesuai timezone browser).
 function toDateTimeLocal(d: Date) {
@@ -189,7 +197,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   }, [orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko — dipakai saat cetak ulang struk ──
-  interface StoreInfo { storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string; }
+  interface StoreInfo { storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string; }
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
   useEffect(() => {
     fetch(`${API}/api/settings`, { headers }).then(async r => {
@@ -201,6 +209,105 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const storePhone   = (storeInfo.whatsapp?.trim() || WHATSAPP_NUMBER)
     .replace(/^62/, '0').replace(/(\d{4})(\d{4})(\d+)/, '$1-$2-$3');
   const storeLogo    = storeInfo.logo;
+
+  // ── Invoice PDF & kirim WA (pakai logo sebagai data URI, react-pdf tidak bisa fetch balik
+  // ke domainnya sendiri dengan andal — lihat komentar di lib/pdf/logo.ts) ──
+  const [invoiceLogoDataUri, setInvoiceLogoDataUri] = useState<string | undefined>(undefined);
+  useEffect(() => { toDataUri(storeLogo).then(setInvoiceLogoDataUri); }, [storeLogo]);
+  const invoiceStoreHeader = {
+    name: storeName,
+    tagline: storeInfo.storeTagline?.trim() || undefined,
+    address: storeAddress || undefined,
+    phone: storePhone,
+    logo: invoiceLogoDataUri,
+  };
+
+  const [printingInvoiceId, setPrintingInvoiceId] = useState<string | null>(null);
+  const buildInvoiceData = (o: Order): OrderInvoiceData => ({
+    invoiceNo:      o.invoiceNo || o.id,
+    date:           formatDate(o),
+    printedAt:      new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    customerName:   o.customerName,
+    customerPhone:  o.customerPhone || undefined,
+    deliveryMethod: o.deliveryMethod,
+    address:        o.address,
+    note:           o.note,
+    items:          o.items,
+    subtotal:       o.subtotal,
+    discount:       o.discount,
+    total:          o.total,
+    paymentMethod:  o.paymentMethod,
+    paymentStatus:  o.paymentStatus,
+    amountPaid:     o.amountPaid,
+    changeAmount:   o.changeAmount,
+    transferBank:   o.transferBank,
+    transferAmount: o.transferAmount,
+  });
+
+  const printInvoicePdf = async (o: Order) => {
+    setPrintingInvoiceId(o.id);
+    try {
+      const blob = await pdf(<OrderInvoicePDF data={buildInvoiceData(o)} store={invoiceStoreHeader} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${(o.invoiceNo || o.id).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat invoice PDF.');
+    } finally {
+      setPrintingInvoiceId(null);
+    }
+  };
+
+  const sendInvoiceWhatsApp = (o: Order) => {
+    const phone = o.customerPhone?.trim();
+    if (!phone) { toast.error('Nomor WhatsApp pelanggan belum diisi di pesanan ini.'); return; }
+
+    const SEP = '─────────────────────';
+    const itemLines = o.items
+      .map((it, i) => `${i + 1}. ${it.name}${it.weight ? ` (${it.weight})` : ''}\n   ${it.qty} x ${formatRp(it.price)} = *${formatRp(it.subtotal)}*`)
+      .join('\n');
+    const discountLine = o.discount && o.discount.amount > 0
+      ? `Diskon (${o.discount.label}) : -${formatRp(o.discount.amount)}\n`
+      : '';
+    const paymentLines = o.paymentMethod === 'cash'
+      ? `Tunai   : ${formatRp(o.amountPaid ?? 0)}\nKembali : ${formatRp(o.changeAmount ?? 0)}`
+      : o.paymentMethod === 'kredit'
+      ? `Status  : *${o.paymentStatus === 'lunas' ? 'LUNAS' : 'BELUM LUNAS (KREDIT)'}*`
+      : o.paymentMethod === 'transfer'
+      ? `Transfer ${o.transferBank ?? ''} : ${formatRp(o.transferAmount ?? 0)}`
+      : '';
+    const pdfUrl = `${window.location.origin}/api/orders/${o.id}/pdf`;
+
+    const message = `*${storeName.toUpperCase()}*
+${storeAddress ? `${storeAddress}\n` : ''}${storePhone}
+${SEP}
+
+Halo *${o.customerName}*!
+Berikut invoice pesanan Anda:
+
+No. Invoice : *${o.invoiceNo}*
+Tanggal     : ${formatDate(o)}
+${SEP}
+${itemLines}
+${SEP}
+Subtotal : ${formatRp(o.subtotal)}
+${discountLine}*Total    : ${formatRp(o.total)}*
+${paymentLines}
+${SEP}
+
+Invoice PDF:
+${pdfUrl}
+
+Terima kasih telah berbelanja!
+_${storeName}_`.trim();
+
+    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
 
   // ── Cetak ulang struk pesanan ──
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
@@ -921,6 +1028,18 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                     <Printer size={12} />
                   </button>
                 </Tooltip>
+                <Tooltip label="Cetak Invoice PDF">
+                  <button onClick={() => printInvoicePdf(o)} disabled={printingInvoiceId === o.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Invoice PDF">
+                    {printingInvoiceId === o.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
+                  </button>
+                </Tooltip>
+                {o.customerPhone && (
+                  <Tooltip label="Kirim Invoice via WhatsApp">
+                    <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
+                      <MessageCircle size={12} />
+                    </button>
+                  </Tooltip>
+                )}
                 {o.status !== 'dibatalkan' && (
                   <Tooltip label="Edit">
                     <button onClick={() => openEdit(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit Pesanan">
@@ -1035,6 +1154,18 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
                         <Printer size={12} />
                       </button>
                     </Tooltip>
+                    <Tooltip label="Cetak Invoice PDF">
+                      <button onClick={() => printInvoicePdf(o)} disabled={printingInvoiceId === o.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Invoice PDF">
+                        {printingInvoiceId === o.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
+                      </button>
+                    </Tooltip>
+                    {o.customerPhone && (
+                      <Tooltip label="Kirim Invoice via WhatsApp">
+                        <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
+                          <MessageCircle size={12} />
+                        </button>
+                      </Tooltip>
+                    )}
                     {o.status !== 'dibatalkan' && (
                       <Tooltip label="Edit">
                         <button onClick={() => openEdit(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit Pesanan">
