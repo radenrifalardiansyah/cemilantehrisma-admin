@@ -125,23 +125,31 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const load = async (silent = false) => {
     const myLoadId = ++loadIdRef.current;
     if (!silent) setLoading(true);
-    const [wRes, bRes, tRes] = await Promise.all([
-      fetch(`${API}/api/wallets`, { headers }),
-      fetch(`${API}/api/wallets/balances`, { headers }),
-      fetch(`${API}/api/wallet-transfers`, { headers }),
-    ]);
-    const walletList: WalletDoc[] = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
-    const { balances: nextBalances, unassigned: nextUnassigned } = bRes.ok
-      ? await bRes.json() as { balances: Record<string, number>; unassigned: number }
-      : { balances: {}, unassigned: 0 };
-    const transferList: Transfer[] = tRes.ok ? (await tRes.json() as { transfers: Transfer[] }).transfers : [];
-    if (myLoadId !== loadIdRef.current) return;
+    try {
+      const [wRes, bRes, tRes] = await Promise.all([
+        fetch(`${API}/api/wallets`, { headers }),
+        fetch(`${API}/api/wallets/balances`, { headers }),
+        fetch(`${API}/api/wallet-transfers`, { headers }),
+      ]);
+      const walletList: WalletDoc[] = wRes.ok ? (await wRes.json() as { wallets: WalletDoc[] }).wallets : [];
+      const { balances: nextBalances, unassigned: nextUnassigned } = bRes.ok
+        ? await bRes.json() as { balances: Record<string, number>; unassigned: number }
+        : { balances: {}, unassigned: 0 };
+      const transferList: Transfer[] = tRes.ok ? (await tRes.json() as { transfers: Transfer[] }).transfers : [];
+      if (myLoadId !== loadIdRef.current) return;
 
-    setWallets(walletList);
-    setTransfers(transferList);
-    setBalances(nextBalances);
-    setUnassigned(nextUnassigned);
-    if (!silent) setLoading(false);
+      setWallets(walletList);
+      setTransfers(transferList);
+      setBalances(nextBalances);
+      setUnassigned(nextUnassigned);
+    } finally {
+      // Selalu matikan spinner awal, terlepas dari menang/kalahnya balapan `myLoadId` —
+      // mount-effect (non-silent) dan poll pertama dari useVisiblePolling (silent) sama-sama
+      // jalan di commit yang sama; kalau load awal kalah balapan, guard di atas skip
+      // penyetelan data-nya, tapi spinner tetap wajib mati karena data terbaru sudah/akan
+      // disetel oleh load yang menang.
+      if (!silent) setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
