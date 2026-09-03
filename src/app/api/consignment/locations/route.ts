@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -41,7 +41,7 @@ const getCachedLocations = unstable_cache(
     return locations;
   },
   ['admin-consignment-locations'],
-  { revalidate: 20 },
+  { revalidate: 20, tags: ['admin-consignment-locations'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -85,5 +85,6 @@ export async function POST(req: NextRequest) {
       after: payload,
     });
   } catch {}
+  revalidateTag('admin-consignment-locations', { expire: 0 });
   return Response.json({ id });
 }

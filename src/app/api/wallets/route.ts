@@ -1,14 +1,12 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { rowToWallet, type WalletRow } from '@/lib/wallets-pg';
 
-// Opened whenever the Dompet tab (or any dropdown showing wallet balances) is opened,
-// not on every session — plain TTL is enough.
 const getCachedWallets = unstable_cache(
   async () => {
     const sql = getSql();
@@ -16,7 +14,7 @@ const getCachedWallets = unstable_cache(
     return rows.map(rowToWallet);
   },
   ['admin-wallets'],
-  { revalidate: 15 },
+  { revalidate: 15, tags: ['admin-wallets'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -65,5 +63,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write history for wallets create', err);
   }
+  revalidateTag('admin-wallets', { expire: 0 });
   return Response.json({ id });
 }

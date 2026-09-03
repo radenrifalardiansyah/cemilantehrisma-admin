@@ -11,7 +11,7 @@ import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { type PeriodKey, periodRange } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import ExcelJS from 'exceljs';
-import { pdf } from '@react-pdf/renderer';
+import { pdf, Document } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -27,8 +27,10 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import type { PosProduct } from '@/lib/pos-types';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
-import RecapNotePDF from '@/lib/pdf/RecapNotePDF';
+import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
+import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
+import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
 import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
@@ -403,6 +405,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
   const [bulkDeletingLocations, setBulkDeletingLocations] = useState(false);
   const [exportingLocations, setExportingLocations] = useState(false);
+  const [exportingLocationsPdf, setExportingLocationsPdf] = useState(false);
   const [importingLocations, setImportingLocations] = useState(false);
   const importLocationFileRef = useRef<HTMLInputElement>(null);
 
@@ -617,6 +620,54 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       toast.error('Gagal membuat file Excel.');
     } finally {
       setExportingLocations(false);
+    }
+  };
+
+  const exportLocationsPDF = async (rows: ConsignmentLocation[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada lokasi untuk diexport.'); return; }
+    setExportingLocationsPdf(true);
+    try {
+      const pdfRows = rows.map((l, i) => {
+        const totals = locationStockTotals(l.id);
+        return {
+          no:          i + 1,
+          name:        l.name,
+          contactName: l.contactName || undefined,
+          contactPhone:l.contactPhone || undefined,
+          address:     l.address || undefined,
+          stockQty:    totals.qty,
+          stockValue:  totals.value,
+          note:        l.note || undefined,
+        };
+      });
+
+      const blob = await pdf(
+        <LocationsListPDF
+          store={storeHeader}
+          data={{
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            totalStock:  pdfRows.reduce((s, r) => s + r.stockQty, 0),
+            totalValue:  pdfRows.reduce((s, r) => s + r.stockValue, 0),
+            rows: pdfRows,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lokasi-konsinyasi-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} lokasi (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingLocationsPdf(false);
     }
   };
 
@@ -1170,6 +1221,7 @@ _${storeHeader.name}_`.trim();
   const [deletingRecapId, setDeletingRecapId] = useState<string | null>(null);
   const [bulkDeletingRecaps, setBulkDeletingRecaps] = useState(false);
   const [printingRecapId, setPrintingRecapId] = useState<string | null>(null);
+  const [printingRecapsBulk, setPrintingRecapsBulk] = useState(false);
 
   const loadRecaps = async () => {
     setRecapsLoading(true);
@@ -1477,6 +1529,99 @@ _${storeHeader.name}_`.trim();
       toast.error('Gagal membuat rekap PDF.');
     }
     setPrintingRecapId(null);
+  };
+
+  // Cetak rekap PDF untuk beberapa rekap sekaligus — satu file, satu halaman per mitra.
+  // Rekap-rekap yang diceklis dikelompokkan per lokasi/mitra dulu: kalau beberapa rekap
+  // ternyata dari mitra yang sama, qty & pendapatannya dijumlahkan jadi satu halaman
+  // ringkasan (per produk); mitra yang berbeda tetap dapat halamannya masing-masing.
+  const printRecapsBulk = async (rows: Recap[]) => {
+    if (rows.length === 0) { toast.error('Tidak ada rekap untuk dicetak.'); return; }
+    setPrintingRecapsBulk(true);
+    try {
+      const groups = groupAndMergeRecaps(rows, locationId => locations.find(l => l.id === locationId)?.code);
+
+      const blob = await pdf(
+        <Document>
+          {groups.map((g, i) => <RecapNotePDFPage key={i} data={g.data} store={storeHeader} />)}
+        </Document>
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rekap-harian-gabungan-${rows.length}-${toISODate(new Date())}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil cetak ${rows.length} rekap (${groups.length} mitra) ke satu PDF.`);
+    } catch {
+      toast.error('Gagal membuat rekap PDF.');
+    } finally {
+      setPrintingRecapsBulk(false);
+    }
+  };
+
+  // Kirim reminder WA untuk rekap yang belum lunas — link nota-nya mengarah ke route publik
+  // yang merender PDF gabungan on-the-fly dari `ids` (grup mitra yang sama otomatis jadi 1
+  // ringkasan, sama seperti export PDF gabungan di atas), jadi mitra buka satu link untuk
+  // seluruh rekap yang belum ia lunasi.
+  const openRecapWhatsApp = (group: ReturnType<typeof groupAndMergeRecaps>[number], phone: string, contactName?: string) => {
+    const { data } = group;
+    const pdfUrl = `${window.location.origin}/api/consignment/recap/pdf?ids=${group.recapIds.join(',')}`;
+    const SEP = '─────────────────────';
+    const itemLines = data.items
+      .map((it, i) => `${i + 1}. ${it.productName}\n   jual ${it.qtySold}${it.qtyRetur ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject ? `, reject ${it.qtyReject}` : ''} · ${formatRp(it.revenue)}`)
+      .join('\n');
+    const message = `*${storeHeader.name.toUpperCase()}*
+${storeHeader.address ? `${storeHeader.address}\n` : ''}${storeHeader.phone ? `${storeHeader.phone}\n` : ''}${SEP}
+
+Halo *${contactName || data.locationName}*!
+Reminder tagihan konsinyasi *${data.locationName}* yang belum lunas:
+
+Periode : ${data.date}
+${SEP}
+${itemLines}
+${SEP}
+*Total Tagihan : ${formatRp(data.totalRevenue)}*
+${SEP}
+Nota Rekap PDF:
+${pdfUrl}
+
+Mohon konfirmasi pembayarannya ya. Terima kasih!
+_${storeHeader.name}_`.trim();
+
+    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const sendRecapWhatsApp = (r: Recap) => {
+    const location = locations.find(l => l.id === r.locationId);
+    const phone = location?.contactPhone?.trim();
+    if (!phone) { toast.error(`Nomor WhatsApp untuk "${r.locationName}" belum diisi di data lokasi.`); return; }
+    const [group] = groupAndMergeRecaps([r], () => location?.code);
+    openRecapWhatsApp(group, phone, location?.contactName);
+  };
+
+  const sendRecapsWhatsAppBulk = (rows: Recap[]) => {
+    const unpaid = rows.filter(r => (r.paymentStatus ?? 'lunas') === 'belum_lunas');
+    if (unpaid.length === 0) { toast.error('Tidak ada rekap belum lunas yang dipilih.'); return; }
+
+    const groups = groupAndMergeRecaps(unpaid, locationId => locations.find(l => l.id === locationId)?.code);
+    const skipped: string[] = [];
+    let sent = 0;
+    groups.forEach(g => {
+      const location = locations.find(l => l.id === g.locationId);
+      const phone = location?.contactPhone?.trim();
+      if (!phone) { skipped.push(g.data.locationName); return; }
+      openRecapWhatsApp(g, phone, location?.contactName);
+      sent++;
+    });
+
+    if (sent > 0) {
+      toast.success(`Membuka WhatsApp untuk ${sent} mitra${skipped.length > 0 ? ` (${skipped.length} dilewati, nomor WA belum diisi)` : ''}.`);
+    } else {
+      toast.error(`Nomor WhatsApp belum diisi untuk: ${skipped.join(', ')}`);
+    }
   };
 
   const bulkDeleteRecaps = async () => {
@@ -1885,6 +2030,14 @@ _${storeHeader.name}_`.trim();
                     <button onClick={() => exportLocationsExcel(filteredLocations, 'sesuai filter')} disabled={exportingLocations} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       {exportingLocations ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {locations.length > 0 && (
+                  <Tooltip label="Export PDF">
+                    <button onClick={() => exportLocationsPDF(filteredLocations, 'sesuai filter')} disabled={exportingLocationsPdf} aria-label="Export PDF"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingLocationsPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -2416,6 +2569,13 @@ _${storeHeader.name}_`.trim();
                                   {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                                 </button>
                               </Tooltip>
+                              {r.paymentStatus === 'belum_lunas' && (
+                                <Tooltip label="Kirim Reminder via WhatsApp">
+                                  <button onClick={() => sendRecapWhatsApp(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Reminder via WhatsApp">
+                                    <MessageCircle size={12} />
+                                  </button>
+                                </Tooltip>
+                              )}
                               <RecordHistoryButton open={auditHistoryId === r.id} onToggle={() => toggleAuditHistory(r.id)} />
                               <Tooltip label="Edit">
                                 <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
@@ -2463,6 +2623,13 @@ _${storeHeader.name}_`.trim();
                                     {printingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                                   </button>
                                 </Tooltip>
+                                {r.paymentStatus === 'belum_lunas' && (
+                                  <Tooltip label="Kirim Reminder via WhatsApp">
+                                    <button onClick={() => sendRecapWhatsApp(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Reminder via WhatsApp">
+                                      <MessageCircle size={12} />
+                                    </button>
+                                  </Tooltip>
+                                )}
                                 <RecordHistoryButton open={auditHistoryId === r.id} onToggle={() => toggleAuditHistory(r.id)} />
                                 <Tooltip label="Edit">
                                   <button onClick={() => openEditRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
@@ -3124,7 +3291,13 @@ _${storeHeader.name}_`.trim();
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingLocations ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
+              Excel
+            </button>
+            <button onClick={() => exportLocationsPDF(locations.filter(l => selectedLocations.has(l.id)), 'terpilih')} disabled={exportingLocationsPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingLocationsPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={bulkDeleteLocations} disabled={bulkDeletingLocations}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
@@ -3176,8 +3349,22 @@ _${storeHeader.name}_`.trim();
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingRecaps ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
+              Excel
             </button>
+            <button onClick={() => printRecapsBulk(recaps.filter(r => selectedRecaps.has(r.id)))} disabled={printingRecapsBulk}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {printingRecapsBulk ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              Cetak PDF
+            </button>
+            {belumLunasSelectedRecaps.length > 0 && (
+              <button onClick={() => sendRecapsWhatsAppBulk(recaps.filter(r => selectedRecaps.has(r.id)))}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+                style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+                <MessageCircle size={13} />
+                Kirim WA {belumLunasSelectedRecaps.length < selectedRecaps.size ? `(${belumLunasSelectedRecaps.length})` : ''}
+              </button>
+            )}
             {belumLunasSelectedRecaps.length > 0 && (
               <button onClick={() => { setBulkMarkLunasWalletId(''); setShowBulkMarkLunasRecaps(true); }}
                 className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

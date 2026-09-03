@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -15,7 +15,6 @@ function rowToWarehouse(r: WarehouseRow) {
   };
 }
 
-// Opened whenever the Gudang tab is opened, not on every session — plain TTL is enough.
 const getCachedWarehouses = unstable_cache(
   async () => {
     const sql = getSql();
@@ -23,7 +22,7 @@ const getCachedWarehouses = unstable_cache(
     return rows.map(rowToWarehouse);
   },
   ['admin-warehouses'],
-  { revalidate: 20 },
+  { revalidate: 20, tags: ['admin-warehouses'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -59,5 +58,6 @@ export async function POST(req: NextRequest) {
     // audit log failure must never fail the business request
   }
 
+  revalidateTag('admin-warehouses', { expire: 0 });
   return Response.json({ id });
 }

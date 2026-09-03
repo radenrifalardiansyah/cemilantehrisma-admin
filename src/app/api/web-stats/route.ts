@@ -133,6 +133,6 @@ export async function GET(req: NextRequest) {
     topMenu,
     topCategories,
     topProducts,
-    daily: daily.slice(0, 7).reverse(),
+    daily: daily.slice(0, numDays).reverse(),
   });
 }

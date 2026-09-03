@@ -1,5 +1,4 @@
 import { NextRequest, after } from 'next/server';
-import { unstable_cache } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
@@ -13,30 +12,25 @@ import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
 
 // `orders` dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab
 // berbeda (Kasir, Pesanan, Pemasukan, Pengeluaran, Modal, Bahan Baku, Mitra) SETIAP kali ada
-// transaksi baru dimanapun. Cache berbasis waktu murni (bukan revalidateTag) dengan sengaja:
-// koleksi ini juga ditulis dari banyak endpoint (checkout kasir, edit/hapus/ubah status pesanan,
-// impor massal, checkout storefront) — mengandalkan invalidasi manual di SEMUA titik tulis itu
-// gampang ada yang kelewat dan diam-diam jadi stale permanen. TTL pendek (15s, sama seperti
-// capital/wallet-transfers) menjaga tampilan tetap terasa langsung sambil menyerap lonjakan baca
-// yang terjadi bersamaan. (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
-const getCachedOrders = unstable_cache(
-  async (from: string | null, to: string | null, limit: number) => {
-    const sql = getSql();
-    let rows: OrderRow[];
-    if (from && to) {
-      rows = await sql<OrderRow[]>`select * from orders where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
-    } else if (from) {
-      rows = await sql<OrderRow[]>`select * from orders where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
-    } else if (to) {
-      rows = await sql<OrderRow[]>`select * from orders where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
-    } else {
-      rows = await sql<OrderRow[]>`select * from orders order by created_at desc limit ${limit}`;
-    }
-    return rows.map(rowToOrder);
-  },
-  ['admin-orders-list'],
-  { revalidate: 15 },
-);
+// transaksi baru dimanapun, dan ditulis dari banyak endpoint (checkout kasir, edit/hapus/ubah
+// status pesanan, impor massal, checkout storefront). Tidak di-cache sama sekali — tag cache
+// gampang kelewat dipasang di salah satu titik tulis itu dan diam-diam jadi stale permanen,
+// sedangkan cache TTL murni tetap punya jeda basi. Baca langsung dari database supaya selalu up
+// to date. (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
+async function fetchOrders(from: string | null, to: string | null, limit: number) {
+  const sql = getSql();
+  let rows: OrderRow[];
+  if (from && to) {
+    rows = await sql<OrderRow[]>`select * from orders where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else if (from) {
+    rows = await sql<OrderRow[]>`select * from orders where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+  } else if (to) {
+    rows = await sql<OrderRow[]>`select * from orders where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else {
+    rows = await sql<OrderRow[]>`select * from orders order by created_at desc limit ${limit}`;
+  }
+  return rows.map(rowToOrder);
+}
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'view');
@@ -46,7 +40,7 @@ export async function GET(req: NextRequest) {
   const to   = searchParams.get('to');
   const limit = parseInt(searchParams.get('limit') ?? '50');
 
-  const orders = await getCachedOrders(from, to, limit);
+  const orders = await fetchOrders(from, to, limit);
   return Response.json({ orders });
 }
 

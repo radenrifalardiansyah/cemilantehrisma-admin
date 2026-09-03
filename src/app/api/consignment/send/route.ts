@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -54,7 +54,7 @@ const getCachedShipments = unstable_cache(
     return rows.map(rowToShipment);
   },
   ['admin-consignment-shipments-list'],
-  { revalidate: 15 },
+  { revalidate: 15, tags: ['admin-consignment-shipments-list'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -181,6 +181,7 @@ export async function POST(req: NextRequest) {
     console.error('Failed to send notification for consignment send', err);
   }
 
+  revalidateTag('admin-consignment-shipments-list', { expire: 0 });
   after(() => revalidateStorefront('products'));
 
   return Response.json({ id: shipmentId });

@@ -1,5 +1,5 @@
 import { NextRequest, after } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { revalidateStorefront } from '@/lib/revalidate';
@@ -12,7 +12,7 @@ const getCachedCategories = unstable_cache(
     return rows.map(rowToCategory);
   },
   ['admin-categories'],
-  { revalidate: 15 }
+  { revalidate: 15, tags: ['admin-categories'] }
 );
 
 export async function GET(req: NextRequest) {
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     insert into categories (id, name, emoji, description, sort_order, banner_url, created_at, updated_at)
     values (${slug}, ${name}, ${emoji || '🏷️'}, ${description ?? ''}, ${nextOrder}, ${bannerUrl ?? ''}, now(), now())
   `;
+  revalidateTag('admin-categories', { expire: 0 });
   after(() => revalidateStorefront('categories'));
   return Response.json({ id: slug });
 }

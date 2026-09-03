@@ -237,39 +237,123 @@ function shortDate(raw: string) {
   return p.length >= 2 ? `${p[p.length - 1]} ${p[1]?.slice(0, 3) ?? ''}`.trim() : raw.slice(0, 5);
 }
 
-function PageviewChart({ data }: { data: { date: string; views: number }[] }) {
-  const maxVal = Math.max(...data.map(d => d.views), 1);
+function PageviewChart({ data }: { data: { date: string; views: number; visitors: number }[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const n = data.length;
-  const W = 28, GAP = 10, H = 72, LH = 22;
-  const totalW = n * (W + GAP) - GAP;
-  const step = n > 14 ? 3 : n > 7 ? 2 : 1;
+  if (n === 0) return null;
+
+  const VW = 720, VH = 190;
+  const PAD = { l: 4, r: 4, t: 22, b: 24 };
+  const iW = VW - PAD.l - PAD.r;
+  const iH = VH - PAD.t - PAD.b;
+  const maxViews = Math.max(...data.map(d => d.views), 1);
+  const maxVisitors = Math.max(...data.map(d => d.visitors), 1);
+  const avgViews = data.reduce((s, d) => s + d.views, 0) / n;
+
+  const gap = n > 20 ? 3 : n > 10 ? 6 : 10;
+  const barW = Math.max((iW - gap * (n - 1)) / n, 3);
+  const avgY = PAD.t + (1 - avgViews / maxViews) * iH;
+
+  // Evenly-spaced label indices (always includes first & last) instead of a modulo step —
+  // a step can leave the forced last label sitting right next to its neighbour and overlapping it.
+  const labelCount = Math.min(n, 8);
+  const labelIdxs = new Set(
+    Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / Math.max(labelCount - 1, 1)))
+  );
+
+  const linePts = data.map((d, i) => ({
+    x: PAD.l + i * (barW + gap) + barW / 2,
+    y: PAD.t + (1 - d.visitors / maxVisitors) * iH,
+  }));
+  const linePath = n < 2 ? '' : linePts.reduce((acc, pt, i) => {
+    if (i === 0) return `M ${pt.x},${pt.y}`;
+    const prev = linePts[i - 1];
+    return `${acc} C ${prev.x + (pt.x - prev.x) * 0.45},${prev.y} ${prev.x + (pt.x - prev.x) * 0.55},${pt.y} ${pt.x},${pt.y}`;
+  }, '');
+
+  const hover = hoverIdx !== null ? data[hoverIdx] : null;
+
   return (
-    <div className="no-scrollbar" style={{ overflowX: 'auto', paddingBottom: 2 }}>
-      <svg width={totalW} height={H + LH} style={{ display: 'block', overflow: 'visible' }}>
+    <div style={{ position: 'relative', userSelect: 'none' }}>
+      <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+        onMouseLeave={() => setHoverIdx(null)}>
+        {[0.25, 0.5, 0.75, 1].map(f => (
+          <line key={f} x1={PAD.l} x2={VW - PAD.r} y1={PAD.t + (1 - f) * iH} y2={PAD.t + (1 - f) * iH}
+            stroke="var(--border-2)" strokeWidth="1" />
+        ))}
+
+        {avgViews > 0 && (
+          <line x1={PAD.l} x2={VW - PAD.r} y1={avgY} y2={avgY}
+            stroke="#0284C7" strokeOpacity="0.45" strokeWidth="1.25" strokeDasharray="5,4" />
+        )}
+
         {data.map((d, i) => {
-          const barH = Math.max((d.views / maxVal) * H, d.views > 0 ? 5 : 2);
-          const x = i * (W + GAP);
+          const x = PAD.l + i * (barW + gap);
+          const barH = Math.max((d.views / maxViews) * iH, d.views > 0 ? 3 : 1.5);
+          const y = PAD.t + iH - barH;
           const isToday = i === n - 1;
-          const showLabel = i % step === 0 || i === n - 1;
+          const isHover = hoverIdx === i;
+          const showLabel = labelIdxs.has(i);
           return (
-            <g key={i}>
-              <rect x={x} y={H - barH} width={W} height={barH} rx="5"
-                fill={isToday ? '#0284C7' : '#0284C720'} />
-              {d.views > 0 && (
-                <text x={x + W / 2} y={H - barH - 4} textAnchor="middle" fontSize="9"
-                  fill={isToday ? '#075985' : '#9E8E72'} fontWeight="700">
-                  {d.views}
-                </text>
-              )}
+            <g key={i} onMouseEnter={() => setHoverIdx(i)} style={{ cursor: 'pointer' }}>
+              <rect x={x - gap / 2} y={PAD.t} width={barW + gap} height={iH} fill="transparent" />
+              <rect x={x} y={y} width={barW} height={barH} rx={Math.min(4, barW / 2)}
+                fill={isHover || isToday ? '#0284C7' : '#0284C730'}
+                style={{ transition: 'fill 0.12s' }} />
               {showLabel && (
-                <text x={x + W / 2} y={H + LH - 3} textAnchor="middle" fontSize="8.5" fill="#9E8E72">
+                <text x={x + barW / 2} y={VH - 6} textAnchor="middle" fontSize="9" fill="#9E8E72">
                   {shortDate(d.date)}
                 </text>
               )}
             </g>
           );
         })}
+
+        {linePath && <path d={linePath} fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />}
+        {linePts.map((pt, i) => (hoverIdx === i || i === n - 1) && (
+          <circle key={i} cx={pt.x} cy={pt.y} r="3.5" fill="#7C3AED" stroke="white" strokeWidth="1.5" />
+        ))}
       </svg>
+
+      {hover && (() => {
+        const x = PAD.l + hoverIdx! * (barW + gap) + barW / 2;
+        const barH = Math.max((hover.views / maxViews) * iH, hover.views > 0 ? 3 : 1.5);
+        const y = PAD.t + iH - barH;
+        const dt = new Date(hover.date);
+        const label = !isNaN(dt.getTime())
+          ? dt.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })
+          : hover.date;
+        return (
+          <div style={{
+            position: 'absolute',
+            left: `${(x / VW) * 100}%`,
+            top: `${(y / VH) * 100}%`,
+            transform: 'translate(-50%, calc(-100% - 8px))',
+            background: 'var(--text-primary)', color: 'white',
+            padding: '6px 10px', borderRadius: 8,
+            fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+            pointerEvents: 'none', boxShadow: '0 4px 14px rgba(0,0,0,0.25)', zIndex: 10,
+          }}>
+            <div>{label}</div>
+            <div style={{ fontWeight: 500, fontSize: 10, marginTop: 2, display: 'flex', gap: 8 }}>
+              <span>🔵 {hover.views} pageview</span>
+              <span>🟣 {hover.visitors} pengunjung</span>
+            </div>
+          </div>
+        );
+      })()}
+
+      <div className="flex items-center gap-4 mt-2">
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+          <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: '#0284C7' }} /> Pageview
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#7C3AED' }} /> Pengunjung unik
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+          <span className="w-2.5 h-[2px] inline-block" style={{ background: '#0284C7', opacity: 0.45 }} /> Rata-rata
+        </span>
+      </div>
     </div>
   );
 }
@@ -1092,6 +1176,9 @@ export default function AdminPage() {
         const dPct = devTotal > 0 ? Math.round((ws.desktop / devTotal) * 100) : 0;
         const avgPages = ws.visitors > 0 ? (ws.pageViews / ws.visitors).toFixed(1) : '–';
         const todayViews = ws.daily.length > 0 ? ws.daily[ws.daily.length - 1].views : 0;
+        const avgViews = ws.daily.length > 0
+          ? Math.round(ws.daily.reduce((s, d) => s + d.views, 0) / ws.daily.length)
+          : 0;
         return (
           <>
             {/* Stat cards — Perangkat gabung jadi 1 kartu (mobile/desktop split) */}
@@ -1143,9 +1230,14 @@ export default function AdminPage() {
                     <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Pageview {webRange} Hari</p>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Kunjungan halaman per hari</p>
                   </div>
-                  <span className="badge" style={{ background: '#EFF6FF', color: '#0284C7' }}>
-                    Hari ini: {todayViews}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="badge" style={{ background: '#EFF6FF', color: '#0284C7' }}>
+                      Hari ini: {todayViews}
+                    </span>
+                    <span className="badge" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                      Rata-rata: {avgViews}/hari
+                    </span>
+                  </div>
                 </div>
                 <PageviewChart data={ws.daily} />
               </div>

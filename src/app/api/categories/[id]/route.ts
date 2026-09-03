@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { revalidateStorefront } from '@/lib/revalidate';
@@ -24,6 +25,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (Object.keys(patch).length > 0) {
     await sql`update categories set ${sql(patch)}, updated_at = now() where id = ${id}`;
   }
+  revalidateTag('admin-categories', { expire: 0 });
   after(() => revalidateStorefront('categories'));
   return Response.json({ ok: true });
 }
@@ -43,6 +45,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   await sql`delete from categories where id = ${id}`;
+  revalidateTag('admin-categories', { expire: 0 });
   after(() => revalidateStorefront('categories'));
   return Response.json({ ok: true });
 }

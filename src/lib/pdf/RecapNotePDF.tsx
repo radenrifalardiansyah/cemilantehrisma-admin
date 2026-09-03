@@ -104,13 +104,15 @@ const s = StyleSheet.create({
   signName: { fontSize: 9, color: C.muted, marginTop: 4 },
 
   footer: { position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'center', fontSize: 7.5, color: C.muted },
+  pageNo: { position: 'absolute', bottom: 24, right: 40, fontSize: 7.5, color: C.muted },
 });
 
-export default function RecapNotePDF({ data, store }: { data: RecapNoteData; store: StoreHeader }) {
+// Just the <Page> — reusable so several recaps can be combined into one multi-page
+// Document (one page per recap, each keeping its own location header) for bulk export.
+export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: StoreHeader }) {
   const isLunas = (data.paymentStatus ?? 'lunas') === 'lunas';
   return (
-    <Document>
-      <Page size="A4" style={s.page}>
+    <Page size="A4" style={s.page}>
         <View style={s.topBar} />
 
         <View style={s.headerRow}>
@@ -231,7 +233,15 @@ export default function RecapNotePDF({ data, store }: { data: RecapNoteData; sto
         </View>
 
         <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
-      </Page>
+        <Text style={s.pageNo} render={({ pageNumber, totalPages }) => totalPages > 1 ? `${pageNumber} / ${totalPages}` : ''} fixed />
+    </Page>
+  );
+}
+
+export default function RecapNotePDF({ data, store }: { data: RecapNoteData; store: StoreHeader }) {
+  return (
+    <Document>
+      <RecapNotePDFPage data={data} store={store} />
     </Document>
   );
 }

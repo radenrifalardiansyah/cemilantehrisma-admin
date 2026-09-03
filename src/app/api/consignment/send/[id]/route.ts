@@ -94,6 +94,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   revalidateTag(shipmentPdfTag(id), 'max');
+  revalidateTag('admin-consignment-shipments-list', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
@@ -287,6 +288,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   revalidateTag(shipmentPdfTag(id), 'max');
+  revalidateTag('admin-consignment-shipments-list', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });
 }
