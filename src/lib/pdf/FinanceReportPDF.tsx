@@ -47,18 +47,18 @@ const s = StyleSheet.create({
 
   topBar: { height: 7, backgroundColor: C.accent, marginTop: -36, marginHorizontal: -36, marginBottom: 18 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logo: { width: 44, height: 44, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  logo: { width: 44, height: 44, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white, flexShrink: 0 },
   storeName: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.dark },
   storeTagline: { fontSize: 8, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8, color: C.muted, marginTop: 1 },
-  headerRight: { alignItems: 'flex-end' },
-  docTitle: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
-  docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
-  docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 3 },
-  docMetaLabel: { fontSize: 8, color: C.muted },
-  docMetaValue: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: C.dark },
+  headerRight: { alignItems: 'flex-end', width: '46%', flexShrink: 0 },
+  docTitle: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5, textAlign: 'right' },
+  docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' },
+  docMetaRow: { marginTop: 4, alignItems: 'flex-end' },
+  docMetaLabel: { fontSize: 7, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3 },
+  docMetaValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark, textAlign: 'right', marginTop: 1 },
 
   divider: { borderBottomWidth: 1.5, borderBottomColor: C.accent, marginTop: 10, marginBottom: 12 },
 
@@ -73,6 +73,7 @@ const s = StyleSheet.create({
   panelHeadText: { color: C.white, fontSize: 9, fontFamily: 'Helvetica-Bold' },
   panelRow2: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
   panelLabel: { flex: 1, fontSize: 8.5, color: C.dark },
+  panelLabelPlain: { fontSize: 8.5, color: C.dark },
   panelSub: { fontSize: 6.8, color: C.muted, marginTop: 1 },
   panelValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', width: 82, textAlign: 'right' },
   panelPct: { fontSize: 7.5, color: C.muted, width: 28, textAlign: 'right' },
@@ -108,7 +109,7 @@ function ReportHeader({ store, title, metaRows }: { store: StoreHeader; title: s
       <View style={s.headerRow}>
         <View style={s.headerLeft}>
           {store.logo && <Image src={store.logo} style={s.logo} />}
-          <View>
+          <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0 }}>
             <Text style={s.storeName}>{store.name}</Text>
             {store.tagline && <Text style={s.storeTagline}>{store.tagline}</Text>}
             {store.address && <Text style={s.storeMeta}>{store.address}</Text>}
@@ -192,8 +193,8 @@ export default function FinanceReportPDF({ data, store }: { data: FinanceReportP
                 {data.expenseRows.map((r, i) => (
                   <View key={i} style={s.panelRow2}>
                     <View style={{ flex: 1 }}>
-                      <Text style={s.panelLabel}>{r.category}</Text>
-                      {r.foldedIntoHpp && <Text style={s.panelSub}>→ masuk HPP saat terjual</Text>}
+                      <Text style={s.panelLabelPlain}>{r.category}</Text>
+                      {r.foldedIntoHpp && <Text style={s.panelSub}>{'-> masuk HPP saat terjual'}</Text>}
                     </View>
                     <Text style={[s.panelValue, { color: C.red }]}>{rp(r.amount)}</Text>
                     <Text style={s.panelPct}>{data.totalBeban > 0 ? Math.round((r.amount / data.totalBeban) * 100) : 0}%</Text>

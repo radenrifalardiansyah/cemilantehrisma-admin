@@ -1,9 +1,21 @@
+import { Fragment } from 'react';
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
 
 export interface RecapNoteItem {
   productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; revenue: number;
+}
+
+// Satu rekap harian sumber di dalam halaman gabungan (lihat `sections` di bawah) — item-nya
+// TIDAK dijumlahkan dengan tanggal lain, jadi rinciannya tetap terlihat per tanggal.
+export interface RecapNoteSection {
+  date:         string;
+  items:        RecapNoteItem[];
+  totalSold:    number;
+  totalRetur:   number;
+  totalReject:  number;
+  totalRevenue: number;
 }
 
 export interface RecapNoteData {
@@ -20,6 +32,10 @@ export interface RecapNoteData {
   totalRetur:      number;
   totalReject:     number;
   totalRevenue:    number;
+  // Diisi hanya kalau beberapa rekap mitra yang sama digabung jadi satu halaman — tiap
+  // rekap sumber tampil sebagai blok tanggalnya sendiri, `items`/`totalXxx` di atas tetap
+  // dipakai sebagai grand total di bagian bawah halaman.
+  sections?:       RecapNoteSection[];
 }
 
 const rp = (n: number) =>
@@ -81,6 +97,13 @@ const s = StyleSheet.create({
   colPrice:  { width: '13%', textAlign: 'right' },
   colRev:    { width: '14%', textAlign: 'right' },
 
+  sectionRow:          { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 6 },
+  sectionRowText:       { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
+  sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
+  sectionSubtotalText: { fontSize: 8, color: C.muted },
+  grandTotalRow:       { flexDirection: 'row', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
+  grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
+
   totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
   totalsBox: { width: '48%', backgroundColor: C.accentBg, borderRadius: 6, padding: 10 },
   totalsLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 },
@@ -111,6 +134,7 @@ const s = StyleSheet.create({
 // Document (one page per recap, each keeping its own location header) for bulk export.
 export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: StoreHeader }) {
   const isLunas = (data.paymentStatus ?? 'lunas') === 'lunas';
+  const sections = data.sections && data.sections.length > 1 ? data.sections : null;
   return (
     <Page size="A4" style={s.page}>
         <View style={s.topBar} />
@@ -179,7 +203,29 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
             <Text style={[s.tHeadCell, s.colPrice]}>Harga Titip</Text>
             <Text style={[s.tHeadCell, s.colRev]}>Pendapatan</Text>
           </View>
-          {data.items.map((it, i) => (
+          {sections ? sections.map((section, si) => (
+            <Fragment key={si}>
+              <View style={s.sectionRow}>
+                <Text style={s.sectionRowText}>{section.date}</Text>
+              </View>
+              {section.items.map((it, i) => (
+                <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]}>
+                  <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
+                  <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
+                  <Text style={[s.tCell, s.colSold]}>{it.qtySold}</Text>
+                  <Text style={[s.tCell, s.colRetur]}>{it.qtyRetur}</Text>
+                  <Text style={[s.tCell, s.colReject]}>{it.qtyReject}</Text>
+                  <Text style={[s.tCell, s.colPrice]}>{rp(it.hargaTitip)}</Text>
+                  <Text style={[s.tCell, s.colRev]}>{rp(it.revenue)}</Text>
+                </View>
+              ))}
+              <View style={s.sectionSubtotalRow}>
+                <Text style={s.sectionSubtotalText}>
+                  Subtotal: jual {section.totalSold}{section.totalRetur > 0 ? `, retur ${section.totalRetur}` : ''}{section.totalReject > 0 ? `, reject ${section.totalReject}` : ''} · {rp(section.totalRevenue)}
+                </Text>
+              </View>
+            </Fragment>
+          )) : data.items.map((it, i) => (
             <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]}>
               <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
               <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
@@ -190,6 +236,11 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
               <Text style={[s.tCell, s.colRev]}>{rp(it.revenue)}</Text>
             </View>
           ))}
+          {sections && (
+            <View style={s.grandTotalRow}>
+              <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} REKAP)</Text>
+            </View>
+          )}
         </View>
 
         <View style={s.totalsWrap}>

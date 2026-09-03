@@ -1,4 +1,4 @@
-import type { RecapNoteData, RecapNoteItem } from '@/lib/pdf/RecapNotePDF';
+import type { RecapNoteData, RecapNoteItem, RecapNoteSection } from '@/lib/pdf/RecapNotePDF';
 
 // Rekap harian yang mau digabung — dipakai baik di client (tab Rekap: cetak/kirim WA gabungan)
 // maupun di server (route publik yang dibuka mitra dari link WhatsApp), jadi shape-nya generik
@@ -65,6 +65,20 @@ export function groupAndMergeRecaps(
     }));
     const items = [...itemMap.values()];
 
+    // Rincian per tanggal — tiap rekap sumber tampil sebagai blok sendiri di halaman gabungan
+    // (bukan ikut dijumlah ke `items` di atas), supaya "tanggal 1 jual berapa, tanggal 2 jual
+    // berapa" tetap terlihat sebelum total keseluruhan di bawahnya.
+    const sections: RecapNoteSection[] = merged
+      ? sorted.map(r => ({
+          date:         formatDateTime(r.createdAt?.seconds),
+          items:        r.items,
+          totalSold:    r.items.reduce((s, it) => s + it.qtySold, 0),
+          totalRetur:   r.items.reduce((s, it) => s + it.qtyRetur, 0),
+          totalReject:  r.items.reduce((s, it) => s + it.qtyReject, 0),
+          totalRevenue: r.items.reduce((s, it) => s + it.revenue, 0),
+        }))
+      : [];
+
     const dateLabel = merged
       ? `${formatDateOnly(sorted[0].createdAt?.seconds)} – ${formatDateOnly(sorted[sorted.length - 1].createdAt?.seconds)} · ${sorted.length} rekap`
       : formatDateTime(first.createdAt?.seconds);
@@ -85,6 +99,7 @@ export function groupAndMergeRecaps(
       paymentStatus:  sorted.every(r => (r.paymentStatus ?? 'lunas') === 'lunas') ? 'lunas' : 'belum_lunas',
       note:           noteParts.length ? noteParts.join('\n') : undefined,
       items,
+      sections:       merged ? sections : undefined,
       totalSold:      items.reduce((s, it) => s + it.qtySold, 0),
       totalRetur:     items.reduce((s, it) => s + it.qtyRetur, 0),
       totalReject:    items.reduce((s, it) => s + it.qtyReject, 0),
