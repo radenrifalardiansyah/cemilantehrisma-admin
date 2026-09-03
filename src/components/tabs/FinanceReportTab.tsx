@@ -6,8 +6,11 @@ import {
   ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark,
   Info, Package, Receipt, ChevronDown, ChevronUp, AlertTriangle, Calculator,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import FinanceReportPDF from '@/lib/pdf/FinanceReportPDF';
+import { toDataUri } from '@/lib/pdf/logo';
 import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
@@ -207,6 +210,24 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [capital,  setCapital]  = useState<CapitalRecord[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [printingPdf, setPrintingPdf] = useState(false);
+
+  // ── Data toko untuk kop PDF ──────────────────────────────────
+  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    fetch(`${API}/api/settings`, { headers }).then(async r => {
+      if (r.ok) setStoreInfo((await r.json() as { settings: typeof storeInfo }).settings ?? {});
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { toDataUri(storeInfo.logo).then(setLogoDataUri); }, [storeInfo.logo]);
+  const storeHeader = {
+    name:    storeInfo.storeName?.trim() || 'Cemilan Teh Risma',
+    tagline: storeInfo.storeTagline?.trim() || undefined,
+    address: [storeInfo.address, storeInfo.city].filter(Boolean).join(', ') || undefined,
+    phone:   storeInfo.whatsapp?.trim() || undefined,
+    logo:    logoDataUri,
+  };
 
   const [saldoAwalRaw, setSaldoAwalRaw] = useState('0');
   useEffect(() => {
@@ -532,6 +553,48 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     } finally { setExporting(false); }
   };
 
+  const printPdf = async () => {
+    setPrintingPdf(true);
+    try {
+      const incomeRows = [
+        { label: 'Penjualan Kasir', amount: kasirRevenue },
+        { label: 'Penjualan Online', amount: onlineRevenue },
+        { label: 'Pendapatan Konsinyasi', amount: consignmentRevenue },
+        { label: 'Pendapatan Lain-lain', amount: totalPendapatanLain },
+      ];
+      const expenseRows = [...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({
+        category, amount, foldedIntoHpp: expenses.some(e => e.category === category && isCogsSourcedExpense(e)),
+      }));
+      const journalRows = journalWithSaldo.map(j => ({
+        tanggal: j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-',
+        jam: j.seconds ? new Date(j.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-',
+        keterangan: j.description,
+        debit: j.debit, kredit: j.kredit, saldo: j.saldo,
+      }));
+
+      const blob = await pdf(
+        <FinanceReportPDF
+          store={storeHeader}
+          data={{
+            periodLabel, from, to,
+            incomeRows, totalPendapatan, hpp, labaKotor,
+            expenseRows, totalBeban, totalBebanOperasional, labaBersih,
+            totalModalMasuk, totalPrive,
+            saldoAwal, journal: journalRows,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-keuangan-${from}-sd-${to}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally { setPrintingPdf(false); }
+  };
+
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
@@ -543,6 +606,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         <Tooltip label="Export Excel">
           <button onClick={exportExcel} disabled={exporting || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Export Excel">
             {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+          </button>
+        </Tooltip>
+        <Tooltip label="Cetak PDF">
+          <button onClick={printPdf} disabled={printingPdf || loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Cetak PDF">
+            {printingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
           </button>
         </Tooltip>
         <Tooltip label="Refresh">
