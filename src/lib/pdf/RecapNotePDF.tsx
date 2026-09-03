@@ -11,6 +11,7 @@ export interface RecapNoteItem {
 // TIDAK dijumlahkan dengan tanggal lain, jadi rinciannya tetap terlihat per tanggal.
 export interface RecapNoteSection {
   date:         string;
+  docNo:        string;
   items:        RecapNoteItem[];
   totalSold:    number;
   totalRetur:   number;
@@ -97,8 +98,9 @@ const s = StyleSheet.create({
   colPrice:  { width: '13%', textAlign: 'right' },
   colRev:    { width: '14%', textAlign: 'right' },
 
-  sectionRow:          { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 6 },
-  sectionRowText:       { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
+  sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 6 },
+  sectionRowText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
+  sectionRowDocNo:     { fontSize: 7.5, color: C.muted },
   sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
   sectionSubtotalText: { fontSize: 8, color: C.muted },
   grandTotalRow:       { flexDirection: 'row', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
@@ -207,9 +209,10 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
             <Fragment key={si}>
               <View style={s.sectionRow}>
                 <Text style={s.sectionRowText}>{section.date}</Text>
+                <Text style={s.sectionRowDocNo}>No: {section.docNo}</Text>
               </View>
               {section.items.map((it, i) => (
-                <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]}>
+                <View key={i} style={s.tRow}>
                   <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
                   <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
                   <Text style={[s.tCell, s.colSold]}>{it.qtySold}</Text>

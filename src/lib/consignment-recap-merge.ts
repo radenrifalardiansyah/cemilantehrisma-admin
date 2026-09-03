@@ -29,7 +29,7 @@ function formatDateOnly(seconds?: number) {
 function formatDateTime(seconds?: number) {
   if (!seconds) return '–';
   return new Date(seconds * 1000).toLocaleDateString('id-ID', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
 
@@ -71,6 +71,7 @@ export function groupAndMergeRecaps(
     const sections: RecapNoteSection[] = merged
       ? sorted.map(r => ({
           date:         formatDateTime(r.createdAt?.seconds),
+          docNo:        `RKP-${r.id.slice(-6).toUpperCase()}`,
           items:        r.items,
           totalSold:    r.items.reduce((s, it) => s + it.qtySold, 0),
           totalRetur:   r.items.reduce((s, it) => s + it.qtyRetur, 0),
