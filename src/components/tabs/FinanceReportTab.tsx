@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store, Coins,
   ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark,
-  Info, Package, Receipt, ChevronDown, ChevronUp, AlertTriangle, Calculator,
+  Info, Package, Receipt, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, Calculator, X,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -112,6 +112,57 @@ function GlossaryPanel({ open, onToggle, items }: { open: boolean; onToggle: () 
   );
 }
 
+interface HppDetailRow { key: string; name: string; qty: number; total: number }
+
+function HppDetailModal({ rows, total, periodLabel, from, to, onClose }: {
+  rows: HppDetailRow[]; total: number; periodLabel: string; from: string; to: string; onClose: () => void;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet modal-md" onClick={e => e.stopPropagation()}>
+        <div className="modal-accent" />
+        <span className="modal-handle" />
+
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon"><Package size={17} /></div>
+            <div>
+              <p className="modal-title">Rincian HPP</p>
+              <p className="modal-subtitle">{periodLabel} ({from} s/d {to})</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="modal-close"><X size={14} /></button>
+        </div>
+
+        <div className="modal-body">
+          {rows.length === 0 ? (
+            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Belum ada produk terjual di periode ini.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {rows.map(r => (
+                <div key={r.key} className="flex items-center justify-between gap-3 pb-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {r.qty} pcs × {formatRp(r.qty ? r.total / r.qty : 0)}
+                    </p>
+                  </div>
+                  <p className="text-xs font-extrabold tabular flex-shrink-0" style={{ color: '#B45309' }}>{formatRp(r.total)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+          <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total HPP</span>
+          <span className="text-sm font-extrabold tabular" style={{ color: '#B45309' }}>{formatRp(total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InfoTip({ label }: { label: string }) {
   return (
     <Tooltip label={label}>
@@ -202,6 +253,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [subView,    setSubView]    = useState<'laba-rugi' | 'jurnal'>('laba-rugi');
   const [showGlossary, setShowGlossary] = useState(false);
   const [showRekonsiliasi, setShowRekonsiliasi] = useState(false);
+  const [showHppDetail, setShowHppDetail] = useState(false);
 
   const [loading,  setLoading]  = useState(true);
   const [orders,   setOrders]   = useState<OrderRecord[]>([]);
@@ -378,6 +430,25 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
     if (it.qtySold > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.productName || '(tanpa nama)');
   }));
+
+  // Rincian HPP per produk — dipakai modal detail saat kartu HPP di-klik. Dikelompokkan per
+  // productId (gabung penjualan kasir/online/konsinyasi produk yang sama), fallback ke nama
+  // kalau item lama/manual tidak punya productId.
+  const hppByProduct = new Map<string, HppDetailRow>();
+  const addHppRow = (productId: string | undefined, name: string, qty: number, cost: number) => {
+    const key = productId || `nama:${name}`;
+    const cur = hppByProduct.get(key) ?? { key, name, qty: 0, total: 0 };
+    cur.qty += qty;
+    cur.total += qty * cost;
+    hppByProduct.set(key, cur);
+  };
+  countedOrders.forEach(o => (o.items ?? []).forEach(it => {
+    if (it.qty > 0) addHppRow(it.productId, it.name || '(tanpa nama)', it.qty, effectiveCostPrice(it.costPrice, it.productId));
+  }));
+  countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
+    if (it.qtySold > 0) addHppRow(it.productId, it.productName || '(tanpa nama)', it.qtySold, effectiveCostPrice(it.costPrice, it.productId));
+  }));
+  const hppDetailRows = [...hppByProduct.values()].sort((a, b) => b.total - a.total);
 
   // Modal & Prive TIDAK ikut Laba Rugi operasional — cuma info terpisah + masuk Jurnal Kas.
   const totalModalMasuk = capital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0);
@@ -751,17 +822,19 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                 </p>
               </div>
             </div>
-            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--surface-2)' }}>
+            <button type="button" onClick={() => setShowHppDetail(true)}
+              className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--surface-2)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(180,83,9,0.15)', color: '#B45309' }}>
                 <Package size={16} />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: '#B45309' }}>{formatRp(hpp)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   HPP <InfoTip label={GLOSSARY_LABA_RUGI[1].desc} />
                 </p>
               </div>
-            </div>
+              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            </button>
             <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--accent-bg)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(212,105,30,0.15)', color: 'var(--accent)' }}>
                 <PieChart size={16} />
@@ -1048,6 +1121,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             </div>
           )}
         </div>
+      )}
+
+      {showHppDetail && (
+        <HppDetailModal rows={hppDetailRows} total={hpp} periodLabel={periodLabel} from={from} to={to} onClose={() => setShowHppDetail(false)} />
       )}
     </div>
   );
