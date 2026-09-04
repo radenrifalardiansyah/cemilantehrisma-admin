@@ -3,11 +3,11 @@
 import { useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import type { PendingLoginRequest } from '@/components/chat/ChatWidget';
+import { useToast } from '@/components/Toast';
 
 interface Props {
   request: PendingLoginRequest | null;
   creds: string;
-  onForceLogout: (reason: string) => void;
   onResolved: () => void;
 }
 
@@ -15,7 +15,8 @@ interface Props {
 // yang memang sudah jalan tiap 60 detik untuk presence. Menambah poll terpisah di sini dulu
 // sempat bikin beban Vercel/Supabase 4-6x lipat dari semua polling lain di app ini digabung,
 // untuk fitur yang jarang benar-benar terpakai.
-export default function LoginRequestWatcher({ request, creds, onForceLogout, onResolved }: Props) {
+export default function LoginRequestWatcher({ request, creds, onResolved }: Props) {
+  const toast = useToast();
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,9 +30,10 @@ export default function LoginRequestWatcher({ request, creds, onForceLogout, onR
         headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, reason: action === 'reject' ? rejectReason.trim() || undefined : undefined }),
       });
+      // Multi-device disengaja: approve TIDAK logout sesi ini — cuma memberi izin perangkat lain
+      // login. Sesi ini tetap aktif seperti biasa setelah dialognya ditutup (lihat onResolved).
       if (action === 'approve' && res.ok) {
-        onForceLogout(`Anda menyetujui login baru dari perangkat lain (${request.deviceLabel}) — sesi ini logout untuk memberi akses ke perangkat tersebut.`);
-        return; // biarkan overlay force-logout yang mengambil alih, jangan reset state lokal dulu
+        toast.success(`Login dari ${request.deviceLabel} disetujui — sesi Anda di sini tetap aktif.`);
       }
     } finally {
       setBusy(false);
@@ -68,8 +70,8 @@ export default function LoginRequestWatcher({ request, creds, onForceLogout, onR
             </div>
           </div>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.5 }}>
-            Kalau Anda terima, sesi Anda di perangkat ini akan langsung logout dan digantikan perangkat
-            baru itu. Kalau ini bukan Anda, tolak permintaan ini.
+            Kalau Anda terima, perangkat itu bisa login dan aktif bersamaan dengan sesi Anda di sini —
+            tidak ada yang logout. Kalau ini bukan Anda, tolak permintaan ini.
           </p>
           {rejecting && (
             <textarea

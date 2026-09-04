@@ -24,8 +24,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     return Response.json({ status: 'expired' });
   }
 
-  // approved — mint token baru (iat-nya otomatis "sekarang", setelah bump sessions_invalidated_at
-  // yang sudah dilakukan /respond, jadi token ini tidak langsung mati kena revoke-nya sendiri).
+  // approved — mint token baru untuk perangkat ini. Sesi yang menyetujui (di /respond) tidak
+  // di-revoke, jadi keduanya aktif bersamaan (multi-device didukung secara sengaja).
   const user = request.user_payload as AuthUser;
   const token = jwt.sign(
     { username: user.username, role: user.role, uid: user.uid, mustChangePassword: user.mustChangePassword },

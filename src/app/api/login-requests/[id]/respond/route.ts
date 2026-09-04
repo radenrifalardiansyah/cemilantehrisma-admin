@@ -1,8 +1,6 @@
 import { NextRequest } from 'next/server';
-import { revalidateTag } from 'next/cache';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { getSql } from '@/lib/db';
-import { SESSION_TAG } from '@/lib/rbac';
 import { getLoginRequest } from '@/lib/login-requests';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -34,19 +32,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return Response.json({ ok: true });
   }
 
-  // approve — setujui dulu, baru revoke sesi lama (termasuk sesi INI sendiri secara sengaja,
-  // lihat komentar di /api/login-requests/[id]: sesi baru mint token setelah bump ini jadi
-  // tidak ikut ter-revoke).
+  // approve — cukup tandai disetujui. Sesi yang sedang aktif (yang merespons ini) TIDAK di-revoke —
+  // multi-device didukung secara sengaja, approval ini murni gerbang notifikasi/audit supaya
+  // pemilik akun yang tahu ada login baru, bukan mekanisme kick. Lihat /api/login-requests/[id]
+  // (GET) yang mint token baru untuk perangkat yang menunggu begitu status ini approved.
   await sql`
     update login_requests set status = 'approved', responded_at = now(), responded_by = ${authUser.username}
     where id = ${id}
   `;
-  await sql`
-    update profiles set
-      sessions_invalidated_at = ${Math.floor(Date.now() / 1000)},
-      sessions_invalidated_reason = ${`Login baru disetujui dari perangkat lain (${request.device_label}).`}
-    where username = ${authUser.username}
-  `;
-  revalidateTag(SESSION_TAG, { expire: 0 });
   return Response.json({ ok: true });
 }

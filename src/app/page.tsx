@@ -383,9 +383,10 @@ export default function AdminPage() {
   // Set right after login when /api/login reports pending=true (akun sudah online di sesi lain
   // — lihat LoginApprovalScreen.tsx) — menggantikan form login sampai sesi tersebut merespons.
   const [pendingApproval, setPendingApproval] = useState<{ requestId: string; deviceLabel: string; tempPassword: string } | null>(null);
-  // Diisi lewat onForceLogout (kick admin, atau menyetujui login baru dari sesi ini sendiri) —
-  // lihat ForceLogoutOverlay.tsx. Beda dari loginErr: ini muncul SETELAH sempat authed, bukan
-  // saat mengisi form login.
+  // Diisi lewat onForceLogout — kick manual oleh admin, atau role/password berubah/akun dihapus
+  // (bukan lagi dipicu oleh approve login konkuren; itu sekarang tidak me-revoke sesi ini, lihat
+  // LoginRequestWatcher.tsx). Lihat ForceLogoutOverlay.tsx. Beda dari loginErr: ini muncul SETELAH
+  // sempat authed, bukan saat mengisi form login.
   const [forceLogoutReason, setForceLogoutReason] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<{ username: string; role: string; email: string | null; avatar: string | null } | null>(null);
   const [permissions, setPermissions] = useState<Record<string, Partial<Record<Action, boolean>>>>({});

@@ -933,7 +933,6 @@ export default function AppShell({
       <LoginRequestWatcher
         request={pendingLoginRequest}
         creds={creds}
-        onForceLogout={onForceLogout}
         onResolved={() => setPendingLoginRequest(null)}
       />
     </div>

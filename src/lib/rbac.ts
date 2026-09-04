@@ -40,8 +40,8 @@ export const getSessionInvalidatedAt = unstable_cache(
   { revalidate: 30, tags: [SESSION_TAG] },
 );
 
-// Returns the revoke reason (kick / login-approval handoff) when the token is stale, so the
-// caller can surface a specific message instead of the generic sessionExpired() default —
+// Returns the revoke reason (admin kick, or role/password change/account deletion) when the
+// token is stale, so the caller can surface a specific message instead of the generic sessionExpired() default —
 // `false` when the session is still valid. Exported (not just used by the requireXxx guards
 // below) so lightweight routes like /api/chat/heartbeat — which don't gate on a feature
 // permission — can still detect "you've been kicked/revoked" without a full requirePermission.
