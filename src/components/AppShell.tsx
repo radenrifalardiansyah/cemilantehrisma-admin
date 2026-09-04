@@ -394,7 +394,12 @@ export default function AppShell({
                   const isActive     = !isFolder && activeTab === tab.id;
                   const hasChildren  = !!tab.children?.length;
                   const childActive  = tab.children?.some(c => c.id === activeTab) ?? false;
-                  const isExpanded   = !collapsed && (isSidebarSearching || expandedIds.has(tab.key) || childActive);
+                  // expandedIds stores which tabs were manually toggled AWAY from their default
+                  // open/closed state (default = open only while a child is the active page) —
+                  // not "which tabs are open" via a plain OR, which used to make it impossible to
+                  // collapse a parent/folder while browsing one of its own children (childActive
+                  // would keep forcing it open no matter how many times the toggle was clicked).
+                  const isExpanded   = !collapsed && (isSidebarSearching || (expandedIds.has(tab.key) ? !childActive : childActive));
                   const navButton = (
                       <button
                         onClick={() => isFolder ? toggleExpanded(tab.key) : setActiveTab(tab.id!)}
