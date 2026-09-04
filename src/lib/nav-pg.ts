@@ -16,7 +16,7 @@ export function rowToModule(r: ModuleRow) {
 }
 
 export interface MenuRow {
-  id: string; module_id: string; parent_id: string | null; feature_key: string;
+  id: string; module_id: string; parent_id: string | null; feature_key: string | null;
   label: string; icon: string; order: number; is_active: boolean;
   created_at: Date; updated_at: Date | null;
 }

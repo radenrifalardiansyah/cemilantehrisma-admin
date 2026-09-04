@@ -13,8 +13,12 @@ import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 
 interface EditState {
   id: string; moduleId: string; parentId: string; featureKey: string; label: string; icon: string; isActive: boolean;
+  // Folder = menu murni pengelompokan, tidak terhubung ke screen apapun (featureKey ''/null
+  // di server). Dipisah dari `!featureKey` supaya form tidak salah menyimpulkan "belum
+  // sempat dipilih" sebagai "sengaja folder" saat auto-pick screen sedang berlangsung.
+  isFolder: boolean;
 }
-const EMPTY: EditState = { id: '', moduleId: '', parentId: '', featureKey: '', label: '', icon: 'Package', isActive: true };
+const EMPTY: EditState = { id: '', moduleId: '', parentId: '', featureKey: '', label: '', icon: 'Package', isActive: true, isFolder: false };
 
 interface MenusTabProps { creds: string; can: (action: Action) => boolean; onChanged?: () => void }
 
@@ -48,7 +52,7 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
 
   const topOf    = (moduleId: string) => menus.filter(m => m.moduleId === moduleId && !m.parentId).sort((a, b) => a.order - b.order);
   const childOf  = (parentId: string) => menus.filter(m => m.parentId === parentId).sort((a, b) => a.order - b.order);
-  const featureLabel = (key: string) => FEATURE_KEYS.find(f => f.key === key)?.label ?? key;
+  const featureLabel = (key: string | null) => key ? (FEATURE_KEYS.find(f => f.key === key)?.label ?? key) : null;
 
   // All ids nested under `id`, at any depth — used to keep a menu from being made its own descendant's child.
   // `result` doubles as the visited-set: a genuine cycle in stale/manually-edited data (parentId
@@ -83,23 +87,32 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
   const openNew = (moduleId: string, parentId: string | null) => {
     const usedActive = new Set(menus.filter(m => m.isActive).map(m => m.featureKey));
     const firstFree = FEATURE_KEYS.find(f => !usedActive.has(f.key));
-    setEditing({ ...EMPTY, moduleId, parentId: parentId ?? '', featureKey: firstFree?.key ?? '', label: firstFree?.label ?? '' });
+    // Screen dipilih otomatis (bukan lewat dropdown) supaya alur tambah menu tidak
+    // mengharuskan admin paham konsep "screen" — tiap screen cuma boleh dipakai satu
+    // menu aktif. Kalau semuanya sudah kepakai, menu baru otomatis dijadikan folder
+    // (murni pengelompokan sub-menu) alih-alih menolak membuka form sama sekali —
+    // folder tidak butuh screen jadi kehabisan screen bukan penghalang untuknya.
+    setEditing({
+      ...EMPTY, moduleId, parentId: parentId ?? '',
+      featureKey: firstFree?.key ?? '', label: firstFree?.label ?? '', isFolder: !firstFree,
+    });
     setIsNew(true); setError('');
   };
   const openEdit = (m: MenuDoc) => {
-    setEditing({ id: m.id, moduleId: m.moduleId, parentId: m.parentId ?? '', featureKey: m.featureKey, label: m.label, icon: m.icon, isActive: m.isActive });
+    setEditing({ id: m.id, moduleId: m.moduleId, parentId: m.parentId ?? '', featureKey: m.featureKey ?? '', label: m.label, icon: m.icon, isActive: m.isActive, isFolder: !m.featureKey });
     setIsNew(false); setError('');
   };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
 
   const save = async () => {
     if (!editing) return;
-    if (!editing.moduleId || !editing.featureKey || !editing.label.trim()) { setError('Modul, screen, dan label wajib diisi.'); return; }
+    if (!editing.moduleId || !editing.label.trim()) { setError('Modul dan label wajib diisi.'); return; }
+    if (!editing.isFolder && !editing.featureKey) { setError('Screen wajib dipilih (atau centang "Menu folder" kalau menu ini cuma untuk mengelompokkan).'); return; }
     setSaving(true); setError('');
 
     const body = {
       moduleId: editing.moduleId, parentId: editing.parentId || null,
-      featureKey: editing.featureKey, label: editing.label, icon: editing.icon, isActive: editing.isActive,
+      featureKey: editing.isFolder ? null : editing.featureKey, label: editing.label, icon: editing.icon, isActive: editing.isActive,
     };
     const r = isNew
       ? await fetch('/api/menus', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -113,6 +126,11 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
     } else {
       const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
       setError(d.error ?? 'Gagal menyimpan menu.');
+      // Screen menu baru dipilih otomatis dari state lokal (lihat openNew) — kalau gagal karena
+      // sesi lain barusan memakai screen yang sama (409), refresh diam-diam supaya percobaan
+      // berikutnya (tutup lalu buka lagi "Tambah Menu") memilih screen yang benar-benar masih
+      // kosong, bukan mengulang screen yang sama dan gagal terus.
+      if (isNew) await load(true);
     }
     setSaving(false);
   };
@@ -178,7 +196,9 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
               {m.label}
               {!m.isActive && <span className="badge badge-gray flex items-center gap-1"><EyeOff size={10} /> Nonaktif</span>}
             </p>
-            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>Screen: {featureLabel(m.featureKey)}</p>
+            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+              {m.featureKey ? `Screen: ${featureLabel(m.featureKey)}` : 'Folder — hanya mengelompokkan sub-menu'}
+            </p>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             {can('edit') && (
@@ -287,20 +307,51 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
                       className="input" placeholder="cth: Pengguna" autoFocus />
                   </div>
                 </div>
-                <div>
-                  <label className="field-label">Screen <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchableSelect
-                    value={editing.featureKey}
-                    onChange={key => {
-                      const def = FEATURE_KEYS.find(f => f.key === key);
-                      setEditing({ ...editing, featureKey: key, label: editing.label || (def?.label ?? '') });
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editing.isFolder}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      if (checked) {
+                        setEditing({ ...editing, isFolder: true, featureKey: '' });
+                        return;
+                      }
+                      const usedActive = new Set(menus.filter(m => m.isActive && m.id !== editing.id).map(m => m.featureKey));
+                      const firstFree = FEATURE_KEYS.find(f => !usedActive.has(f.key));
+                      setEditing({ ...editing, isFolder: false, featureKey: firstFree?.key ?? '', label: editing.label || (firstFree?.label ?? '') });
                     }}
-                    options={availableFeatureKeys.map(f => ({ value: f.key, label: f.label }))}
-                    placeholder="— Pilih screen —"
-                    searchPlaceholder="Cari screen…"
+                    className="w-4 h-4"
                   />
-                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Menentukan fitur & hak akses yang berlaku untuk menu ini.</p>
-                </div>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Menu folder (cuma mengelompokkan sub-menu, tanpa halaman sendiri)</span>
+                </label>
+                {editing.isFolder ? (
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Menu ini tidak akan bisa diklik — cuma menampilkan/menyembunyikan sub-menu di bawahnya.
+                  </p>
+                ) : isNew ? (
+                  // Menu baru non-folder: screen dipilih otomatis (lihat openNew) — tidak ditampilkan
+                  // sebagai dropdown supaya admin tidak perlu paham konsep screen untuk sekadar
+                  // menambah menu. Tetap ditampilkan read-only supaya jelas menu ini terhubung ke fitur mana.
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Terhubung ke fitur: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{featureLabel(editing.featureKey)}</span> (dipilih otomatis).
+                  </p>
+                ) : (
+                  <div>
+                    <label className="field-label">Screen <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <SearchableSelect
+                      value={editing.featureKey}
+                      onChange={key => {
+                        const def = FEATURE_KEYS.find(f => f.key === key);
+                        setEditing({ ...editing, featureKey: key, label: editing.label || (def?.label ?? '') });
+                      }}
+                      options={availableFeatureKeys.map(f => ({ value: f.key, label: f.label }))}
+                      placeholder="— Pilih screen —"
+                      searchPlaceholder="Cari screen…"
+                    />
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Menentukan fitur & hak akses yang berlaku untuk menu ini.</p>
+                  </div>
+                )}
                 {!isNew && (
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input type="checkbox" checked={editing.isActive} onChange={e => setEditing({ ...editing, isActive: e.target.checked })} className="w-4 h-4" />

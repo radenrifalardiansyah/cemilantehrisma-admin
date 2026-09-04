@@ -11,7 +11,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
-    moduleId?: string; parentId?: string | null; featureKey?: string; label?: string; icon?: string; isActive?: boolean;
+    moduleId?: string; parentId?: string | null; featureKey?: string | null; label?: string; icon?: string; isActive?: boolean;
   };
 
   if (typeof data.featureKey === 'string' && !FEATURE_KEY_SET.has(data.featureKey)) {
@@ -19,7 +19,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   const sql = getSql();
-  const [current] = await sql<{ feature_key: string; is_active: boolean; parent_id: string | null }[]>`select feature_key, is_active, parent_id from menus where id = ${id}`;
+  const [current] = await sql<{ feature_key: string | null; is_active: boolean; parent_id: string | null }[]>`select feature_key, is_active, parent_id from menus where id = ${id}`;
   if (!current) return Response.json({ error: 'Menu tidak ditemukan.' }, { status: 404 });
 
   // Tolak parentId yang bikin siklus — perlindungan ini sebelumnya cuma ada di klien (menyaring
@@ -44,13 +44,18 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     }
   }
 
-  const featureKey = data.featureKey ?? current.feature_key;
+  // data.featureKey === undefined -> field not touched, keep current value.
+  // data.featureKey === null / '' -> explicitly cleared -> menu becomes a folder.
+  // `coalesce` can't express "set to null" (coalesce(null, x) just returns x), so the
+  // final value is resolved here in JS and written as a plain assignment below instead.
+  const featureKeyProvided = data.featureKey !== undefined;
+  const nextFeatureKey = featureKeyProvided ? (data.featureKey || null) : current.feature_key;
   const nextActive = data.isActive ?? current.is_active;
-  if (nextActive) {
-    const [conflict] = await sql<{ id: string; label: string }[]>`select id, label from menus where feature_key = ${featureKey} and is_active = true and id != ${id} limit 1`;
+  if (nextActive && nextFeatureKey) {
+    const [conflict] = await sql<{ id: string; label: string }[]>`select id, label from menus where feature_key = ${nextFeatureKey} and is_active = true and id != ${id} limit 1`;
     if (conflict) {
       return Response.json(
-        { error: `Screen "${featureKey}" sudah punya menu aktif ("${conflict.label}").` },
+        { error: `Screen "${nextFeatureKey}" sudah punya menu aktif ("${conflict.label}").` },
         { status: 409 },
       );
     }
@@ -61,7 +66,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     update menus set
       module_id = coalesce(${data.moduleId ?? null}, module_id),
       parent_id = ${nextParentId},
-      feature_key = coalesce(${data.featureKey ?? null}, feature_key),
+      feature_key = ${nextFeatureKey},
       label = coalesce(${data.label ?? null}, label),
       icon = coalesce(${data.icon ?? null}, icon),
       is_active = coalesce(${data.isActive ?? null}, is_active),

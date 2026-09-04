@@ -664,7 +664,13 @@ export default function AdminPage() {
     if (activeTab === 'admin-fee' || activeTab === 'tagihan-admin-fee') return;
     const visible = new Set(menus.map(m => m.featureKey));
     if (!visible.has(activeTab)) {
-      const firstVisible = menus.slice().sort((a, b) => a.order - b.order)[0]?.featureKey as TabId | undefined;
+      // Folder menus (featureKey null — pure grouping) aren't a real screen to land on,
+      // so they're excluded here; otherwise a folder sorted first would make this silently
+      // fail to redirect at all (setActiveTab(null) is a no-op, guarded below anyway).
+      const firstVisible = menus
+        .filter(m => m.featureKey)
+        .slice()
+        .sort((a, b) => a.order - b.order)[0]?.featureKey as TabId | undefined;
       if (firstVisible) setActiveTab(firstVisible);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

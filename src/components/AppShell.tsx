@@ -58,7 +58,12 @@ export type TabId =
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
   | 'admin-fee' | 'tagihan-admin-fee' | 'notifications';
 
-interface NavTab { id: TabId; label: string; Icon: LucideIcon; children?: NavTab[] }
+// `id: null` marks a folder — a menu that only groups children and has no screen/page of
+// its own (see MenuDoc.featureKey). `key` is a stable identity for React keys and expand
+// state, independent of `id` — needed because `id` can be null and non-unique across
+// multiple folders, unlike the underlying menu row's own `id` (module_id/parent_id chains
+// use the same "id" name in MenuDoc, so this is named `key` here to avoid confusion).
+interface NavTab { key: string; id: TabId | null; label: string; Icon: LucideIcon; children?: NavTab[] }
 interface NavGroup { id: string; label: string; Icon: LucideIcon; tabs: NavTab[] }
 
 // Builds the sidebar tree from the dynamic `modules`/`menus` data (Struktur
@@ -72,7 +77,8 @@ function buildNavGroups(modules: ModuleDoc[], menus: MenuDoc[]): NavGroup[] {
       .sort((a, b) => a.order - b.order)
       .map(toNavTab);
     return {
-      id: m.featureKey as TabId,
+      key: m.id,
+      id: m.featureKey as TabId | null,
       label: m.label,
       Icon: resolveIcon(m.icon),
       children: children.length ? children : undefined,
@@ -92,6 +98,20 @@ function buildNavGroups(modules: ModuleDoc[], menus: MenuDoc[]): NavGroup[] {
         .map(toNavTab),
     }))
     .filter(g => g.tabs.length > 0);
+}
+
+// Folders (id === null) aren't real screens, so they're excluded from the flattened
+// lists that drive the mobile bottom nav / "More" sheet / preferred-primary-tabs logic —
+// only their (recursively) flattened children appear there, exactly as if those children
+// were direct siblings. Desktop sidebar renders the tree as-is (see buildNavGroups) so
+// folders still show up there as an expand/collapse-only header.
+type ClickableTab = NavTab & { id: TabId };
+
+function flattenClickable(tabs: NavTab[]): ClickableTab[] {
+  return tabs.flatMap(t => {
+    const rest = t.children ? flattenClickable(t.children) : [];
+    return t.id === null ? rest : [{ ...t, id: t.id }, ...rest];
+  });
 }
 
 // Preferred quick-access order for the mobile bottom nav; gracefully
@@ -162,21 +182,21 @@ export default function AppShell({
   const [aboutOpen,  setAboutOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Set<TabId>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const confirm = useConfirm();
 
   const NAV_GROUPS  = buildNavGroups(modules, menus);
-  const ALL_TABS     = NAV_GROUPS.flatMap(g => g.tabs.flatMap(t => t.children ? [t, ...t.children] : [t]));
-  const preferred     = PREFERRED_PRIMARY_IDS.map(id => ALL_TABS.find(t => t.id === id)).filter((t): t is NavTab => !!t);
+  const ALL_TABS     = NAV_GROUPS.flatMap(g => flattenClickable(g.tabs));
+  const preferred     = PREFERRED_PRIMARY_IDS.map(id => ALL_TABS.find(t => t.id === id)).filter((t): t is ClickableTab => !!t);
   const rest           = ALL_TABS.filter(t => !preferred.includes(t));
   const PRIMARY_TABS  = [...preferred, ...rest].slice(0, Math.min(4, ALL_TABS.length));
   const primaryIds     = new Set(PRIMARY_TABS.map(t => t.id));
   const MORE_TABS      = ALL_TABS.filter(t => !primaryIds.has(t.id));
 
   // Pinned outside NAV_GROUPS on purpose — see the TabId comment above.
-  const SUPER_ADMIN_TAB: NavTab | null = superAdmin ? { id: 'admin-fee', label: 'Biaya Admin', Icon: Landmark } : null;
-  const ADMIN_BILLING_TAB: NavTab | null = role === 'admin' ? { id: 'tagihan-admin-fee', label: 'Tagihan Biaya Admin', Icon: Receipt } : null;
+  const SUPER_ADMIN_TAB: ClickableTab | null = superAdmin ? { key: 'admin-fee', id: 'admin-fee', label: 'Biaya Admin', Icon: Landmark } : null;
+  const ADMIN_BILLING_TAB: ClickableTab | null = role === 'admin' ? { key: 'tagihan-admin-fee', id: 'tagihan-admin-fee', label: 'Tagihan Biaya Admin', Icon: Receipt } : null;
   const PINNED_TAB = SUPER_ADMIN_TAB ?? ADMIN_BILLING_TAB;
   const MORE_TABS_DISPLAY = PINNED_TAB ? [...MORE_TABS, PINNED_TAB] : MORE_TABS;
   const filteredMoreTabs = moreQuery.trim()
@@ -248,8 +268,8 @@ export default function AppShell({
   const sw           = collapsed ? SIDEBAR_MINI : SIDEBAR_FULL;
 
   const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); setMoreQuery(''); };
-  const toggleExpanded = (id: TabId) =>
-    setExpandedIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleExpanded = (key: string) =>
+    setExpandedIds(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   return (
     <NotificationsProvider creds={creds}>
@@ -370,13 +390,14 @@ export default function AppShell({
               {!groupCollapsed && (
               <div className="space-y-0.5">
                 {group.tabs.map(tab => {
-                  const isActive     = activeTab === tab.id;
+                  const isFolder     = tab.id === null;
+                  const isActive     = !isFolder && activeTab === tab.id;
                   const hasChildren  = !!tab.children?.length;
                   const childActive  = tab.children?.some(c => c.id === activeTab) ?? false;
-                  const isExpanded   = !collapsed && (isSidebarSearching || expandedIds.has(tab.id) || childActive);
+                  const isExpanded   = !collapsed && (isSidebarSearching || expandedIds.has(tab.key) || childActive);
                   const navButton = (
                       <button
-                        onClick={() => setActiveTab(tab.id)}
+                        onClick={() => isFolder ? toggleExpanded(tab.key) : setActiveTab(tab.id!)}
                         className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
                         style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
                       >
@@ -400,12 +421,12 @@ export default function AppShell({
                             className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
                           />
                         )}
-                        {!collapsed && tab.id !== 'pos' && (badges[tab.id] ?? 0) > 0 && (
+                        {!collapsed && !isFolder && tab.id !== 'pos' && (badges[tab.id!] ?? 0) > 0 && (
                           <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
-                            {badges[tab.id]}
+                            {badges[tab.id!]}
                           </span>
                         )}
-                        {collapsed && tab.id !== 'pos' && (badges[tab.id] ?? 0) > 0 && (
+                        {collapsed && !isFolder && tab.id !== 'pos' && (badges[tab.id!] ?? 0) > 0 && (
                           <span
                             className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500"
                           />
@@ -414,8 +435,8 @@ export default function AppShell({
                           <span
                             role="button"
                             tabIndex={0}
-                            onClick={e => { e.stopPropagation(); toggleExpanded(tab.id); }}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); toggleExpanded(tab.id); } }}
+                            onClick={e => { e.stopPropagation(); toggleExpanded(tab.key); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); toggleExpanded(tab.key); } }}
                             className="flex-shrink-0 p-0.5"
                           >
                             <ChevronDown
@@ -430,7 +451,7 @@ export default function AppShell({
                       </button>
                   );
                   return (
-                    <div key={tab.id}>
+                    <div key={tab.key}>
                       {collapsed
                         ? <Tooltip label={tab.label}>{navButton}</Tooltip>
                         : navButton}
@@ -438,11 +459,11 @@ export default function AppShell({
                       {isExpanded && (
                         <div className="mt-0.5 space-y-0.5" style={{ paddingLeft: 29 }}>
                           {tab.children!.map(child => {
-                            const childIsActive = activeTab === child.id;
+                            const childIsActive = child.id !== null && activeTab === child.id;
                             return (
                               <button
-                                key={child.id}
-                                onClick={() => setActiveTab(child.id)}
+                                key={child.key}
+                                onClick={() => child.id && setActiveTab(child.id)}
                                 className={`sidebar-nav-item w-full${childIsActive ? ' active' : ''}`}
                                 style={{ justifyContent: 'flex-start' }}
                               >

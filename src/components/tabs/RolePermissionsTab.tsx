@@ -111,7 +111,11 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
   // module's own rows (top-level menu + its children) instead of the whole matrix.
   const moduleFeatureKeys = (moduleId: string) => {
     const tops = topOf(moduleId);
-    return [...tops, ...tops.flatMap(m => childOf(m.id))].map(m => m.featureKey);
+    // Folder menus (featureKey null — pure grouping, no page/permission of their own)
+    // don't participate in the permission matrix at all.
+    return [...tops, ...tops.flatMap(m => childOf(m.id))]
+      .map(m => m.featureKey)
+      .filter((k): k is string => k !== null);
   };
   const moduleColumnKeys = (moduleId: string, a: Action) =>
     moduleFeatureKeys(moduleId).filter(k => getFeatureKeyDef(k)?.actions.includes(a));
@@ -158,7 +162,7 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
   // whose menu was deleted, so it never silently disappears from the matrix.
   const topOf   = (moduleId: string) => menus.filter(m => m.moduleId === moduleId && !m.parentId).sort((a, b) => a.order - b.order);
   const childOf = (parentId: string) => menus.filter(m => m.parentId === parentId).sort((a, b) => a.order - b.order);
-  const coveredKeys = new Set(menus.map(m => m.featureKey));
+  const coveredKeys = new Set(menus.map(m => m.featureKey).filter((k): k is string => k !== null));
   const orphanKeys = FEATURE_KEYS.filter(f => !coveredKeys.has(f.key));
 
   const row = (featureKey: string, label: string, iconName: string, indent: boolean) => {
@@ -322,8 +326,9 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
                 </div>
                 {!isCollapsed && tops.map(m => (
                   <div key={m.id}>
-                    {row(m.featureKey, m.label, m.icon, false)}
-                    {childOf(m.id).map(c => row(c.featureKey, c.label, c.icon, true))}
+                    {/* Folder menus (featureKey null) have no permission of their own to show — only their children do. */}
+                    {m.featureKey && row(m.featureKey, m.label, m.icon, false)}
+                    {childOf(m.id).map(c => c.featureKey && row(c.featureKey, c.label, c.icon, true))}
                   </div>
                 ))}
               </div>

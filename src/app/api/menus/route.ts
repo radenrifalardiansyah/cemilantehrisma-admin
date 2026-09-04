@@ -58,7 +58,28 @@ export async function GET(req: NextRequest) {
     // menus already unfiltered — super-admin sees everything.
   } else {
     const permissions = await getRolePermissionsMap(user.role);
-    menus = menus.filter(m => checkPermission(permissions, m.featureKey, 'view'));
+    // Folder menus (featureKey null — pure grouping, no page of their own) have nothing
+    // for checkPermission to check, so they can't be filtered the normal way: a folder is
+    // visible only if at least one of its (possibly nested) children is visible.
+    const childrenByParent = new Map<string, typeof menus>();
+    for (const m of menus) {
+      if (!m.parentId) continue;
+      const siblings = childrenByParent.get(m.parentId) ?? [];
+      siblings.push(m);
+      childrenByParent.set(m.parentId, siblings);
+    }
+    const visibleCache = new Map<string, boolean>();
+    const isVisible = (m: (typeof menus)[number]): boolean => {
+      const cached = visibleCache.get(m.id);
+      if (cached !== undefined) return cached;
+      visibleCache.set(m.id, false); // cycle guard while this node is being resolved
+      const result = m.featureKey
+        ? checkPermission(permissions, m.featureKey, 'view')
+        : (childrenByParent.get(m.id) ?? []).some(isVisible);
+      visibleCache.set(m.id, result);
+      return result;
+    };
+    menus = menus.filter(isVisible);
   }
   const usedModuleIds = new Set(menus.map(m => m.moduleId));
   modules = modules.filter(m => m.isActive && usedModuleIds.has(m.id));
@@ -74,19 +95,22 @@ export async function POST(req: NextRequest) {
   }
 
   const { moduleId, parentId, featureKey, label, icon, isActive } = await req.json() as {
-    moduleId: string; parentId?: string | null; featureKey: string; label: string; icon: string; isActive?: boolean;
+    moduleId: string; parentId?: string | null; featureKey?: string | null; label: string; icon: string; isActive?: boolean;
   };
 
-  if (!moduleId || !featureKey || !label || !icon) {
-    return Response.json({ error: 'Modul, screen, label, dan ikon wajib diisi.' }, { status: 400 });
+  if (!moduleId || !label || !icon) {
+    return Response.json({ error: 'Modul, label, dan ikon wajib diisi.' }, { status: 400 });
   }
-  if (!FEATURE_KEY_SET.has(featureKey)) {
+  // featureKey kosong/null = menu folder murni (cuma mengelompokkan children, tidak
+  // terhubung ke screen apapun) — lihat AppShell.tsx untuk cara ia dirender di sidebar.
+  const isFolder = !featureKey;
+  if (!isFolder && !FEATURE_KEY_SET.has(featureKey)) {
     return Response.json({ error: `Screen "${featureKey}" tidak dikenal.` }, { status: 400 });
   }
 
   const sql = getSql();
   const active = isActive ?? true;
-  if (active) {
+  if (active && !isFolder) {
     const [dupe] = await sql<{ label: string }[]>`select label from menus where feature_key = ${featureKey} and is_active = true limit 1`;
     if (dupe) {
       return Response.json(
@@ -103,7 +127,7 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   await sql`
     insert into menus (id, module_id, parent_id, feature_key, label, icon, "order", is_active, created_at, updated_at)
-    values (${id}, ${moduleId}, ${parentId ?? null}, ${featureKey}, ${label}, ${icon}, ${nextOrder}, ${active}, now(), now())
+    values (${id}, ${moduleId}, ${parentId ?? null}, ${isFolder ? null : featureKey}, ${label}, ${icon}, ${nextOrder}, ${active}, now(), now())
   `;
   revalidateTag('modules-and-menus', { expire: 0 });
   return Response.json({ id });

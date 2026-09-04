@@ -30,7 +30,9 @@ export interface MenuDoc {
   id: string;
   moduleId: string;
   parentId: string | null;
-  featureKey: string;
+  // null = menu folder murni: cuma mengelompokkan children, tidak terhubung ke screen
+  // apapun dan tidak bisa diklik sendiri (lihat AppShell.tsx toNavTab).
+  featureKey: string | null;
   label: string;
   icon: string;
   order: number;
