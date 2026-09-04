@@ -187,7 +187,10 @@ export default function AppShell({
   const [aboutOpen,  setAboutOpen]  = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed,  setCollapsed]  = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Maps a manually-toggled tab.key to the childActive value it had at toggle time,
+  // so the override can be told apart from a stale one left behind by navigation
+  // (see toggleExpanded / isExpanded below).
+  const [expandedOverrides, setExpandedOverrides] = useState<Map<string, boolean>>(new Map());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const confirm = useConfirm();
 
@@ -273,8 +276,12 @@ export default function AppShell({
   const sw           = collapsed ? SIDEBAR_MINI : SIDEBAR_FULL;
 
   const go = (tab: TabId) => { setActiveTab(tab); setMoreOpen(false); setMoreQuery(''); };
-  const toggleExpanded = (key: string) =>
-    setExpandedIds(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const toggleExpanded = (key: string, childActiveNow: boolean) =>
+    setExpandedOverrides(m => {
+      const n = new Map(m);
+      n.has(key) ? n.delete(key) : n.set(key, childActiveNow);
+      return n;
+    });
 
   return (
     <NotificationsProvider creds={creds}>
@@ -399,15 +406,19 @@ export default function AppShell({
                   const isActive     = !isFolder && activeTab === tab.id;
                   const hasChildren  = !!tab.children?.length;
                   const childActive  = tab.children?.some(c => c.id === activeTab) ?? false;
-                  // expandedIds stores which tabs were manually toggled AWAY from their default
-                  // open/closed state (default = open only while a child is the active page) —
-                  // not "which tabs are open" via a plain OR, which used to make it impossible to
-                  // collapse a parent/folder while browsing one of its own children (childActive
-                  // would keep forcing it open no matter how many times the toggle was clicked).
-                  const isExpanded   = !collapsed && (isSidebarSearching || (expandedIds.has(tab.key) ? !childActive : childActive));
+                  // expandedOverrides stores which tabs were manually toggled AWAY from their
+                  // default open/closed state (default = open only while a child is the active
+                  // page), tagged with the childActive value at the moment of the toggle. If
+                  // childActive has since changed (e.g. the user clicked into one of this tab's
+                  // own children after manually opening it), the override is stale and ignored —
+                  // otherwise clicking a sub-menu item would flip childActive without updating the
+                  // override, making the parent collapse right as its own child becomes active.
+                  const override    = expandedOverrides.get(tab.key);
+                  const isOverridden = override !== undefined && override === childActive;
+                  const isExpanded   = !collapsed && (isSidebarSearching || (isOverridden ? !childActive : childActive));
                   const navButton = (
                       <button
-                        onClick={() => isFolder ? toggleExpanded(tab.key) : setActiveTab(tab.id!)}
+                        onClick={() => isFolder ? toggleExpanded(tab.key, childActive) : setActiveTab(tab.id!)}
                         className={`sidebar-nav-item w-full${isActive ? ' active' : ''}`}
                         style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
                       >
@@ -445,8 +456,8 @@ export default function AppShell({
                           <span
                             role="button"
                             tabIndex={0}
-                            onClick={e => { e.stopPropagation(); toggleExpanded(tab.key); }}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); toggleExpanded(tab.key); } }}
+                            onClick={e => { e.stopPropagation(); toggleExpanded(tab.key, childActive); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); toggleExpanded(tab.key, childActive); } }}
                             className="flex-shrink-0 p-0.5"
                           >
                             <ChevronDown
