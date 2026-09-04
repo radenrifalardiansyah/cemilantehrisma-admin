@@ -18,7 +18,12 @@ export interface GenericTablePDFData {
   label: string;                 // mis. "sesuai filter" / "terpilih"
   generatedAt: string;
   columns: GenericTableColumn[];
-  rows: (string | number)[][];   // tiap baris = array nilai sel, urutannya mengikuti `columns`
+  // Tiap baris = array nilai sel, urutannya mengikuti `columns`. Hindari karakter di luar
+  // WinAnsi/Latin-1 — font standar react-pdf (Helvetica) cuma punya glyph situ, jadi emoji
+  // ATAU simbol Unicode seperti tanda minus "−" (U+2212, beda dari "-" biasa) hilang/rusak
+  // saat dirender. Lihat CategoriesTab.tsx (kolom Emoji sengaja tidak disertakan di PDF) dan
+  // OrdersTab.tsx (pakai "-" biasa untuk diskon, bukan "−").
+  rows: (string | number)[][];
 }
 
 const C = {

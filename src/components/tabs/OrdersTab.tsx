@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import OrderInvoicePDF, { type OrderInvoiceData } from '@/lib/pdf/OrderInvoicePDF';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { toDataUri } from '@/lib/pdf/logo';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -159,6 +160,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [view, setView] = useViewMode('orders');
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [onlyBelumLunas, setOnlyBelumLunas] = useState(false);
@@ -739,6 +741,70 @@ _${storeName}_`.trim();
     }
   };
 
+  const exportPdf = async (rows: Order[]) => {
+    if (rows.length === 0) { toast.error('Tidak ada pesanan untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={invoiceStoreHeader}
+          data={{
+            title: 'DAFTAR PESANAN',
+            label: `total omzet ${formatRp(rows.reduce((s, o) => s + (o.total ?? 0), 0))}`,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            // "Jml Produk" dihilangkan (sudah tersirat dari daftar di kolom Produk), dan
+            // Subtotal+Diskon digabung satu kolom — 12 kolom Excel terlalu sempit untuk A4
+            // landscape.
+            columns: [
+              { header: 'No', width: '3%', align: 'center' },
+              { header: 'No. Invoice', width: '10%' },
+              { header: 'Sumber', width: '6%', align: 'center' },
+              { header: 'Tanggal', width: '10%' },
+              { header: 'Pelanggan', width: '12%' },
+              { header: 'No. HP', width: '9%' },
+              { header: 'Produk', width: '20%' },
+              { header: 'Subtotal / Diskon', width: '13%', align: 'right' },
+              { header: 'Total', width: '9%', align: 'right', bold: true },
+              { header: 'Status', width: '8%', align: 'center' },
+            ],
+            rows: rows.map((o, i) => {
+              const itemsText = (o.items ?? []).map(it => `${it.name} (${it.weight}) ×${it.qty}`).join(', ');
+              const discount = o.discount?.amount ?? 0;
+              return [
+                i + 1,
+                o.invoiceNo || '-',
+                o.source === 'portal' ? 'Website' : 'Kasir',
+                formatDate(o),
+                o.customerName || '-',
+                o.customerPhone || '-',
+                itemsText || '-',
+                // "-" biasa, bukan tanda minus Unicode (−) — font standar react-pdf (Helvetica/
+                // WinAnsi) tidak punya glyph itu, hasilnya karakter hilang/kosong di PDF.
+                discount > 0 ? `${formatRp(o.subtotal ?? o.total)} (-${formatRp(discount)})` : formatRp(o.subtotal ?? o.total),
+                formatRp(o.total),
+                o.status || '-',
+              ];
+            }),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pesanan-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} pesanan ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const downloadOrderTemplate = async () => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Cemilan Teh Risma Admin';
@@ -952,6 +1018,13 @@ _${storeName}_`.trim();
             <Tooltip label="Export Excel">
               <button onClick={() => exportExcel(orders)} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {orders.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportPdf(orders)} disabled={exportingPdf} aria-label="Export PDF" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -1276,6 +1349,12 @@ _${storeName}_`.trim();
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(orders.filter(o => selected.has(o.id)))} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             {belumLunasSelected.length > 0 && (
               <button onClick={() => { setBulkMarkLunasWalletId(''); setShowBulkMarkLunas(true); }}

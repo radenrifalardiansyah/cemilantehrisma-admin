@@ -6,8 +6,11 @@ import {
   ChevronLeft, ChevronRight,
   Upload,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
@@ -80,6 +83,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [suppliers,   setSuppliers]   = useState<Supplier[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -99,6 +103,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
   const [importing,  setImporting]  = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [exporting,  setExporting]  = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -344,6 +349,47 @@ export default function SuppliersTab({ creds }: { creds: string }) {
     }
   };
 
+  const exportPdf = async (rows: Supplier[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada supplier untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR SUPPLIER',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '5%', align: 'center' },
+              { header: 'Kode', width: '10%' },
+              { header: 'Nama', width: '18%', bold: true },
+              { header: 'Telepon', width: '14%' },
+              { header: 'Alamat', width: '25%' },
+              { header: 'Catatan', width: '18%' },
+              { header: 'Terdaftar', width: '10%' },
+            ],
+            rows: rows.map((s, i) => [i + 1, s.code || '-', s.name, s.phone || '-', s.address || '-', s.note || '-', formatDate(s)]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `supplier-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} supplier (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const openNew   = () => { setEditing({ id: '', ...EMPTY_SUPPLIER }); setIsNew(true); setError(''); };
   const openEdit  = (s: Supplier) => { setEditing({ ...s }); setIsNew(false); setError(''); };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
@@ -474,6 +520,14 @@ export default function SuppliersTab({ creds }: { creds: string }) {
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {suppliers.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -670,6 +724,12 @@ export default function SuppliersTab({ creds }: { creds: string }) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(suppliers.filter(s => selected.has(s.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

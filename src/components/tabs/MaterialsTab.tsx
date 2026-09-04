@@ -5,8 +5,11 @@ import {
   Boxes, ShoppingBag, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
   ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -138,6 +141,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [subTab, setSubTab] = useState<SubTab>('stok');
   const [highlightedMaterialId, setHighlightedMaterialId] = useState<string | null>(null);
@@ -160,6 +164,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [selectedMaterials, setSelectedMaterials] = useState<Set<string>>(new Set());
   const [bulkDeletingMaterials, setBulkDeletingMaterials] = useState(false);
   const [exportingMaterials, setExportingMaterials] = useState(false);
+  const [exportingMaterialsPdf, setExportingMaterialsPdf] = useState(false);
   const [importingMaterials, setImportingMaterials] = useState(false);
   const importMaterialFileRef = useRef<HTMLInputElement>(null);
 
@@ -515,6 +520,48 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     }
   };
 
+  const exportMaterialsPdf = async (rows: RawMaterial[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada bahan baku untuk diexport.'); return; }
+    setExportingMaterialsPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'STOK BAHAN BAKU',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '6%', align: 'center' },
+              { header: 'Nama', width: '26%', bold: true },
+              { header: 'Satuan', width: '12%', align: 'center' },
+              { header: 'Stok', width: '12%', align: 'center' },
+              { header: 'Harga Rata-rata', width: '22%', align: 'right' },
+              { header: 'Nilai Stok', width: '22%', align: 'right', bold: true },
+            ],
+            rows: rows.map((m, i) => [
+              i + 1, m.name, m.unit, roundQty(m.stockQty), formatRp(m.avgCost), formatRp(roundQty(m.stockQty) * m.avgCost),
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bahan-baku-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} bahan baku (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingMaterialsPdf(false);
+    }
+  };
+
   const filteredMaterials = materials
     .filter(m => !materialSearch || m.name.toLowerCase().includes(materialSearch.toLowerCase()))
     .filter(m => !materialOnlyInStock || roundQty(m.stockQty) > 0)
@@ -664,6 +711,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [selectedPurchases, setSelectedPurchases] = useState<Set<string>>(new Set());
   const [bulkDeletingPurchases, setBulkDeletingPurchases] = useState(false);
   const [exportingPurchases, setExportingPurchases] = useState(false);
+  const [exportingPurchasesPdf, setExportingPurchasesPdf] = useState(false);
   const [importingPurchases, setImportingPurchases] = useState(false);
   const importPurchaseFileRef = useRef<HTMLInputElement>(null);
   const [purchaseHistoryId, setPurchaseHistoryId] = useState<string | null>(null);
@@ -951,6 +999,57 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     }
   };
 
+  const exportPurchasesPdf = async (rows: Purchase[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada pembelian untuk diexport.'); return; }
+    setExportingPurchasesPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'PEMBELIAN BAHAN BAKU',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '4%', align: 'center' },
+              { header: 'Tanggal', width: '10%' },
+              { header: 'Supplier', width: '14%' },
+              { header: 'Bahan Dibeli', width: '27%' },
+              { header: 'Total', width: '12%', align: 'right', bold: true },
+              { header: 'Bayar', width: '9%', align: 'center' },
+              { header: 'Status', width: '9%', align: 'center' },
+              { header: 'Catatan', width: '15%' },
+            ],
+            rows: rows.map((p, i) => [
+              i + 1,
+              p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds),
+              p.supplierName || 'Tanpa nama',
+              p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', '),
+              formatRp(p.total),
+              p.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+              p.voided ? 'Dibatalkan' : 'Aktif',
+              p.note || '-',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pembelian-bahan-baku-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} pembelian (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPurchasesPdf(false);
+    }
+  };
+
   const filteredPurchases = purchases
     .filter(p => !purchaseSearch || (p.supplierName ?? '').toLowerCase().includes(purchaseSearch.toLowerCase()));
   const purchaseTotalPages = Math.max(1, Math.ceil(filteredPurchases.length / purchasePageSize));
@@ -1049,6 +1148,14 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                     <button onClick={() => exportMaterialsExcel(filteredMaterials, 'sesuai filter')} disabled={exportingMaterials} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       {exportingMaterials ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {materials.length > 0 && (
+                  <Tooltip label="Export PDF">
+                    <button onClick={() => exportMaterialsPdf(filteredMaterials, 'sesuai filter')} disabled={exportingMaterialsPdf} aria-label="Export PDF"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingMaterialsPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -1287,6 +1394,14 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                         <button onClick={() => exportPurchasesExcel(filteredPurchases, 'sesuai filter')} disabled={exportingPurchases} aria-label="Export Excel"
                           className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                           {exportingPurchases ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                        </button>
+                      </Tooltip>
+                    )}
+                    {purchases.length > 0 && (
+                      <Tooltip label="Export PDF">
+                        <button onClick={() => exportPurchasesPdf(filteredPurchases, 'sesuai filter')} disabled={exportingPurchasesPdf} aria-label="Export PDF"
+                          className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                          {exportingPurchasesPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                         </button>
                       </Tooltip>
                     )}

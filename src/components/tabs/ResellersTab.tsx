@@ -7,8 +7,11 @@ import {
   UserCheck, UserX, Clock, UserSearch, Landmark, Wallet, Upload,
   User, Building2,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import FilterSelect from '@/components/FilterSelect';
@@ -137,6 +140,7 @@ const EMPTY_EDITING: Omit<EditingReseller, 'id'> = {
 export default function ResellersTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
+  const storeHeader = useStoreHeader(creds);
 
   const [resellers,   setResellers]   = useState<Reseller[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -151,6 +155,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkStatusUpdating, setBulkStatusUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [importing, setImporting] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
@@ -455,6 +460,57 @@ export default function ResellersTab({ creds }: { creds: string }) {
     }
   };
 
+  const exportPdf = async (rows: Reseller[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada reseller untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR RESELLER',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            // Bank/No. Rekening/Atas Nama digabung jadi satu kolom (beda dari Excel yang punya
+            // 3 kolom terpisah) — 13 kolom terlalu sempit untuk A4 landscape.
+            columns: [
+              { header: 'No', width: '4%', align: 'center' },
+              { header: 'Kode', width: '6%' },
+              { header: 'Nama', width: '13%', bold: true },
+              { header: 'Jenis', width: '8%' },
+              { header: 'No. HP', width: '10%' },
+              { header: 'Email', width: '12%' },
+              { header: 'Kota', width: '8%' },
+              { header: 'Alamat', width: '15%' },
+              { header: 'Rekening Bank', width: '15%' },
+              { header: 'Status', width: '9%', align: 'center' },
+            ],
+            rows: rows.map((r, i) => [
+              i + 1, r.code || '-', r.name, CUSTOMER_TYPE_MAP[r.type ?? 'personal'].label, r.phone || '-',
+              r.email || '-', r.city || '-', r.address || '-',
+              r.bankName ? `${r.bankName} · ${r.bankAccount || '-'} a.n. ${r.bankHolder || '-'}` : '-',
+              STATUS_MAP[r.status].label,
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reseller-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} reseller (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const downloadResellerTemplate = async () => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Cemilan Teh Risma Admin';
@@ -720,6 +776,14 @@ export default function ResellersTab({ creds }: { creds: string }) {
                 </button>
               </Tooltip>
             )}
+            {resellers.length > 0 && (
+              <Tooltip label="Export PDF">
+                <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                </button>
+              </Tooltip>
+            )}
             {resellers.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
             <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
               <Plus size={13} /> <span className="hidden sm:inline">Tambah Reseller</span>
@@ -967,6 +1031,12 @@ export default function ResellersTab({ creds }: { creds: string }) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(resellers.filter(r => selected.has(r.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={() => bulkUpdateStatus('approved')} disabled={bulkStatusUpdating || bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"

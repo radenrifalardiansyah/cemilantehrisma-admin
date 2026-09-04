@@ -190,7 +190,9 @@ export default function OrderInvoicePDF({ data, store }: { data: OrderInvoiceDat
             {data.discount && data.discount.amount > 0 && (
               <View style={s.totalsLine}>
                 <Text style={[s.totalsKey, { color: C.green }]}>Diskon ({data.discount.label})</Text>
-                <Text style={[s.totalsVal, { color: C.green }]}>− {rp(data.discount.amount)}</Text>
+                {/* "-" biasa, bukan tanda minus Unicode (−, U+2212) — font standar react-pdf
+                    tidak punya glyph itu, hasilnya karakter hilang di invoice yang dikirim ke pelanggan. */}
+                <Text style={[s.totalsVal, { color: C.green }]}>- {rp(data.discount.amount)}</Text>
               </View>
             )}
             <View style={s.totalsFinalLine}>

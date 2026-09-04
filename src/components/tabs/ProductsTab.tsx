@@ -10,7 +10,10 @@ import {
   Eye, EyeOff,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ImageLightbox from '@/components/ImageLightbox';
 import ImageCarousel from '@/components/ImageCarousel';
 import { useViewMode } from '@/lib/useViewMode';
@@ -146,6 +149,7 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: () => void 
 export default function ProductsTab({ creds }: { creds: string }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const storeHeader = useStoreHeader(creds);
 
   // ── Product state ─────────────────────────────────────────────────
   const [products,    setProducts]    = useState<FireProduct[]>([]);
@@ -166,6 +170,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
   const [bulkPublishing, setBulkPublishing] = useState(false);
   const [exporting,     setExporting]     = useState(false);
+  const [exportingPdf,  setExportingPdf]  = useState(false);
   const [importing,     setImporting]     = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useViewMode('products');
@@ -679,6 +684,66 @@ export default function ProductsTab({ creds }: { creds: string }) {
     }
   };
 
+  const exportPdf = async (rows: FireProduct[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada produk untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR PRODUK',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            // Harga Coret digabung ke kolom Harga ("Rp10.000 (coret Rp15.000)"), dan Buka
+            // PO/Publish digabung jadi satu kolom Status — 13 kolom Excel terlalu sempit untuk
+            // A4 landscape.
+            columns: [
+              { header: 'No', width: '4%', align: 'center' },
+              { header: 'Kode', width: '7%' },
+              { header: 'Nama', width: '17%', bold: true },
+              { header: 'Kategori', width: '10%' },
+              { header: 'Harga', width: '12%', align: 'right' },
+              { header: 'Berat', width: '6%', align: 'center' },
+              { header: 'Status Stok', width: '10%', align: 'center' },
+              { header: 'Stok', width: '6%', align: 'center' },
+              { header: 'Badge', width: '9%' },
+              { header: 'Status', width: '10%', align: 'center' },
+              { header: 'Deskripsi', width: '9%' },
+            ],
+            rows: rows.map((p, i) => [
+              i + 1,
+              p.code || '-',
+              p.name,
+              catName(p.category),
+              p.originalPrice ? `${formatRp(p.price)} (coret ${formatRp(p.originalPrice)})` : formatRp(p.price),
+              p.weight || '-',
+              stockStatus(p).label,
+              p.stockQty ?? 0,
+              p.badge || '-',
+              [p.published !== false ? 'Publish' : 'Draft', p.openPO ? 'Buka PO' : null].filter(Boolean).join(', '),
+              p.description || '-',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `produk-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} produk (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const togglePageAll = () => {
     const pageIds    = paginated.map(p => p.id);
     const allSelected = pageIds.every(id => selected.has(id));
@@ -825,6 +890,14 @@ export default function ProductsTab({ creds }: { creds: string }) {
                 <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                   className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                   {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+            )}
+            {products.length > 0 && (
+              <Tooltip label="Export PDF">
+                <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                 </button>
               </Tooltip>
             )}
@@ -1127,6 +1200,12 @@ export default function ProductsTab({ creds }: { creds: string }) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(products.filter(p => selected.has(p.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={() => bulkSetPublished(true)} disabled={bulkPublishing}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

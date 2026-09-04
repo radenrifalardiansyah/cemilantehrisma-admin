@@ -6,7 +6,10 @@ import {
   Factory, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Upload,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -114,6 +117,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [materials,        setMaterials]        = useState<RawMaterial[]>([]);
   const [materialsLoading, setMaterialsLoading] = useState(true);
@@ -262,6 +266,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [importing, setImporting] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
@@ -359,6 +364,58 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       URL.revokeObjectURL(url);
       toast.success(`Berhasil export ${rows.length} batch produksi ke Excel.`);
     } finally { setExporting(false); }
+  };
+
+  const exportProductionPdf = async (rows: ProductionBatch[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada riwayat produksi untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'RIWAYAT PRODUKSI',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '4%', align: 'center' },
+              { header: 'Tanggal', width: '8%' },
+              { header: 'Produk Hasil', width: '13%' },
+              { header: 'Bahan Baku', width: '20%' },
+              { header: 'Biaya Bahan', width: '9%', align: 'right' },
+              { header: 'Biaya Lain', width: '8%', align: 'right' },
+              { header: 'Total Biaya', width: '9%', align: 'right', bold: true },
+              { header: 'HPP/pcs', width: '8%', align: 'right' },
+              { header: 'Gudang', width: '8%' },
+              { header: 'Catatan', width: '13%' },
+            ],
+            rows: rows.map((b, i) => [
+              i + 1,
+              formatDateDisplay(b.date),
+              batchOutputs(b).map(o => `${o.productName}: ${o.yieldQty} pcs`).join('; '),
+              b.materialsUsed.map(m => `${m.materialName}: ${m.qty} ${m.unit}`).join('; '),
+              formatRp(b.materialCost),
+              formatRp(b.otherCost),
+              formatRp(b.totalCost),
+              formatRp(b.costPerPcs),
+              b.warehouseName ?? '-',
+              b.note || '-',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `produksi-cemilantehrisma-${todayISO()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} batch produksi ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally { setExportingPdf(false); }
   };
 
   const PRODUCTION_TEMPLATE_COLS = [
@@ -574,6 +631,13 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
             <Tooltip label="Export Excel">
               <button onClick={() => exportProductionExcel(filteredBatches, 'sesuai filter')} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {batches.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportProductionPdf(filteredBatches, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
