@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
@@ -67,6 +68,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       updated_at = now()
     where id = ${id}
   `;
+  revalidateTag('modules-and-menus', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -85,5 +87,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   await sql`delete from menus where id = ${id}`;
+  revalidateTag('modules-and-menus', { expire: 0 });
   return Response.json({ ok: true });
 }

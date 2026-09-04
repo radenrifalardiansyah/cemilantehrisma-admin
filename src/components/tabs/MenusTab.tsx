@@ -137,7 +137,8 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
     if (target < 0 || target >= siblings.length) return;
     const next = siblings.slice();
     [next[idx], next[target]] = [next[target], next[idx]];
-    setMenus(prev => prev.map(m => next.find(n => n.id === m.id) ?? m));
+    const reordered = next.map((m, i) => ({ ...m, order: i }));
+    setMenus(prev => prev.map(m => reordered.find(n => n.id === m.id) ?? m));
     setReordering(true);
     await fetch('/api/menus/reorder', {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },

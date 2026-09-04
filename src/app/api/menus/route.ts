@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { hasPermission, getRolePermissionsMap, checkPermission } from '@/lib/rbac';
@@ -9,10 +9,9 @@ import { rowToModule, rowToMenu, type ModuleRow, type MenuRow } from '@/lib/nav-
 
 // Every logged-in session fetches this once on mount (sidebar build) — was two raw
 // collection scans on every session, now collapsed across concurrent sessions for 20s.
-// Struktur Menu/Modul edits are rare and a few seconds of staleness here is cosmetic
-// (permission filtering below is always fresh via getRolePermissionsMap), so a plain
-// TTL is enough — no tag/invalidation wiring needed, same tradeoff as getAllUsernames.
-// (Tahap 24 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
+// Tagged so mutations (create/edit/delete/reorder) can invalidate immediately instead
+// of waiting out the TTL — Struktur Menu's reorder chevrons refetch right after saving
+// and need the fresh order, not a stale one from up to 20s ago.
 const getModulesAndMenus = unstable_cache(
   async () => {
     const sql = getSql();
@@ -23,7 +22,7 @@ const getModulesAndMenus = unstable_cache(
     return { modules: modRows.map(rowToModule), menus: menuRows.map(rowToMenu) };
   },
   ['modules-and-menus'],
-  { revalidate: 20 },
+  { revalidate: 20, tags: ['modules-and-menus'] },
 );
 
 // Two modes, selected by an explicit `?scope=manage` query param (not by the
@@ -106,5 +105,6 @@ export async function POST(req: NextRequest) {
     insert into menus (id, module_id, parent_id, feature_key, label, icon, "order", is_active, created_at, updated_at)
     values (${id}, ${moduleId}, ${parentId ?? null}, ${featureKey}, ${label}, ${icon}, ${nextOrder}, ${active}, now(), now())
   `;
+  revalidateTag('modules-and-menus', { expire: 0 });
   return Response.json({ id });
 }

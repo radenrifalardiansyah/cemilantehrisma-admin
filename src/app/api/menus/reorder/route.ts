@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
@@ -16,5 +17,6 @@ export async function POST(req: NextRequest) {
       await pgTx`update menus set "order" = ${order}, updated_at = now() where id = ${id}`;
     }
   });
+  revalidateTag('modules-and-menus', { expire: 0 });
   return Response.json({ ok: true });
 }
