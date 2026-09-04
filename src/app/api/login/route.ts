@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { getSql } from '@/lib/db';
 import { recordLogin } from '@/lib/login-history';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
+import { createLoginRequest } from '@/lib/login-requests';
+import { PRESENCE_ONLINE_WINDOW_MS } from '@/lib/chat';
 
 // Best-effort brute-force guard: in-memory per serverless instance, so it resets
 // on cold start and isn't shared across concurrent instances/regions — not a
@@ -61,10 +63,23 @@ export async function POST(req: NextRequest) {
 
   loginAttempts.delete(ip);
   const user = { username: profile.username, role: profile.role, uid: data.user.id, mustChangePassword: profile.must_change_password };
+  const userAgent = req.headers.get('user-agent') || 'unknown';
+
+  // Akun ini sedang dipakai di sesi lain (heartbeat chat masih "hidup", lihat lib/chat.ts) —
+  // jangan langsung terbitkan token baru, minta persetujuan dari sesi yang sedang aktif dulu.
+  // Lihat /api/login-requests/[id] (poll perangkat ini) dan /api/login-requests/pending
+  // (poll sesi aktif) untuk kelanjutan alurnya.
+  const [presenceRow] = await sql<{ last_seen: Date | null }[]>`select last_seen from presence where username = ${profile.username}`;
+  const alreadyOnline = !!presenceRow?.last_seen && Date.now() - presenceRow.last_seen.getTime() < PRESENCE_ONLINE_WINDOW_MS;
+  if (alreadyOnline) {
+    const { id, deviceLabel } = await createLoginRequest({ username: profile.username, ip, userAgent, userPayload: user });
+    return Response.json({ ok: true, pending: true, requestId: id, deviceLabel });
+  }
+
   const token = jwt.sign(user, process.env.JWT_SECRET!, { expiresIn: '7d' });
 
   try {
-    await recordLogin({ username: user.username, role: user.role, ip, userAgent: req.headers.get('user-agent') || 'unknown' });
+    await recordLogin({ username: user.username, role: user.role, ip, userAgent });
   } catch {
     // Best-effort — gagal mencatat riwayat login tidak boleh menggagalkan login yang sudah valid.
   }

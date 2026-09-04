@@ -1,8 +1,9 @@
 'use client';
 
-import { Users } from 'lucide-react';
+import { Users, UserX } from 'lucide-react';
 import ChatAvatar from './ChatAvatar';
 import StatusDot from './StatusDot';
+import { useConfirm } from '@/components/Confirm';
 import { TEAM_ROOM_ID, directRoomId, formatLastSeen, SerializedTimestamp } from '@/lib/chat';
 
 export interface Contact {
@@ -19,6 +20,8 @@ interface Props {
   contacts: Contact[];
   selfOnline: boolean;
   unreadRoomIds: string[];
+  canKick: boolean;
+  onKick: (username: string) => void;
   onSelectTeam: () => void;
   onSelectContact: (contact: Contact) => void;
 }
@@ -34,9 +37,21 @@ const sectionLabelStyle: React.CSSProperties = {
 const unreadDotStyle: React.CSSProperties = { width: 10, height: 10, borderRadius: '50%', background: '#EF4444', flexShrink: 0 };
 
 export default function ChatRoomList({
-  username, avatar, contacts, selfOnline, unreadRoomIds, onSelectTeam, onSelectContact,
+  username, avatar, contacts, selfOnline, unreadRoomIds, canKick, onKick, onSelectTeam, onSelectContact,
 }: Props) {
   const teamUnread = unreadRoomIds.includes(TEAM_ROOM_ID);
+  const confirm = useConfirm();
+
+  const handleKick = async (e: React.MouseEvent, target: string) => {
+    e.stopPropagation();
+    const ok = await confirm({
+      title: 'Keluarkan Sesi',
+      message: `Keluarkan paksa sesi aktif "${target}"? Akun ini akan langsung logout dari perangkat manapun yang sedang dipakainya.`,
+      confirmLabel: 'Keluarkan',
+      danger: true,
+    });
+    if (ok) onKick(target);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
@@ -86,6 +101,19 @@ export default function ChatRoomList({
               <p style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.online ? 'Online' : formatLastSeen(c.lastLoginAt)}</p>
             </div>
             {unread && <span style={unreadDotStyle} />}
+            {canKick && c.online && (
+              <span
+                role="button"
+                title={`Keluarkan sesi ${c.username}`}
+                onClick={e => handleKick(e, c.username)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 28, height: 28, borderRadius: '50%', color: 'var(--danger)', flexShrink: 0,
+                }}
+              >
+                <UserX size={15} />
+              </span>
+            )}
           </button>
         );
       })}

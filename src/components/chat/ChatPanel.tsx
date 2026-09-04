@@ -15,6 +15,7 @@ interface Props {
   username: string;
   avatar: string | null;
   creds: string;
+  canKick: boolean;
   accounts: Account[];
   initialActiveRoom: ActiveRoom | null;
   unreadRoomIds: string[];
@@ -27,7 +28,7 @@ interface Props {
 // most sensitive to team size. Panel is also only mounted while the widget is open.
 const PRESENCE_POLL_MS = 20_000;
 
-export default function ChatPanel({ username, avatar, creds, accounts, initialActiveRoom, unreadRoomIds, onRefreshUnread, closing, onClose }: Props) {
+export default function ChatPanel({ username, avatar, creds, canKick, accounts, initialActiveRoom, unreadRoomIds, onRefreshUnread, closing, onClose }: Props) {
   // Seeded once from a resolved deep link (push notification click, see ChatWidget.tsx) —
   // ChatPanel only mounts once that resolution is already done, so a lazy initializer is
   // enough here; no effect needed to react to it arriving later.
@@ -46,6 +47,12 @@ export default function ChatPanel({ username, avatar, creds, accounts, initialAc
   }, [creds]);
 
   useVisiblePolling(fetchPresence, PRESENCE_POLL_MS, [fetchPresence]);
+
+  const kickUser = useCallback((target: string) => {
+    fetch(`/api/users/${encodeURIComponent(target)}/kick`, { method: 'POST', headers: { 'x-admin-auth': creds } })
+      .then(r => { if (r.ok) fetchPresence(); })
+      .catch(() => {});
+  }, [creds, fetchPresence]);
 
   const contacts: Contact[] = accounts
     .filter(a => a.username !== username)
@@ -88,6 +95,8 @@ export default function ChatPanel({ username, avatar, creds, accounts, initialAc
               contacts={contacts}
               selfOnline={onlineMap[username] ?? true}
               unreadRoomIds={unreadRoomIds}
+              canKick={canKick}
+              onKick={kickUser}
               onSelectTeam={() => setActiveRoom({ kind: 'team' })}
               onSelectContact={contact => setActiveRoom({ kind: 'direct', contact })}
             />

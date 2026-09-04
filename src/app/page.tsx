@@ -10,6 +10,8 @@ import {
   LayoutDashboard, PieChart, Store, KeyRound,
 } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
+import LoginApprovalScreen from '@/components/LoginApprovalScreen';
+import ForceLogoutOverlay from '@/components/ForceLogoutOverlay';
 import type { NotificationDoc } from '@/components/NotificationBell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -378,6 +380,13 @@ export default function AdminPage() {
   const [newPassConfirm, setNewPassConfirm] = useState('');
   const [changeErr, setChangeErr] = useState('');
   const [changing, setChanging] = useState(false);
+  // Set right after login when /api/login reports pending=true (akun sudah online di sesi lain
+  // — lihat LoginApprovalScreen.tsx) — menggantikan form login sampai sesi tersebut merespons.
+  const [pendingApproval, setPendingApproval] = useState<{ requestId: string; deviceLabel: string; tempPassword: string } | null>(null);
+  // Diisi lewat onForceLogout (kick admin, atau menyetujui login baru dari sesi ini sendiri) —
+  // lihat ForceLogoutOverlay.tsx. Beda dari loginErr: ini muncul SETELAH sempat authed, bukan
+  // saat mengisi form login.
+  const [forceLogoutReason, setForceLogoutReason] = useState<string | null>(null);
   const [authUser, setAuthUser] = useState<{ username: string; role: string; email: string | null; avatar: string | null } | null>(null);
   const [permissions, setPermissions] = useState<Record<string, Partial<Record<Action, boolean>>>>({});
   const [superAdmin, setSuperAdmin] = useState(false);
@@ -629,6 +638,11 @@ export default function AdminPage() {
   // state + kicks off the dashboard/nav fetches. Shared by session-restore
   // and login so both end up with the exact same state shape.
   const applySession = useCallback(async (token: string): Promise<boolean> => {
+    // Data fetches ditembak paralel dengan /api/me (bukan menunggu /api/me selesai dulu) — tiap
+    // endpoint sudah verifikasi token sendiri lewat requirePermission, jadi tidak perlu menunggu
+    // hasil /api/me. Ini menghilangkan satu round-trip berurutan dari waktu sampai data pertama
+    // tampil (mis. tab Analitik Mitra) saat login/refresh halaman.
+    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
     const res = await fetch('/api/me', { headers: { 'x-admin-auth': token } });
     if (!res.ok) return false;
     const { user, permissions, superAdmin } = await res.json() as {
@@ -637,7 +651,6 @@ export default function AdminPage() {
       superAdmin: boolean;
     };
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
-    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
     return true;
   }, [fetchDash, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics, fetchConsignmentAnalytics]);
 
@@ -690,18 +703,49 @@ export default function AdminPage() {
       body: JSON.stringify({ username, password }),
     });
     if (res.ok) {
-      const { token, mustChangePassword } = await res.json() as { token: string; mustChangePassword?: boolean };
-      if (mustChangePassword) {
-        // Password sementara — jangan buka dashboard dulu, minta ganti password dulu.
-        setPendingChange({ token, tempPassword: password });
+      const data = await res.json() as { token?: string; mustChangePassword?: boolean; pending?: boolean; requestId?: string; deviceLabel?: string };
+      if (data.pending && data.requestId) {
+        // Akun ini sedang online di sesi lain — tunggu sesi itu menerima/menolak (lihat
+        // LoginApprovalScreen.tsx) sebelum token benar-benar diterbitkan.
+        setPendingApproval({ requestId: data.requestId, deviceLabel: data.deviceLabel ?? 'perangkat lain', tempPassword: password });
         return;
       }
-      localStorage.setItem('admin_creds', token);
-      await applySession(token);
+      if (data.mustChangePassword) {
+        // Password sementara — jangan buka dashboard dulu, minta ganti password dulu.
+        setPendingChange({ token: data.token!, tempPassword: password });
+        return;
+      }
+      localStorage.setItem('admin_creds', data.token!);
+      await applySession(data.token!);
     } else {
       setFieldErrors({ username: ' ', password: ' ' });
       setLoginErr('Username/email atau password salah.');
     }
+  };
+
+  // Sesi lain menyetujui permintaan login ini (lihat LoginApprovalScreen.tsx) — lanjutkan
+  // persis seperti login normal yang berhasil, termasuk kemungkinan masih harus ganti password
+  // sementara.
+  const handleApprovalApproved = async (result: { token: string; mustChangePassword?: boolean }) => {
+    const tempPassword = pendingApproval?.tempPassword ?? password;
+    setPendingApproval(null);
+    if (result.mustChangePassword) {
+      setPendingChange({ token: result.token, tempPassword });
+      return;
+    }
+    localStorage.setItem('admin_creds', result.token);
+    await applySession(result.token);
+  };
+
+  const handleApprovalRejected = (reason: string) => {
+    setPendingApproval(null);
+    setFieldErrors({ username: ' ', password: ' ' });
+    setLoginErr(reason);
+  };
+
+  const handleApprovalExpired = () => {
+    setPendingApproval(null);
+    setLoginErr('Permintaan login kedaluwarsa — silakan coba lagi.');
   };
 
   const submitPasswordChange = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -797,6 +841,16 @@ export default function AdminPage() {
         </form>
       </div>
     </div>
+  );
+
+  if (pendingApproval) return (
+    <LoginApprovalScreen
+      requestId={pendingApproval.requestId}
+      deviceLabel={pendingApproval.deviceLabel}
+      onApproved={handleApprovalApproved}
+      onRejected={handleApprovalRejected}
+      onExpired={handleApprovalExpired}
+    />
   );
 
   if (!authed) return (
@@ -1397,10 +1451,12 @@ export default function AdminPage() {
   // the API is still the real enforcement point, this is just UI polish.
   const can = (featureKey: string, action: Action) => superAdmin || permissions[featureKey]?.[action] === true;
   return (
+    <>
     <AppShell
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       onLogout={logout}
+      onForceLogout={reason => setForceLogoutReason(reason)}
       hasCart={posCartCount > 0}
       cartCount={posCartCount}
       username={adminUsername}
@@ -1476,5 +1532,12 @@ export default function AdminPage() {
         <NotificationsTab creds={creds} username={adminUsername} onOpenNotification={handleOpenNotification} />
       )}
     </AppShell>
+    {forceLogoutReason && (
+      <ForceLogoutOverlay
+        reason={forceLogoutReason}
+        onDismiss={() => { setForceLogoutReason(null); logout(); }}
+      />
+    )}
+    </>
   );
 }

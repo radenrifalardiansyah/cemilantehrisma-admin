@@ -6,10 +6,15 @@ import ChatPanel, { ActiveRoom } from './ChatPanel';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import { SerializedTimestamp, TEAM_ROOM_ID } from '@/lib/chat';
 
+export interface PendingLoginRequest { id: string; deviceLabel: string; ip: string }
+
 interface Props {
   username: string;
   creds: string;
   avatar: string | null;
+  canKick: boolean;
+  onForceLogout: (reason: string) => void;
+  onPendingLoginRequest: (request: PendingLoginRequest | null) => void;
 }
 
 // Was 25s — writes a `presence/status` doc on every beat for every logged-in session
@@ -34,7 +39,7 @@ function resolveDeepLinkRoom(roomId: string, accounts: Account[], username: stri
   return { kind: 'direct', contact: { username: account.username, role: account.role, avatar: account.avatar, online: false, lastLoginAt: account.lastLoginAt } };
 }
 
-export default function ChatWidget({ username, creds, avatar }: Props) {
+export default function ChatWidget({ username, creds, avatar, canKick, onForceLogout, onPendingLoginRequest }: Props) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMounted, setPanelMounted] = useState(false);
   const [unreadRoomIds, setUnreadRoomIds] = useState<string[]>([]);
@@ -84,9 +89,26 @@ export default function ChatWidget({ username, creds, avatar }: Props) {
       .catch(() => {});
   }, [creds]);
 
+  // Heartbeat juga membawa (a) deteksi "sesi ini masih valid?" — kalau 401, akun ini baru saja
+  // di-kick admin atau login barunya disetujui dari sesi lain — dan (b) "ada yang mau login ke
+  // akun ini?" (lihat api/chat/heartbeat/route.ts). Keduanya numpang di poll 60 detik yang
+  // memang sudah jalan untuk presence, bukan poll terpisah, supaya tidak menambah beban
+  // Vercel/Supabase di luar yang sudah ada.
   const heartbeat = useCallback(() => {
-    fetch('/api/chat/heartbeat', { method: 'POST', headers: { 'x-admin-auth': creds } }).catch(() => {});
-  }, [creds]);
+    fetch('/api/chat/heartbeat', { method: 'POST', headers: { 'x-admin-auth': creds } })
+      .then(async res => {
+        if (res.status === 401) {
+          const d = await res.json().catch(() => ({ error: undefined })) as { error?: string };
+          onForceLogout(d.error || 'Sesi Anda sudah tidak berlaku — silakan login ulang.');
+          return;
+        }
+        if (res.ok) {
+          const d = await res.json().catch(() => null) as { pendingLoginRequest?: PendingLoginRequest | null } | null;
+          onPendingLoginRequest(d?.pendingLoginRequest ?? null);
+        }
+      })
+      .catch(() => {});
+  }, [creds, onForceLogout, onPendingLoginRequest]);
 
   useVisiblePolling(heartbeat, HEARTBEAT_MS, [heartbeat]);
   useVisiblePolling(fetchUnread, UNREAD_POLL_MS, [fetchUnread]);
@@ -130,6 +152,7 @@ export default function ChatWidget({ username, creds, avatar }: Props) {
           username={username}
           avatar={avatar}
           creds={creds}
+          canKick={canKick}
           accounts={accounts}
           initialActiveRoom={initialActiveRoom}
           unreadRoomIds={unreadRoomIds}

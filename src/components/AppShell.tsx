@@ -11,7 +11,8 @@ import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
-import ChatWidget from '@/components/chat/ChatWidget';
+import ChatWidget, { type PendingLoginRequest } from '@/components/chat/ChatWidget';
+import LoginRequestWatcher from '@/components/LoginRequestWatcher';
 import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
 import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
@@ -129,6 +130,7 @@ interface AppShellProps {
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
   onLogout: () => void;
+  onForceLogout: (reason: string) => void;
   hasCart: boolean;
   cartCount: number;
   children: React.ReactNode;
@@ -147,7 +149,7 @@ interface AppShellProps {
 }
 
 export default function AppShell({
-  activeTab, setActiveTab, onLogout,
+  activeTab, setActiveTab, onLogout, onForceLogout,
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
@@ -155,6 +157,9 @@ export default function AppShell({
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
   const [moreDragY,  setMoreDragY]  = useState(0);
+  // Diisi dari heartbeat chat (lihat ChatWidget.tsx) — bukan poll sendiri, supaya tidak menambah
+  // beban request/query di luar yang sudah ada.
+  const [pendingLoginRequest, setPendingLoginRequest] = useState<PendingLoginRequest | null>(null);
   const moreDragStartY = useRef<number | null>(null);
   const moreDragging = useRef(false);
   const moreTouchedOnce = useRef(false);
@@ -917,7 +922,20 @@ export default function AppShell({
         />
       )}
 
-      <ChatWidget username={username} creds={creds} avatar={avatar} />
+      <ChatWidget
+        username={username}
+        creds={creds}
+        avatar={avatar}
+        canKick={superAdmin || role === 'admin'}
+        onForceLogout={onForceLogout}
+        onPendingLoginRequest={setPendingLoginRequest}
+      />
+      <LoginRequestWatcher
+        request={pendingLoginRequest}
+        creds={creds}
+        onForceLogout={onForceLogout}
+        onResolved={() => setPendingLoginRequest(null)}
+      />
     </div>
     </NotificationsProvider>
   );

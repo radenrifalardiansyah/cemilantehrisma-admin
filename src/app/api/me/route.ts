@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { revalidateTag } from 'next/cache';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 import { getSql } from '@/lib/db';
-import { getRolePermissionsMap, SESSION_TAG } from '@/lib/rbac';
+import { getRolePermissionsMap, staleSessionReason, sessionExpired, SESSION_TAG } from '@/lib/rbac';
 import { fullAccessPermissions } from '@/lib/permissions';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 import type { Action } from '@/types/rbac';
@@ -13,6 +13,11 @@ interface ProfileRow { email: string | null; avatar: string | null }
 export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
   if (!authUser) return unauthorized();
+  // Dipanggil di setiap session-restore (lihat applySession di page.tsx) — token yang sudah
+  // di-revoke (kick admin, login baru disetujui, role/password diubah) tidak boleh lolos di sini
+  // juga, sama seperti requirePermission/requireSuperAdmin/requireAdminOrSuperAdmin.
+  const staleReason = await staleSessionReason(authUser);
+  if (staleReason !== false) return sessionExpired(staleReason);
 
   const superAdmin = authUser.role === 'super-admin';
 
@@ -46,6 +51,8 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const authUser = getAuthUser(req);
   if (!authUser) return unauthorized();
+  const staleReason = await staleSessionReason(authUser);
+  if (staleReason !== false) return sessionExpired(staleReason);
 
   const { email, avatar, currentPassword, newPassword } = await req.json() as {
     email?: string; avatar?: string | null; currentPassword?: string; newPassword?: string;

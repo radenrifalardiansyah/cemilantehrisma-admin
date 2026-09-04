@@ -10,8 +10,10 @@ export function forbidden() {
   return Response.json({ error: 'Anda tidak memiliki akses untuk aksi ini.' }, { status: 403 });
 }
 
-export function sessionExpired() {
-  return Response.json({ error: 'Sesi Anda sudah tidak berlaku (role/password diubah, atau akun dihapus) — silakan login ulang.' }, { status: 401 });
+export function sessionExpired(reason?: string | null) {
+  return Response.json({
+    error: reason || 'Sesi Anda sudah tidak berlaku (role/password diubah, atau akun dihapus) — silakan login ulang.',
+  }, { status: 401 });
 }
 
 // Cached the same way as getRolePermissionsMap, for the same reason (runs on nearly every
@@ -26,22 +28,28 @@ export function sessionExpired() {
 // `profiles` pindah ke Postgres (Tahap 7 migrasi, lihat plan gleaming-wondering-quokka.md) —
 // dulu koleksi Firestore `users`.
 export const getSessionInvalidatedAt = unstable_cache(
-  async (username: string): Promise<number | null> => {
+  async (username: string): Promise<{ at: number; reason: string | null } | null> => {
     const sql = getSql();
-    const [row] = await sql<{ sessions_invalidated_at: string | null }[]>`
-      select sessions_invalidated_at from profiles where username = ${username}
+    const [row] = await sql<{ sessions_invalidated_at: string | null; sessions_invalidated_reason: string | null }[]>`
+      select sessions_invalidated_at, sessions_invalidated_reason from profiles where username = ${username}
     `;
     if (!row) return null;
-    return Number(row.sessions_invalidated_at) || 0;
+    return { at: Number(row.sessions_invalidated_at) || 0, reason: row.sessions_invalidated_reason };
   },
   ['session-invalidated-at'],
   { revalidate: 30, tags: [SESSION_TAG] },
 );
 
-async function isSessionStale(user: AuthUser): Promise<boolean> {
-  const invalidatedAt = await getSessionInvalidatedAt(user.username);
-  if (invalidatedAt === null) return true;
-  return (user.iat ?? 0) < invalidatedAt;
+// Returns the revoke reason (kick / login-approval handoff) when the token is stale, so the
+// caller can surface a specific message instead of the generic sessionExpired() default —
+// `false` when the session is still valid. Exported (not just used by the requireXxx guards
+// below) so lightweight routes like /api/chat/heartbeat — which don't gate on a feature
+// permission — can still detect "you've been kicked/revoked" without a full requirePermission.
+export async function staleSessionReason(user: AuthUser): Promise<string | null | false> {
+  const invalidated = await getSessionInvalidatedAt(user.username);
+  if (invalidated === null) return null; // profile gone entirely — no specific reason to give
+  if ((user.iat ?? 0) < invalidated.at) return invalidated.reason;
+  return false;
 }
 
 type PermissionsMap = Record<string, Partial<Record<Action, boolean>>>;
@@ -99,7 +107,8 @@ export async function requirePermission(
   const user = getAuthUser(req);
   if (!user) return unauthorized();
   if (user.mustChangePassword) return passwordChangeRequired();
-  if (await isSessionStale(user)) return sessionExpired();
+  const staleReason = await staleSessionReason(user);
+  if (staleReason !== false) return sessionExpired(staleReason);
   if (!(await hasPermission(user, featureKey, action))) return forbidden();
   return user;
 }
@@ -112,7 +121,8 @@ export async function requireSuperAdmin(req: Request): Promise<AuthUser | Respon
   const user = getAuthUser(req);
   if (!user) return unauthorized();
   if (user.mustChangePassword) return passwordChangeRequired();
-  if (await isSessionStale(user)) return sessionExpired();
+  const staleReason = await staleSessionReason(user);
+  if (staleReason !== false) return sessionExpired(staleReason);
   if (user.role !== 'super-admin') return forbidden();
   return user;
 }
@@ -125,7 +135,8 @@ export async function requireAdminOrSuperAdmin(req: Request): Promise<AuthUser |
   const user = getAuthUser(req);
   if (!user) return unauthorized();
   if (user.mustChangePassword) return passwordChangeRequired();
-  if (await isSessionStale(user)) return sessionExpired();
+  const staleReason = await staleSessionReason(user);
+  if (staleReason !== false) return sessionExpired(staleReason);
   if (user.role !== 'super-admin' && user.role !== 'admin') return forbidden();
   return user;
 }
@@ -154,6 +165,22 @@ export function assertCanDeleteUser(
 ): { ok: true } | { ok: false; error: string } {
   if (actingUser.username === targetUsername) {
     return { ok: false, error: 'Anda tidak dapat menghapus akun Anda sendiri.' };
+  }
+  return { ok: true };
+}
+
+// Force-logout ("kick") an online user's session — same escalation concern as assertCanEditUser:
+// an `admin` must never be able to knock a `super-admin` offline.
+export function assertCanKickUser(
+  actingUser: AuthUser,
+  targetUsername: string,
+  targetRole: string,
+): { ok: true } | { ok: false; error: string } {
+  if (actingUser.username === targetUsername) {
+    return { ok: false, error: 'Anda tidak dapat mengeluarkan sesi Anda sendiri.' };
+  }
+  if (targetRole === 'super-admin' && actingUser.role !== 'super-admin') {
+    return { ok: false, error: 'Hanya Super Admin yang dapat mengeluarkan sesi Super Admin lain.' };
   }
   return { ok: true };
 }
