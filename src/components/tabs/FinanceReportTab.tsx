@@ -813,12 +813,27 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           )}
 
           {zeroCostProducts.size > 0 && (
-            <div className="card p-3 flex items-start gap-2.5" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
-              <AlertTriangle size={15} style={{ color: '#B45309', flexShrink: 0, marginTop: 2 }} />
-              <p className="text-xs font-medium" style={{ color: '#92400E' }}>
-                <span className="font-bold">Harga Modal (HPP) belum diisi untuk {zeroCostProducts.size} produk yang terjual di periode ini</span> — HPP produk ini dihitung Rp0, jadi Laba Kotor &amp; Laba Bersih pasti lebih tinggi dari sebenarnya.
-                {' '}Isi di menu <span className="font-bold">Produk → edit produk → &quot;Harga Modal / HPP&quot;</span>, lalu klik tombol <span className="font-bold">&quot;Hitung Ulang HPP&quot;</span> di pojok kanan atas supaya langsung kepakai tanpa transaksi ulang. Produk: {[...zeroCostProducts].join(', ')}.
-              </p>
+            <div className="card p-4 flex items-start gap-3" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
+              <AlertTriangle size={16} style={{ color: '#B45309', flexShrink: 0, marginTop: 1 }} />
+              <div className="flex-1 min-w-0 space-y-2">
+                <p className="text-xs font-bold leading-relaxed" style={{ color: '#92400E' }}>
+                  Harga Modal (HPP) belum diisi untuk {zeroCostProducts.size} produk yang terjual di periode ini
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+                  HPP produk ini dihitung Rp0, jadi Laba Kotor &amp; Laba Bersih pasti lebih tinggi dari sebenarnya.
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: '#92400E' }}>
+                  Isi di menu <span className="font-semibold">Produk → edit produk → &quot;Harga Modal / HPP&quot;</span>, lalu klik tombol <span className="font-semibold">&quot;Hitung Ulang HPP&quot;</span> di pojok kanan atas supaya langsung kepakai tanpa transaksi ulang.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {[...zeroCostProducts].map(p => (
+                    <span key={p} className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(180,83,9,0.14)', color: '#92400E' }}>
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
