@@ -112,10 +112,11 @@ function GlossaryPanel({ open, onToggle, items }: { open: boolean; onToggle: () 
   );
 }
 
-interface HppDetailRow { key: string; name: string; qty: number; total: number }
+interface DetailRow { key: string; label: string; sub?: string; value: number }
 
-function HppDetailModal({ rows, total, periodLabel, from, to, onClose }: {
-  rows: HppDetailRow[]; total: number; periodLabel: string; from: string; to: string; onClose: () => void;
+function SummaryDetailModal({ title, icon: Icon, color, rows, total, totalLabel = 'Total', periodLabel, from, to, emptyMessage, onClose }: {
+  title: string; icon: React.ComponentType<{ size?: number }>; color: string; rows: DetailRow[]; total: number;
+  totalLabel?: string; periodLabel: string; from: string; to: string; emptyMessage: string; onClose: () => void;
 }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -125,9 +126,9 @@ function HppDetailModal({ rows, total, periodLabel, from, to, onClose }: {
 
         <div className="modal-header">
           <div className="modal-header-left">
-            <div className="modal-icon"><Package size={17} /></div>
+            <div className="modal-icon"><Icon size={17} /></div>
             <div>
-              <p className="modal-title">Rincian HPP</p>
+              <p className="modal-title">{title}</p>
               <p className="modal-subtitle">{periodLabel} ({from} s/d {to})</p>
             </div>
           </div>
@@ -136,18 +137,16 @@ function HppDetailModal({ rows, total, periodLabel, from, to, onClose }: {
 
         <div className="modal-body">
           {rows.length === 0 ? (
-            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Belum ada produk terjual di periode ini.</p>
+            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>{emptyMessage}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {rows.map(r => (
                 <div key={r.key} className="flex items-center justify-between gap-3 pb-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      {r.qty} pcs × {formatRp(r.qty ? r.total / r.qty : 0)}
-                    </p>
+                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.label}</p>
+                    {r.sub && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{r.sub}</p>}
                   </div>
-                  <p className="text-xs font-extrabold tabular flex-shrink-0" style={{ color: '#B45309' }}>{formatRp(r.total)}</p>
+                  <p className="text-xs font-extrabold tabular flex-shrink-0" style={{ color }}>{formatRp(r.value)}</p>
                 </div>
               ))}
             </div>
@@ -155,8 +154,8 @@ function HppDetailModal({ rows, total, periodLabel, from, to, onClose }: {
         </div>
 
         <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-          <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total HPP</span>
-          <span className="text-sm font-extrabold tabular" style={{ color: '#B45309' }}>{formatRp(total)}</span>
+          <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>{totalLabel}</span>
+          <span className="text-sm font-extrabold tabular" style={{ color }}>{formatRp(total)}</span>
         </div>
       </div>
     </div>
@@ -253,7 +252,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [subView,    setSubView]    = useState<'laba-rugi' | 'jurnal'>('laba-rugi');
   const [showGlossary, setShowGlossary] = useState(false);
   const [showRekonsiliasi, setShowRekonsiliasi] = useState(false);
-  const [showHppDetail, setShowHppDetail] = useState(false);
+  const [openDetail, setOpenDetail] = useState<'omzet' | 'hpp' | 'beban' | null>(null);
 
   const [loading,  setLoading]  = useState(true);
   const [orders,   setOrders]   = useState<OrderRecord[]>([]);
@@ -434,7 +433,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // Rincian HPP per produk — dipakai modal detail saat kartu HPP di-klik. Dikelompokkan per
   // productId (gabung penjualan kasir/online/konsinyasi produk yang sama), fallback ke nama
   // kalau item lama/manual tidak punya productId.
-  const hppByProduct = new Map<string, HppDetailRow>();
+  const hppByProduct = new Map<string, { key: string; name: string; qty: number; total: number }>();
   const addHppRow = (productId: string | undefined, name: string, qty: number, cost: number) => {
     const key = productId || `nama:${name}`;
     const cur = hppByProduct.get(key) ?? { key, name, qty: 0, total: 0 };
@@ -448,7 +447,24 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
     if (it.qtySold > 0) addHppRow(it.productId, it.productName || '(tanpa nama)', it.qtySold, effectiveCostPrice(it.costPrice, it.productId));
   }));
-  const hppDetailRows = [...hppByProduct.values()].sort((a, b) => b.total - a.total);
+  const hppDetailRows: DetailRow[] = [...hppByProduct.values()].sort((a, b) => b.total - a.total)
+    .map(r => ({ key: r.key, label: r.name, sub: `${r.qty} pcs × ${formatRp(r.qty ? r.total / r.qty : 0)}`, value: r.total }));
+
+  // Rincian Omzet per sumber — kasir/online/konsinyasi/lain-lain, sama seperti yang dipakai di
+  // Export Excel & PDF (lihat incomeRows di printPdf), cuma dibungkus format DetailRow di sini.
+  const omzetDetailRows: DetailRow[] = [
+    { key: 'kasir', label: 'Penjualan Kasir', value: kasirRevenue },
+    { key: 'online', label: 'Penjualan Online', value: onlineRevenue },
+    { key: 'konsinyasi', label: 'Pendapatan Konsinyasi', value: consignmentRevenue },
+    { key: 'lain', label: 'Pendapatan Lain-lain', value: totalPendapatanLain },
+  ].filter(r => r.value !== 0);
+
+  // Rincian Beban Operasional per kategori — hanya beban di luar HPP (Bahan Baku/Produksi sudah
+  // dikeluarkan lewat isCogsSourcedExpense supaya tidak dobel hitung dengan HPP di atas).
+  const bebanOperasionalByCategory = new Map<string, number>();
+  expensesOperasional.forEach(e => bebanOperasionalByCategory.set(e.category, (bebanOperasionalByCategory.get(e.category) ?? 0) + e.amount));
+  const bebanOperasionalDetailRows: DetailRow[] = [...bebanOperasionalByCategory.entries()]
+    .sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ key: category, label: category, value: amount }));
 
   // Modal & Prive TIDAK ikut Laba Rugi operasional — cuma info terpisah + masuk Jurnal Kas.
   const totalModalMasuk = capital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0);
@@ -811,18 +827,20 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             Ringkasan Akrual — Laba Rugi Sebenarnya <InfoTip label={GLOSSARY_LABA_RUGI[7].desc} />
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--success-bg)' }}>
+            <button type="button" onClick={() => setOpenDetail('omzet')}
+              className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--success-bg)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
                 <TrendingUp size={16} />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--success)' }}>{formatRp(totalPendapatan)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   Omzet <InfoTip label={GLOSSARY_LABA_RUGI[0].desc} />
                 </p>
               </div>
-            </div>
-            <button type="button" onClick={() => setShowHppDetail(true)}
+              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            </button>
+            <button type="button" onClick={() => setOpenDetail('hpp')}
               className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--surface-2)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(180,83,9,0.15)', color: '#B45309' }}>
                 <Package size={16} />
@@ -846,17 +864,19 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                 </p>
               </div>
             </div>
-            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--danger-bg)' }}>
+            <button type="button" onClick={() => setOpenDetail('beban')}
+              className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--danger-bg)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--danger)' }}>
                 <Receipt size={16} />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--danger)' }}>{formatRp(totalBebanOperasional)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   Beban Operasional <InfoTip label={GLOSSARY_LABA_RUGI[3].desc} />
                 </p>
               </div>
-            </div>
+              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            </button>
             <div className="card p-4 flex items-center gap-3" style={{ background: labaBersih >= 0 ? 'var(--accent-bg)' : 'var(--danger-bg)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: labaBersih >= 0 ? 'rgba(212,105,30,0.15)' : 'rgba(220,38,38,0.15)', color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
                 <Wallet size={16} />
@@ -1123,8 +1143,23 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         </div>
       )}
 
-      {showHppDetail && (
-        <HppDetailModal rows={hppDetailRows} total={hpp} periodLabel={periodLabel} from={from} to={to} onClose={() => setShowHppDetail(false)} />
+      {openDetail === 'omzet' && (
+        <SummaryDetailModal title="Rincian Omzet" icon={TrendingUp} color="var(--success)"
+          rows={omzetDetailRows} total={totalPendapatan} totalLabel="Total Omzet"
+          periodLabel={periodLabel} from={from} to={to}
+          emptyMessage="Belum ada pendapatan di periode ini." onClose={() => setOpenDetail(null)} />
+      )}
+      {openDetail === 'hpp' && (
+        <SummaryDetailModal title="Rincian HPP" icon={Package} color="#B45309"
+          rows={hppDetailRows} total={hpp} totalLabel="Total HPP"
+          periodLabel={periodLabel} from={from} to={to}
+          emptyMessage="Belum ada produk terjual di periode ini." onClose={() => setOpenDetail(null)} />
+      )}
+      {openDetail === 'beban' && (
+        <SummaryDetailModal title="Rincian Beban Operasional" icon={Receipt} color="var(--danger)"
+          rows={bebanOperasionalDetailRows} total={totalBebanOperasional} totalLabel="Total Beban Operasional"
+          periodLabel={periodLabel} from={from} to={to}
+          emptyMessage="Belum ada beban operasional di periode ini." onClose={() => setOpenDetail(null)} />
       )}
     </div>
   );
