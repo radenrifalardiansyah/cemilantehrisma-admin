@@ -5,8 +5,11 @@ import {
   Blocks, Plus, Pencil, Trash2, X, Check, Loader2, ChevronUp, ChevronDown, EyeOff,
   Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
@@ -54,6 +57,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [modules, setModules] = useState<ModuleDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +69,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting,   setExporting]   = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [editing,    setEditing]    = useState<EditState | null>(null);
   const [isNew,      setIsNew]      = useState(false);
@@ -259,6 +264,47 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
     }
   };
 
+  const exportPdf = async (rows: ModuleDoc[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada modul untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR MODUL',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '6%', align: 'center' },
+              { header: 'Urutan', width: '10%', align: 'center' },
+              { header: 'Nama', width: '26%', bold: true },
+              { header: 'ID', width: '24%' },
+              { header: 'Ikon', width: '18%' },
+              { header: 'Status', width: '16%', align: 'center' },
+            ],
+            rows: rows.map((m, i) => [i + 1, m.order + 1, m.name, m.id, m.icon, m.isActive ? 'Aktif' : 'Nonaktif']),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `modul-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} modul (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const filtered = modules.filter(m => !search
     || m.name.toLowerCase().includes(search.toLowerCase())
     || m.id.toLowerCase().includes(search.toLowerCase()));
@@ -329,6 +375,14 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {modules.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -542,6 +596,12 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(modules.filter(m => selected.has(m.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

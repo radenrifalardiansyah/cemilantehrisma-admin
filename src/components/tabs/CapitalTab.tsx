@@ -5,8 +5,11 @@ import {
   Landmark, Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronLeft, ChevronRight, ArrowDownCircle, ArrowUpCircle,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import FilterSelect from '@/components/FilterSelect';
@@ -72,6 +75,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
   const wallets = useWallets(creds);
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
@@ -95,6 +99,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,      setError]      = useState('');
   const [exporting,  setExporting]  = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -267,6 +272,43 @@ export default function CapitalTab({ creds }: { creds: string }) {
     } finally { setExporting(false); }
   };
 
+  const exportPdf = async (rows: CapitalEntry[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada catatan untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'MODAL & PRIVE',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'Tanggal', width: '16%' },
+              { header: 'Tipe', width: '18%' },
+              { header: 'Jumlah', width: '18%', align: 'right', bold: true },
+              { header: 'Catatan', width: '48%' },
+            ],
+            rows: rows.map(e => [
+              formatDateDisplay(e.date), e.type === 'modal' ? 'Modal Masuk' : 'Prive Pemilik', formatRp(e.amount), e.note || '',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `modal-prive-${todayISO()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} catatan ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally { setExportingPdf(false); }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center py-24">
       <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
@@ -330,6 +372,14 @@ export default function CapitalTab({ creds }: { creds: string }) {
                 <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                   className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                   {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+            )}
+            {entries.length > 0 && (
+              <Tooltip label="Export PDF">
+                <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                 </button>
               </Tooltip>
             )}
@@ -527,6 +577,12 @@ export default function CapitalTab({ creds }: { creds: string }) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(entries.filter(e => selected.has(e.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

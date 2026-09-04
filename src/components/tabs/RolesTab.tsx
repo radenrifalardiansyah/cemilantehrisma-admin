@@ -5,8 +5,11 @@ import {
   IdCard, Plus, Pencil, Trash2, X, Check, Loader2, Lock, Search,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
@@ -58,6 +61,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [roles,   setRoles]   = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +72,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting,   setExporting]   = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [editing,    setEditing]    = useState<EditState | null>(null);
   const [isNew,      setIsNew]      = useState(false);
@@ -262,6 +267,47 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
     }
   };
 
+  const exportPdf = async (rows: Role[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada role untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR ROLE',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '5%', align: 'center' },
+              { header: 'Nama', width: '18%', bold: true },
+              { header: 'ID', width: '16%' },
+              { header: 'Deskripsi', width: '35%' },
+              { header: 'Sistem', width: '10%', align: 'center' },
+              { header: 'Dibuat', width: '16%' },
+            ],
+            rows: rows.map((r, i) => [i + 1, r.name, r.id, r.description || '-', r.isSystem ? 'Ya' : 'Tidak', formatDate(r)]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `role-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} role (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const filtered = roles.filter(r => !search
     || r.name.toLowerCase().includes(search.toLowerCase())
     || r.id.toLowerCase().includes(search.toLowerCase())
@@ -313,6 +359,14 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {roles.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -502,6 +556,12 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(roles.filter(r => selected.has(r.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

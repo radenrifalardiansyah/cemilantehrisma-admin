@@ -5,8 +5,11 @@ import {
   ShieldCheck, Plus, Pencil, Trash2, X, Check, Loader2, Eye, EyeOff, Search,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import { useToast } from '@/components/Toast';
@@ -61,6 +64,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [users,   setUsers]   = useState<AppUser[]>([]);
   const [roles,   setRoles]   = useState<Role[]>([]);
@@ -72,6 +76,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting,   setExporting]   = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [editing,    setEditing]    = useState<EditState | null>(null);
   const [isNew,      setIsNew]      = useState(false);
@@ -269,6 +274,46 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
     }
   };
 
+  const exportPdf = async (rows: AppUser[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada pengguna untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR PENGGUNA',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '6%', align: 'center' },
+              { header: 'Username', width: '22%', bold: true },
+              { header: 'Email', width: '30%' },
+              { header: 'Role', width: '22%' },
+              { header: 'Terdaftar', width: '20%' },
+            ],
+            rows: rows.map((u, i) => [i + 1, u.username, u.email || '-', roleName(u.role), formatDate(u)]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pengguna-cemilantehrisma-${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Berhasil export ${rows.length} pengguna (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const filtered = users.filter(u => !search
     || u.username.toLowerCase().includes(search.toLowerCase())
     || (u.email ?? '').toLowerCase().includes(search.toLowerCase())
@@ -320,6 +365,14 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {users.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -515,6 +568,12 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportPdf(users.filter(u => selected.has(u.username)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"

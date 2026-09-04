@@ -5,8 +5,11 @@ import {
   Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power, ArrowRightLeft,
   Search, ChevronLeft, ChevronRight, RefreshCw,
 } from 'lucide-react';
-import { ExcelIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import IconPicker from '@/components/IconPicker';
 import ColorPicker from '@/components/ColorPicker';
 import NumberInput from '@/components/NumberInput';
@@ -75,6 +78,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const storeHeader = useStoreHeader(creds);
 
   const [wallets, setWallets] = useState<WalletDoc[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
@@ -97,6 +101,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [transferEditing, setTransferEditing] = useState<({ id: string } & TransferForm) | null>(null);
   const [transferIsNew, setTransferIsNew] = useState(false);
@@ -112,6 +117,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const [transferSelected, setTransferSelected] = useState<Set<string>>(new Set());
   const [transferBulkDeleting, setTransferBulkDeleting] = useState(false);
   const [transferExporting, setTransferExporting] = useState(false);
+  const [transferExportingPdf, setTransferExportingPdf] = useState(false);
 
   // Generasi request — `load()` dipanggil ulang setelah tiap aksi CRUD dompet/transfer (lihat
   // pemanggil di bawah); dua aksi yang dipicu cepat berurutan bisa membuat dua `load()` tumpang
@@ -334,6 +340,46 @@ export default function WalletsTab({ creds }: { creds: string }) {
     } finally { setExporting(false); }
   };
 
+  const exportPdf = async (rows: WalletDoc[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada dompet untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR DOMPET',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '6%', align: 'center' },
+              { header: 'Nama', width: '24%', bold: true },
+              { header: 'Tipe', width: '15%' },
+              { header: 'Status', width: '13%', align: 'center' },
+              { header: 'Saldo Awal', width: '21%', align: 'right' },
+              { header: 'Saldo Saat Ini', width: '21%', align: 'right', bold: true },
+            ],
+            rows: rows.map((w, i) => [
+              i + 1, w.name, WALLET_TYPE_LABEL[w.type], w.isActive ? 'Aktif' : 'Nonaktif',
+              formatRp(w.initialBalance), formatRp(balances[w.id] ?? 0),
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dompet-${todayISO()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} dompet ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally { setExportingPdf(false); }
+  };
+
   // ─── Transfer: CRUD ──────────────────────────────────────────────
   const openNewTransfer = () => { setTransferEditing({ id: '', ...emptyTransferForm() }); setTransferIsNew(true); setTransferError(''); };
   const openEditTransfer = (t: Transfer) => {
@@ -513,6 +559,45 @@ export default function WalletsTab({ creds }: { creds: string }) {
     } finally { setTransferExporting(false); }
   };
 
+  const exportTransferPdf = async (rows: Transfer[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada transfer untuk diexport.'); return; }
+    setTransferExportingPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'TRANSFER ANTAR DOMPET',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'No', width: '6%', align: 'center' },
+              { header: 'Tanggal', width: '16%' },
+              { header: 'Dari', width: '19%' },
+              { header: 'Ke', width: '19%' },
+              { header: 'Jumlah', width: '16%', align: 'right', bold: true },
+              { header: 'Catatan', width: '24%' },
+            ],
+            rows: rows.map((t, i) => [
+              i + 1, formatDateDisplay(t.date), walletName(t.fromWalletId), walletName(t.toWalletId), formatRp(t.amount), t.note || '',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transfer-dompet-${todayISO()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} transfer ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally { setTransferExportingPdf(false); }
+  };
+
   const totalAktif = wallets.filter(w => w.isActive).reduce((s, w) => s + (balances[w.id] ?? 0), 0);
 
   if (loading) return (
@@ -574,6 +659,14 @@ export default function WalletsTab({ creds }: { creds: string }) {
               <button onClick={() => exportExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {wallets.length > 0 && (
+            <Tooltip label="Export PDF">
+              <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
               </button>
             </Tooltip>
           )}
@@ -770,6 +863,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
               {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
+            <button onClick={() => exportPdf(wallets.filter(w => selected.has(w.id)), 'terpilih')} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
+            </button>
             <button onClick={bulkDelete} disabled={bulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'var(--danger)', color: '#fff' }}>
@@ -804,6 +903,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
                 <button onClick={() => exportTransferExcel(transferFiltered, 'sesuai filter')} disabled={transferExporting} aria-label="Export Excel"
                   className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                   {transferExporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="Export PDF">
+                <button onClick={() => exportTransferPdf(transferFiltered, 'sesuai filter')} disabled={transferExportingPdf} aria-label="Export PDF"
+                  className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {transferExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                 </button>
               </Tooltip>
               <ViewToggle mode={transferView} onChange={setTransferView} height={HEADER_BTN_H} />
@@ -968,6 +1073,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {transferExporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => exportTransferPdf(transfers.filter(t => transferSelected.has(t.id)), 'terpilih')} disabled={transferExportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {transferExportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              PDF
             </button>
             <button onClick={transferBulkDelete} disabled={transferBulkDeleting}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
