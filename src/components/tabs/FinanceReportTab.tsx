@@ -5,6 +5,7 @@ import {
   Loader2, RefreshCw, TrendingUp, TrendingDown, Wallet, ShoppingCart, Globe, Store, Coins,
   ScrollText, PieChart, ArrowDownCircle, ArrowUpCircle, Landmark,
   Info, Package, Receipt, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, Calculator, X,
+  Award,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -23,6 +24,32 @@ const API = '';
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+
+const pct = (value: number, base: number) => (base > 0 ? (value / base) * 100 : 0);
+const formatPct = (n: number) => `${n.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+
+// Penilaian kesehatan usaha dari Margin Bersih (Laba Bersih / Omzet) — patokan umum untuk
+// usaha kuliner/UMKM skala rumahan, bukan standar akuntansi baku.
+type MarginTier = 'good' | 'warning' | 'bad';
+const gradeMarginBersih = (marginPct: number): { grade: string; label: string; desc: string; tier: MarginTier } => {
+  if (marginPct >= 20) return { grade: 'A', label: 'Sangat Sehat', desc: 'Margin laba tinggi — usaha sangat menguntungkan dengan bantalan aman kalau biaya naik.', tier: 'good' };
+  if (marginPct >= 12) return { grade: 'B', label: 'Sehat', desc: 'Margin laba bagus — usaha berjalan baik dan berkelanjutan.', tier: 'good' };
+  if (marginPct >= 6) return { grade: 'C', label: 'Cukup Sehat', desc: 'Margin laba standar — usaha jalan, tapi tipis dan perlu efisiensi biaya.', tier: 'warning' };
+  if (marginPct >= 0) return { grade: 'D', label: 'Kurang Sehat', desc: 'Margin laba sangat tipis — rawan rugi kalau ada kenaikan harga bahan/operasional.', tier: 'warning' };
+  return { grade: 'E', label: 'Tidak Sehat', desc: 'Usaha merugi di periode ini — perlu evaluasi harga jual, HPP, dan beban operasional.', tier: 'bad' };
+};
+const MARGIN_TIER_COLOR: Record<MarginTier, { fg: string; bg: string; ring: string }> = {
+  good: { fg: 'var(--success)', bg: 'var(--success-bg)', ring: 'rgba(21,128,61,0.15)' },
+  warning: { fg: 'var(--warning)', bg: 'rgba(180,83,9,0.08)', ring: 'rgba(180,83,9,0.15)' },
+  bad: { fg: 'var(--danger)', bg: 'var(--danger-bg)', ring: 'rgba(220,38,38,0.15)' },
+};
+const MARGIN_GRADE_SCALE: { grade: string; range: string; label: string; desc: string; tier: MarginTier }[] = [
+  { grade: 'A', range: '≥ 20%', label: 'Sangat Sehat', desc: 'Margin laba tinggi — usaha sangat menguntungkan dengan bantalan aman kalau biaya naik.', tier: 'good' },
+  { grade: 'B', range: '12% – 20%', label: 'Sehat', desc: 'Margin laba bagus — usaha berjalan baik dan berkelanjutan.', tier: 'good' },
+  { grade: 'C', range: '6% – 12%', label: 'Cukup Sehat', desc: 'Margin standar — usaha jalan, tapi tipis dan perlu efisiensi biaya.', tier: 'warning' },
+  { grade: 'D', range: '0% – 6%', label: 'Kurang Sehat', desc: 'Margin sangat tipis — rawan rugi kalau ada kenaikan harga bahan/operasional.', tier: 'warning' },
+  { grade: 'E', range: '< 0% (rugi)', label: 'Tidak Sehat', desc: 'Usaha merugi di periode ini — perlu evaluasi harga jual, HPP, dan beban operasional.', tier: 'bad' },
+];
 
 // ─── Tipe data ────────────────────────────────────────────────────────────────
 interface OrderRecord {
@@ -252,6 +279,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [subView,    setSubView]    = useState<'laba-rugi' | 'jurnal'>('laba-rugi');
   const [showGlossary, setShowGlossary] = useState(false);
   const [showRekonsiliasi, setShowRekonsiliasi] = useState(false);
+  const [showGradeScale, setShowGradeScale] = useState(false);
   const [openDetail, setOpenDetail] = useState<'omzet' | 'hpp' | 'beban' | null>(null);
 
   const [loading,  setLoading]  = useState(true);
@@ -406,6 +434,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e));
   const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + e.amount, 0);
   const labaBersih = labaKotor - totalBebanOperasional;
+  const marginBersihPct = pct(labaBersih, totalPendapatan);
+  const gradeUsaha = gradeMarginBersih(marginBersihPct);
 
   // Versi lama (sebelum HPP akrual ada): Total Pendapatan − Total Beban kas (termasuk Bahan Baku/
   // Produksi langsung sebagai beban). Tetap ditampilkan terpisah di bawah supaya tidak hilang, tapi
@@ -903,6 +933,91 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Rasio & Margin — persentase tiap komponen terhadap Omzet, biar kesehatan margin kelihatan
+              langsung tanpa hitung manual dari nominal Rupiah di atas. */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="card p-3 flex flex-col items-center text-center gap-0.5" style={{ background: 'var(--surface-2)' }}>
+              <p className="text-base font-extrabold tabular leading-none" style={{ color: '#B45309' }}>{formatPct(pct(hpp, totalPendapatan))}</p>
+              <p className="text-[10.5px] font-medium" style={{ color: 'var(--text-muted)' }}>HPP dari Omzet</p>
+            </div>
+            <div className="card p-3 flex flex-col items-center text-center gap-0.5" style={{ background: 'var(--accent-bg)' }}>
+              <p className="text-base font-extrabold tabular leading-none" style={{ color: 'var(--accent)' }}>{formatPct(pct(labaKotor, totalPendapatan))}</p>
+              <p className="text-[10.5px] font-medium" style={{ color: 'var(--text-muted)' }}>Margin Kotor dari Omzet</p>
+            </div>
+            <div className="card p-3 flex flex-col items-center text-center gap-0.5" style={{ background: 'var(--danger-bg)' }}>
+              <p className="text-base font-extrabold tabular leading-none" style={{ color: 'var(--danger)' }}>{formatPct(pct(totalBebanOperasional, totalPendapatan))}</p>
+              <p className="text-[10.5px] font-medium" style={{ color: 'var(--text-muted)' }}>Beban dari Omzet</p>
+            </div>
+            <div className="card p-3 flex flex-col items-center text-center gap-0.5" style={{ background: labaBersih >= 0 ? 'var(--accent-bg)' : 'var(--danger-bg)' }}>
+              <p className="text-base font-extrabold tabular leading-none" style={{ color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{formatPct(pct(labaBersih, totalPendapatan))}</p>
+              <p className="text-[10.5px] font-medium" style={{ color: 'var(--text-muted)' }}>Margin Bersih dari Omzet</p>
+            </div>
+          </div>
+
+          {/* Penilaian kesehatan usaha — grade A-E dari Margin Bersih (Laba Bersih / Omzet). Patokan umum
+              untuk usaha kuliner/UMKM, bukan standar akuntansi formal — sekadar bantu baca cepat. */}
+          <div className="card p-4 flex items-center gap-4" style={{ background: MARGIN_TIER_COLOR[gradeUsaha.tier].bg }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 text-2xl font-extrabold" style={{ background: MARGIN_TIER_COLOR[gradeUsaha.tier].ring, color: MARGIN_TIER_COLOR[gradeUsaha.tier].fg }}>
+              {gradeUsaha.grade}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold flex items-center gap-1.5" style={{ color: MARGIN_TIER_COLOR[gradeUsaha.tier].fg }}>
+                <Award size={15} /> Penilaian Usaha: {gradeUsaha.label}
+              </p>
+              <p className="text-[12px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {gradeUsaha.desc} Margin Bersih periode ini <span className="font-bold tabular">{formatPct(marginBersihPct)}</span> dari Omzet.
+              </p>
+            </div>
+          </div>
+
+          {/* Tabel skala penilaian — disembunyikan default, cuma buat yang mau lihat semua ambang batas
+              grade A-E sekaligus, bukan cuma grade yang lagi didapat. */}
+          <div className="card overflow-hidden">
+            <button type="button" onClick={() => setShowGradeScale(v => !v)}
+              className="w-full flex items-center gap-2 px-4 py-3 text-xs font-bold"
+              style={{ color: 'var(--accent)' }}>
+              <Award size={14} />
+              <span className="flex-1 text-left">Skala Penilaian Margin Bersih (Grade A-E)</span>
+              {showGradeScale ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showGradeScale && (
+              <div className="px-5 pb-5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                <p className="text-[11px] my-3" style={{ color: 'var(--text-muted)' }}>
+                  Patokan umum untuk usaha kuliner/UMKM skala rumahan, bukan standar akuntansi baku — sekadar bantu baca cepat sehat tidaknya margin laba.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left" style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th className="pb-2 pr-3 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-2)' }}>Grade</th>
+                        <th className="pb-2 pr-3 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-2)' }}>Margin Bersih</th>
+                        <th className="pb-2 pr-3 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-2)' }}>Status</th>
+                        <th className="pb-2 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-2)' }}>Arti</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MARGIN_GRADE_SCALE.map(row => {
+                        const rc = MARGIN_TIER_COLOR[row.tier];
+                        const isCurrent = row.grade === gradeUsaha.grade;
+                        return (
+                          <tr key={row.grade} style={{ background: isCurrent ? rc.bg : 'transparent' }}>
+                            <td className="py-2 pr-3 align-top">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-extrabold"
+                                style={{ background: rc.ring, color: rc.fg }}>{row.grade}</span>
+                            </td>
+                            <td className="py-2 pr-3 align-top text-xs font-bold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{row.range}</td>
+                            <td className="py-2 pr-3 align-top text-xs font-bold whitespace-nowrap" style={{ color: rc.fg }}>{row.label}{isCurrent && <span className="ml-1 font-medium" style={{ color: 'var(--text-muted)' }}>(sekarang)</span>}</td>
+                            <td className="py-2 align-top text-[11.5px]" style={{ color: 'var(--text-secondary)' }}>{row.desc}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Rekonsiliasi Kas vs Laba — disembunyikan default, cuma buat yang penasaran kenapa Laba
