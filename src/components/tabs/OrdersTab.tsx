@@ -17,6 +17,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
 import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
@@ -977,6 +978,19 @@ _${storeName}_`.trim();
       {/* Header */}
       <div className="flex flex-row items-center gap-2 sm:gap-3">
         {orders.length > 0 && (
+          <button
+            onClick={() => { setOnlyBelumLunas(v => !v); resetPage(); }}
+            className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+            style={{
+              height: HEADER_BTN_H,
+              background: onlyBelumLunas ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+              color: onlyBelumLunas ? 'white' : 'var(--text-muted)',
+            }}
+          >
+            <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
+          </button>
+        )}
+        {orders.length > 0 && (
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
@@ -1001,19 +1015,6 @@ _${storeName}_`.trim();
           </Tooltip>
           <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) importOrdersFromExcel(f); e.target.value = ''; }} />
-          {orders.length > 0 && (
-            <button
-              onClick={() => { setOnlyBelumLunas(v => !v); resetPage(); }}
-              className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
-              style={{
-                height: HEADER_BTN_H,
-                background: onlyBelumLunas ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
-                color: onlyBelumLunas ? 'white' : 'var(--text-muted)',
-              }}
-            >
-              <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
-            </button>
-          )}
           {orders.length > 0 && (
             <Tooltip label="Export Excel">
               <button onClick={() => exportExcel(orders)} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
@@ -1536,8 +1537,13 @@ _${storeName}_`.trim();
                         </button>
                       ))}
                     </div>
-                    <input type="number" min="0" value={editDiscountRaw} onChange={e => setEditDiscountRaw(e.target.value)}
-                      placeholder="0" className="input" style={{ flex: 1 }} />
+                    {editDiscountType === 'percent' ? (
+                      <input type="number" min="0" value={editDiscountRaw} onChange={e => setEditDiscountRaw(e.target.value)}
+                        placeholder="0" className="input" style={{ flex: 1 }} />
+                    ) : (
+                      <NumberInput value={editDiscountRaw} onChange={setEditDiscountRaw}
+                        placeholder="0" className="input" style={{ flex: 1 }} />
+                    )}
                   </div>
                 </div>
 
@@ -1558,7 +1564,7 @@ _${storeName}_`.trim();
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="field-label">Dibayar</label>
-                      <input type="number" min="0" value={editAmountPaid} onChange={e => setEditAmountPaid(e.target.value)} placeholder="0" className="input" />
+                      <NumberInput value={editAmountPaid} onChange={setEditAmountPaid} placeholder="0" />
                     </div>
                     <div>
                       <label className="field-label">Kembalian</label>
@@ -1576,7 +1582,7 @@ _${storeName}_`.trim();
                     </div>
                     <div>
                       <label className="field-label">Jumlah Transfer</label>
-                      <input type="number" min="0" value={editTransferAmount} onChange={e => setEditTransferAmount(e.target.value)} className="input" />
+                      <NumberInput value={editTransferAmount} onChange={setEditTransferAmount} />
                     </div>
                   </div>
                 )}
