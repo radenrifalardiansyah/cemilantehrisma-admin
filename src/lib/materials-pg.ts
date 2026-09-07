@@ -40,6 +40,31 @@ export function rowToPurchase(r: PurchaseRow) {
 
 export interface BatchOutputRow { productId: string; productName: string; yieldQty: number; costPerPcs: number }
 export interface BatchMaterialUsedRow { materialId: string; materialName: string; unit: string; qty: number; costPerUnit: number; cost: number }
+
+// Gabungkan baris dengan id yang sama SEBELUM dipakai — dipakai baik saat catat produksi baru
+// maupun edit, supaya batch tidak pernah menyimpan dua baris terpisah untuk produk/bahan yang
+// sama (data lebih rapi, dan cocok dengan larangan pilih produk yang sama 2x di ProductionTab).
+export function mergeMaterialsUsed<T extends { materialId: string; qty: number }>(rows: T[]): T[] {
+  const merged = new Map<string, T>();
+  for (const r of rows) {
+    const qty = Number(r.qty) || 0;
+    const existing = merged.get(r.materialId);
+    if (existing) existing.qty += qty;
+    else merged.set(r.materialId, { ...r, qty });
+  }
+  return [...merged.values()];
+}
+
+export function mergeOutputs<T extends { productId: string; yieldQty: number }>(rows: T[]): T[] {
+  const merged = new Map<string, T>();
+  for (const r of rows) {
+    const qty = Number(r.yieldQty) || 0;
+    const existing = merged.get(r.productId);
+    if (existing) existing.yieldQty += qty;
+    else merged.set(r.productId, { ...r, yieldQty: qty });
+  }
+  return [...merged.values()];
+}
 export interface ProductionBatchRow {
   id: string; date: string; outputs: unknown; materials_used: unknown;
   material_cost: string; other_cost: string; total_cost: string; total_yield_qty: string; cost_per_pcs: string;

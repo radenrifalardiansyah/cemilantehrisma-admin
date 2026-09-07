@@ -924,11 +924,18 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                 <div>
                   <label style={fieldLabel}>Produk Hasil <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {outputRows.map((row, i) => (
+                    {outputRows.map((row, i) => {
+                      // Produk yang sudah dipilih di baris LAIN disembunyikan — pilih produk yang sama
+                      // dua kali diam-diam menjumlahkan qty-nya jadi produksi ganda (lihat komentar
+                      // mergeOutputs di lib/materials-pg.ts), jadi baris yang sudah ada harus diedit
+                      // langsung angkanya, bukan ditambah baris baru untuk produk yang sama.
+                      const otherProductIds = new Set(outputRows.filter((_, idx) => idx !== i).map(r => r.productId).filter(Boolean));
+                      const rowProductOptions = productOptions.filter(o => !otherProductIds.has(o.value));
+                      return (
                       <div key={i} className="flex items-center gap-2">
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
-                            options={productOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
+                            options={rowProductOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                         </div>
                         {/* min="0" tidak menolak tanda minus saat diketik — tanpa kloning ke '0' di
                             sini, baris dengan qty negatif diam-diam hilang dari total (di-filter
@@ -943,7 +950,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                           </button>
                         </Tooltip>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <button onClick={addOutputRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
                     <Plus size={12} /> Tambah Produk Hasil (mis. varian rasa lain)
@@ -957,12 +965,16 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                       const material = effectiveMaterials.find(m => m.id === row.materialId);
                       const qty = parseFloat(row.qty) || 0;
                       const shortage = !!material && qty > material.stockQty;
+                      // Bahan yang sudah dipilih di baris lain disembunyikan — sama alasannya dengan
+                      // produk hasil di atas, cegah qty terpisah untuk material yang sama.
+                      const otherMaterialIds = new Set(rows.filter((_, idx) => idx !== i).map(r => r.materialId).filter(Boolean));
+                      const rowMaterialOptions = materialOptions.filter(o => !otherMaterialIds.has(o.value));
                       return (
                         <div key={i}>
                           <div className="flex items-center gap-2">
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
-                                options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                                options={rowMaterialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
                             </div>
                             {/* Lihat komentar sama di input qty output di atas — cegah negatif
                                 langsung di sini, bukan hanya menyaringnya diam-diam dari total. */}

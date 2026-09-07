@@ -7,7 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
-import { rowToBatch, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
+import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -49,8 +49,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     date?: string; note?: string; warehouseId?: string; warehouseName?: string;
     outputs: OutputInput[]; materialsUsed: MaterialUsedInput[]; otherCost?: number;
   };
-  const newMaterialsUsed = data.materialsUsed ?? [];
-  const newOutputs = (data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
+  const newMaterialsUsed = mergeMaterialsUsed(data.materialsUsed ?? []);
+  const newOutputs = mergeOutputs(data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
   const newOtherCost = Number(data.otherCost) || 0;
   const date = data.date || new Date().toISOString().slice(0, 10);
   const newWarehouseId   = data.warehouseId ?? '';

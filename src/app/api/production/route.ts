@@ -9,36 +9,10 @@ import { notify } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg } from '@/lib/stock-pg';
-import { rowToBatch, type ProductionBatchRow } from '@/lib/materials-pg';
+import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow } from '@/lib/materials-pg';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
-
-// Gabungkan baris dengan id yang sama SEBELUM dipakai untuk update — tanpa ini, dua baris bahan
-// (atau dua baris hasil) untuk material/produk yang sama masing-masing menghitung delta dari
-// snapshot awal yang sama lalu ditimpa dengan nilai literal, sehingga baris kedua menimpa (bukan
-// menambah) hasil baris pertama dan stok jadi kurang terpotong/kurang bertambah.
-function mergeMaterialsUsed(rows: MaterialUsedInput[]): MaterialUsedInput[] {
-  const merged = new Map<string, MaterialUsedInput>();
-  for (const r of rows) {
-    const qty = Number(r.qty) || 0;
-    const existing = merged.get(r.materialId);
-    if (existing) existing.qty += qty;
-    else merged.set(r.materialId, { ...r, qty });
-  }
-  return [...merged.values()];
-}
-
-function mergeOutputs(rows: OutputInput[]): OutputInput[] {
-  const merged = new Map<string, OutputInput>();
-  for (const r of rows) {
-    const qty = Number(r.yieldQty) || 0;
-    const existing = merged.get(r.productId);
-    if (existing) existing.yieldQty += qty;
-    else merged.set(r.productId, { ...r, yieldQty: qty });
-  }
-  return [...merged.values()];
-}
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'production', 'view');
