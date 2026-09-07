@@ -2091,8 +2091,8 @@ _${storeHeader.name}_`.trim();
                         <div key={l.id}>
                           <div className="flex flex-col gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                           <div className="flex flex-wrap items-start gap-3">
-                          <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
-                          <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} /></div>
+                          <span className="pt-[5px] w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
+                          <div className="pt-[5px]"><Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} /></div>
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)' }}>
                             <Store size={16} style={{ color: 'var(--accent)' }} />
                           </div>
@@ -2163,16 +2163,16 @@ _${storeHeader.name}_`.trim();
                       const isSelected = selectedLocations.has(l.id);
                       return (
                         <div key={l.id}>
-                          <div className="card overflow-hidden p-5 relative"
+                          <div className="card overflow-hidden p-5"
                           style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                          <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
-                            <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
-                          </div>
-                          <div className="flex items-start justify-between mb-3 pl-6">
-                            <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
-                              <Store size={20} style={{ color: 'var(--accent)' }} />
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
+                              <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
+                                <Store size={20} style={{ color: 'var(--accent)' }} />
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-shrink-0">
                               <Tooltip label="Kirim Stok">
                                 <button onClick={() => openSendForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
                                   <Send size={12} />
