@@ -23,16 +23,24 @@ function outputSignature(outputs: { productId: string; yieldQty: number }[]) {
 // dipengaruhi produksi (hanya stockQty), jadi tambah-balik lalu kurangi-baru selalu tepat secara
 // kuantitas berapa pun urutan transaksi lain di antaranya.
 //
-// Untuk produk hasil, HPP (costPrice) memakai rata-rata tertimbang yang bersifat asosiatif — batch lain
-// yang ikut menambah produk yang sama masih bisa dihitung ulang dengan tepat. Yang TIDAK aman adalah
-// kejadian yang MENGURANGI stok produk itu (terjual, dikirim konsinyasi, transfer keluar, dsb) setelah
-// batch ini — makanya hanya diblokir kalau ada batch produksi LAIN yang lebih baru menyentuh produk yang
-// sama; kalau produk sudah terjual/berpindah stok, edit/hapus tetap dijalankan (best-effort) — cek &
-// koreksi manual lewat Edit Produk kalau HPP hasil akhirnya terasa tidak pas.
+// Untuk produk hasil, stockQty TIDAK BOLEH dihitung ulang lewat reverse-lalu-apply seperti bahan
+// baku — kalau sebagian/semua hasil batch ini sudah terjual/dikirim konsinyasi setelah dibuat,
+// curQty saat edit sudah lebih kecil dari yieldQty batch ini; reverse (curQty - yieldQty) akan
+// negatif dan ke-clamp jadi 0, lalu apply menaruh yieldQty penuh lagi — diam-diam "mengembalikan"
+// stok yang sudah keluar (bug nyata yang pernah kejadian, lihat riwayat edit 2026-09-07 yang
+// mengembalikan stok Mie Kremes/Basreng ke angka produksi awal padahal sudah terjual/dikirim).
+// Makanya qty HANYA digeser sebesar SELISIH yieldQty lama->baru (0 kalau yieldQty produk itu tidak
+// berubah sama sekali) lewat `applyYieldDelta` di bawah — reverseProductState/applyProductState di
+// sini cuma dipakai untuk membaurkan HPP (rata-rata tertimbang, boleh sedikit meleset — cek &
+// koreksi manual lewat Edit Produk kalau HPP hasil akhirnya terasa tidak pas), bukan untuk qty.
 function reverseProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
   const newQty = curQty - yieldQty;
   const newCost = newQty > 0 ? (curCost * curQty - yieldQty * costPerPcs) / newQty : 0;
   return { qty: Math.max(0, newQty), cost: Math.max(0, newCost) };
+}
+
+function applyYieldDelta(curQty: number, oldYieldQty: number, newYieldQty: number) {
+  return Math.max(0, curQty + (newYieldQty - oldYieldQty));
 }
 
 function applyProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
@@ -153,8 +161,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const byId = new Map(productRows.map(r => [r.id, r]));
       newOutputs.forEach(o => { if (!byId.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
 
-      // Produk hasil: kembalikan dulu efek output batch lama (rata-rata tertimbang bersifat asosiatif),
-      // lalu terapkan output batch baru dengan HPP/pcs yang baru dihitung.
+      // Produk hasil: HPP dibaurkan lewat reverse-lalu-apply (rata-rata tertimbang bersifat
+      // asosiatif), TAPI qty digeser terpisah lewat selisih yieldQty lama->baru saja — lihat
+      // komentar di applyYieldDelta di atas untuk alasan kenapa qty tidak boleh direkonstruksi
+      // ulang dari yieldQty batch begitu saja.
+      const oldByProduct = new Map(oldOutputs.map(o => [o.productId, o]));
+      const newByProduct = new Map(newOutputs.map(o => [o.productId, o]));
       const productState = new Map<string, { qty: number; cost: number }>();
       productIds.forEach(pid => {
         const row2 = byId.get(pid);
@@ -163,16 +175,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         productState.set(pid, { qty, cost });
       });
       const outputsWithCost: BatchOutputRow[] = [];
-      oldOutputs.forEach(o => {
-        const st = productState.get(o.productId)!;
-        productState.set(o.productId, reverseProductState(st.qty, st.cost, o.yieldQty, o.costPerPcs));
-      });
-      newOutputs.forEach(o => {
-        const st = productState.get(o.productId)!;
-        const applied = applyProductState(st.qty, st.cost, o.yieldQty, costPerPcs);
-        productState.set(o.productId, applied);
-        outputsWithCost.push({ ...o, costPerPcs });
-      });
+      for (const pid of productIds) {
+        const st = productState.get(pid)!;
+        const oldO = oldByProduct.get(pid);
+        const newO = newByProduct.get(pid);
+        let costState = { qty: st.qty, cost: st.cost };
+        if (oldO) costState = reverseProductState(costState.qty, costState.cost, oldO.yieldQty, oldO.costPerPcs);
+        if (newO) costState = applyProductState(costState.qty, costState.cost, newO.yieldQty, costPerPcs);
+        const qty = applyYieldDelta(st.qty, oldO?.yieldQty ?? 0, newO?.yieldQty ?? 0);
+        productState.set(pid, { qty, cost: costState.cost });
+        if (newO) outputsWithCost.push({ ...newO, costPerPcs });
+      }
       for (const pid of productIds) {
         const st = productState.get(pid)!;
         const openPO = byId.get(pid)?.open_po ?? false;
