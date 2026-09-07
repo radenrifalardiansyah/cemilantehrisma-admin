@@ -6,6 +6,11 @@ import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
+import { computeWalletBalance } from '@/lib/wallet-balance';
+
+// Kegagalan validasi yang diketahui (saldo kurang) — dilempar dari dalam transaksi supaya bisa
+// dibedakan dari error tak terduga dan diterjemahkan ke respons 400.
+class ExpenseValidationError extends Error {}
 
 interface ExpenseRow {
   id: string; category: string | null; description: string | null; amount: string;
@@ -83,11 +88,33 @@ export async function POST(req: NextRequest) {
   };
   const id = randomUUID();
   const sql = getSql();
-  await sql`
-    insert into expenses (id, category, description, amount, items, date, note, wallet_id, created_at, updated_at)
-    values (${id}, ${payload.category}, ${payload.description}, ${payload.amount}, ${JSON.stringify(payload.items)}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
-  `;
   const db = getDb();
+
+  try {
+    await sql.begin(async (pgTx) => {
+      // Pengeluaran selalu mengurangi saldo dompet — validasi supaya tidak menembus saldo yang
+      // benar-benar ada, sama seperti Transfer Antar Dompet & Prive. Dikunci per-dompet
+      // (pg_advisory_xact_lock) supaya dua Pengeluaran/Prive yang tiba hampir bersamaan dari dompet
+      // yang sama tidak lolos validasi berdasarkan saldo yang sama (TOCTOU).
+      if (payload.walletId) {
+        await pgTx`select pg_advisory_xact_lock(hashtext(${payload.walletId}))`;
+        const [walletRow] = await pgTx<{ initial_balance: string }[]>`select initial_balance from wallets where id = ${payload.walletId}`;
+        const initialBalance = Number(walletRow?.initial_balance) || 0;
+        const balance = await computeWalletBalance(db, payload.walletId, initialBalance, undefined, undefined, pgTx);
+        if (payload.amount > balance) {
+          throw new ExpenseValidationError(`Saldo dompet tidak cukup untuk Pengeluaran ini (saldo saat ini Rp${Math.round(balance).toLocaleString('id-ID')}).`);
+        }
+      }
+      await pgTx`
+        insert into expenses (id, category, description, amount, items, date, note, wallet_id, created_at, updated_at)
+        values (${id}, ${payload.category}, ${payload.description}, ${payload.amount}, ${JSON.stringify(payload.items)}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
+      `;
+    });
+  } catch (err) {
+    if (err instanceof ExpenseValidationError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
+
   try {
     await logHistory(db, {
       entity: 'expenses',

@@ -25,7 +25,10 @@ function mergeItems(items: SendItemInput[]): SendItemInput[] {
     const existing = merged.get(it.productId);
     if (existing) {
       const totalQty = existing.qty + qty;
-      existing.hargaTitip = totalQty > 0 ? (existing.qty * existing.hargaTitip + qty * it.hargaTitip) / totalQty : it.hargaTitip;
+      // Dibulatkan — Harga Titip disimpan & diedit sebagai Rupiah bulat (lewat NumberInput di form
+      // Kirim), jadi rata-rata tertimbang antar baris duplikat tidak boleh menghasilkan desimal
+      // yang nanti rusak (kehilangan titik desimal) begitu shipment ini dibuka lagi di Edit Kirim.
+      existing.hargaTitip = totalQty > 0 ? Math.round((existing.qty * existing.hargaTitip + qty * it.hargaTitip) / totalQty) : it.hargaTitip;
       existing.qty = totalQty;
     } else {
       merged.set(it.productId, { ...it, qty });

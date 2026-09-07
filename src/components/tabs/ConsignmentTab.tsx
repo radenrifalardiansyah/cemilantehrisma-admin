@@ -886,7 +886,10 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     setEditingShipment(s);
     setSendLocationId(s.locationId ?? '');
     setSendWarehouseId(s.warehouseId ?? '');
-    setSendRows(s.items.map(it => ({ productId: it.productId, qty: String(it.qty), hargaTitip: String(it.hargaTitip) })));
+    // hargaTitip bisa desimal (rata-rata tertimbang saat server gabungkan baris produk duplikat
+    // dalam satu Kirim) — NumberInput cuma untuk Rupiah bulat & buang titik desimal kalau tidak
+    // dibulatkan dulu (sama seperti bug avgCost Bahan Baku).
+    setSendRows(s.items.map(it => ({ productId: it.productId, qty: String(it.qty), hargaTitip: String(Math.round(it.hargaTitip)) })));
     setSendNote(s.note ?? '');
     setSendDate(s.createdAt?.seconds ? toLocalDateTimeInput(new Date(s.createdAt.seconds * 1000)) : toLocalDateTimeInput(new Date()));
     setShowSendForm(true);

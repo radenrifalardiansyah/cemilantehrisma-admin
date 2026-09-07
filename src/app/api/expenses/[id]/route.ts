@@ -4,8 +4,11 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { computeWalletBalance } from '@/lib/wallet-balance';
 
 type Ctx = { params: Promise<{ id: string }> };
+
+class ExpenseValidationError extends Error {}
 
 interface ExpenseRow {
   id: string; category: string | null; description: string | null; amount: string;
@@ -51,15 +54,34 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
   };
-  await sql`
-    update expenses
-    set category = ${payload.category}, description = ${payload.description}, amount = ${payload.amount},
-        items = ${JSON.stringify(payload.items)}, date = ${payload.date}, note = ${payload.note},
-        wallet_id = ${payload.walletId}, updated_at = now()
-    where id = ${id}
-  `;
+  const db = getDb();
   try {
-    const db = getDb();
+    await sql.begin(async (pgTx) => {
+      // Sama seperti POST — kunci & validasi saldo dompet. Kontribusi lama entri ini sendiri
+      // dikeluarkan (excludeExpenseId) supaya edit yang cuma ganti catatan tidak keblokir oleh
+      // saldo yang sudah termasuk dirinya sendiri.
+      if (payload.walletId) {
+        await pgTx`select pg_advisory_xact_lock(hashtext(${payload.walletId}))`;
+        const [walletRow] = await pgTx<{ initial_balance: string }[]>`select initial_balance from wallets where id = ${payload.walletId}`;
+        const initialBalance = Number(walletRow?.initial_balance) || 0;
+        const balance = await computeWalletBalance(db, payload.walletId, initialBalance, undefined, undefined, pgTx, undefined, id);
+        if (payload.amount > balance) {
+          throw new ExpenseValidationError(`Saldo dompet tidak cukup untuk Pengeluaran ini (saldo saat ini Rp${Math.round(balance).toLocaleString('id-ID')}).`);
+        }
+      }
+      await pgTx`
+        update expenses
+        set category = ${payload.category}, description = ${payload.description}, amount = ${payload.amount},
+            items = ${JSON.stringify(payload.items)}, date = ${payload.date}, note = ${payload.note},
+            wallet_id = ${payload.walletId}, updated_at = now()
+        where id = ${id}
+      `;
+    });
+  } catch (err) {
+    if (err instanceof ExpenseValidationError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
+  try {
     await logHistory(db, {
       entity: 'expenses',
       entityId: id,

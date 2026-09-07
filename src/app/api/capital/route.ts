@@ -6,6 +6,11 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
+import { computeWalletBalance } from '@/lib/wallet-balance';
+
+// Kegagalan validasi yang diketahui (saldo kurang) — dilempar dari dalam transaksi supaya bisa
+// dibedakan dari error tak terduga dan diterjemahkan ke respons 400.
+class CapitalValidationError extends Error {}
 
 interface CapitalEntryRow {
   id: string; type: string; amount: string; date: string; note: string | null; wallet_id: string | null;
@@ -76,11 +81,34 @@ export async function POST(req: NextRequest) {
   };
   const id = randomUUID();
   const sql = getSql();
-  await sql`
-    insert into capital_entries (id, type, amount, date, note, wallet_id, created_at, updated_at)
-    values (${id}, ${payload.type}, ${payload.amount}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
-  `;
   const db = getDb();
+
+  try {
+    await sql.begin(async (pgTx) => {
+      // Prive (penarikan modal) mengurangi saldo dompet — validasi supaya tidak menembus saldo
+      // yang benar-benar ada, sama seperti Transfer Antar Dompet. Modal Masuk tidak perlu validasi
+      // (menambah saldo). Dikunci per-dompet (pg_advisory_xact_lock) supaya dua Prive/Pengeluaran
+      // yang tiba hampir bersamaan dari dompet yang sama tidak lolos validasi berdasarkan saldo
+      // yang sama (TOCTOU) — lihat pola sama di wallet-transfers.
+      if (payload.type === 'prive' && payload.walletId) {
+        await pgTx`select pg_advisory_xact_lock(hashtext(${payload.walletId}))`;
+        const [walletRow] = await pgTx<{ initial_balance: string }[]>`select initial_balance from wallets where id = ${payload.walletId}`;
+        const initialBalance = Number(walletRow?.initial_balance) || 0;
+        const balance = await computeWalletBalance(db, payload.walletId, initialBalance, undefined, undefined, pgTx);
+        if (payload.amount > balance) {
+          throw new CapitalValidationError(`Saldo dompet tidak cukup untuk Prive ini (saldo saat ini Rp${Math.round(balance).toLocaleString('id-ID')}).`);
+        }
+      }
+      await pgTx`
+        insert into capital_entries (id, type, amount, date, note, wallet_id, created_at, updated_at)
+        values (${id}, ${payload.type}, ${payload.amount}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
+      `;
+    });
+  } catch (err) {
+    if (err instanceof CapitalValidationError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
+
   const typeLabel = payload.type === 'prive' ? 'Modal Keluar' : 'Modal Masuk';
   try {
     await logHistory(db, {

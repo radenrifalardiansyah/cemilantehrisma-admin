@@ -232,7 +232,10 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const openAdjust = (m: RawMaterial) => {
     setAdjustingMaterial(m);
     setAdjustStockQty(String(Math.round(m.stockQty * 100) / 100));
-    setAdjustAvgCost(String(m.avgCost));
+    // avgCost hasil rata-rata tertimbang nyaris selalu desimal (mis. 15999.999999999998).
+    // NumberInput cuma untuk Rupiah bulat — dia buang titik desimal & gabung semua digit,
+    // jadi wajib dibulatkan dulu supaya tidak tampil angka raksasa yang ngaco.
+    setAdjustAvgCost(String(Math.round(m.avgCost)));
     setAdjustNote('');
   };
   const closeAdjust = () => { setAdjustingMaterial(null); setAdjustStockQty(''); setAdjustAvgCost(''); setAdjustNote(''); };
@@ -627,7 +630,9 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     setSupplierId(p.supplierId ?? '');
     setSupplierName(p.supplierName ?? '');
     setPurchaseDate(p.date || todayISO());
-    setRows(p.items.map(it => ({ materialId: it.materialId, qty: String(it.qty), price: String(it.price) })));
+    // it.price bisa desimal (mis. hasil import Excel) — NumberInput buang titik desimal
+    // & gabung digit kalau tidak dibulatkan dulu (sama seperti avgCost di openAdjust).
+    setRows(p.items.map(it => ({ materialId: it.materialId, qty: String(it.qty), price: String(Math.round(it.price)) })));
     setPurchaseNote(p.note ?? '');
     setPurchasePaymentStatus(p.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
     setPurchaseWalletId(p.walletId ?? '');
@@ -691,15 +696,21 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [voidingPurchaseId, setVoidingPurchaseId] = useState<string | null>(null);
   const voidPurchase = async (p: Purchase) => {
     if (!await confirm({
-      message: `Batalkan pembelian dari "${p.supplierName || 'Tanpa nama'}"? Pengeluaran otomatisnya (kalau ada) akan dihapus, TAPI stok bahan baku yang sudah bertambah TIDAK dikurangi lagi (karena sudah dipakai/berubah). Kalau stok sekarang perlu dibetulkan, pakai "Koreksi" di menu Stok setelah ini.`,
+      message: `Batalkan pembelian dari "${p.supplierName || 'Tanpa nama'}"? Pengeluaran otomatisnya (kalau ada) akan dihapus. Stok & harga rata-rata bahan baku akan dikembalikan seperti sebelum pembelian ini — KECUALI kalau bahan bakunya sudah dibeli/dipakai lagi setelah transaksi ini, maka stok akan dibiarkan apa adanya dan perlu dibetulkan manual lewat "Koreksi" di menu Stok.`,
       danger: true,
     })) return;
     setVoidingPurchaseId(p.id);
     const r = await fetch(`${API}/api/material-purchases/${p.id}/void`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
-    const data = await r.json().catch(() => ({})) as { error?: string };
-    if (r.ok) { toast.success('Pembelian dibatalkan — tidak lagi dihitung sebagai pengeluaran.'); await loadPurchases(); refetchBalances(); }
+    const data = await r.json().catch(() => ({})) as { error?: string; reversed?: boolean; skippedMaterials?: string[] };
+    if (r.ok) {
+      toast.success(data.reversed
+        ? 'Pembelian dibatalkan — stok & harga rata-rata bahan baku sudah dikembalikan.'
+        : `Pembelian dibatalkan, TAPI stok tidak diubah karena sudah dipakai/dibeli lagi: ${(data.skippedMaterials ?? []).join(', ')}. Betulkan manual lewat "Koreksi" di menu Stok.`);
+      await Promise.all([loadMaterials(), loadPurchases()]);
+      refetchBalances();
+    }
     else toast.error(data.error ?? 'Gagal membatalkan pembelian.');
     setVoidingPurchaseId(null);
   };

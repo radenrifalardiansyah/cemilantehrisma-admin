@@ -200,8 +200,10 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       closeEdit();
       toast.success(isNew ? 'Pengeluaran berhasil dicatat.' : 'Pengeluaran berhasil diperbarui.');
     } else {
-      toast.error('Gagal menyimpan pengeluaran.');
-      setError('Gagal menyimpan pengeluaran.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      const msg = d.error ?? 'Gagal menyimpan pengeluaran.';
+      toast.error(msg);
+      setError(msg);
     }
     setSaving(false);
   };

@@ -53,17 +53,22 @@ export async function computeWalletBalance(
   excludeTransferId?: string,
   tx?: Transaction,
   pgTx?: PgClient,
+  // Dipakai saat mengedit sebuah entri Modal/Prive atau Pengeluaran — supaya kontribusi lama entri
+  // itu sendiri dikeluarkan dulu dari total sebelum divalidasi ulang dengan nilai barunya (kalau
+  // tidak, edit yang cuma mengubah catatan pun bisa keblokir oleh kontribusinya sendiri).
+  excludeCapitalEntryId?: string,
+  excludeExpenseId?: string,
 ): Promise<number> {
   void tx;
   const sql = pgTx ?? getSql();
   const [pgTotals] = await sql<{ total_modal: string; total_prive: string; total_in: string; total_out: string; total_income: string; total_expenses: string; total_orders: string; total_recaps: string }[]>`
     select
       coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal'), 0) as total_modal,
-      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive'), 0) as total_prive,
+      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive' and id != ${excludeCapitalEntryId ?? ''}), 0) as total_prive,
       coalesce((select sum(amount) from wallet_transfers where to_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_in,
       coalesce((select sum(amount) from wallet_transfers where from_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_out,
       coalesce((select sum(amount) from income where wallet_id = ${walletId}), 0) as total_income,
-      coalesce((select sum(amount) from expenses where wallet_id = ${walletId}), 0) as total_expenses,
+      coalesce((select sum(amount) from expenses where wallet_id = ${walletId} and id != ${excludeExpenseId ?? ''}), 0) as total_expenses,
       coalesce((select sum(total) from orders where wallet_id = ${walletId} and status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'), 0) as total_orders,
       coalesce((select sum(total_revenue) from consignment_recaps where wallet_id = ${walletId} and payment_status != 'belum_lunas'), 0) as total_recaps
   `;

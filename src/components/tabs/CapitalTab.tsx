@@ -133,8 +133,10 @@ export default function CapitalTab({ creds }: { creds: string }) {
       closeEdit();
       toast.success(isNew ? 'Tercatat.' : 'Berhasil diperbarui.');
     } else {
-      toast.error('Gagal menyimpan.');
-      setError('Gagal menyimpan.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      const msg = d.error ?? 'Gagal menyimpan.';
+      toast.error(msg);
+      setError(msg);
     }
     setSaving(false);
   };

@@ -4,8 +4,11 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { computeWalletBalance } from '@/lib/wallet-balance';
 
 type Ctx = { params: Promise<{ id: string }> };
+
+class CapitalValidationError extends Error {}
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'capital', 'edit');
@@ -15,7 +18,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const amount = Number(data.amount) || 0;
   if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
   const sql = getSql();
-  const [before] = await sql`select * from capital_entries where id = ${id}`;
   const payload = {
     type: data.type === 'prive' ? 'prive' : 'modal',
     amount,
@@ -23,14 +25,39 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
   };
-  await sql`
-    update capital_entries
-    set type = ${payload.type}, amount = ${payload.amount}, date = ${payload.date},
-        note = ${payload.note}, wallet_id = ${payload.walletId}, updated_at = now()
-    where id = ${id}
-  `;
+  const db = getDb();
+  let before: { type: string; amount: string; date: string; note: string | null; wallet_id: string | null } | undefined;
+
   try {
-    const db = getDb();
+    await sql.begin(async (pgTx) => {
+      [before] = await pgTx`select * from capital_entries where id = ${id}`;
+
+      // Sama seperti POST — kunci &amp; validasi saldo hanya untuk Prive (penarikan). Kontribusi lama
+      // entri ini sendiri dikeluarkan (excludeCapitalEntryId) supaya edit yang cuma ganti catatan
+      // tidak keblokir oleh saldo yang sudah termasuk dirinya sendiri.
+      if (payload.type === 'prive' && payload.walletId) {
+        await pgTx`select pg_advisory_xact_lock(hashtext(${payload.walletId}))`;
+        const [walletRow] = await pgTx<{ initial_balance: string }[]>`select initial_balance from wallets where id = ${payload.walletId}`;
+        const initialBalance = Number(walletRow?.initial_balance) || 0;
+        const balance = await computeWalletBalance(db, payload.walletId, initialBalance, undefined, undefined, pgTx, id);
+        if (payload.amount > balance) {
+          throw new CapitalValidationError(`Saldo dompet tidak cukup untuk Prive ini (saldo saat ini Rp${Math.round(balance).toLocaleString('id-ID')}).`);
+        }
+      }
+
+      await pgTx`
+        update capital_entries
+        set type = ${payload.type}, amount = ${payload.amount}, date = ${payload.date},
+            note = ${payload.note}, wallet_id = ${payload.walletId}, updated_at = now()
+        where id = ${id}
+      `;
+    });
+  } catch (err) {
+    if (err instanceof CapitalValidationError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
+
+  try {
     const typeLabel = payload.type === 'prive' ? 'Modal Keluar' : 'Modal Masuk';
     await logHistory(db, {
       entity: 'capital',
