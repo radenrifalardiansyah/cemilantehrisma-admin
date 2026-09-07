@@ -2605,6 +2605,9 @@ _${storeHeader.name}_`.trim();
                             style={{ transition: 'background-color 0.6s ease', background: highlightedRecapId === r.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="flex items-center gap-2 mb-1">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                                <ClipboardList size={14} />
+                              </div>
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
                               {locations.find(l => l.id === r.locationId)?.code && (
                                 <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
