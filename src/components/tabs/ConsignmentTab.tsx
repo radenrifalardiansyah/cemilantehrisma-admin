@@ -2378,12 +2378,10 @@ _${storeHeader.name}_`.trim();
                         const isSelected = selectedShipments.has(s.id);
                         return (
                           <div key={s.id} ref={el => { shipmentRowRefs.current[s.id] = el; }}>
-                          <div className="card overflow-hidden p-4 relative"
+                          <div className="card overflow-hidden p-4"
                             style={{ transition: 'background-color 0.6s ease', background: highlightedShipmentId === s.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
+                            <div className="flex items-center gap-2 mb-1">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
-                            </div>
-                            <div className="flex items-center gap-2 mb-1 pl-6">
                               <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                                 <Send size={14} />
                               </div>
@@ -2603,23 +2601,19 @@ _${storeHeader.name}_`.trim();
                         const isSelected = selectedRecaps.has(r.id);
                         return (
                           <div key={r.id} ref={el => { recapRowRefs.current[r.id] = el; }}>
-                          <div className="card overflow-hidden p-4 relative"
+                          <div className="card overflow-hidden p-4"
                             style={{ transition: 'background-color 0.6s ease', background: highlightedRecapId === r.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                            <div className="absolute top-3 left-3 z-10 rounded-md px-1 py-0.5" style={{ background: 'var(--surface)' }}>
+                            <div className="flex items-center gap-2 mb-1">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
-                            </div>
-                            <div className="flex items-center justify-between gap-2 mb-1 pl-6">
-                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
-                                {locations.find(l => l.id === r.locationId)?.code && (
-                                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
-                                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                                    {locations.find(l => l.id === r.locationId)?.code}
-                                  </span>
-                                )}
-                                {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
-                                {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
-                              </div>
+                              <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
+                              {locations.find(l => l.id === r.locationId)?.code && (
+                                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                  {locations.find(l => l.id === r.locationId)?.code}
+                                </span>
+                              )}
+                              {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
+                              {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 <Tooltip label="Cetak Rekap PDF">
                                   <button onClick={() => printRecapNota(r)} disabled={printingRecapId === r.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Rekap PDF">
