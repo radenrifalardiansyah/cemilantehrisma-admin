@@ -1347,7 +1347,11 @@ export default function ProductsTab({ creds }: { creds: string }) {
                     ] as const).map(f => (
                       <div key={f.key}>
                         <label className="field-label">{f.label}</label>
-                        <NumberInput value={(editing[f.key] as number | undefined) ?? ''}
+                        {/* costPrice bisa desimal — HPP dihitung ulang otomatis dari rata-rata bergerak
+                            tiap ada Produksi (lihat production/route.ts), jadi harus dibulatkan dulu
+                            sebelum ditaruh di NumberInput (dia buang titik desimal & gabung digit,
+                            sama seperti bug avgCost di Bahan Baku). */}
+                        <NumberInput value={(() => { const v = editing[f.key] as number | undefined; return v ? Math.round(v) : ''; })()}
                           onChange={raw => setEditing({ ...editing, [f.key]: raw ? Number(raw) : 0 })}
                         />
                       </div>
