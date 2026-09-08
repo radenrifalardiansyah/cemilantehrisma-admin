@@ -55,6 +55,15 @@ interface MasterBankOption { name: string; bankCode?: string; logoUrl?: string }
 type TransferForm = { fromWalletId: string; toWalletId: string; amount: string; date: string; note: string };
 const emptyTransferForm = (): TransferForm => ({ fromWalletId: '', toWalletId: '', amount: '', date: todayISO(), note: '' });
 
+function BankLogo({ logoUrl, name, size }: { logoUrl: string; name: string; size: number }) {
+  return (
+    <div className="rounded-md overflow-hidden flex-shrink-0" style={{ width: size, height: size, background: 'var(--surface)' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={logoUrl} alt={name} className="w-full h-full" style={{ objectFit: 'contain' }} />
+    </div>
+  );
+}
+
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
 }) {
@@ -267,6 +276,9 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
   const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const bankLogoByName = new Map(
+    bankOptions.filter(b => b.logoUrl).map(b => [b.name.toLowerCase(), b.logoUrl as string])
+  );
   const goPage     = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const resetPage  = () => setPage(1);
 
@@ -744,7 +756,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
                           {!w.isActive && <span className="badge badge-gray text-[10px]">Nonaktif</span>}
                         </div>
                         {w.bankName && (
-                          <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
+                          <div className="flex items-center gap-1">
+                            {bankLogoByName.get(w.bankName.toLowerCase()) && (
+                              <BankLogo logoUrl={bankLogoByName.get(w.bankName.toLowerCase())!} name={w.bankName} size={14} />
+                            )}
+                            <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
+                          </div>
                         )}
                       </div>
                       <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
@@ -795,7 +812,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
                         {!w.isActive && <span className="badge badge-gray text-[10px]">Nonaktif</span>}
                       </div>
                       {w.bankName && (
-                        <p className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
+                        <div className="flex items-center gap-1">
+                          {bankLogoByName.get(w.bankName.toLowerCase()) && (
+                            <BankLogo logoUrl={bankLogoByName.get(w.bankName.toLowerCase())!} name={w.bankName} size={14} />
+                          )}
+                          <p className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
+                        </div>
                       )}
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
                         {formatRp(balance)}

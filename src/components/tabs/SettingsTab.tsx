@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Plus, Pencil, Trash2, X, Search } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Plus, Pencil, Trash2, X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import ColorPicker from '@/components/ColorPicker';
 import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
 import { useViewMode } from '@/lib/useViewMode';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -38,6 +39,27 @@ interface SettingsWarehouse { id: string; name: string }
 interface MasterBank { id: string; code: string; name: string; bankCode?: string; ewallet: boolean; logoUrl?: string }
 type BankForm = { code: string | null; name: string; bankCode: string; ewallet: boolean; logoUrl: string };
 const emptyBankForm = (): BankForm => ({ code: null, name: '', bankCode: '', ewallet: false, logoUrl: '' });
+
+function Checkbox({ checked, indeterminate, onChange }: {
+  checked: boolean; indeterminate?: boolean; onChange: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{
+        background:  checked || indeterminate ? 'var(--accent)' : 'transparent',
+        borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)',
+      }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked
+          ? <Check size={11} color="#fff" strokeWidth={3} />
+          : null}
+    </button>
+  );
+}
 
 function BankLogo({ bank, size }: { bank: { name: string; logoUrl?: string }; size: number }) {
   if (bank.logoUrl) {
@@ -132,6 +154,10 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [banks,        setBanks]        = useState<MasterBank[] | null>(null);
   const [bankSearch,    setBankSearch]  = useState('');
   const [bankView, setBankView] = useViewMode('master-banks');
+  const [bankPage, setBankPage] = useState(1);
+  const [bankPageSize, setBankPageSize] = useState(10);
+  const [selectedBanks, setSelectedBanks] = useState<Set<string>>(new Set());
+  const [bulkDeletingBanks, setBulkDeletingBanks] = useState(false);
   const [syncingBanks, setSyncingBanks] = useState(false);
   const [bankModal, setBankModal] = useState<BankForm | null>(null);
   const [savingBank, setSavingBank] = useState(false);
@@ -185,6 +211,44 @@ export default function SettingsTab({ creds }: { creds: string }) {
     if (!q) return true;
     return b.name.toLowerCase().includes(q) || (b.bankCode ?? '').toLowerCase().includes(q);
   });
+  const bankTotalPages = Math.max(1, Math.ceil(filteredBanks.length / bankPageSize));
+  const bankSafePage   = Math.min(bankPage, bankTotalPages);
+  const paginatedBanks = filteredBanks.slice((bankSafePage - 1) * bankPageSize, bankSafePage * bankPageSize);
+  const goBankPage     = (p: number) => setBankPage(Math.max(1, Math.min(p, bankTotalPages)));
+  const resetBankPage  = () => setBankPage(1);
+
+  const toggleBankSelect = (code: string) =>
+    setSelectedBanks(s => { const n = new Set(s); n.has(code) ? n.delete(code) : n.add(code); return n; });
+
+  const toggleBankPageAll = () => {
+    const pageCodes    = paginatedBanks.map(b => b.code);
+    const allSelected  = pageCodes.length > 0 && pageCodes.every(c => selectedBanks.has(c));
+    setSelectedBanks(s => {
+      const n = new Set(s);
+      if (allSelected) pageCodes.forEach(c => n.delete(c));
+      else             pageCodes.forEach(c => n.add(c));
+      return n;
+    });
+  };
+
+  const bulkDeleteBanks = async () => {
+    if (selectedBanks.size === 0) return;
+    if (!await confirm({ message: `Hapus ${selectedBanks.size} bank yang dipilih dari master data? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    setBulkDeletingBanks(true);
+    const r = await fetch(`${API}/api/master-banks/bulk-delete`, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codes: [...selectedBanks] }),
+    });
+    if (r.ok) {
+      const d = await r.json() as { deleted: number };
+      await loadBanks();
+      setSelectedBanks(new Set());
+      toast.success(`${d.deleted} bank berhasil dihapus.`);
+    } else {
+      toast.error('Gagal menghapus bank yang dipilih.');
+    }
+    setBulkDeletingBanks(false);
+  };
 
   const openNewBank = () => { setBankModal(emptyBankForm()); setBankError(''); };
   const openEditBank = (b: MasterBank) => { setBankModal({ code: b.code, name: b.name, bankCode: b.bankCode ?? '', ewallet: b.ewallet, logoUrl: b.logoUrl ?? '' }); setBankError(''); };
@@ -362,7 +426,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                     <input
                       value={bankSearch}
-                      onChange={e => setBankSearch(e.target.value)}
+                      onChange={e => { setBankSearch(e.target.value); resetBankPage(); }}
                       placeholder="Cari nama atau kode bank…"
                       className="input"
                       style={{ paddingLeft: 30, fontSize: 12.5, height: 34 }}
@@ -388,54 +452,112 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
                     {banks.length === 0 ? 'Belum ada data bank — klik "Sinkronkan" untuk memuat daftar bawaan.' : 'Tidak ada bank yang cocok dengan pencarian.'}
                   </p>
-                ) : bankView === 'table' ? (
-                  <div className="space-y-1.5">
-                    {filteredBanks.map(b => (
-                      <div key={b.code} className="flex items-center justify-between gap-3 p-3 rounded-xl"
-                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
-                        <div className="flex items-center gap-3 min-w-0">
-                          <BankLogo bank={b} size={36} />
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
-                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                              {b.ewallet ? 'E-Wallet' : `Kode kliring: ${b.bankCode || '–'}`}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => openEditBank(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
-                            <Pencil size={14} />
-                          </button>
-                          <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
-                            {deletingBankCode === b.code ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {filteredBanks.map(b => (
-                      <div key={b.code} className="rounded-xl overflow-hidden"
-                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
-                        <div className="pt-5 pb-3 px-3 flex flex-col items-center text-center gap-1.5">
-                          <BankLogo bank={b} size={48} />
-                          <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
-                          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            {b.ewallet ? 'E-Wallet' : `Kode: ${b.bankCode || '–'}`}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-center gap-1 px-3 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                          <button onClick={() => openEditBank(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
-                            <Pencil size={12} />
-                          </button>
-                          <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
-                            {deletingBankCode === b.code ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          </button>
-                        </div>
+                  <>
+                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                      <Checkbox
+                        checked={paginatedBanks.length > 0 && paginatedBanks.every(b => selectedBanks.has(b.code))}
+                        indeterminate={paginatedBanks.some(b => selectedBanks.has(b.code)) && !paginatedBanks.every(b => selectedBanks.has(b.code))}
+                        onChange={toggleBankPageAll}
+                      />
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                        {selectedBanks.size > 0 ? `${selectedBanks.size} dipilih` : `${paginatedBanks.length} bank di halaman ini`}
+                      </span>
+                    </div>
+
+                    {bankView === 'table' ? (
+                      <div className="space-y-1.5">
+                        {paginatedBanks.map(b => (
+                          <div key={b.code} className="flex items-center gap-3 p-3 rounded-xl"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
+                            <Checkbox checked={selectedBanks.has(b.code)} onChange={() => toggleBankSelect(b.code)} />
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <BankLogo bank={b} size={36} />
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  {b.ewallet ? 'E-Wallet' : `Kode kliring: ${b.bankCode || '–'}`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => openEditBank(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={14} />
+                              </button>
+                              <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                                {deletingBankCode === b.code ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {paginatedBanks.map(b => (
+                          <div key={b.code} className="rounded-xl overflow-hidden relative"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
+                            <div className="absolute top-2 left-2 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
+                              <Checkbox checked={selectedBanks.has(b.code)} onChange={() => toggleBankSelect(b.code)} />
+                            </div>
+                            <div className="pt-5 pb-3 px-3 flex flex-col items-center text-center gap-1.5">
+                              <BankLogo bank={b} size={48} />
+                              <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
+                              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                {b.ewallet ? 'E-Wallet' : `Kode: ${b.bankCode || '–'}`}
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-center gap-1 px-3 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                              <button onClick={() => openEditBank(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                                {deletingBankCode === b.code ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {filteredBanks.length} bank · halaman {bankSafePage} dari {bankTotalPages}
+                        </p>
+                        <PageSizeSelect value={bankPageSize} onChange={n => { setBankPageSize(n); resetBankPage(); }} />
+                      </div>
+                      {bankTotalPages > 1 && (
+                        <div className="flex items-center gap-1">
+                          <Tooltip label="Halaman sebelumnya">
+                            <button onClick={() => goBankPage(bankSafePage - 1)} disabled={bankSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                              <ChevronLeft size={14} />
+                            </button>
+                          </Tooltip>
+                          {Array.from({ length: bankTotalPages }, (_, i) => i + 1)
+                            .filter(n => n === 1 || n === bankTotalPages || Math.abs(n - bankSafePage) <= 1)
+                            .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                              if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                              acc.push(n); return acc;
+                            }, [])
+                            .map((n, i) =>
+                              n === '…'
+                                ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                                : <button key={n} onClick={() => goBankPage(n as number)}
+                                    className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                                    style={bankSafePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                                    {n}
+                                  </button>
+                            )
+                          }
+                          <Tooltip label="Halaman berikutnya">
+                            <button onClick={() => goBankPage(bankSafePage + 1)} disabled={bankSafePage === bankTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                              <ChevronRight size={14} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             ) : (
@@ -614,6 +736,26 @@ export default function SettingsTab({ creds }: { creds: string }) {
           </div>
         </div>
       </div>
+
+      {/* Bulk action bar — master bank */}
+      {activeGrp === 'sync' && selectedBanks.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selectedBanks.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={bulkDeleteBanks} disabled={bulkDeletingBanks}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--danger)', color: '#fff' }}>
+              {bulkDeletingBanks ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Hapus
+            </button>
+            <button onClick={() => setSelectedBanks(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit master bank modal */}
       {bankModal && (

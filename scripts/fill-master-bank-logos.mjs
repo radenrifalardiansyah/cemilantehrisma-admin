@@ -75,16 +75,25 @@ async function findWikidataItem(name) {
 // "QRIS"). Makanya match harus diverifikasi dulu sebelum dipakai:
 //
 // 1. Token overlap — pecah nama & judul artikel jadi kata (huruf/angka saja, lowercase), match
-//    diterima kalau ada minimal satu kata (panjang >=3) yang sama persis di keduanya. Ini
-//    menangkap kasus normal terlepas dari urutan kata ("Permata Bank" vs "Bank Permata") maupun
-//    typo/singkatan resmi ("GoPay" vs "Gopay"), sekaligus menolak match yang beneran tidak
-//    berhubungan sama sekali ("AstraPay" vs "MRT Jakarta" — nol kata yang sama).
+//    diterima kalau ada minimal satu kata SIGNIFIKAN yang sama persis di keduanya. Ini menangkap
+//    kasus normal terlepas dari urutan kata ("Permata Bank" vs "Bank Permata") maupun typo/
+//    singkatan resmi ("GoPay" vs "Gopay"), sekaligus menolak match yang beneran tidak berhubungan
+//    sama sekali ("AstraPay" vs "MRT Jakarta" — nol kata yang sama).
+//    Kata generik ("bank", "syariah", "indonesia", dst) DIBUANG dari perhitungan overlap — kejadian
+//    nyata: "Bank Aceh Syariah" sempat lolos nyangkut ke logo "Bank Syariah Indonesia" (BSI) cuma
+//    gara-gara sama-sama punya kata "bank" & "syariah", padahal dua bank yang beda sama sekali.
+//    Kata generik ini muncul di puluhan nama bank syariah/BUMN/BPD berbeda, jadi tidak boleh
+//    dianggap bukti kecocokan.
 // 2. Fallback akronim — kalau nama aslinya cuma singkatan huruf besar tanpa spasi (BCA, BRI, BNI,
 //    BTN, dst), token overlap PASTI gagal karena hurufnya tidak match kata hasil kepanjangannya.
 //    Untuk kasus ini diterima asal deskripsi Wikidata-nya masih menyebut sesuatu yang berbau
 //    korporat/finansial (bank/perusahaan/company/dompet/dst) sebagai pengaman tambahan.
+const STOPWORDS = new Set([
+  'bank', 'syariah', 'indonesia', 'negara', 'rakyat', 'tabungan', 'nasional', 'internasional',
+  'international', 'daerah', 'pembangunan', 'digital', 'perusahaan', 'company', 'dan', 'the', 'of',
+]);
 function tokenize(s) {
-  return new Set((s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(t => t.length >= 3));
+  return new Set((s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(t => t.length >= 3 && !STOPWORDS.has(t)));
 }
 function tokenOverlap(a, b) {
   const ta = tokenize(a), tb = tokenize(b);
