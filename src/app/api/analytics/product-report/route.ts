@@ -116,6 +116,10 @@ export async function GET(req: NextRequest) {
     const itemsSubtotal = (o.items ?? []).reduce((s, it) => s + (it.subtotal ?? (it.price ?? 0) * it.qty), 0);
     const scale = (o.total != null && itemsSubtotal > 0) ? o.total / itemsSubtotal : 1;
     (o.items ?? []).forEach(it => {
+      // Item bebas input di POS (mis. "Ongkir JNE", "Bungkus kado") tidak punya productId —
+      // sama seperti /api/orders yang skip pemotongan stok & HPP untuk item ini, laporan produk
+      // juga harus skip supaya item non-produk ini tidak nyasar jadi baris produk.
+      if (!it.productId) return;
       const r = rowFor(it.productId, it.name);
       if (o.source === 'portal') r.qtyOnline += it.qty; else r.qtyPos += it.qty;
       r.revenue += (it.subtotal ?? (it.price ?? 0) * it.qty) * scale;
