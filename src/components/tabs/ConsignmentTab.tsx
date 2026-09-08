@@ -8,6 +8,7 @@ import {
   History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import { type PeriodKey, periodRange } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import ExcelJS from 'exceljs';
@@ -96,10 +97,27 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
 ];
 
 interface ConsignmentLocation {
-  id: string; name: string; contactName: string; contactPhone: string; address: string; note: string; code?: string;
+  id: string; name: string; contactName: string; contactPhone: string; address: string; note: string; code?: string; logoUrl?: string;
 }
-type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string };
-const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '' };
+
+function LocationLogo({ location, size }: { location: { name: string; logoUrl?: string }; size: number }) {
+  if (location.logoUrl) {
+    return (
+      <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: size, height: size, background: 'var(--surface)' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={location.logoUrl} alt={location.name} className="w-full h-full" style={{ objectFit: 'contain' }} />
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl flex-shrink-0 flex items-center justify-center"
+      style={{ width: size, height: size, background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+      <Store size={Math.round(size * 0.45)} />
+    </div>
+  );
+}
+type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string; logoUrl: string };
+const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '', logoUrl: '' };
 
 const LOCATION_CODE_PREFIX = 'MTR';
 
@@ -393,6 +411,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [editingL,    setEditingL]    = useState<ConsignmentLocation | null>(null);
   const [lForm,       setLForm]       = useState<LocationForm>(EMPTY_LOCATION);
   const [savingL,     setSavingL]     = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [deletingLId, setDeletingLId] = useState<string | null>(null);
   const [locationView, setLocationView] = useViewMode('consignment-locations', 'card');
 
@@ -456,7 +475,32 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const openCreateL = () => { setEditingL(null); setLForm({ ...EMPTY_LOCATION, code: nextLocationCode(locations) }); setShowLForm(true); };
   const openEditL = (l: ConsignmentLocation) => {
-    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '' }); setShowLForm(true);
+    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '', logoUrl: l.logoUrl ?? '' }); setShowLForm(true);
+  };
+  const uploadLocationLogo = async (file?: File) => {
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale  = Math.min(1, 400 / Math.max(bitmap.width, bitmap.height));
+      const w = Math.round(bitmap.width * scale);
+      const h = Math.round(bitmap.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+      const blob: Blob = await new Promise(resolve => canvas.toBlob(b => resolve(b!), 'image/jpeg', 0.85));
+      const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' });
+      const form = new FormData();
+      form.append('file', compressed);
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      setLForm(f => ({ ...f, logoUrl: url }));
+    } catch {
+      toast.error('Gagal mengunggah logo mitra.');
+    } finally {
+      setLogoUploading(false);
+    }
   };
   const saveLocation = async () => {
     if (!lForm.name.trim()) return;
@@ -766,7 +810,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
           raw[field] = cell.value?.toString().trim() ?? '';
         });
         if (!raw.name.trim()) return;
-        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '' });
+        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '', logoUrl: '' });
       });
 
       if (rows.length === 0) {
@@ -2132,9 +2176,7 @@ _${storeHeader.name}_`.trim();
                           <div className="flex flex-wrap items-start gap-3">
                           <span className="pt-[5px] w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                           <div className="pt-[5px]"><Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} /></div>
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)' }}>
-                            <Store size={16} style={{ color: 'var(--accent)' }} />
-                          </div>
+                          <LocationLogo location={l} size={36} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
@@ -2207,9 +2249,7 @@ _${storeHeader.name}_`.trim();
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
-                              <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
-                                <Store size={20} style={{ color: 'var(--accent)' }} />
-                              </div>
+                              <LocationLogo location={l} size={44} />
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <Tooltip label="Kirim Stok">
@@ -2734,18 +2774,29 @@ _${storeHeader.name}_`.trim();
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ width: 110, flexShrink: 0 }}>
-                    <label className="field-label">Kode {editingL ? '(opsional)' : '(otomatis)'}</label>
-                    <input type="text" value={lForm.code} onChange={e => setLForm({ ...lForm, code: e.target.value })}
-                      placeholder="MTR001" className="input" readOnly={!editingL}
-                      style={!editingL ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined} />
-                  </div>
+                <div className="flex items-center gap-3">
+                  <ImageUploadBox
+                    src={lForm.logoUrl}
+                    alt={lForm.name || 'Logo mitra'}
+                    uploading={logoUploading}
+                    onSelect={f => uploadLocationLogo(f)}
+                    onRemove={() => setLForm({ ...lForm, logoUrl: '' })}
+                    icon={<Store size={18} />}
+                    fit="contain"
+                    size={56}
+                    emptyText="Logo"
+                  />
                   <div style={{ flex: 1 }}>
                     <label className="field-label">Nama Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
                     <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
                       placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
                   </div>
+                </div>
+                <div style={{ width: 110, flexShrink: 0 }}>
+                  <label className="field-label">Kode {editingL ? '(opsional)' : '(otomatis)'}</label>
+                  <input type="text" value={lForm.code} onChange={e => setLForm({ ...lForm, code: e.target.value })}
+                    placeholder="MTR001" className="input" readOnly={!editingL}
+                    style={!editingL ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined} />
                 </div>
                 <div>
                   <label className="field-label">Nama Kontak</label>

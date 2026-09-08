@@ -10,12 +10,12 @@ const LOCATION_CODE_PREFIX = 'MTR';
 
 interface LocationRow {
   id: string; name: string; code: string | null; contact_name: string | null; contact_phone: string | null;
-  address: string | null; note: string | null; created_at: Date; updated_at: Date | null;
+  address: string | null; note: string | null; logo_url: string | null; created_at: Date; updated_at: Date | null;
 }
 function rowToLocation(r: LocationRow) {
   return {
     id: r.id, name: r.name, code: r.code ?? '', contactName: r.contact_name ?? '', contactPhone: r.contact_phone ?? '',
-    address: r.address ?? '', note: r.note ?? '',
+    address: r.address ?? '', note: r.note ?? '', logoUrl: r.logo_url ?? '',
     createdAt: r.created_at.toISOString(), updatedAt: r.updated_at ? r.updated_at.toISOString() : null,
   };
 }
@@ -68,11 +68,11 @@ export async function POST(req: NextRequest) {
   const payload = {
     name: data.name as string, code: codeTrim,
     contactName: (data.contactName as string) ?? '', contactPhone: (data.contactPhone as string) ?? '',
-    address: (data.address as string) ?? '', note: (data.note as string) ?? '',
+    address: (data.address as string) ?? '', note: (data.note as string) ?? '', logoUrl: (data.logoUrl as string) ?? '',
   };
   await sql`
-    insert into consignment_locations (id, name, code, contact_name, contact_phone, address, note, created_at, updated_at)
-    values (${id}, ${payload.name}, ${payload.code}, ${payload.contactName}, ${payload.contactPhone}, ${payload.address}, ${payload.note}, now(), now())
+    insert into consignment_locations (id, name, code, contact_name, contact_phone, address, note, logo_url, created_at, updated_at)
+    values (${id}, ${payload.name}, ${payload.code}, ${payload.contactName}, ${payload.contactPhone}, ${payload.address}, ${payload.note}, ${payload.logoUrl}, now(), now())
   `;
   try {
     await logHistory(db, {
