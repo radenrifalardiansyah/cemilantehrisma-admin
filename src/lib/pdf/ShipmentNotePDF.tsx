@@ -1,7 +1,17 @@
+import { Fragment } from 'react';
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 
 export interface ShipmentNoteItem { productName: string; qty: number; hargaTitip: number; subtotal: number }
+
+// Satu pengiriman sumber di dalam halaman gabungan (lihat `sections` di bawah) — item-nya
+// TIDAK dijumlahkan dengan tanggal lain, jadi rinciannya tetap terlihat per tanggal.
+export interface ShipmentNoteSection {
+  date:  string;
+  docNo: string;
+  items: ShipmentNoteItem[];
+  total: number;
+}
 
 export interface ShipmentNoteData {
   locationName:  string;
@@ -16,6 +26,10 @@ export interface ShipmentNoteData {
   note?:         string;
   items:         ShipmentNoteItem[];
   total:         number;
+  // Diisi hanya kalau beberapa pengiriman mitra yang sama digabung jadi satu halaman — tiap
+  // pengiriman sumber tampil sebagai blok tanggalnya sendiri, `items`/`total` di atas tetap
+  // dipakai sebagai grand total di bagian bawah halaman.
+  sections?:     ShipmentNoteSection[];
 }
 
 export interface StoreHeader {
@@ -74,6 +88,14 @@ const s = StyleSheet.create({
   colPrice: { width: '18%', textAlign: 'right' },
   colSub:   { width: '18%', textAlign: 'right' },
 
+  sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 8 },
+  sectionRowText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
+  sectionRowDocNo:     { fontSize: 7.5, color: C.muted },
+  sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
+  sectionSubtotalText: { fontSize: 8, color: C.muted },
+  grandTotalRow:       { flexDirection: 'row', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
+  grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
+
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, alignItems: 'center' },
   totalLabel: { fontSize: 10, color: C.muted, marginRight: 10 },
   totalValue: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.accent },
@@ -92,12 +114,15 @@ const s = StyleSheet.create({
   signName: { fontSize: 9, color: C.muted, marginTop: 4 },
 
   footer: { position: 'absolute', bottom: 24, left: 40, right: 40, textAlign: 'center', fontSize: 7.5, color: C.muted },
+  pageNo: { position: 'absolute', bottom: 24, right: 40, fontSize: 7.5, color: C.muted },
 });
 
-export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteData; store: StoreHeader }) {
+// Just the <Page> — reusable so several pengiriman bisa digabung ke satu multi-page Document
+// (satu halaman per mitra, tiap halaman tetap punya header lokasinya sendiri) untuk cetak gabungan.
+export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; store: StoreHeader }) {
+  const sections = data.sections && data.sections.length > 1 ? data.sections : null;
   return (
-    <Document>
-      <Page size="A4" style={s.page}>
+    <Page size="A4" style={s.page}>
         <View style={s.topBar} />
 
         <View style={s.headerRow}>
@@ -157,7 +182,26 @@ export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteDat
             <Text style={[s.tHeadCell, s.colPrice]}>Harga Titip</Text>
             <Text style={[s.tHeadCell, s.colSub]}>Subtotal</Text>
           </View>
-          {data.items.map((it, i) => (
+          {sections ? sections.map((section, si) => (
+            <Fragment key={si}>
+              <View style={s.sectionRow}>
+                <Text style={s.sectionRowText}>{section.date}</Text>
+                <Text style={s.sectionRowDocNo}>No: {section.docNo}</Text>
+              </View>
+              {section.items.map((it, i) => (
+                <View key={i} style={s.tRow}>
+                  <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
+                  <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
+                  <Text style={[s.tCell, s.colQty]}>{it.qty} pcs</Text>
+                  <Text style={[s.tCell, s.colPrice]}>{rp(it.hargaTitip)}</Text>
+                  <Text style={[s.tCell, s.colSub]}>{rp(it.subtotal)}</Text>
+                </View>
+              ))}
+              <View style={s.sectionSubtotalRow}>
+                <Text style={s.sectionSubtotalText}>Subtotal: {rp(section.total)}</Text>
+              </View>
+            </Fragment>
+          )) : data.items.map((it, i) => (
             <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]}>
               <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
               <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
@@ -166,6 +210,11 @@ export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteDat
               <Text style={[s.tCell, s.colSub]}>{rp(it.subtotal)}</Text>
             </View>
           ))}
+          {sections && (
+            <View style={s.grandTotalRow}>
+              <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} PENGIRIMAN)</Text>
+            </View>
+          )}
         </View>
 
         <View style={s.totalRow}>
@@ -200,7 +249,15 @@ export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteDat
         </View>
 
         <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
-      </Page>
+        <Text style={s.pageNo} render={({ pageNumber, totalPages }) => totalPages > 1 ? `${pageNumber} / ${totalPages}` : ''} fixed />
+    </Page>
+  );
+}
+
+export default function ShipmentNotePDF({ data, store }: { data: ShipmentNoteData; store: StoreHeader }) {
+  return (
+    <Document>
+      <ShipmentNotePDFPage data={data} store={store} />
     </Document>
   );
 }

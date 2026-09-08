@@ -26,9 +26,10 @@ import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import type { PosProduct } from '@/lib/pos-types';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
-import ShipmentNotePDF from '@/lib/pdf/ShipmentNotePDF';
+import ShipmentNotePDF, { ShipmentNotePDFPage } from '@/lib/pdf/ShipmentNotePDF';
 import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
+import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
 import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
 import { toDataUri } from '@/lib/pdf/logo';
@@ -838,6 +839,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [deletingShipmentId, setDeletingShipmentId] = useState<string | null>(null);
   const [bulkDeletingShipments, setBulkDeletingShipments] = useState(false);
   const [printingShipmentId, setPrintingShipmentId] = useState<string | null>(null);
+  const [printingShipmentsBulk, setPrintingShipmentsBulk] = useState(false);
 
   const loadShipments = async () => {
     setShipmentsLoading(true);
@@ -1083,6 +1085,43 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       toast.error('Gagal membuat nota PDF.');
     }
     setPrintingShipmentId(null);
+  };
+
+  // Cetak nota kirim PDF untuk beberapa pengiriman sekaligus sesuai ceklis — satu file, satu
+  // halaman per mitra. Pengiriman yang diceklis dikelompokkan per lokasi/mitra dulu: kalau
+  // beberapa pengiriman ternyata ke mitra yang sama, qty & subtotalnya dijumlahkan jadi satu
+  // halaman ringkasan (per produk); mitra yang berbeda tetap dapat halamannya masing-masing.
+  // Sama persis dengan `printRecapsBulk` di tab Rekap.
+  const printShipmentsBulk = async (rows: Shipment[]) => {
+    if (rows.length === 0) { toast.error('Tidak ada pengiriman untuk dicetak.'); return; }
+    setPrintingShipmentsBulk(true);
+    try {
+      const groups = groupAndMergeShipments(rows, locationId => {
+        const location = locations.find(l => l.id === locationId);
+        return location
+          ? { code: location.code, contactName: location.contactName, contactPhone: location.contactPhone, address: location.address }
+          : undefined;
+      });
+
+      const blob = await pdf(
+        <Document>
+          {groups.map((g, i) => <ShipmentNotePDFPage key={i} data={g.data} store={storeHeader} />)}
+        </Document>
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nota-kirim-gabungan-${rows.length}-${toISODate(new Date())}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil cetak ${rows.length} pengiriman (${groups.length} mitra) ke satu PDF.`);
+    } catch {
+      toast.error('Gagal membuat nota PDF.');
+    } finally {
+      setPrintingShipmentsBulk(false);
+    }
   };
 
   // Nota kirim dikirim via WA sebagai teks rincian + link PDF (server render on-demand di
@@ -3324,6 +3363,12 @@ _${storeHeader.name}_`.trim();
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingShipments ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
+            </button>
+            <button onClick={() => printShipmentsBulk(shipments.filter(s => selectedShipments.has(s.id)))} disabled={printingShipmentsBulk}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {printingShipmentsBulk ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              Cetak PDF
             </button>
             <button onClick={bulkDeleteShipments} disabled={bulkDeletingShipments}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
