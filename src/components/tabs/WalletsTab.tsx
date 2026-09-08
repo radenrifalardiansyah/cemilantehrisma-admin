@@ -743,6 +743,9 @@ export default function WalletsTab({ creds }: { creds: string }) {
                           <span className="badge badge-gray text-[10px]">{WALLET_TYPE_LABEL[w.type]}</span>
                           {!w.isActive && <span className="badge badge-gray text-[10px]">Nonaktif</span>}
                         </div>
+                        {w.bankName && (
+                          <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
+                        )}
                       </div>
                       <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
                         {formatRp(balance)}
@@ -791,6 +794,9 @@ export default function WalletsTab({ creds }: { creds: string }) {
                         <span className="badge badge-gray text-[10px]">{WALLET_TYPE_LABEL[w.type]}</span>
                         {!w.isActive && <span className="badge badge-gray text-[10px]">Nonaktif</span>}
                       </div>
+                      {w.bankName && (
+                        <p className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
+                      )}
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
                         {formatRp(balance)}
                       </p>
