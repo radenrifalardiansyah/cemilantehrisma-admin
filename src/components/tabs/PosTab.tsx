@@ -1137,7 +1137,7 @@ export default function PosTab({
                   <SearchSelect
                     value={transferBank}
                     onChange={setTransferBank}
-                    options={bankOptions.map(b => ({ value: b.code, label: b.name }))}
+                    options={bankOptions.map(b => ({ value: b.code, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
                     placeholder="– Pilih Bank Pengirim –"
                     searchPlaceholder="Cari bank…"
                   />

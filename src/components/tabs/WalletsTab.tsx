@@ -50,7 +50,7 @@ interface Transfer { id: string; fromWalletId: string; toWalletId: string; amoun
 type WalletForm = { name: string; type: WalletDoc['type']; icon: string; color: string; initialBalance: string; bankName: string };
 const emptyForm = (): WalletForm => ({ name: '', type: 'cash', icon: 'Wallet', color: '#D4691E', initialBalance: '', bankName: '' });
 
-interface MasterBankOption { name: string }
+interface MasterBankOption { name: string; bankCode?: string; logoUrl?: string }
 
 type TransferForm = { fromWalletId: string; toWalletId: string; amount: string; date: string; note: string };
 const emptyTransferForm = (): TransferForm => ({ fromWalletId: '', toWalletId: '', amount: '', date: todayISO(), note: '' });
@@ -1230,7 +1230,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                     <SearchSelect
                       value={editing.bankName}
                       onChange={v => setEditing({ ...editing, bankName: v })}
-                      options={bankOptions.map(b => ({ value: b.name, label: b.name }))}
+                      options={bankOptions.map(b => ({ value: b.name, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
                       placeholder="– Pilih bank –"
                       searchPlaceholder="Cari bank…"
                     />

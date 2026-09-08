@@ -64,7 +64,7 @@ interface Reseller {
 }
 
 interface CustomerOption { id: string; name: string; phone?: string; city?: string; code?: string; }
-interface BankOption { id: string; name: string; bankCode?: string; ewallet?: boolean; }
+interface BankOption { id: string; name: string; bankCode?: string; ewallet?: boolean; logoUrl?: string; }
 
 function customerLabel(c: { name: string; phone?: string; code?: string }) {
   return `${c.code ? `${c.code} · ` : ''}${c.name}${c.phone ? ` · ${c.phone}` : ''}`;
@@ -1250,6 +1250,10 @@ export default function ResellersTab({ creds }: { creds: string }) {
                           onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
                           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                         >
+                          {b.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={b.logoUrl} alt="" className="w-5 h-5 rounded flex-shrink-0" style={{ objectFit: 'contain', background: 'var(--surface-2)' }} />
+                          ) : null}
                           {b.bankCode && (
                             <span className="text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded"
                               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>

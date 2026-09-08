@@ -189,8 +189,8 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
   useEffect(() => {
     fetch('/api/master-banks', { headers })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { banks?: { name: string }[] } | null) => {
-        if (d?.banks) setBankOptions(d.banks.map(b => ({ value: b.name, label: b.name })));
+      .then((d: { banks?: { name: string; bankCode?: string }[] } | null) => {
+        if (d?.banks) setBankOptions(d.banks.map(b => ({ value: b.name, label: b.bankCode ? `${b.name} — ${b.bankCode}` : b.name })));
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps

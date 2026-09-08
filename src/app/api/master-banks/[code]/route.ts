@@ -15,6 +15,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if (typeof data.name === 'string' && data.name.trim()) patch.name = data.name.trim();
   if ('bankCode' in data) patch.bank_code = typeof data.bankCode === 'string' && data.bankCode.trim() ? data.bankCode.trim() : null;
   if (typeof data.ewallet === 'boolean') patch.ewallet = data.ewallet;
+  if ('logoUrl' in data) patch.logo_url = typeof data.logoUrl === 'string' && data.logoUrl.trim() ? data.logoUrl.trim() : null;
 
   const sql = getSql();
   if (Object.keys(patch).length > 0) {

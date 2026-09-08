@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
   }
   const bankCode = typeof data.bankCode === 'string' && data.bankCode.trim() ? data.bankCode.trim() : null;
   const ewallet = data.ewallet === true;
+  const logoUrl = typeof data.logoUrl === 'string' && data.logoUrl.trim() ? data.logoUrl.trim() : null;
 
   const sql = getSql();
   const [existing] = await sql<{ code: string }[]>`select code from master_banks where code = ${code}`;
@@ -48,8 +49,8 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Bank dengan nama ini sudah ada.' }, { status: 400 });
   }
   await sql`
-    insert into master_banks (code, name, bank_code, ewallet)
-    values (${code}, ${name}, ${bankCode}, ${ewallet})
+    insert into master_banks (code, name, bank_code, ewallet, logo_url)
+    values (${code}, ${name}, ${bankCode}, ${ewallet}, ${logoUrl})
   `;
   revalidateTag('admin-master-banks', { expire: 0 });
   return Response.json({ code });

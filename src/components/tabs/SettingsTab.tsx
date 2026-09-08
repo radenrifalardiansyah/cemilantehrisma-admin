@@ -7,6 +7,8 @@ import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import ColorPicker from '@/components/ColorPicker';
 import Tooltip from '@/components/Tooltip';
+import ViewToggle from '@/components/ViewToggle';
+import { useViewMode } from '@/lib/useViewMode';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 
@@ -33,9 +35,26 @@ interface StoreSettings {
 }
 
 interface SettingsWarehouse { id: string; name: string }
-interface MasterBank { id: string; code: string; name: string; bankCode?: string; ewallet: boolean }
-type BankForm = { code: string | null; name: string; bankCode: string; ewallet: boolean };
-const emptyBankForm = (): BankForm => ({ code: null, name: '', bankCode: '', ewallet: false });
+interface MasterBank { id: string; code: string; name: string; bankCode?: string; ewallet: boolean; logoUrl?: string }
+type BankForm = { code: string | null; name: string; bankCode: string; ewallet: boolean; logoUrl: string };
+const emptyBankForm = (): BankForm => ({ code: null, name: '', bankCode: '', ewallet: false, logoUrl: '' });
+
+function BankLogo({ bank, size }: { bank: { name: string; logoUrl?: string }; size: number }) {
+  if (bank.logoUrl) {
+    return (
+      <div className="rounded-lg overflow-hidden flex-shrink-0" style={{ width: size, height: size, background: 'var(--surface)' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={bank.logoUrl} alt={bank.name} className="w-full h-full" style={{ objectFit: 'contain' }} />
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg flex-shrink-0 flex items-center justify-center"
+      style={{ width: size, height: size, background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+      <Landmark size={Math.round(size * 0.45)} />
+    </div>
+  );
+}
 
 const FIELD_GROUPS = [
   {
@@ -112,11 +131,13 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const [activeGrp, setActiveGrp] = useState('store');
   const [banks,        setBanks]        = useState<MasterBank[] | null>(null);
   const [bankSearch,    setBankSearch]  = useState('');
+  const [bankView, setBankView] = useViewMode('master-banks');
   const [syncingBanks, setSyncingBanks] = useState(false);
   const [bankModal, setBankModal] = useState<BankForm | null>(null);
   const [savingBank, setSavingBank] = useState(false);
   const [bankError, setBankError] = useState('');
   const [deletingBankCode, setDeletingBankCode] = useState<string | null>(null);
+  const [bankLogoUploading, setBankLogoUploading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
@@ -166,14 +187,32 @@ export default function SettingsTab({ creds }: { creds: string }) {
   });
 
   const openNewBank = () => { setBankModal(emptyBankForm()); setBankError(''); };
-  const openEditBank = (b: MasterBank) => { setBankModal({ code: b.code, name: b.name, bankCode: b.bankCode ?? '', ewallet: b.ewallet }); setBankError(''); };
+  const openEditBank = (b: MasterBank) => { setBankModal({ code: b.code, name: b.name, bankCode: b.bankCode ?? '', ewallet: b.ewallet, logoUrl: b.logoUrl ?? '' }); setBankError(''); };
   const closeBankModal = () => { setBankModal(null); setBankError(''); };
+
+  const uploadBankLogo = async (file?: File) => {
+    if (!file || !bankModal) return;
+    setBankLogoUploading(true);
+    try {
+      const compressed = await compressLogo(file);
+      const form = new FormData();
+      form.append('file', compressed);
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      setBankModal(m => m ? { ...m, logoUrl: url } : m);
+    } catch {
+      toast.error('Gagal mengunggah logo bank.');
+    } finally {
+      setBankLogoUploading(false);
+    }
+  };
 
   const saveBank = async () => {
     if (!bankModal) return;
     if (!bankModal.name.trim()) { setBankError('Nama bank wajib diisi.'); return; }
     setSavingBank(true); setBankError('');
-    const payload = { name: bankModal.name.trim(), bankCode: bankModal.bankCode.trim(), ewallet: bankModal.ewallet };
+    const payload = { name: bankModal.name.trim(), bankCode: bankModal.bankCode.trim(), ewallet: bankModal.ewallet, logoUrl: bankModal.logoUrl.trim() };
     const r = bankModal.code === null
       ? await fetch(`${API}/api/master-banks`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/master-banks/${bankModal.code}`, { method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -330,6 +369,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     />
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <ViewToggle mode={bankView} onChange={setBankView} height={34} />
                     <button onClick={syncBanks} disabled={syncingBanks} className="btn-ghost text-xs" style={{ height: 34 }}>
                       {syncingBanks ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
                       {syncingBanks ? 'Menyinkronkan…' : 'Sinkronkan'}
@@ -348,16 +388,13 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
                     {banks.length === 0 ? 'Belum ada data bank — klik "Sinkronkan" untuk memuat daftar bawaan.' : 'Tidak ada bank yang cocok dengan pencarian.'}
                   </p>
-                ) : (
+                ) : bankView === 'table' ? (
                   <div className="space-y-1.5">
                     {filteredBanks.map(b => (
                       <div key={b.code} className="flex items-center justify-between gap-3 p-3 rounded-xl"
                         style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                            style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                            <Landmark size={16} />
-                          </div>
+                          <BankLogo bank={b} size={36} />
                           <div className="min-w-0">
                             <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
                             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -371,6 +408,29 @@ export default function SettingsTab({ creds }: { creds: string }) {
                           </button>
                           <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
                             {deletingBankCode === b.code ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {filteredBanks.map(b => (
+                      <div key={b.code} className="rounded-xl overflow-hidden"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
+                        <div className="pt-5 pb-3 px-3 flex flex-col items-center text-center gap-1.5">
+                          <BankLogo bank={b} size={48} />
+                          <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
+                          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            {b.ewallet ? 'E-Wallet' : `Kode: ${b.bankCode || '–'}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-1 px-3 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                          <button onClick={() => openEditBank(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={12} />
+                          </button>
+                          <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                            {deletingBankCode === b.code ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                           </button>
                         </div>
                       </div>
@@ -486,7 +546,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     <SearchSelect
                       value={(settings.storeBankName as string) ?? ''}
                       onChange={v => set('storeBankName', v)}
-                      options={(banks ?? []).map(b => ({ value: b.name, label: b.name }))}
+                      options={(banks ?? []).map(b => ({ value: b.name, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
                       placeholder="– Pilih Bank –"
                       searchPlaceholder="Cari bank…"
                     />
@@ -573,10 +633,23 @@ export default function SettingsTab({ creds }: { creds: string }) {
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="field-label">Nama Bank / E-Wallet <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input value={bankModal.name} onChange={e => setBankModal({ ...bankModal, name: e.target.value })}
-                    className="input" placeholder="cth: Bank ABC, DanaKu" autoFocus />
+                <div className="flex items-center gap-3">
+                  <ImageUploadBox
+                    src={bankModal.logoUrl}
+                    alt={bankModal.name || 'Logo bank'}
+                    uploading={bankLogoUploading}
+                    onSelect={f => uploadBankLogo(f)}
+                    onRemove={() => setBankModal({ ...bankModal, logoUrl: '' })}
+                    icon={<Landmark size={18} />}
+                    fit="contain"
+                    size={56}
+                    emptyText="Logo"
+                  />
+                  <div style={{ flex: 1 }}>
+                    <label className="field-label">Nama Bank / E-Wallet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input value={bankModal.name} onChange={e => setBankModal({ ...bankModal, name: e.target.value })}
+                      className="input" placeholder="cth: Bank ABC, DanaKu" autoFocus />
+                  </div>
                 </div>
 
                 <div>

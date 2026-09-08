@@ -14,7 +14,7 @@ export interface PosReseller { id: string; customerId?: string; name: string; ph
 
 export interface PosCustomer { id: string; name: string; phone: string }
 
-export interface PosBank { id: string; code: string; name: string }
+export interface PosBank { id: string; code: string; name: string; bankCode?: string; logoUrl?: string }
 
 export const POS_CAT_ALL: PosCategory_Entry = { id: 'semua', label: 'Semua', emoji: '🛍️' };
 

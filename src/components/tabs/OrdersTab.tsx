@@ -174,10 +174,10 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
 
   const headers = { 'x-admin-auth': creds };
 
-  const [bankOptions, setBankOptions] = useState<{ name: string }[]>([]);
+  const [bankOptions, setBankOptions] = useState<{ name: string; bankCode?: string; logoUrl?: string }[]>([]);
   useEffect(() => {
     fetch(`${API}/api/master-banks`, { headers })
-      .then(r => r.ok ? r.json() as Promise<{ banks: { name: string }[] }> : Promise.resolve({ banks: [] }))
+      .then(r => r.ok ? r.json() as Promise<{ banks: { name: string; bankCode?: string; logoUrl?: string }[] }> : Promise.resolve({ banks: [] }))
       .then(d => setBankOptions(d.banks))
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1587,7 +1587,7 @@ _${storeName}_`.trim();
                     <div>
                       <label className="field-label">Bank</label>
                       <SearchSelect value={editTransferBank} onChange={setEditTransferBank}
-                        options={bankOptions.map(b => ({ value: b.name, label: b.name }))}
+                        options={bankOptions.map(b => ({ value: b.name, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
                         placeholder="– Pilih Bank –" searchPlaceholder="Cari bank…" />
                     </div>
                     <div>
