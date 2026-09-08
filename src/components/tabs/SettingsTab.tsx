@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Plus, Pencil, Trash2, X, Search } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import ColorPicker from '@/components/ColorPicker';
+import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/Confirm';
 
 const API = '';
 
@@ -31,6 +33,9 @@ interface StoreSettings {
 }
 
 interface SettingsWarehouse { id: string; name: string }
+interface MasterBank { id: string; code: string; name: string; bankCode?: string; ewallet: boolean }
+type BankForm = { code: string | null; name: string; bankCode: string; ewallet: boolean };
+const emptyBankForm = (): BankForm => ({ code: null, name: '', bankCode: '', ewallet: false });
 
 const FIELD_GROUPS = [
   {
@@ -99,13 +104,19 @@ const FIELD_GROUPS = [
 
 export default function SettingsTab({ creds }: { creds: string }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [settings,  setSettings]  = useState<StoreSettings>({});
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
   const [activeGrp, setActiveGrp] = useState('store');
-  const [bankCount,   setBankCount]   = useState<number | null>(null);
+  const [banks,        setBanks]        = useState<MasterBank[] | null>(null);
+  const [bankSearch,    setBankSearch]  = useState('');
   const [syncingBanks, setSyncingBanks] = useState(false);
+  const [bankModal, setBankModal] = useState<BankForm | null>(null);
+  const [savingBank, setSavingBank] = useState(false);
+  const [bankError, setBankError] = useState('');
+  const [deletingBankCode, setDeletingBankCode] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
@@ -129,23 +140,66 @@ export default function SettingsTab({ creds }: { creds: string }) {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadBankCount = async () => {
+  const loadBanks = async () => {
     const r = await fetch(`${API}/api/master-banks`, { headers });
-    if (r.ok) { const { banks } = await r.json() as { banks: unknown[] }; setBankCount(banks.length); }
+    if (r.ok) { const { banks: b } = await r.json() as { banks: MasterBank[] }; setBanks(b); }
   };
-  useEffect(() => { loadBankCount(); }, []);
+  useEffect(() => { loadBanks(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const syncBanks = async () => {
     setSyncingBanks(true);
     const r = await fetch(`${API}/api/master-banks/sync`, { method: 'POST', headers });
     if (r.ok) {
       const d = await r.json() as { synced: number; total: number };
-      await loadBankCount();
+      await loadBanks();
       toast.success(d.synced > 0 ? `${d.synced} bank baru disinkronkan (${d.total} total tersedia).` : 'Semua data bank sudah tersinkron.');
     } else {
       toast.error('Gagal menyinkronkan data bank.');
     }
     setSyncingBanks(false);
+  };
+
+  const filteredBanks = (banks ?? []).filter(b => {
+    const q = bankSearch.trim().toLowerCase();
+    if (!q) return true;
+    return b.name.toLowerCase().includes(q) || (b.bankCode ?? '').toLowerCase().includes(q);
+  });
+
+  const openNewBank = () => { setBankModal(emptyBankForm()); setBankError(''); };
+  const openEditBank = (b: MasterBank) => { setBankModal({ code: b.code, name: b.name, bankCode: b.bankCode ?? '', ewallet: b.ewallet }); setBankError(''); };
+  const closeBankModal = () => { setBankModal(null); setBankError(''); };
+
+  const saveBank = async () => {
+    if (!bankModal) return;
+    if (!bankModal.name.trim()) { setBankError('Nama bank wajib diisi.'); return; }
+    setSavingBank(true); setBankError('');
+    const payload = { name: bankModal.name.trim(), bankCode: bankModal.bankCode.trim(), ewallet: bankModal.ewallet };
+    const r = bankModal.code === null
+      ? await fetch(`${API}/api/master-banks`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      : await fetch(`${API}/api/master-banks/${bankModal.code}`, { method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (r.ok) {
+      await loadBanks();
+      closeBankModal();
+      toast.success(bankModal.code === null ? 'Bank berhasil ditambahkan.' : 'Bank berhasil diperbarui.');
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      setBankError(d.error ?? 'Gagal menyimpan bank.');
+      toast.error(d.error ?? 'Gagal menyimpan bank.');
+    }
+    setSavingBank(false);
+  };
+
+  const deleteBank = async (b: MasterBank) => {
+    if (!await confirm({ message: `Hapus bank "${b.name}" dari master data? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    setDeletingBankCode(b.code);
+    const r = await fetch(`${API}/api/master-banks/${b.code}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      await loadBanks();
+      toast.success(`Bank "${b.name}" berhasil dihapus.`);
+    } else {
+      toast.error('Gagal menghapus bank.');
+    }
+    setDeletingBankCode(null);
   };
 
   const save = async () => {
@@ -260,27 +314,69 @@ export default function SettingsTab({ creds }: { creds: string }) {
             {activeGrp === 'sync' ? (
               <div className="space-y-3">
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Sinkronkan data master ke Firestore. Bank baru akan ditambahkan, bank yang sudah ada akan diperbarui (mis. kode bank) tanpa duplikasi.
+                  Daftar bank &amp; e-wallet yang muncul di dropdown pilihan bank (mis. form Dompet, Reseller, Biaya Admin).
+                  Tombol &quot;Sinkronkan&quot; menambahkan/memperbarui daftar bank bawaan tanpa menghapus bank custom yang sudah ditambahkan.
                 </p>
 
-                <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                      <Landmark size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Master Bank</p>
-                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        {bankCount === null ? 'Memuat…' : `${bankCount} bank tersimpan di Firestore`}
-                      </p>
-                    </div>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="relative flex-1" style={{ minWidth: 200 }}>
+                    <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      value={bankSearch}
+                      onChange={e => setBankSearch(e.target.value)}
+                      placeholder="Cari nama atau kode bank…"
+                      className="input"
+                      style={{ paddingLeft: 30, fontSize: 12.5, height: 34 }}
+                    />
                   </div>
-                  <button onClick={syncBanks} disabled={syncingBanks} className="btn-ghost text-xs flex-shrink-0" style={{ height: 34 }}>
-                    {syncingBanks ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-                    {syncingBanks ? 'Menyinkronkan…' : 'Sinkronkan'}
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={syncBanks} disabled={syncingBanks} className="btn-ghost text-xs" style={{ height: 34 }}>
+                      {syncingBanks ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                      {syncingBanks ? 'Menyinkronkan…' : 'Sinkronkan'}
+                    </button>
+                    <button onClick={openNewBank} className="btn-primary text-xs" style={{ height: 34 }}>
+                      <Plus size={13} /> Tambah Bank
+                    </button>
+                  </div>
                 </div>
+
+                {banks === null ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                  </div>
+                ) : filteredBanks.length === 0 ? (
+                  <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
+                    {banks.length === 0 ? 'Belum ada data bank — klik "Sinkronkan" untuk memuat daftar bawaan.' : 'Tidak ada bank yang cocok dengan pencarian.'}
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {filteredBanks.map(b => (
+                      <div key={b.code} className="flex items-center justify-between gap-3 p-3 rounded-xl"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border-2)' }}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                            <Landmark size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{b.name}</p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              {b.ewallet ? 'E-Wallet' : `Kode kliring: ${b.bankCode || '–'}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => openEditBank(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                            {deletingBankCode === b.code ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
             <div className="space-y-4">
@@ -450,6 +546,73 @@ export default function SettingsTab({ creds }: { creds: string }) {
           </div>
         </div>
       </div>
+
+      {/* Add/Edit master bank modal */}
+      {bankModal && (
+        <div className="modal-overlay" onClick={closeBankModal}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Landmark size={17} /></div>
+                <div>
+                  <p className="modal-title">{bankModal.code === null ? 'Tambah Bank' : 'Edit Bank'}</p>
+                  <p className="modal-subtitle">{bankModal.code === null ? 'Tambah bank/e-wallet baru ke master data' : `Edit: ${bankModal.name}`}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={closeBankModal} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label className="field-label">Nama Bank / E-Wallet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input value={bankModal.name} onChange={e => setBankModal({ ...bankModal, name: e.target.value })}
+                    className="input" placeholder="cth: Bank ABC, DanaKu" autoFocus />
+                </div>
+
+                <div>
+                  <label className="field-label">Kode Kliring (opsional)</label>
+                  <input value={bankModal.bankCode} onChange={e => setBankModal({ ...bankModal, bankCode: e.target.value })}
+                    className="input" placeholder="cth: 014" />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>E-Wallet</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Dompet digital tanpa kode kliring baku</p>
+                  </div>
+                  <button
+                    onClick={() => setBankModal({ ...bankModal, ewallet: !bankModal.ewallet })}
+                    className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                    style={{ background: bankModal.ewallet ? 'var(--accent)' : 'var(--border)' }}
+                  >
+                    <span
+                      className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                      style={{ transform: bankModal.ewallet ? 'translateX(20px)' : 'translateX(2px)' }}
+                    />
+                  </button>
+                </div>
+
+                {bankError && (
+                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                    {bankError}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeBankModal} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                Batal
+              </button>
+              <button onClick={saveBank} disabled={savingBank} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {savingBank ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {savingBank ? 'Menyimpan…' : 'Simpan Bank'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

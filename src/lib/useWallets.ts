@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 export interface WalletDoc {
   id: string; name: string; type: 'cash' | 'bank' | 'ewallet' | 'other';
   icon: string; color: string; initialBalance: number; isActive: boolean; order: number;
+  bankName?: string;
 }
 
 // Dipakai di semua form transaksi (Pemasukan, Pengeluaran, Modal/Prive, Pembelian Bahan

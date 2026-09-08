@@ -11,6 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // camelCase (field lama Firestore) -> kolom snake_case Postgres.
 const COLUMN_MAP: Record<string, string> = {
   name: 'name', type: 'type', icon: 'icon', color: 'color', initialBalance: 'initial_balance', isActive: 'is_active',
+  bankName: 'bank_name',
 };
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -29,6 +30,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (typeof data.color === 'string' && data.color) patch.color = data.color;
   if (data.initialBalance !== undefined) patch.initialBalance = Number(data.initialBalance) || 0;
   if (typeof data.isActive === 'boolean') patch.isActive = data.isActive;
+  if (typeof data.bankName === 'string') patch.bankName = data.bankName.trim() || null;
 
   const sqlPatch: Record<string, unknown> = {};
   for (const [camelKey, column] of Object.entries(COLUMN_MAP)) {

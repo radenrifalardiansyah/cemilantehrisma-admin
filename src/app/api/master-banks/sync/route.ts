@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { MASTER_BANKS } from '@/lib/master-banks';
@@ -20,5 +21,6 @@ export async function POST(req: NextRequest) {
     `;
   }
 
+  revalidateTag('admin-master-banks', { expire: 0 });
   return Response.json({ synced: created, total: MASTER_BANKS.length });
 }

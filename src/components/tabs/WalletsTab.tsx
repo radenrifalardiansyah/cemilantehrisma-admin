@@ -47,8 +47,10 @@ const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other'] as const;
 
 interface Transfer { id: string; fromWalletId: string; toWalletId: string; amount: number; date: string; note?: string }
 
-type WalletForm = { name: string; type: WalletDoc['type']; icon: string; color: string; initialBalance: string };
-const emptyForm = (): WalletForm => ({ name: '', type: 'cash', icon: 'Wallet', color: '#D4691E', initialBalance: '' });
+type WalletForm = { name: string; type: WalletDoc['type']; icon: string; color: string; initialBalance: string; bankName: string };
+const emptyForm = (): WalletForm => ({ name: '', type: 'cash', icon: 'Wallet', color: '#D4691E', initialBalance: '', bankName: '' });
+
+interface MasterBankOption { name: string }
 
 type TransferForm = { fromWalletId: string; toWalletId: string; amount: string; date: string; note: string };
 const emptyTransferForm = (): TransferForm => ({ fromWalletId: '', toWalletId: '', amount: '', date: todayISO(), note: '' });
@@ -92,6 +94,14 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [bankOptions, setBankOptions] = useState<MasterBankOption[]>([]);
+
+  useEffect(() => {
+    fetch(`${API}/api/master-banks`, { headers })
+      .then(r => r.ok ? r.json() as Promise<{ banks: MasterBankOption[] }> : Promise.resolve({ banks: [] }))
+      .then(d => setBankOptions(d.banks))
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Daftar dompet: search, tabel/kartu, ceklis, export ──────────────
   const [search, setSearch] = useState('');
@@ -169,7 +179,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   // ─── Dompet: CRUD ────────────────────────────────────────────────
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (w: WalletDoc) => {
-    setEditing({ id: w.id, name: w.name, type: w.type, icon: w.icon, color: w.color, initialBalance: String(w.initialBalance) });
+    setEditing({ id: w.id, name: w.name, type: w.type, icon: w.icon, color: w.color, initialBalance: String(w.initialBalance), bankName: w.bankName ?? '' });
     setIsNew(false); setError('');
   };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
@@ -181,6 +191,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     const payload = {
       name: editing.name.trim(), type: editing.type, icon: editing.icon, color: editing.color,
       initialBalance: parseFloat(editing.initialBalance) || 0,
+      bankName: editing.type === 'bank' ? editing.bankName.trim() : '',
     };
     const r = isNew
       ? await fetch(`${API}/api/wallets`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -1206,6 +1217,19 @@ export default function WalletsTab({ creds }: { creds: string }) {
                     ))}
                   </div>
                 </div>
+
+                {editing.type === 'bank' && (
+                  <div>
+                    <label className="field-label">Bank</label>
+                    <SearchSelect
+                      value={editing.bankName}
+                      onChange={v => setEditing({ ...editing, bankName: v })}
+                      options={bankOptions.map(b => ({ value: b.name, label: b.name }))}
+                      placeholder="– Pilih bank –"
+                      searchPlaceholder="Cari bank…"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="field-label">Saldo Awal (Rp)</label>
