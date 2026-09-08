@@ -103,6 +103,16 @@ function tokenOverlap(a, b) {
 const ACRONYM_RE = /^[A-Z]{2,6}$/;
 const GENERIC_CORP_RE = /bank|compan|perusahaan|wallet|dompet|pembayaran|payment|platform|aplikasi|digital/i;
 
+// Match yang lolos validasi token-overlap tapi ternyata tetap salah secara visual (sudah dicek
+// manual) — logo yang ketemu itu benar milik entitas YANG DI-MATCH, tapi entitasnya bukan yang
+// kita mau tampilkan:
+//   - mantap: nyangkut ke artikel "Bank Mandiri" (induk), dapat logo Mandiri polos — padahal Bank
+//     Mandiri Taspen (Mantap) punya branding sendiri yang beda.
+//   - smbc: artikelnya sendiri benar ("Bank SMBC Indonesia"), tapi P154-nya masih logo lama
+//     "btpn" (belum diperbarui Wikidata pasca rebranding) — nama tampil vs logo jadi tidak nyambung.
+// Dikecualikan permanen supaya run berikutnya tidak menimpa balik dengan hasil yang sama.
+const KNOWN_BAD_MATCHES = new Set(['mantap', 'smbc']);
+
 async function getLogoFilename(qid, name, matchedTitle) {
   await sleep(DELAY_MS);
   const url = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=claims|descriptions&languages=id|en&format=json`;
@@ -121,15 +131,40 @@ async function getLogoFilename(qid, name, matchedTitle) {
   return { filename: logo ?? null, desc, rejected: false };
 }
 
-async function resolveCommonsFile(filename) {
+// Fallback kalau Wikidata tidak (belum) punya klaim P154: banyak infobox perusahaan di Wikipedia
+// ID sudah mengisi parameter logo (nama parameternya beda-beda tergantung template infobox yang
+// dipakai artikel itu — "logo", "company_logo", "image_logo", dst) walau datanya belum disalin ke
+// Wikidata. Ini AMAN dipakai karena judul artikelnya sendiri sudah lolos verifikasi token-overlap/
+// akronim di atas — bukan sumber kandidat baru, cuma cara lain ambil gambar dari entitas yang sama
+// yang sudah divalidasi.
+async function getInfoboxLogo(title) {
+  await sleep(DELAY_MS);
+  const url = `https://id.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&prop=wikitext&section=0&format=json`;
+  const json = await apiGet(url);
+  const wikitext = json.parse?.wikitext?.['*'];
+  if (!wikitext) return null;
+  const m = wikitext.match(/\|\s*(?:company_|image_)?logo\s*=\s*([^\n|]+)/i);
+  if (!m) return null;
+  const raw = m[1].trim();
+  if (!raw) return null;
+  return raw.replace(/^\[\[(?:File|Berkas):/i, '').replace(/\]\]\s*$/, '').split('|')[0].trim();
+}
+
+async function resolveFileOn(host, filename) {
   await sleep(DELAY_MS);
   const title = `File:${filename}`;
-  const url = `https://commons.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|mime&format=json`;
+  const url = `https://${host}/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|mime&format=json`;
   const json = await apiGet(url);
   const page = Object.values(json.query?.pages ?? {})[0];
   const info = page?.imageinfo?.[0];
   if (!info?.url) return null;
   return { url: info.url, mime: info.mime };
+}
+
+// Sebagian besar logo ada di Wikimedia Commons (dipakai lintas-bahasa), tapi sebagian artikel
+// upload filenya lokal di id.wikipedia sendiri — coba Commons dulu, baru id.wikipedia.
+async function resolveCommonsFile(filename) {
+  return (await resolveFileOn('commons.wikimedia.org', filename)) ?? (await resolveFileOn('id.wikipedia.org', filename));
 }
 
 async function downloadBuffer(url) {
@@ -180,6 +215,7 @@ async function main() {
   const sql = postgres(process.env.DIRECT_URL, { prepare: false, max: 3 });
   let banks = await sql`select code, name, ewallet from master_banks where logo_url is null order by name asc`;
   if (only) banks = banks.filter(b => only.includes(b.code));
+  banks = banks.filter(b => !KNOWN_BAD_MATCHES.has(b.code));
   banks = banks.slice(0, limit);
 
   console.log(`Memproses ${banks.length} bank tanpa logo...\n`);
@@ -193,18 +229,24 @@ async function main() {
 
     const logoResult = await getLogoFilename(found.qid, b.name, found.matchedTitle);
     if (logoResult.rejected) { console.log(`SKIP   ${b.name} (${b.code}) — ${found.qid} (${found.matchedTitle}) tidak ada kecocokan kata/deskripsi ("${logoResult.desc}"), kemungkinan match salah`); skipped++; return; }
-    const filename = logoResult.filename;
-    if (!filename) { console.log(`SKIP   ${b.name} (${b.code}) — ${found.qid} (${found.matchedTitle}) tidak punya klaim logo (P154)`); skipped++; return; }
+
+    let filename = logoResult.filename;
+    let source = 'P154';
+    if (!filename) {
+      filename = await getInfoboxLogo(found.matchedTitle);
+      source = 'infobox';
+    }
+    if (!filename) { console.log(`SKIP   ${b.name} (${b.code}) — ${found.qid} (${found.matchedTitle}) tidak punya logo (P154 maupun infobox)`); skipped++; return; }
 
     const file = await resolveCommonsFile(filename);
-    if (!file) { console.log(`SKIP   ${b.name} (${b.code}) — file Commons "${filename}" tidak ketemu`); skipped++; return; }
+    if (!file) { console.log(`SKIP   ${b.name} (${b.code}) — file "${filename}" (dari ${source}) tidak ketemu di Commons/id.wikipedia`); skipped++; return; }
 
     const raw = await downloadBuffer(file.url);
     const png = await toPngIfNeeded(raw, file.mime);
     const cdnUrl = await uploadToCloudinary(png, `${b.code}.png`);
 
     await sql`update master_banks set logo_url = ${cdnUrl} where code = ${b.code}`;
-    console.log(`OK     ${b.name} (${b.code}) — ${found.matchedTitle} -> ${filename} -> ${cdnUrl}`);
+    console.log(`OK     ${b.name} (${b.code}) — ${found.matchedTitle} -> ${filename} (${source}) -> ${cdnUrl}`);
     filled++;
   };
 
