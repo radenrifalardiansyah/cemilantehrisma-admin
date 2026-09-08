@@ -55,15 +55,6 @@ interface MasterBankOption { name: string; bankCode?: string; logoUrl?: string }
 type TransferForm = { fromWalletId: string; toWalletId: string; amount: string; date: string; note: string };
 const emptyTransferForm = (): TransferForm => ({ fromWalletId: '', toWalletId: '', amount: '', date: todayISO(), note: '' });
 
-function BankLogo({ logoUrl, name, size }: { logoUrl: string; name: string; size: number }) {
-  return (
-    <div className="rounded-md overflow-hidden flex-shrink-0" style={{ width: size, height: size, background: 'var(--surface)' }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={logoUrl} alt={name} className="w-full h-full" style={{ objectFit: 'contain' }} />
-    </div>
-  );
-}
-
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
 }) {
@@ -734,6 +725,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
             <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
               {paginated.map((w, idx) => {
                 const Icon = resolveIcon(w.icon);
+                const bankLogo = w.bankName ? bankLogoByName.get(w.bankName.toLowerCase()) : undefined;
                 const balance = balances[w.id] ?? 0;
                 const isDeleting = deletingId === w.id;
                 const isToggling = togglingId === w.id;
@@ -746,8 +738,11 @@ export default function WalletsTab({ creds }: { creds: string }) {
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>
                         {rowNum}
                       </span>
-                      <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: `${w.color}22`, color: w.color }}>
-                        <Icon size={16} />
+                      <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden p-1.5" style={{ background: bankLogo ? 'var(--surface)' : `${w.color}22`, color: w.color }}>
+                        {bankLogo
+                          ? /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={bankLogo} alt={w.bankName} className="w-full h-full" style={{ objectFit: 'contain' }} />
+                          : <Icon size={16} />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -756,12 +751,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                           {!w.isActive && <span className="badge badge-gray text-[10px]">Nonaktif</span>}
                         </div>
                         {w.bankName && (
-                          <div className="flex items-center gap-1">
-                            {bankLogoByName.get(w.bankName.toLowerCase()) && (
-                              <BankLogo logoUrl={bankLogoByName.get(w.bankName.toLowerCase())!} name={w.bankName} size={14} />
-                            )}
-                            <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
-                          </div>
+                          <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
                         )}
                       </div>
                       <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
@@ -793,6 +783,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {paginated.map(w => {
                 const Icon = resolveIcon(w.icon);
+                const bankLogo = w.bankName ? bankLogoByName.get(w.bankName.toLowerCase()) : undefined;
                 const balance = balances[w.id] ?? 0;
                 const isDeleting = deletingId === w.id;
                 const isToggling = togglingId === w.id;
@@ -803,8 +794,11 @@ export default function WalletsTab({ creds }: { creds: string }) {
                       <Checkbox checked={isSelected} onChange={() => toggleSelect(w.id)} />
                     </div>
                     <div className="pt-8 pb-3 px-4 flex flex-col items-center text-center gap-1">
-                      <div className="w-14 h-14 rounded-2xl flex-shrink-0 flex items-center justify-center mb-1" style={{ background: `${w.color}22`, color: w.color }}>
-                        <Icon size={22} />
+                      <div className="w-14 h-14 rounded-2xl flex-shrink-0 flex items-center justify-center overflow-hidden mb-1 p-2" style={{ background: bankLogo ? 'var(--surface)' : `${w.color}22`, color: w.color }}>
+                        {bankLogo
+                          ? /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={bankLogo} alt={w.bankName} className="w-full h-full" style={{ objectFit: 'contain' }} />
+                          : <Icon size={22} />}
                       </div>
                       <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{w.name}</p>
                       <div className="flex items-center gap-1">
@@ -812,12 +806,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                         {!w.isActive && <span className="badge badge-gray text-[10px]">Nonaktif</span>}
                       </div>
                       {w.bankName && (
-                        <div className="flex items-center gap-1">
-                          {bankLogoByName.get(w.bankName.toLowerCase()) && (
-                            <BankLogo logoUrl={bankLogoByName.get(w.bankName.toLowerCase())!} name={w.bankName} size={14} />
-                          )}
-                          <p className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
-                        </div>
+                        <p className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>{w.bankName}</p>
                       )}
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: balance >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>
                         {formatRp(balance)}
