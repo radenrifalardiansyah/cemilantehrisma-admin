@@ -174,6 +174,14 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
 
   const headers = { 'x-admin-auth': creds };
 
+  const [bankOptions, setBankOptions] = useState<{ name: string }[]>([]);
+  useEffect(() => {
+    fetch(`${API}/api/master-banks`, { headers })
+      .then(r => r.ok ? r.json() as Promise<{ banks: { name: string }[] }> : Promise.resolve({ banks: [] }))
+      .then(d => setBankOptions(d.banks))
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const load = async () => {
     setLoading(true);
     const r = await fetch(`${API}/api/orders?from=2000-01-01`, { headers });
@@ -1578,7 +1586,9 @@ _${storeName}_`.trim();
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="field-label">Bank</label>
-                      <input type="text" value={editTransferBank} onChange={e => setEditTransferBank(e.target.value)} className="input" />
+                      <SearchSelect value={editTransferBank} onChange={setEditTransferBank}
+                        options={bankOptions.map(b => ({ value: b.name, label: b.name }))}
+                        placeholder="– Pilih Bank –" searchPlaceholder="Cari bank…" />
                     </div>
                     <div>
                       <label className="field-label">Jumlah Transfer</label>

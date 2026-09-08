@@ -482,7 +482,15 @@ export default function SettingsTab({ creds }: { creds: string }) {
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                     {f.label}
                   </label>
-                  {f.type === 'textarea' ? (
+                  {f.key === 'storeBankName' ? (
+                    <SearchSelect
+                      value={(settings.storeBankName as string) ?? ''}
+                      onChange={v => set('storeBankName', v)}
+                      options={(banks ?? []).map(b => ({ value: b.name, label: b.name }))}
+                      placeholder="– Pilih Bank –"
+                      searchPlaceholder="Cari bank…"
+                    />
+                  ) : f.type === 'textarea' ? (
                     <textarea
                       rows={4}
                       placeholder={f.placeholder}
