@@ -2399,6 +2399,7 @@ _${storeHeader.name}_`.trim();
                             style={{ transition: 'background-color 0.6s ease', background: highlightedShipmentId === s.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                             <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} /></div>
+                            <LocationLogo location={locations.find(l => l.id === s.locationId) ?? { name: s.locationName }} size={32} />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -2461,9 +2462,7 @@ _${storeHeader.name}_`.trim();
                             style={{ transition: 'background-color 0.6s ease', background: highlightedShipmentId === s.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="flex items-center gap-2 mb-1">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
-                              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                                <Send size={14} />
-                              </div>
+                              <LocationLogo location={locations.find(l => l.id === s.locationId) ?? { name: s.locationName }} size={32} />
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
                               {locations.find(l => l.id === s.locationId)?.code && (
                                 <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
@@ -2609,6 +2608,7 @@ _${storeHeader.name}_`.trim();
                             style={{ transition: 'background-color 0.6s ease', background: highlightedRecapId === r.id ? 'var(--accent-bg)' : isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
                             <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                             <div className="pt-0.5"><Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} /></div>
+                            <LocationLogo location={locations.find(l => l.id === r.locationId) ?? { name: r.locationName }} size={32} />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -2684,9 +2684,7 @@ _${storeHeader.name}_`.trim();
                             style={{ transition: 'background-color 0.6s ease', background: highlightedRecapId === r.id ? 'var(--accent-bg)' : undefined, outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                             <div className="flex items-center gap-2 mb-1">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectRecap(r.id)} />
-                              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                                <ClipboardList size={14} />
-                              </div>
+                              <LocationLogo location={locations.find(l => l.id === r.locationId) ?? { name: r.locationName }} size={32} />
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{r.locationName}</p>
                               {locations.find(l => l.id === r.locationId)?.code && (
                                 <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
