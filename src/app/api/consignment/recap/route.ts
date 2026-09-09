@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
-import { unstable_cache } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -39,27 +38,25 @@ function mergeRecapItems(items: RecapItemInput[]): RecapItemInput[] {
 }
 
 // Dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab setiap kali ada
-// transaksi baru — cache waktu murni (bukan revalidateTag) karena koleksi ini juga ditulis dari
-// PATCH/PUT/DELETE di consignment/recap/[id]/route.ts. Lihat komentar serupa di
-// src/app/api/orders/route.ts. (Tahap 13 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
-const getCachedRecaps = unstable_cache(
-  async (from: string | null, to: string | null, limit: number) => {
-    const sql = getSql();
-    let rows: RecapRow[];
-    if (from && to) {
-      rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
-    } else if (from) {
-      rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
-    } else if (to) {
-      rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
-    } else {
-      rows = await sql<RecapRow[]>`select * from consignment_recaps order by created_at desc limit ${limit}`;
-    }
-    return rows.map(rowToRecap);
-  },
-  ['admin-consignment-recap-list'],
-  { revalidate: 15 },
-);
+// transaksi baru, dan ditulis dari POST di sini serta PATCH/PUT/DELETE di
+// consignment/recap/[id]/route.ts. Tidak di-cache sama sekali — tag cache gampang kelewat
+// dipasang di salah satu titik tulis itu dan diam-diam jadi stale permanen, sedangkan cache TTL
+// murni tetap punya jeda basi (baris yang dihapus masih nongol sampai 15 detik). Baca langsung
+// dari database supaya selalu up to date. Lihat komentar serupa di src/app/api/orders/route.ts.
+async function fetchRecaps(from: string | null, to: string | null, limit: number) {
+  const sql = getSql();
+  let rows: RecapRow[];
+  if (from && to) {
+    rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else if (from) {
+    rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+  } else if (to) {
+    rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+  } else {
+    rows = await sql<RecapRow[]>`select * from consignment_recaps order by created_at desc limit ${limit}`;
+  }
+  return rows.map(rowToRecap);
+}
 
 // Read by IncomeTab & FinanceReportTab (not just the Konsinyasi tab) to roll
 // consignment revenue into their totals — gate view with OR semantics so a
@@ -75,10 +72,10 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const sql = getSql();
 
-  const recaps = await getCachedRecaps(from, to, limit);
+  const recaps = await fetchRecaps(from, to, limit);
 
-  // Lazy overdue check — dijalankan tiap daftar rekap dibuka (dalam window cache 15 detik di
-  // atas, bukan tiap request persis), bukan lewat cron (tidak ada infra scheduler saat ini).
+  // Lazy overdue check — dijalankan tiap daftar rekap dibuka, bukan lewat cron (tidak ada infra
+  // scheduler saat ini).
   // `overdueNotifiedAt` jadi flag idempoten supaya notifikasi cuma ditulis sekali per rekap.
   const now = Date.now();
   await Promise.all(recaps.map(async r => {
