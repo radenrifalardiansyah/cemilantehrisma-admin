@@ -920,6 +920,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   };
 
   const sendTotal = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.hargaTitip) || 0), 0);
+  const sendTotalQty = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
   const canSubmitSend = !!sendLocationId && !!sendWarehouseId
     && sendRows.some(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0);
 
@@ -2440,7 +2441,7 @@ _${storeHeader.name}_`.trim();
                                   {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
                                 </span>
                               </div>
-                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)} · {s.items.reduce((sum, it) => sum + it.qty, 0)} pcs</p>
                               <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
                                 {s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
                               </p>
@@ -2527,6 +2528,12 @@ _${storeHeader.name}_`.trim();
                               <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{s.note}&rdquo;</p>
                             )}
                             <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total item</span>
+                              <span className="text-sm font-bold tabular" style={{ color: 'var(--text-primary)' }}>
+                                {s.items.reduce((sum, it) => sum + it.qty, 0)} pcs
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between mt-1.5">
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total nilai titip</span>
                               <span className="text-sm font-bold tabular" style={{ color: 'var(--accent)' }}>
                                 {formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0))}
@@ -2967,6 +2974,10 @@ _${storeHeader.name}_`.trim();
                   <input type="text" value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
                 </div>
 
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{sendTotalQty} pcs</span>
+                </div>
                 <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
                   <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Nilai Titip</span>
                   <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(sendTotal)}</span>
