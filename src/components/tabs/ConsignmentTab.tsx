@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
-import { type PeriodKey, periodRange } from '@/lib/period';
+import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import ExcelJS from 'exceljs';
 import { pdf, Document } from '@react-pdf/renderer';
@@ -876,6 +876,9 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [shipmentView, setShipmentView] = useViewMode('consignment-shipments', 'table');
 
   const [shipmentSearch,   setShipmentSearch]   = useState('');
+  const [shipmentPeriod,     setShipmentPeriod]     = useState<PeriodKey>('month');
+  const [shipmentCustomFrom, setShipmentCustomFrom] = useState('');
+  const [shipmentCustomTo,   setShipmentCustomTo]   = useState('');
   const [shipmentPage,     setShipmentPage]     = useState(1);
   const [shipmentPageSize, setShipmentPageSize] = useState(10);
   const [selectedShipments, setSelectedShipments] = useState<Set<string>>(new Set());
@@ -887,11 +890,12 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const loadShipments = async () => {
     setShipmentsLoading(true);
-    const r = await fetch(`${API}/api/consignment/send?limit=50`, { headers });
+    const { from, to } = periodRange(shipmentPeriod, shipmentCustomFrom, shipmentCustomTo);
+    const r = await fetch(`${API}/api/consignment/send?from=${from}&to=${to}`, { headers });
     if (r.ok) setShipments((await r.json() as { shipments: Shipment[] }).shipments);
     setShipmentsLoading(false);
   };
-  useEffect(() => { loadShipments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadShipments(); }, [shipmentPeriod, shipmentCustomFrom, shipmentCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addSendRow    = () => setSendRows(prev => [...prev, { ...EMPTY_SEND_ROW }]);
   const removeSendRow = (i: number) => setSendRows(prev => prev.filter((_, idx) => idx !== i));
@@ -1300,6 +1304,9 @@ _${storeHeader.name}_`.trim();
 
   const [recapSearch,   setRecapSearch]   = useState('');
   const [recapOnlyBelumLunas, setRecapOnlyBelumLunas] = useState(false);
+  const [recapPeriod,     setRecapPeriod]     = useState<PeriodKey>('month');
+  const [recapCustomFrom, setRecapCustomFrom] = useState('');
+  const [recapCustomTo,   setRecapCustomTo]   = useState('');
   const [recapPage,     setRecapPage]     = useState(1);
   const [recapPageSize, setRecapPageSize] = useState(10);
   const [selectedRecaps, setSelectedRecaps] = useState<Set<string>>(new Set());
@@ -1311,11 +1318,12 @@ _${storeHeader.name}_`.trim();
 
   const loadRecaps = async () => {
     setRecapsLoading(true);
-    const r = await fetch(`${API}/api/consignment/recap?limit=50`, { headers });
+    const { from, to } = periodRange(recapPeriod, recapCustomFrom, recapCustomTo);
+    const r = await fetch(`${API}/api/consignment/recap?from=${from}&to=${to}`, { headers });
     if (r.ok) setRecaps((await r.json() as { recaps: Recap[] }).recaps);
     setRecapsLoading(false);
   };
-  useEffect(() => { loadRecaps(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadRecaps(); }, [recapPeriod, recapCustomFrom, recapCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh — only the sub-tab currently in view (skips the pricier N+1 location/stock
   // fetch entirely while looking at Kirim/Rekap/Analitik). Each `loadX` already guards its
@@ -2332,6 +2340,23 @@ _${storeHeader.name}_`.trim();
         {/* ════ KIRIM STOK ═════════════════════════════════════ */}
         {subTab === 'kirim' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {PERIOD_OPTIONS.map(p => (
+                <button key={p.id} onClick={() => { setShipmentPeriod(p.id); resetShipmentPage(); }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                  style={shipmentPeriod === p.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                  {p.label}
+                </button>
+              ))}
+              {shipmentPeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input type="date" value={shipmentCustomFrom} onChange={e => { setShipmentCustomFrom(e.target.value); resetShipmentPage(); }} className="input" style={{ height: 36 }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                  <input type="date" value={shipmentCustomTo} onChange={e => { setShipmentCustomTo(e.target.value); resetShipmentPage(); }} className="input" style={{ height: 36 }} />
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {shipments.length > 0 && (
                 <div className="relative flex-1 min-w-0">
@@ -2526,6 +2551,23 @@ _${storeHeader.name}_`.trim();
         {/* ════ REKAP HARIAN ═══════════════════════════════════ */}
         {subTab === 'rekap' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {PERIOD_OPTIONS.map(p => (
+                <button key={p.id} onClick={() => { setRecapPeriod(p.id); resetRecapPage(); }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                  style={recapPeriod === p.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                  {p.label}
+                </button>
+              ))}
+              {recapPeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input type="date" value={recapCustomFrom} onChange={e => { setRecapCustomFrom(e.target.value); resetRecapPage(); }} className="input" style={{ height: 36 }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                  <input type="date" value={recapCustomTo} onChange={e => { setRecapCustomTo(e.target.value); resetRecapPage(); }} className="input" style={{ height: 36 }} />
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {recaps.length > 0 && (
                 <div className="relative flex-1 min-w-0">
