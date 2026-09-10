@@ -446,6 +446,7 @@ body {
   display: flex;
   flex-direction: column;
   max-height: 92vh;
+  max-height: min(92vh, calc(var(--vvh, 100vh) - 16px));
   overflow: hidden;
   animation: modal-slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }

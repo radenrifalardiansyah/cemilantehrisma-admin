@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import AdminSplashScreen from "@/components/AdminSplashScreen";
+import KeyboardViewportFix from "@/components/KeyboardViewportFix";
 import ToastProvider from "@/components/Toast";
 import ConfirmProvider from "@/components/Confirm";
 import { getCachedAdminBranding } from "@/lib/server/branding";
@@ -59,6 +60,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       } as React.CSSProperties}
     >
       <body>
+        <KeyboardViewportFix />
         <AdminSplashScreen />
         <ToastProvider>
           <ConfirmProvider>{children}</ConfirmProvider>
