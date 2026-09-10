@@ -73,7 +73,7 @@ export default function Tooltip({ label, children, side = 'bottom' }: TooltipPro
   return (
     <span
       ref={triggerRef}
-      className="relative inline-flex"
+      className="inline-flex"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
       onFocus={() => setShow(true)}

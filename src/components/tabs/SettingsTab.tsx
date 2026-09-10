@@ -563,10 +563,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
             ) : (
             <div className="space-y-4">
               {activeGrp === 'store' && (
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                    Logo Toko
-                  </label>
+                <div className="rounded-2xl p-4 flex items-center gap-4" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                   <ImageUploadBox
                     src={settings.logo}
                     alt="Logo toko"
@@ -574,20 +571,25 @@ export default function SettingsTab({ creds }: { creds: string }) {
                     onSelect={f => uploadLogo(f)}
                     onRemove={() => set('logo', '')}
                     fit="contain"
-                    size={88}
+                    size={96}
                     emptyText="Upload Logo"
+                    crop
+                    cropTitle="Edit Logo Toko"
+                    cropKeepAlpha={false}
                   />
-                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                    Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos.
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      Logo Toko
+                    </p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos. Klik ikon crop untuk atur ulang posisi & rotasi.
+                    </p>
+                  </div>
                 </div>
               )}
               {activeGrp === 'store' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                      Tanda Tangan Elektronik
-                    </label>
+                  <div className="rounded-2xl p-4 flex items-start gap-4" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                     <ImageUploadBox
                       src={settings.ownerSignature}
                       alt="Tanda tangan pemilik"
@@ -595,17 +597,21 @@ export default function SettingsTab({ creds }: { creds: string }) {
                       onSelect={f => uploadSignature(f)}
                       onRemove={() => set('ownerSignature', '')}
                       fit="contain"
-                      size={72}
+                      size={80}
                       emptyText="Upload"
+                      crop
+                      cropTitle="Edit Tanda Tangan"
                     />
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                      Foto/scan tanda tangan pemilik, latar transparan (PNG) lebih rapi.
-                    </p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        Tanda Tangan Elektronik
+                      </p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        Foto/scan tanda tangan pemilik, latar transparan (PNG) lebih rapi.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                      Cap / Stempel Elektronik
-                    </label>
+                  <div className="rounded-2xl p-4 flex items-start gap-4" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                     <ImageUploadBox
                       src={settings.ownerStamp}
                       alt="Cap toko"
@@ -613,12 +619,19 @@ export default function SettingsTab({ creds }: { creds: string }) {
                       onSelect={f => uploadStamp(f)}
                       onRemove={() => set('ownerStamp', '')}
                       fit="contain"
-                      size={72}
+                      size={80}
                       emptyText="Upload"
+                      crop
+                      cropTitle="Edit Cap / Stempel"
                     />
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                      Foto cap/stempel toko, latar transparan (PNG) lebih rapi.
-                    </p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        Cap / Stempel Elektronik
+                      </p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        Foto cap/stempel toko, latar transparan (PNG) lebih rapi.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
