@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
           ${JSON.stringify(itemsWithCost)}, ${Number(data.subtotal) || 0}, ${data.discount ? JSON.stringify(data.discount) : null}, ${Number(data.total) || 0},
           ${isPreOrder ? 'baru' : 'selesai'}, 'kasir',
           ${data.deliveryMethod ?? null}, ${data.address ?? null}, ${data.note ?? null},
-          ${data.paymentMethod ?? null}, ${data.paymentStatus ?? 'belum_lunas'},
+          ${data.paymentMethod ?? null}, ${data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')},
           ${data.amountPaid ?? null}, ${data.changeAmount ?? null},
           ${data.transferBank ?? null}, ${data.transferAmount ?? null}, ${data.transferProofUrl ?? null},
           ${!isPreOrder}, ${data.warehouseId ?? null}, ${data.warehouseName ?? null},
