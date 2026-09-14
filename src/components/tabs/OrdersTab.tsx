@@ -986,6 +986,18 @@ _${storeName}_`.trim();
       {/* Header */}
       <div className="flex flex-row items-center gap-2 sm:gap-3">
         {orders.length > 0 && (
+          <div className="relative flex-1 min-w-0">
+            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); resetPage(); }}
+              className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
+              placeholder="Cari nama pelanggan, no. invoice, atau no. HP…"
+            />
+          </div>
+        )}
+        {orders.length > 0 && (
           <button
             onClick={() => { setOnlyBelumLunas(v => !v); resetPage(); }}
             className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
@@ -997,18 +1009,6 @@ _${storeName}_`.trim();
           >
             <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
           </button>
-        )}
-        {orders.length > 0 && (
-          <div className="relative flex-1 min-w-0">
-            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input
-              value={search}
-              onChange={e => { setSearch(e.target.value); resetPage(); }}
-              className="input text-sm w-full"
-              style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-              placeholder="Cari nama pelanggan, no. invoice, atau no. HP…"
-            />
-          </div>
         )}
         <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           <Tooltip label="Unduh Template">
