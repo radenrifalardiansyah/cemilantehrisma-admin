@@ -234,6 +234,7 @@ export async function POST(req: NextRequest) {
     actor: guard,
   }))).catch(err => console.error('Failed to send push for low stock', err));
 
+  revalidateTag('admin-materials', { expire: 0 });
   if (otherCost > 0) revalidateTag('admin-expenses', { expire: 0 });
   after(() => revalidateStorefront('products'));
 

@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to write history for material purchase create', err);
   }
+  revalidateTag('admin-materials', { expire: 0 });
   if (purchaseData.expenseId) revalidateTag('admin-expenses', { expire: 0 });
 
   return Response.json({ id: purchaseId });

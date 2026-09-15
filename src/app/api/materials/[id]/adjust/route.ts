@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -61,5 +62,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for material adjust', err);
   }
 
+  revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ ok: true });
 }

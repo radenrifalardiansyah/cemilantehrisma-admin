@@ -115,6 +115,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for material purchase void', err);
   }
+  if (reversed) revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
 
   return Response.json({ ok: true, reversed, skippedMaterials });

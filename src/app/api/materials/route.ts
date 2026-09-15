@@ -15,7 +15,7 @@ const getCachedMaterials = unstable_cache(
     return rows.map(rowToMaterial);
   },
   ['admin-materials'],
-  { revalidate: 15, tags: ['admin-materials'] },
+  { revalidate: false, tags: ['admin-materials'] },
 );
 
 export async function GET(req: NextRequest) {

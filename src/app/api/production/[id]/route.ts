@@ -272,6 +272,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for production update', err);
   }
+  revalidateTag('admin-materials', { expire: 0 });
   if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
 
   after(() => revalidateStorefront('products'));
@@ -393,6 +394,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for production delete', err);
   }
+  revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
 
   after(() => revalidateStorefront('products'));

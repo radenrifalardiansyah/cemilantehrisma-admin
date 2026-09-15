@@ -178,6 +178,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for material purchase update', err);
   }
+  revalidateTag('admin-materials', { expire: 0 });
   if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
 
   return Response.json({ ok: true });
@@ -266,6 +267,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for material purchase delete', err);
   }
+  revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
 
   return Response.json({ ok: true });

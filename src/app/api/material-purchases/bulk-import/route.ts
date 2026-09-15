@@ -82,6 +82,9 @@ export async function POST(req: NextRequest) {
     // kegagalan menulis audit log tidak boleh menggagalkan hasil impor yang sudah terjadi
   }
 
-  if (created > 0) revalidateTag('admin-expenses', { expire: 0 });
+  if (created > 0) {
+    revalidateTag('admin-materials', { expire: 0 });
+    revalidateTag('admin-expenses', { expire: 0 });
+  }
   return Response.json({ created, skippedInvalid });
 }
