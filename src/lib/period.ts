@@ -23,8 +23,8 @@ export function periodRange(period: PeriodKey, customFrom: string, customTo: str
     case 'today': return { from: today, to: today };
     case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: toISO(d), to: today }; }
     case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: toISO(d), to: today }; }
-    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: toISO(d), to: today }; }
-    case 'year': { const d = new Date(now.getFullYear(), 0, 1); return { from: toISO(d), to: today }; }
+    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); return { from: toISO(d), to: toISO(end) }; }
+    case 'year': { const d = new Date(now.getFullYear(), 0, 1); const end = new Date(now.getFullYear(), 11, 31); return { from: toISO(d), to: toISO(end) }; }
     case 'custom': return { from: customFrom || today, to: customTo || today };
   }
 }
