@@ -8,6 +8,7 @@ import { logHistory } from '@/lib/history';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
+import { wibDateKey } from '@/lib/date';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -60,7 +61,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const newMaterialsUsed = mergeMaterialsUsed(data.materialsUsed ?? []);
   const newOutputs = mergeOutputs(data.outputs ?? []).filter(o => (Number(o.yieldQty) || 0) > 0);
   const newOtherCost = Number(data.otherCost) || 0;
-  const date = data.date || new Date().toISOString().slice(0, 10);
+  const date = data.date || wibDateKey(new Date());
   const newWarehouseId   = data.warehouseId ?? '';
   const newWarehouseName = data.warehouseName ?? '';
   if (newMaterialsUsed.length === 0) return Response.json({ error: 'Minimal 1 bahan baku dipakai.' }, { status: 400 });

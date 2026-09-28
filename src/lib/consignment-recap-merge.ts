@@ -23,13 +23,13 @@ export interface MergedRecapGroup {
 
 function formatDateOnly(seconds?: number) {
   if (!seconds) return '–';
-  return new Date(seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(seconds * 1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function formatDateTime(seconds?: number) {
   if (!seconds) return '–';
   return new Date(seconds * 1000).toLocaleDateString('id-ID', {
-    weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
 
@@ -95,7 +95,7 @@ export function groupAndMergeRecaps(
       locationCode:   first.locationId ? getLocationCode?.(first.locationId) : undefined,
       warehouseName:  first.warehouseName || undefined,
       date:           dateLabel,
-      printedAt:      new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      printedAt:      new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       docNo:          merged ? `RKP-GAB-${first.id.slice(-6).toUpperCase()}` : sourceDocs[0],
       paymentStatus:  sorted.every(r => (r.paymentStatus ?? 'lunas') === 'lunas') ? 'lunas' : 'belum_lunas',
       note:           noteParts.length ? noteParts.join('\n') : undefined,

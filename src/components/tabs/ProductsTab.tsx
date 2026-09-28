@@ -670,7 +670,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `produk-cemilantehrisma-${today}.xlsx`;
@@ -731,7 +731,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `produk-cemilantehrisma-${today}.pdf`;

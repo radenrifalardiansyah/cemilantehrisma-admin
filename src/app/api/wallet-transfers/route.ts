@@ -6,6 +6,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { computeWalletBalance } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
+import { wibDateKey } from '@/lib/date';
 
 interface WalletTransferRow {
   id: string; from_wallet_id: string; to_wallet_id: string; amount: string; date: string; note: string | null;
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
 
   const payload = {
     fromWalletId, toWalletId, amount,
-    date: typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10),
+    date: typeof data.date === 'string' && data.date ? data.date : wibDateKey(new Date()),
     note: (data.note as string | undefined) ?? '',
   };
 

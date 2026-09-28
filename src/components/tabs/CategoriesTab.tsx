@@ -367,7 +367,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `kategori-cemilantehrisma-${today}.xlsx`;
@@ -412,7 +412,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `kategori-cemilantehrisma-${today}.pdf`;

@@ -55,7 +55,7 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
   const [txnModalChannel, setTxnModalChannel] = useState<Channel | null>(null);
   const [clientName, setClientName] = useState('Cemilan Teh Risma');
   const [paymentInfo, setPaymentInfo] = useState<AdminFeePaymentInfo | null>(null);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = new Date().toLocaleDateString('en-CA');
 
   useEffect(() => {
     fetch('/api/settings', { headers }).then(async r => {

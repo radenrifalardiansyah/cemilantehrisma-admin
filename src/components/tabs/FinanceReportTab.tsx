@@ -562,13 +562,13 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const dailyMap = new Map<string, { income: number; expense: number }>();
   countedOrders.forEach(o => {
     if (!o.createdAt?.seconds) return;
-    const key = new Date(o.createdAt.seconds * 1000).toISOString().slice(0, 10);
+    const key = new Date(o.createdAt.seconds * 1000).toLocaleDateString('en-CA');
     const cur = dailyMap.get(key) ?? { income: 0, expense: 0 };
     cur.income += o.total ?? 0; dailyMap.set(key, cur);
   });
   countedRecaps.forEach(r => {
     if (!r.createdAt?.seconds) return;
-    const key = new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 10);
+    const key = new Date(r.createdAt.seconds * 1000).toLocaleDateString('en-CA');
     const cur = dailyMap.get(key) ?? { income: 0, expense: 0 };
     cur.income += r.totalRevenue ?? 0; dailyMap.set(key, cur);
   });

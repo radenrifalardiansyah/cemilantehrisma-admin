@@ -652,7 +652,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `lokasi-konsinyasi-cemilantehrisma-${today}.xlsx`;
@@ -700,7 +700,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `lokasi-konsinyasi-cemilantehrisma-${today}.pdf`;
@@ -1065,7 +1065,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `riwayat-kirim-konsinyasi-${today}.xlsx`;
@@ -1556,7 +1556,7 @@ _${storeHeader.name}_`.trim();
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `riwayat-rekap-konsinyasi-${today}.xlsx`;
@@ -1966,7 +1966,7 @@ _${storeHeader.name}_`.trim();
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const safeName = historyLocation.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
       const a = document.createElement('a');
       a.href = url;

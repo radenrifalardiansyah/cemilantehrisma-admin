@@ -6,6 +6,7 @@ import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
+import { wibDateKey } from '@/lib/date';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,7 +36,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const newItems = data.items ?? [];
   if (newItems.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
   const newPaymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
-  const date = data.date || new Date().toISOString().slice(0, 10);
+  const date = data.date || wibDateKey(new Date());
 
   const db = getDb();
   const sql = getSql();

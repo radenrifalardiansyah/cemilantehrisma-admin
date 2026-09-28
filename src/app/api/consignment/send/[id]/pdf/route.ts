@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 function formatDate(seconds?: number) {
   if (!seconds) return '–';
   return new Date(seconds * 1000).toLocaleDateString('id-ID', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
 
@@ -89,7 +89,7 @@ function renderShipmentPdf(id: string) {
         address: location?.address || undefined,
         warehouseName: shipment.warehouseName || undefined,
         date: formatDate(shipment.createdAt?.seconds),
-        printedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        printedAt: new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
         docNo: `KRM-${id.slice(-6).toUpperCase()}`,
         note: shipment.note || undefined,
         items,

@@ -199,7 +199,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
     const countedOrders = orders.filter(o =>
       (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
     const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
-    const dateOf = (c?: { seconds: number } | null) => c?.seconds ? new Date(c.seconds * 1000).toISOString().slice(0, 10) : todayISO();
+    const dateOf = (c?: { seconds: number } | null) => c?.seconds ? new Date(c.seconds * 1000).toLocaleDateString('en-CA') : todayISO();
 
     const fromOrders: Income[] = countedOrders.map(o => ({
       id: `order-${o.id}`,

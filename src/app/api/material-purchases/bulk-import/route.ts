@@ -5,6 +5,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { wibDateKey } from '@/lib/date';
 
 interface ImportRow {
   materialId: string; materialName: string; unit: string; qty: number; price: number;
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     if (!row.materialId || qty <= 0 || price < 0) { skippedInvalid++; continue; }
 
     const paymentStatus = row.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
-    const date = row.date || new Date().toISOString().slice(0, 10);
+    const date = row.date || wibDateKey(new Date());
     const purchaseId = randomUUID();
     const expenseId = randomUUID();
 

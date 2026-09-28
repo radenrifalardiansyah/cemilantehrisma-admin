@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 function formatDate(seconds?: number | null, fallback?: string) {
   if (seconds) {
     return new Date(seconds * 1000).toLocaleDateString('id-ID', {
-      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
   }
   return fallback || '–';
@@ -59,7 +59,7 @@ export async function GET(
     const data: OrderInvoiceData = {
       invoiceNo:      order.invoiceNo || id,
       date:           formatDate(order.createdAt?.seconds, order.date),
-      printedAt:      new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      printedAt:      new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       customerName:   order.customerName,
       customerPhone:  order.customerPhone || undefined,
       deliveryMethod: order.deliveryMethod as 'pickup' | 'delivery' | undefined,

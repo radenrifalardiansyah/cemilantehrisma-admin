@@ -247,7 +247,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `modul-cemilantehrisma-${today}.xlsx`;
@@ -288,7 +288,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `modul-cemilantehrisma-${today}.pdf`;

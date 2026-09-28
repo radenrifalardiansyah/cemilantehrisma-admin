@@ -507,7 +507,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `bahan-baku-cemilantehrisma-${today}.xlsx`;
@@ -550,7 +550,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `bahan-baku-cemilantehrisma-${today}.pdf`;
@@ -996,7 +996,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `pembelian-bahan-baku-cemilantehrisma-${today}.xlsx`;
@@ -1048,7 +1048,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toLocaleDateString('en-CA');
       const a = document.createElement('a');
       a.href = url;
       a.download = `pembelian-bahan-baku-cemilantehrisma-${today}.pdf`;
