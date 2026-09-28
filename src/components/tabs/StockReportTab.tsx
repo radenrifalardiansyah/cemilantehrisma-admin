@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
@@ -642,27 +642,41 @@ export default function StockReportTab({
 
   const { from: reportFrom, to: reportTo } = reportPeriodRange(reportPeriod, reportCustomFrom, reportCustomTo);
 
+  // Generasi request — cegah respons periode LAMA yang datang belakangan menimpa data periode BARU
+  // (mis. ganti "Tahun Ini" → "Hari Ini" dengan cepat; query setahun lebih lambat selesai), sama
+  // seperti loadIdRef di Laporan Keuangan. try/finally supaya indikator loading tidak macet kalau
+  // fetch gagal (mis. koneksi putus).
+  const ledgerLoadIdRef = useRef(0);
   const loadReportLedger = async () => {
+    const myLoadId = ++ledgerLoadIdRef.current;
     setReportLedgerLoading(true);
-    const r = await fetch(`${API}/api/stock?from=${reportFrom}&to=${reportTo}`, { headers });
-    if (r.ok) {
-      const { entries } = await r.json() as { entries: TxEntry[] };
-      setReportLedger(entries);
+    try {
+      const r = await fetch(`${API}/api/stock?from=${reportFrom}&to=${reportTo}`, { headers });
+      if (r.ok) {
+        const { entries } = await r.json() as { entries: TxEntry[] };
+        if (myLoadId === ledgerLoadIdRef.current) setReportLedger(entries);
+      }
+    } finally {
+      if (myLoadId === ledgerLoadIdRef.current) setReportLedgerLoading(false);
     }
-    setReportLedgerLoading(false);
   };
 
+  const whLoadIdRef = useRef(0);
   const loadAllWhStocks = async () => {
+    const myLoadId = ++whLoadIdRef.current;
     if (warehouses.length === 0) { setAllWhStocks([]); return; }
     setAllWhStocksLoading(true);
-    const results = await Promise.all(warehouses.map(async w => {
-      const r = await fetch(`${API}/api/warehouses/${w.id}/stock`, { headers });
-      if (!r.ok) return [];
-      const { stocks: s } = await r.json() as { stocks: ProductStock[] };
-      return s.map(x => ({ warehouseId: w.id, warehouseName: w.name, ...x }));
-    }));
-    setAllWhStocks(results.flat());
-    setAllWhStocksLoading(false);
+    try {
+      const results = await Promise.all(warehouses.map(async w => {
+        const r = await fetch(`${API}/api/warehouses/${w.id}/stock`, { headers });
+        if (!r.ok) return [];
+        const { stocks: s } = await r.json() as { stocks: ProductStock[] };
+        return s.map(x => ({ warehouseId: w.id, warehouseName: w.name, ...x }));
+      }));
+      if (myLoadId === whLoadIdRef.current) setAllWhStocks(results.flat());
+    } finally {
+      if (myLoadId === whLoadIdRef.current) setAllWhStocksLoading(false);
+    }
   };
 
   useEffect(() => { loadWarehouses(); }, []);
@@ -681,11 +695,17 @@ export default function StockReportTab({
   const sumQty = (entries: TxEntry[], types: TxEntry['type'][]) =>
     entries.filter(e => types.includes(e.type)).reduce((s, e) => s + e.qty, 0);
 
-  const reportMasukQty   = sumQty(reportLedgerFiltered, ['in']);
-  const reportKeluarQty  = sumQty(reportLedgerFiltered, ['out', 'reject']);
-  const reportTrIn       = reportWhFilter === 'semua' ? 0 : reportLedgerFiltered.filter(e => e.type === 'transfer' && e.toWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
-  const reportTrOut      = reportWhFilter === 'semua' ? 0 : reportLedgerFiltered.filter(e => e.type === 'transfer' && e.fromWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
-  const reportTransferCt = reportLedgerFiltered.filter(e => e.type === 'transfer').length;
+  // Ringkasan mutasi & tabel Riwayat mengikuti filter kategori juga — sama seperti Nilai/Unit/Jenis
+  // (reportScopeRows di bawah), supaya kartu ringkasan tidak mencampur semua kategori dengan
+  // angka yang sudah difilter.
+  const reportCatProductIds = reportCatFilter === 'semua' ? null : new Set(products.filter(p => p.category === reportCatFilter).map(p => p.id));
+  const reportLedgerScoped = reportCatProductIds ? reportLedgerFiltered.filter(e => reportCatProductIds.has(e.productId)) : reportLedgerFiltered;
+
+  const reportMasukQty   = sumQty(reportLedgerScoped, ['in']);
+  const reportKeluarQty  = sumQty(reportLedgerScoped, ['out', 'reject']);
+  const reportTrIn       = reportWhFilter === 'semua' ? 0 : reportLedgerScoped.filter(e => e.type === 'transfer' && e.toWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
+  const reportTrOut      = reportWhFilter === 'semua' ? 0 : reportLedgerScoped.filter(e => e.type === 'transfer' && e.fromWarehouseId === reportWhFilter).reduce((s, e) => s + e.qty, 0);
+  const reportTransferCt = reportLedgerScoped.filter(e => e.type === 'transfer').length;
   const reportNetQty     = reportMasukQty + reportTrIn - reportKeluarQty - reportTrOut;
 
   const currentQtyMap = new Map<string, number>();
@@ -738,7 +758,7 @@ export default function StockReportTab({
   const paginatedReportRows = reportDisplayRows.slice((safeReportPage - 1) * reportPageSize, safeReportPage * reportPageSize);
   const goReportPage     = (p: number) => setReportPage(Math.max(1, Math.min(p, totalReportPages)));
 
-  const reportLedgerSorted = [...reportLedgerFiltered].sort((a, b) => entrySeconds(b) - entrySeconds(a));
+  const reportLedgerSorted = [...reportLedgerScoped].sort((a, b) => entrySeconds(b) - entrySeconds(a));
   const totalReportTxPages = Math.max(1, Math.ceil(reportLedgerSorted.length / reportTxPageSize));
   const safeReportTxPage   = Math.min(reportTxPage, totalReportTxPages);
   const paginatedReportTx  = reportLedgerSorted.slice((safeReportTxPage - 1) * reportTxPageSize, safeReportTxPage * reportTxPageSize);
@@ -816,7 +836,7 @@ export default function StockReportTab({
       styleHeader(wsD, 3, ['Produk', 'Kategori', 'Stok Awal', 'Stok Akhir', 'HPP', 'Nilai Stok', 'Masuk', 'Keluar', 'Net', 'Status']);
       const catLabelFor = (id?: string) => categories.find(c => c.id === id)?.label ?? (id ?? '');
       const statusLabel = { habis: 'Habis', rendah: 'Rendah', normal: 'Normal', open_po: 'Open PO' };
-      [...reportRowsAll].sort((a, b) => b.nilai - a.nilai).forEach((r, i) => {
+      [...reportScopeRows].sort((a, b) => b.nilai - a.nilai).forEach((r, i) => {
         const rowNum = 4 + i;
         const row = wsD.getRow(rowNum);
         row.getCell(1).value = r.product.name;
@@ -874,7 +894,7 @@ export default function StockReportTab({
   const printReportPdf = async () => {
     setPrintingReportPdf(true);
     try {
-      const rows = [...reportRowsAll].sort((a, b) => b.nilai - a.nilai).map((r, i) => ({
+      const rows = [...reportScopeRows].sort((a, b) => b.nilai - a.nilai).map((r, i) => ({
         no: i + 1,
         productName: r.product.name,
         category: categories.find(c => c.id === r.product.category)?.label,
