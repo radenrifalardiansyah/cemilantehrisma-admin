@@ -1,4 +1,4 @@
-import { NextRequest, after } from 'next/server';
+import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
@@ -7,7 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
@@ -240,7 +240,7 @@ export async function POST(req: NextRequest) {
 
   revalidateTag('admin-materials', { expire: 0 });
   if (otherCost > 0) revalidateTag('admin-expenses', { expire: 0 });
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
 
   return Response.json({ id: batchId });
 }

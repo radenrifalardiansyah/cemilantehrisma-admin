@@ -3,7 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
 
@@ -135,7 +135,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for consignment recap delete', err);
   }
 
-  if (stockTouched) after(() => revalidateStorefront('products'));
+  if (stockTouched) revalidateProductStock();
   // Menghapus rekap mengubah total totalSold yang dijumlah di beranda storefront.
   after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
@@ -370,7 +370,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for consignment recap update', err);
   }
 
-  if (stockTouched) after(() => revalidateStorefront('products'));
+  if (stockTouched) revalidateProductStock();
   // Edit rekap menghitung ulang totalSold yang dijumlah di beranda storefront.
   after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });

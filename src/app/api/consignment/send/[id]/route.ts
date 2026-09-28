@@ -1,11 +1,11 @@
-import { NextRequest, after } from 'next/server';
+import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 
@@ -103,7 +103,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   revalidateTag(shipmentPdfTag(id), 'max');
   revalidateTag('admin-consignment-shipments-list', { expire: 0 });
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
   return Response.json({ ok: true });
 }
 
@@ -308,6 +308,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   revalidateTag(shipmentPdfTag(id), 'max');
   revalidateTag('admin-consignment-shipments-list', { expire: 0 });
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
   return Response.json({ ok: true });
 }

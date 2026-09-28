@@ -1,11 +1,11 @@
-import { NextRequest, after } from 'next/server';
+import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
@@ -276,7 +276,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
 
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
   return Response.json({ ok: true });
 }
 
@@ -398,6 +398,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
 
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
   return Response.json({ ok: true });
 }

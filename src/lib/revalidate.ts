@@ -1,3 +1,5 @@
+import { after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { SITE_URL } from '@/lib/branding';
 
 // Tells the storefront to drop its products/categories/stats cache right after we write to
@@ -17,4 +19,14 @@ export async function revalidateStorefront(tag: 'products' | 'categories' | 'sta
   } catch {
     // ignore — best-effort
   }
+}
+
+// Dipanggil setiap kali stok/HPP produk berubah di luar CRUD produk (pesanan, produksi, konsinyasi,
+// koreksi stok, stok gudang). Selain storefront, cache daftar produk admin (`admin-products`, TTL
+// 15 detik — dipakai POS & menu Produk) juga harus langsung dibuang; sebelumnya hanya CRUD produk
+// yang melakukannya, jadi stok di POS bisa masih angka lama sampai 15 detik setelah penjualan.
+// Hanya boleh dipanggil dari Route Handler / Server Function (syarat revalidateTag & after).
+export function revalidateProductStock() {
+  revalidateTag('admin-products', { expire: 0 });
+  after(() => revalidateStorefront('products'));
 }

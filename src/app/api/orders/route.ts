@@ -1,10 +1,10 @@
-import { NextRequest, after } from 'next/server';
+import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateProductStock } from '@/lib/revalidate';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
     console.error('Failed to send notification for new order', err);
   }
 
-  if (!isPreOrder && deltas.size > 0) after(() => revalidateStorefront('products'));
+  if (!isPreOrder && deltas.size > 0) revalidateProductStock();
 
   return Response.json({ id: orderId });
 }

@@ -1,8 +1,8 @@
-import { NextRequest, after } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateProductStock } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ productId: string }> };
 
@@ -52,6 +52,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal mencatat koreksi stok.' }, { status: 400 });
   }
 
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
   return Response.json({ ok: true });
 }

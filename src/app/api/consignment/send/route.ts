@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { NextRequest, after } from 'next/server';
+import { NextRequest } from 'next/server';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
@@ -7,7 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, readWarehouseShortagesPg, type WsSnapshot } from '@/lib/stock-pg';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 
@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
   }
 
   revalidateTag('admin-consignment-shipments-list', { expire: 0 });
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
 
   return Response.json({ id: shipmentId });
 }

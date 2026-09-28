@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
@@ -29,6 +30,7 @@ async function clearWarehouseProductStockTx(warehouseId: string, productId: stri
 
 export async function clearWarehouseProductStock(warehouseId: string, productId: string, note: string): Promise<void> {
   await clearWarehouseProductStockTx(warehouseId, productId, note);
+  revalidateTag('admin-products', { expire: 0 });
   await revalidateStorefront('products');
 }
 
@@ -53,6 +55,9 @@ export async function clearWarehouseStockForProducts(
       failed.push({ productId, error: err instanceof Error ? err.message : String(err) });
     }
   }
-  if (cleared.length > 0) await revalidateStorefront('products');
+  if (cleared.length > 0) {
+    revalidateTag('admin-products', { expire: 0 });
+    await revalidateStorefront('products');
+  }
   return { cleared, failed };
 }

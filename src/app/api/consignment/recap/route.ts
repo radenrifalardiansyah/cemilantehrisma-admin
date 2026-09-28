@@ -7,7 +7,7 @@ import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
 
@@ -248,7 +248,7 @@ export async function POST(req: NextRequest) {
     console.error('Failed to send notification for new consignment recap', err);
   }
 
-  if (items.some(it => it.qtyRetur > 0)) after(() => revalidateStorefront('products'));
+  if (items.some(it => it.qtyRetur > 0)) revalidateProductStock();
   // "Terjual" di beranda storefront juga menghitung totalSold dari consignmentRecaps.
   after(() => revalidateStorefront('stats'));
 

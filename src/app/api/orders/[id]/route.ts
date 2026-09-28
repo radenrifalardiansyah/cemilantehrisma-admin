@@ -6,7 +6,7 @@ import { restoreOrderStockInTxPg, RestorableOrderItem } from '@/lib/order-stock-
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { logHistory } from '@/lib/history';
 import { getSettings } from '@/lib/settings-pg';
-import { revalidateStorefront } from '@/lib/revalidate';
+import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { rowToOrder, OrderRow } from '@/lib/orders-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -159,7 +159,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     } catch (err) {
       console.error('Failed to write history for order edit', err);
     }
-    after(() => revalidateStorefront('products'));
+    revalidateProductStock();
     return Response.json({ ok: true });
   }
 
@@ -247,7 +247,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for order status update', err);
   }
 
-  if (statusResult.stockTouched) after(() => revalidateStorefront('products'));
+  if (statusResult.stockTouched) revalidateProductStock();
   // "Terjual" di beranda storefront dihitung dari qty pesanan berstatus 'selesai' — status
   // apapun yang berubah di sini bisa menggeser hitungan itu (jadi/lepas dari 'selesai').
   if (status !== undefined) after(() => revalidateStorefront('stats'));
@@ -286,6 +286,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     }
   }
 
-  after(() => revalidateStorefront('products'));
+  revalidateProductStock();
   return Response.json({ ok: true });
 }
