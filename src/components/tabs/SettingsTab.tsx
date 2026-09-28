@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Plus, Pencil, Trash2, X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Globe, Plus, Pencil, Trash2, X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -20,7 +20,9 @@ interface StoreSettings {
   legalName?: string;
   ownerName?: string; ownerSignature?: string; ownerStamp?: string;
   whatsapp?: string; instagramUrl?: string; tiktokUrl?: string; shopeeUrl?: string; mapsUrl?: string;
-  address?: string; city?: string;
+  address?: string; city?: string; region?: string; nib?: string; shopeeName?: string;
+  // Website & SEO storefront (dipakai di metadata, sitemap, JSON-LD, PDF proposal/invoice).
+  siteUrl?: string; seoTitle?: string; seoDescription?: string; seoKeywords?: string; googleSiteVerification?: string;
   privacyPolicy?: string; termsOfService?: string; returnPolicy?: string;
   minOrderWhatsapp?: string; openHours?: string;
   freeShippingMin?: number; resellerDiscount?: number;
@@ -89,15 +91,18 @@ const FIELD_GROUPS = [
       { key: 'ownerName',        label: 'Nama Pemilik',    type: 'text',     placeholder: 'Nama pemilik untuk tanda tangan PDF' },
       { key: 'address',          label: 'Alamat',          type: 'text',     placeholder: 'Jl. ...' },
       { key: 'city',             label: 'Kota',            type: 'text',     placeholder: 'Kota / Kabupaten' },
+      { key: 'region',           label: 'Nama Daerah (untuk teks "khas ...")', type: 'text', placeholder: 'Kosongkan = otomatis dari Kota, mis. Bogor' },
+      { key: 'nib',              label: 'NIB (Nomor Induk Berusaha)', type: 'text', placeholder: 'Tampil di PDF proposal & invoice' },
     ],
   },
   {
     id: 'contact', icon: <Phone size={15}/>, label: 'Kontak & Sosial Media',
     fields: [
-      { key: 'whatsapp',      label: 'WhatsApp',   type: 'text', placeholder: '628xxx' },
+      { key: 'whatsapp',      label: 'WhatsApp',   type: 'text', placeholder: '08xxx atau 628xxx' },
       { key: 'instagramUrl',  label: 'Instagram',  type: 'text', placeholder: 'https://instagram.com/...' },
       { key: 'tiktokUrl',     label: 'TikTok',     type: 'text', placeholder: 'https://tiktok.com/...' },
       { key: 'shopeeUrl',     label: 'Shopee',     type: 'text', placeholder: 'https://shopee.co.id/...' },
+      { key: 'shopeeName',    label: 'Nama Toko Shopee', type: 'text', placeholder: 'Kosongkan = pakai Nama Toko' },
       { key: 'mapsUrl',       label: 'Google Maps', type: 'text', placeholder: 'https://maps.app.goo.gl/...' },
     ],
   },
@@ -135,6 +140,16 @@ const FIELD_GROUPS = [
       { key: 'adminAppName',                   label: 'Nama Aplikasi Admin',           type: 'text',  placeholder: 'Admin Teh Risma' },
       { key: 'adminThemeColor',                label: 'Warna Tema Admin',              type: 'color', placeholder: '' },
       { key: 'adminThemeBackgroundColor',       label: 'Warna Latar Admin',             type: 'color', placeholder: '' },
+    ],
+  },
+  {
+    id: 'seo', icon: <Globe size={15}/>, label: 'Website & SEO',
+    fields: [
+      { key: 'siteUrl',                label: 'URL Website',              type: 'text',     placeholder: 'https://namatoko.vercel.app' },
+      { key: 'seoTitle',               label: 'Judul SEO (Google)',       type: 'text',     placeholder: 'Kosongkan = "Nama Toko — Tagline"' },
+      { key: 'seoDescription',         label: 'Deskripsi SEO (Google)',   type: 'textarea', placeholder: 'Kosongkan = pakai Deskripsi Toko' },
+      { key: 'seoKeywords',            label: 'Kata Kunci SEO (pisahkan koma)', type: 'textarea', placeholder: 'keripik kimpul, mie kremes, cemilan bogor' },
+      { key: 'googleSiteVerification', label: 'Kode Verifikasi Google Search Console', type: 'text', placeholder: 'Isi content dari meta google-site-verification' },
     ],
   },
   {
@@ -582,7 +597,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                       Logo Toko
                     </p>
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      Tampil di struk cetak kasir. Sebaiknya gambar persegi & latar polos. Klik ikon crop untuk atur ulang posisi & rotasi.
+                      Tampil di website (navbar, footer, splash, ikon aplikasi), PDF proposal & invoice, dan struk cetak kasir. Sebaiknya gambar persegi & latar polos. Klik ikon crop untuk atur ulang posisi & rotasi.
                     </p>
                   </div>
                 </div>
