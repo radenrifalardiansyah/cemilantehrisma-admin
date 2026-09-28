@@ -2178,7 +2178,7 @@ _${storeHeader.name}_`.trim();
                     {paginatedLocations.map((l, i) => {
                       const { qty: totalQty, value: totalValue } = locationStockTotals(l.id);
                       const isSelected = selectedLocations.has(l.id);
-                      const num = (safeLocationPage - 1) * locationPageSize + i + 1;
+                      const num = (safeLocationPage - 1) * (Number.isFinite(locationPageSize) ? locationPageSize : 0) + i + 1;
                       return (
                         <div key={l.id}>
                           <div className="flex flex-col gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
@@ -2418,7 +2418,7 @@ _${storeHeader.name}_`.trim();
                     <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                       {paginatedShipments.map((s, i) => {
                         const isSelected = selectedShipments.has(s.id);
-                        const num = (safeShipmentPage - 1) * shipmentPageSize + i + 1;
+                        const num = (safeShipmentPage - 1) * (Number.isFinite(shipmentPageSize) ? shipmentPageSize : 0) + i + 1;
                         return (
                           <div key={s.id} ref={el => { shipmentRowRefs.current[s.id] = el; }}>
                           <div className="flex items-start gap-3 px-4 py-3"
@@ -2650,7 +2650,7 @@ _${storeHeader.name}_`.trim();
                     <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                       {paginatedRecaps.map((r, i) => {
                         const isSelected = selectedRecaps.has(r.id);
-                        const num = (safeRecapPage - 1) * recapPageSize + i + 1;
+                        const num = (safeRecapPage - 1) * (Number.isFinite(recapPageSize) ? recapPageSize : 0) + i + 1;
                         return (
                           <div key={r.id} ref={el => { recapRowRefs.current[r.id] = el; }}>
                           <div className="flex items-start gap-3 px-4 py-3"
