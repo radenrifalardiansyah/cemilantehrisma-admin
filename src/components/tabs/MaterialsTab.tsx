@@ -582,6 +582,9 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     if (!materials.some(m => m.id === highlightMaterialId)) { onHighlightHandled?.(); return; }
     setSubTab('stok');
     setMaterialSearch('');
+    // Matikan juga filter "hanya ada stok" — halaman dihitung dari daftar tanpa filter, dan bahan yang
+    // dinotifikasi stok rendah bisa saja stoknya 0 (tersaring keluar) sehingga barisnya tidak ketemu.
+    setMaterialOnlyInStock(false);
     const idx = [...materials]
       .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }))
       .findIndex(m => m.id === highlightMaterialId);

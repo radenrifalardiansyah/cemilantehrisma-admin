@@ -948,7 +948,9 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const sendTotal = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.hargaTitip) || 0), 0);
   const sendTotalQty = sendRows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
-  const canSubmitSend = !!sendLocationId && !!sendWarehouseId
+  // Tanggal wajib valid — `new Date('').toISOString()` melempar RangeError saat submit, jadi tombol
+  // dinonaktifkan dulu kalau kolom Tanggal dikosongkan.
+  const canSubmitSend = !!sendLocationId && !!sendWarehouseId && !isNaN(new Date(sendDate).getTime())
     && sendRows.some(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0);
 
   const openCreateSend = () => {
@@ -1400,7 +1402,7 @@ _${storeHeader.name}_`.trim();
   const recapTotalReject  = recapRows.reduce((s, r) => s + r.reject, 0);
   const recapHasExceeds   = recapRows.some(r => r.exceeds);
   const recapNeedsWarehouse = recapTotalRetur + recapTotalReject > 0;
-  const canSubmitRecap    = !!recapLocationId && recapRows.some(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
+  const canSubmitRecap    = !!recapLocationId && !isNaN(new Date(recapDate).getTime()) && recapRows.some(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
     && !recapHasExceeds && (!recapNeedsWarehouse || !!recapWarehouseId)
     && (recapPaymentStatus === 'belum_lunas' || !!recapWalletId);
 
@@ -1823,6 +1825,8 @@ _${storeHeader.name}_`.trim();
     if (idx === -1) { onHighlightHandled?.(); return; }
     setSubTab('rekap');
     setRecapSearch('');
+    // Matikan juga filter "Belum Lunas" — halaman dihitung dari daftar tanpa filter.
+    setRecapOnlyBelumLunas(false);
     setRecapPage(Math.floor(idx / recapPageSize) + 1);
     setHighlightedRecapId(highlightRecapId);
     requestAnimationFrame(() => recapRowRefs.current[highlightRecapId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
