@@ -31,6 +31,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   try {
     await sql.begin(async pgTx => {
+      // Kunci baris ini lalu cek ulang — data di atas dibaca DI LUAR transaksi. Tanpa ini, dua request
+      // bersamaan (mis. double-klik / retry) sama-sama lolos validasi dan membalik stok yang sama dua kali.
+      const [locked] = await pgTx<{ updated_at: Date | null }[]>`select updated_at from consignment_shipments where id = ${id} for update`;
+      if (!locked) throw new Error('Riwayat kirim sudah dihapus.');
+      if ((locked.updated_at?.getTime() ?? null) !== (shipmentRow.updated_at?.getTime() ?? null)) {
+        throw new Error('Riwayat kirim baru saja diubah — muat ulang lalu coba lagi.');
+      }
+
       const productIds = items.map(it => it.productId);
       const stockKeys  = items.map(it => `${shipment.locationId}_${it.productId}`);
       const [productRows, stockRows] = await Promise.all([
@@ -145,6 +153,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   try {
     await sql.begin(async pgTx => {
+      // Kunci baris ini lalu cek ulang — data di atas dibaca DI LUAR transaksi. Tanpa ini, dua request
+      // bersamaan (mis. double-klik / retry) sama-sama lolos validasi dan membalik stok yang sama dua kali.
+      const [locked] = await pgTx<{ updated_at: Date | null }[]>`select updated_at from consignment_shipments where id = ${id} for update`;
+      if (!locked) throw new Error('Riwayat kirim sudah dihapus.');
+      if ((locked.updated_at?.getTime() ?? null) !== (shipmentRow.updated_at?.getTime() ?? null)) {
+        throw new Error('Riwayat kirim baru saja diubah — muat ulang lalu coba lagi.');
+      }
+
       const [productRows, stockRows] = await Promise.all([
         productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
         stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],

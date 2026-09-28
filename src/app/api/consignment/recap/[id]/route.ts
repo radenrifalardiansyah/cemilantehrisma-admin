@@ -8,7 +8,7 @@ import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
-interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number }
+interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; costPrice?: number }
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
 // Tandai Lunas — pendapatan konsinyasi dibaca langsung dari totalRevenue rekap ini di Laporan
@@ -56,6 +56,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   try {
     await sql.begin(async pgTx => {
+      // Kunci baris ini lalu cek ulang — data di atas dibaca DI LUAR transaksi. Tanpa ini, dua request
+      // bersamaan (mis. double-klik / retry) sama-sama lolos validasi dan membalik stok yang sama dua kali.
+      const [locked] = await pgTx<{ updated_at: Date | null }[]>`select updated_at from consignment_recaps where id = ${id} for update`;
+      if (!locked) throw new Error('Riwayat rekap sudah dihapus.');
+      if ((locked.updated_at?.getTime() ?? null) !== (recapRow.updated_at?.getTime() ?? null)) {
+        throw new Error('Riwayat rekap baru saja diubah — muat ulang lalu coba lagi.');
+      }
+
       const stockKeys = items.map(it => `${recap.locationId}_${it.productId}`);
       const productIds = returItems.map(it => it.productId);
       const wsKeys = returItems.map(it => `${recap.warehouseId}_${it.productId}`);
@@ -146,7 +154,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
   };
   const newItems = (data.items ?? [])
-    .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
+    .map(it => ({ ...it, qtySold: Number(it.qtySold) || 0, qtyRetur: Number(it.qtyRetur) || 0, qtyReject: Number(it.qtyReject) || 0 }))
     .filter(it => it.qtySold > 0 || it.qtyRetur > 0 || it.qtyReject > 0);
   if (newItems.length === 0) return Response.json({ error: 'Isi minimal 1 produk dengan qty terjual, retur, atau reject.' }, { status: 400 });
   const paymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
@@ -190,15 +198,19 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   });
   const wsKeys = [...wsMeta.keys()];
 
-  interface RecapItemComputed extends RecapItemInput { hargaTitip: number; revenue: number }
+  interface RecapItemComputed extends RecapItemInput { hargaTitip: number; revenue: number; costPrice: number; cogs: number }
   let recapItems: RecapItemComputed[] = [];
   let totalSold = 0, totalRetur = 0, totalReject = 0, totalRevenue = 0;
 
   try {
     await sql.begin(async pgTx => {
-      // Kunci baris rekap ini SEBELUM baca ulang state produk/stok — cegah dua edit bersamaan
-      // pada rekap yang sama saling menimpa.
-      await pgTx`select id from consignment_recaps where id = ${id} for update`;
+      // Kunci baris ini lalu cek ulang — data di atas dibaca DI LUAR transaksi. Tanpa ini, dua request
+      // bersamaan (mis. double-klik / retry) sama-sama lolos validasi dan membalik stok yang sama dua kali.
+      const [locked] = await pgTx<{ updated_at: Date | null }[]>`select updated_at from consignment_recaps where id = ${id} for update`;
+      if (!locked) throw new Error('Riwayat rekap sudah dihapus.');
+      if ((locked.updated_at?.getTime() ?? null) !== (oldRecapRowPeek.updated_at?.getTime() ?? null)) {
+        throw new Error('Riwayat rekap baru saja diubah — muat ulang lalu coba lagi.');
+      }
 
       const [productRows, stockRows, wsRows] = await Promise.all([
         productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
@@ -253,11 +265,22 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       });
       if (shortages.length > 0) throw new Error(`Qty melebihi stok di lokasi: ${shortages.join(', ')}`);
 
+      // Snapshot HPP (costPrice) — pertahankan snapshot dari rekap lama per produk supaya HPP/laba
+      // historis tidak ikut bergeser ke harga modal terkini saat rekap diedit. Produk yang baru
+      // ditambahkan di edit ini memakai costPrice produk saat ini (sama seperti POST).
+      const oldCostByPid = new Map(oldItems.filter(it => it.costPrice != null).map(it => [it.productId, Number(it.costPrice) || 0]));
+      const needCostIds = [...new Set(newItems.map(it => it.productId).filter(pid => !oldCostByPid.has(pid)))];
+      const costRows = needCostIds.length > 0
+        ? await pgTx<{ id: string; cost_price: string | null }[]>`select id, cost_price from products where id in ${pgTx(needCostIds)}`
+        : [];
+      const currentCostByPid = new Map(costRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0]));
+
       recapItems = newItems.map(it => {
         const s = stockState.get(`${data.locationId}_${it.productId}`)!;
         const hargaTitip = s.hargaTitip;
         s.stockQty -= (it.qtySold + it.qtyRetur + it.qtyReject);
-        return { ...it, hargaTitip, revenue: it.qtySold * hargaTitip };
+        const costPrice = oldCostByPid.get(it.productId) ?? currentCostByPid.get(it.productId) ?? 0;
+        return { ...it, hargaTitip, revenue: it.qtySold * hargaTitip, costPrice, cogs: it.qtySold * costPrice };
       });
       totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
       totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
