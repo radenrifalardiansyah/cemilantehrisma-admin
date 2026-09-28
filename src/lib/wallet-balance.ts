@@ -56,6 +56,8 @@ export async function computeWalletBalance(
   // Dipakai saat mengedit sebuah entri Modal/Prive atau Pengeluaran — supaya kontribusi lama entri
   // itu sendiri dikeluarkan dulu dari total sebelum divalidasi ulang dengan nilai barunya (kalau
   // tidak, edit yang cuma mengubah catatan pun bisa keblokir oleh kontribusinya sendiri).
+  // Dikeluarkan dari total Modal DAN Prive — entri Modal yang diubah jadi Prive tidak boleh ikut
+  // dihitung sebagai modal lama yang "menutupi" prive barunya sendiri.
   excludeCapitalEntryId?: string,
   excludeExpenseId?: string,
 ): Promise<number> {
@@ -63,7 +65,7 @@ export async function computeWalletBalance(
   const sql = pgTx ?? getSql();
   const [pgTotals] = await sql<{ total_modal: string; total_prive: string; total_in: string; total_out: string; total_income: string; total_expenses: string; total_orders: string; total_recaps: string }[]>`
     select
-      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal'), 0) as total_modal,
+      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal' and id != ${excludeCapitalEntryId ?? ''}), 0) as total_modal,
       coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive' and id != ${excludeCapitalEntryId ?? ''}), 0) as total_prive,
       coalesce((select sum(amount) from wallet_transfers where to_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_in,
       coalesce((select sum(amount) from wallet_transfers where from_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_out,
