@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'production', 'view');
   if (guard instanceof Response) return guard;
   const { searchParams } = new URL(req.url);
-  const limit = parseInt(searchParams.get('limit') ?? '50');
+  // `?limit=all` → tanpa batas (LIMIT NULL di Postgres) — dipakai tab riwayat supaya pencarian,
+  // opsi tampil "Semua", dan export tidak diam-diam terpotong di 50 data terakhir.
+  const limitParam = searchParams.get('limit');
+  const limit = limitParam === 'all' ? null : parseInt(limitParam ?? '50') || 50;
   const sql = getSql();
   const rows = await sql<ProductionBatchRow[]>`select * from production_batches order by created_at desc limit ${limit}`;
   const batches = rows.map(rowToBatch);

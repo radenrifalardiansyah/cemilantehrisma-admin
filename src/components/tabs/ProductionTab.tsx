@@ -133,7 +133,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const [batchesLoading, setBatchesLoading] = useState(true);
   const loadBatches = async () => {
     setBatchesLoading(true);
-    const r = await fetch(`${API}/api/production?limit=50`, { headers });
+    const r = await fetch(`${API}/api/production?limit=all`, { headers });
     if (r.ok) setBatches((await r.json() as { batches: ProductionBatch[] }).batches);
     setBatchesLoading(false);
   };

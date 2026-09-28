@@ -186,7 +186,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [purchasesLoading, setPurchasesLoading] = useState(true);
   const loadPurchases = async () => {
     setPurchasesLoading(true);
-    const r = await fetch(`${API}/api/material-purchases?limit=50`, { headers });
+    const r = await fetch(`${API}/api/material-purchases?limit=all`, { headers });
     if (r.ok) setPurchases((await r.json() as { purchases: Purchase[] }).purchases);
     setPurchasesLoading(false);
   };

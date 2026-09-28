@@ -390,8 +390,10 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     setHistoryLoading(true);
     try {
       const [sr, rr] = await Promise.all([
-        fetch(`${API}/api/consignment/send?limit=500`, { headers }),
-        fetch(`${API}/api/consignment/recap?limit=500`, { headers }),
+        // from=2000-01-01 = seluruh riwayat (konvensi yang sama dengan route recap) — tanpa `from`, API
+        // hanya mengembalikan N data terbaru dari SEMUA lokasi, jadi riwayat lama lokasi ini bisa hilang.
+        fetch(`${API}/api/consignment/send?from=2000-01-01`, { headers }),
+        fetch(`${API}/api/consignment/recap?from=2000-01-01`, { headers }),
       ]);
       const sData = sr.ok ? (await sr.json() as { shipments: Shipment[] }).shipments : [];
       const rData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
