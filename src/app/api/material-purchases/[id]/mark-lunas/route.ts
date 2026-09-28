@@ -28,6 +28,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
       if (!row) throw new Error('Pembelian tidak ditemukan.');
       const purchase = rowToPurchase(row);
+      if (purchase.voided) throw new Error('Pembelian ini sudah dibatalkan dan tidak bisa ditandai lunas.');
       if (purchase.paymentStatus !== 'belum_lunas') return { before: purchase, didMark: false }; // sudah lunas, tidak perlu apa-apa
 
       await pgTx`update material_purchases set payment_status = 'lunas', expense_id = ${expenseId}, updated_at = now() where id = ${id}`;

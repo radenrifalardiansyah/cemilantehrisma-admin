@@ -50,6 +50,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
       if (!row) throw new Error('Pembelian tidak ditemukan.');
       const purchase = rowToPurchase(row);
+      if (purchase.voided) throw new Error('Pembelian ini sudah dibatalkan dan tidak bisa diedit.');
       let expenseChangedLocal = false;
       const oldItems = purchase.items;
       const itemsChanged = itemsKey(oldItems) !== itemsKey(newItems);
@@ -204,7 +205,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       if (!row) throw new Error('Pembelian tidak ditemukan.');
       const purchase = rowToPurchase(row);
       let deleted = false;
-      const items = purchase.items;
+      // Pembelian yang sudah di-void stoknya SUDAH dikembalikan oleh route void (atau sengaja
+      // dibiarkan kalau reversal-nya dilewati) — jangan dikembalikan lagi di sini, cukup hapus
+      // barisnya. Tanpa ini, stok bahan baku berkurang dua kali.
+      const items = purchase.voided ? [] : purchase.items;
 
       const materialIds = items.map(it => it.materialId);
       const materialRows = materialIds.length > 0
