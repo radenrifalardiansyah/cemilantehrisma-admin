@@ -882,61 +882,71 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <button type="button" onClick={() => setOpenDetail('omzet')}
-              className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--success-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
-                <TrendingUp size={16} />
+              className="card p-4 flex flex-col gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--success-bg)' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
+                  <TrendingUp size={16} />
+                </div>
+                <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--success)' }}>{formatRp(totalPendapatan)}</p>
+              <div className="min-w-0">
+                <p className="text-lg lg:text-base xl:text-lg font-extrabold tabular leading-tight break-words" style={{ color: 'var(--success)' }}>{formatRp(totalPendapatan)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   Omzet <InfoTip label={GLOSSARY_LABA_RUGI[0].desc} />
                 </p>
               </div>
-              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
             </button>
             <button type="button" onClick={() => setOpenDetail('hpp')}
-              className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--surface-2)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(180,83,9,0.15)', color: '#B45309' }}>
-                <Package size={16} />
+              className="card p-4 flex flex-col gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--surface-2)' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(180,83,9,0.15)', color: '#B45309' }}>
+                  <Package size={16} />
+                </div>
+                <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: '#B45309' }}>{formatRp(hpp)}</p>
+              <div className="min-w-0">
+                <p className="text-lg lg:text-base xl:text-lg font-extrabold tabular leading-tight break-words" style={{ color: '#B45309' }}>{formatRp(hpp)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   HPP <InfoTip label={GLOSSARY_LABA_RUGI[1].desc} />
                 </p>
               </div>
-              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
             </button>
-            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--accent-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(212,105,30,0.15)', color: 'var(--accent)' }}>
-                <PieChart size={16} />
+            <div className="card p-4 flex flex-col gap-3" style={{ background: 'var(--accent-bg)' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(212,105,30,0.15)', color: 'var(--accent)' }}>
+                  <PieChart size={16} />
+                </div>
               </div>
               <div className="min-w-0">
-                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--accent)' }}>{formatRp(labaKotor)}</p>
+                <p className="text-lg lg:text-base xl:text-lg font-extrabold tabular leading-tight break-words" style={{ color: 'var(--accent)' }}>{formatRp(labaKotor)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   Laba Kotor <InfoTip label={GLOSSARY_LABA_RUGI[2].desc} />
                 </p>
               </div>
             </div>
             <button type="button" onClick={() => setOpenDetail('beban')}
-              className="card p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--danger-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--danger)' }}>
-                <Receipt size={16} />
+              className="card p-4 flex flex-col gap-3 text-left transition-transform active:scale-[0.98]" style={{ background: 'var(--danger-bg)' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--danger)' }}>
+                  <Receipt size={16} />
+                </div>
+                <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--danger)' }}>{formatRp(totalBebanOperasional)}</p>
+              <div className="min-w-0">
+                <p className="text-lg lg:text-base xl:text-lg font-extrabold tabular leading-tight break-words" style={{ color: 'var(--danger)' }}>{formatRp(totalBebanOperasional)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   Beban Operasional <InfoTip label={GLOSSARY_LABA_RUGI[3].desc} />
                 </p>
               </div>
-              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
             </button>
-            <div className="card p-4 flex items-center gap-3" style={{ background: labaBersih >= 0 ? 'var(--accent-bg)' : 'var(--danger-bg)' }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: labaBersih >= 0 ? 'rgba(212,105,30,0.15)' : 'rgba(220,38,38,0.15)', color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
-                <Wallet size={16} />
+            <div className="card p-4 flex flex-col gap-3" style={{ background: labaBersih >= 0 ? 'var(--accent-bg)' : 'var(--danger-bg)' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: labaBersih >= 0 ? 'rgba(212,105,30,0.15)' : 'rgba(220,38,38,0.15)', color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                  <Wallet size={16} />
+                </div>
               </div>
               <div className="min-w-0">
-                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{formatRp(labaBersih)}</p>
+                <p className="text-lg lg:text-base xl:text-lg font-extrabold tabular leading-tight break-words" style={{ color: labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' }}>{formatRp(labaBersih)}</p>
                 <p className="text-[11px] font-medium mt-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                   {labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih'} <InfoTip label={GLOSSARY_LABA_RUGI[4].desc} />
                 </p>
