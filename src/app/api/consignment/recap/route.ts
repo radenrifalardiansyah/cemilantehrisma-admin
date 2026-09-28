@@ -4,7 +4,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { CONSIGNMENT_RECAP_VIEW_KEYS } from '@/lib/permissions';
-import { wibDayStart, wibDayEnd } from '@/lib/date';
+import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
@@ -77,10 +77,13 @@ export async function GET(req: NextRequest) {
   // Lazy overdue check — dijalankan tiap daftar rekap dibuka, bukan lewat cron (tidak ada infra
   // scheduler saat ini).
   // `overdueNotifiedAt` jadi flag idempoten supaya notifikasi cuma ditulis sekali per rekap.
-  const now = Date.now();
+  // Dibandingkan per hari kalender WIB — dueDate 'yyyy-mm-dd' tersimpan sebagai 00:00 UTC (07:00 WIB),
+  // jadi membandingkan momen langsung membuat notifikasi terkirim pagi hari DI tanggal jatuh tempo,
+  // bukan setelah harinya lewat.
+  const todayWib = wibDateKey(new Date());
   await Promise.all(recaps.map(async r => {
     if (r.paymentStatus !== 'belum_lunas' || !r.dueDate || r.overdueNotifiedAt) return;
-    if (r.dueDate.seconds * 1000 > now) return;
+    if (wibDateKey(new Date(r.dueDate.seconds * 1000)) >= todayWib) return;
     await notify(db, {
       type: 'consignment_overdue',
       title: 'Konsinyasi jatuh tempo',
