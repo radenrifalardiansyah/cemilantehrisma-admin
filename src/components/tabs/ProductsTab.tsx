@@ -10,6 +10,7 @@ import {
   Eye, EyeOff,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { cellText, cellNumber } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
@@ -311,19 +312,21 @@ export default function ProductsTab({ creds }: { creds: string }) {
       ws.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRowNum) return;
         const raw: Record<string, string> = Object.fromEntries(PRODUCT_TEMPLATE_COLS.map(c => [c.key, '']));
+        const vals: Record<string, unknown> = {};
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const field = colField.get(colNumber);
           if (!field) return;
-          raw[field] = cell.value?.toString().trim() ?? '';
+          raw[field] = cellText(cell.value);
+          vals[field] = cell.value;
         });
         if (!raw.name.trim()) return;
         const categoryId = catIdByName.get(raw.category.trim().toLowerCase());
         if (!categoryId) return;
         rows.push({
           code: raw.code, name: raw.name, category: categoryId,
-          price: Number(raw.price.replace(/[^0-9.-]/g, '')) || 0,
-          originalPrice: Number(raw.originalPrice.replace(/[^0-9.-]/g, '')) || undefined,
-          weight: raw.weight, stockQty: Number(raw.stockQty.replace(/[^0-9.-]/g, '')) || 0,
+          price: cellNumber(vals.price) || 0,
+          originalPrice: cellNumber(vals.originalPrice) || undefined,
+          weight: raw.weight, stockQty: cellNumber(vals.stockQty) || 0,
           openPO: /^ya$/i.test(raw.openPO.trim()), badge: raw.badge, description: raw.description,
         });
       });

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { cellText, cellNumber } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import OrderInvoicePDF, { type OrderInvoiceData } from '@/lib/pdf/OrderInvoicePDF';
@@ -906,18 +907,20 @@ _${storeName}_`.trim();
       ws.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRowNum) return;
         const raw: Record<string, string> = Object.fromEntries(ORDER_TEMPLATE_COLS.map(c => [c.key, '']));
+        const vals: Record<string, unknown> = {};
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const field = colField.get(colNumber);
           if (!field) return;
-          raw[field] = cell.value?.toString().trim() ?? '';
+          raw[field] = cellText(cell.value);
+          vals[field] = cell.value;
         });
         if (!raw.customerName.trim()) return;
         rows.push({
           invoiceNo: raw.invoiceNo, date: raw.date, customerName: raw.customerName, customerPhone: raw.customerPhone,
           itemsText: raw.itemsText,
-          subtotal: Number(raw.subtotal.replace(/[^0-9.-]/g, '')) || undefined,
-          discount: Number(raw.discount.replace(/[^0-9.-]/g, '')) || undefined,
-          total: Number(raw.total.replace(/[^0-9.-]/g, '')) || 0,
+          subtotal: cellNumber(vals.subtotal) || undefined,
+          discount: cellNumber(vals.discount) || undefined,
+          total: cellNumber(vals.total) || 0,
           status: raw.status,
         });
       });

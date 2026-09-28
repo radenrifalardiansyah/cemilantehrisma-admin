@@ -12,6 +12,7 @@ import ImageUploadBox from '@/components/ImageUploadBox';
 import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import ExcelJS from 'exceljs';
+import { cellText } from '@/lib/excel-cell';
 import { pdf, Document } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
@@ -807,7 +808,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const field = colField.get(colNumber);
           if (!field) return;
-          raw[field] = cell.value?.toString().trim() ?? '';
+          raw[field] = cellText(cell.value);
         });
         if (!raw.name.trim()) return;
         rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '', logoUrl: '' });

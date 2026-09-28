@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { cellText } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
@@ -253,7 +254,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const field = colField.get(colNumber);
           if (!field) return;
-          raw[field] = cell.value?.toString().trim() ?? '';
+          raw[field] = cellText(cell.value);
         });
         if (raw.name.trim()) {
           rows.push({ ...EMPTY_CUSTOMER, ...raw, type: normalizeCustomerType(raw.type) });

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
+import { cellText, cellNumber } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
@@ -376,7 +377,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const field = colField.get(colNumber);
           if (!field) return;
-          raw[field] = cell.value?.toString().trim() ?? '';
+          raw[field] = cellText(cell.value);
         });
         if (raw.name.trim() && raw.unit.trim()) rows.push({ name: raw.name, unit: raw.unit, minStock: '' });
       });
@@ -848,15 +849,17 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       ws.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRowNum) return;
         const raw = Object.fromEntries(PURCHASE_TEMPLATE_COLS.map(c => [c.key, ''])) as Record<PurchaseTemplateKey, string>;
+        const vals: Partial<Record<PurchaseTemplateKey, unknown>> = {};
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const field = colField.get(colNumber);
           if (!field) return;
-          raw[field] = cell.value?.toString().trim() ?? '';
+          raw[field] = cellText(cell.value);
+          vals[field] = cell.value;
         });
         if (!raw.materialName.trim()) return;
         const material = matIdByName.get(raw.materialName.trim().toLowerCase());
-        const qty = Number(raw.qty.replace(/[^0-9.-]/g, '')) || 0;
-        const price = Number(raw.price.replace(/[^0-9.-]/g, '')) || 0;
+        const qty = cellNumber(vals.qty) || 0;
+        const price = cellNumber(vals.price) || 0;
         if (!material || qty <= 0 || price <= 0) { skippedInvalidClient++; return; }
         rows.push({
           materialId: material.id, materialName: material.name, unit: material.unit, qty, price,

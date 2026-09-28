@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import ExcelJS from 'exceljs';
+import { cellText, cellNumber } from '@/lib/excel-cell';
 import {
   Factory, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, AlertTriangle,
   Search, ChevronLeft, ChevronRight, Upload,
@@ -502,8 +503,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       let created = 0;
       for (let r = headerRowNum + 1; r <= ws.rowCount; r++) {
         const row = ws.getRow(r);
-        const get = (col: number) => { const v = row.getCell(col).value; return v == null ? '' : String(v).trim(); };
-        const tglRaw = get(1), gudangRaw = get(2), produkRaw = get(3), bahanRaw = get(4), biayaLainRaw = get(5), catatanRaw = get(6);
+        const get = (col: number) => cellText(row.getCell(col).value);
+        const tglRaw = get(1), gudangRaw = get(2), produkRaw = get(3), bahanRaw = get(4), catatanRaw = get(6);
         if (!tglRaw && !gudangRaw && !produkRaw && !bahanRaw) continue; // baris kosong, lewati
 
         const rowLabel = `Baris ${r}`;
@@ -538,7 +539,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
           date: /^\d{4}-\d{2}-\d{2}$/.test(tglRaw) ? tglRaw : todayISO(),
           outputs, materialsUsed,
           warehouseId: warehouse.id, warehouseName: warehouse.name,
-          otherCost: parseFloat(biayaLainRaw.replace(/[^0-9.-]/g, '')) || 0,
+          otherCost: cellNumber(row.getCell(5).value) || 0,
           note: catatanRaw,
         };
         const res = await fetch(`${API}/api/production`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
