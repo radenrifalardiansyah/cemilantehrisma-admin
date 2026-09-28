@@ -57,8 +57,10 @@ function periodRange(period: PeriodKey, customFrom: string, customTo: string): {
     case 'today': return { from: today, to: today };
     case '7d': { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: toISO(d), to: today }; }
     case '30d': { const d = new Date(now); d.setDate(d.getDate() - 29); return { from: toISO(d), to: today }; }
-    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: toISO(d), to: today }; }
-    case 'year': { const d = new Date(now.getFullYear(), 0, 1); return { from: toISO(d), to: today }; }
+    // Bulan/tahun kalender penuh (bukan dipotong sampai hari ini) — sama seperti src/lib/period.ts,
+    // supaya entri bertanggal setelah hari ini (mis. sewa yang dicatat di muka) tetap muncul.
+    case 'month': { const d = new Date(now.getFullYear(), now.getMonth(), 1); const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); return { from: toISO(d), to: toISO(end) }; }
+    case 'year': { const d = new Date(now.getFullYear(), 0, 1); const end = new Date(now.getFullYear(), 11, 31); return { from: toISO(d), to: toISO(end) }; }
     case 'custom': return { from: customFrom || today, to: customTo || today };
   }
 }
@@ -318,7 +320,10 @@ export default function IncomeTab({ creds }: { creds: string }) {
   // ── Ringkasan (sesuai periode terpilih) ───────────────────────
   const periodLabel = PERIOD_OPTIONS.find(p => p.id === period)?.label ?? '';
   const totalPeriode = income.reduce((s, i) => s + i.amount, 0);
-  const daysInRange  = Math.max(1, Math.round((new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000) + 1);
+  // Rata-rata dihitung sampai hari ini (bukan sampai akhir bulan/tahun) supaya angkanya tidak
+  // mengecil karena hari-hari yang belum lewat.
+  const avgTo        = to < toISO(new Date()) ? to : toISO(new Date());
+  const daysInRange  = Math.max(1, Math.round((new Date(`${avgTo}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000) + 1);
   const avgPerDay    = totalPeriode / daysInRange;
 
   const categoryOptions = [
