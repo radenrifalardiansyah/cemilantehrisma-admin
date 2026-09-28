@@ -55,13 +55,17 @@ export async function POST(req: NextRequest) {
       const itemsWithSubtotal = items.map(it => ({ ...it, subtotal: it.qty * it.price }));
       const total = itemsWithSubtotal.reduce((s, it) => s + it.subtotal, 0);
 
+      // State berjalan per bahan baku — bahan yang sama bisa muncul di lebih dari satu baris (mis.
+      // 5 kg + 3 kg Tepung), jadi tiap baris harus melihat hasil baris sebelumnya, bukan nilai awal.
+      const state = new Map([...materialById].map(([mid, m]) => [mid, { qty: Number(m.stock_qty) || 0, avg: Number(m.avg_cost) || 0 }]));
       for (const it of items) {
-        const m = materialById.get(it.materialId)!;
-        const oldQty = Number(m.stock_qty) || 0;
-        const oldAvg = Number(m.avg_cost) || 0;
-        const newQty = oldQty + it.qty;
-        const newAvg = newQty > 0 ? (oldQty * oldAvg + it.qty * it.price) / newQty : 0;
-        await pgTx`update raw_materials set stock_qty = ${newQty}, avg_cost = ${newAvg}, updated_at = now() where id = ${it.materialId}`;
+        const st = state.get(it.materialId)!;
+        const qty = st.qty + it.qty;
+        const avg = qty > 0 ? (st.qty * st.avg + it.qty * it.price) / qty : 0;
+        state.set(it.materialId, { qty, avg });
+      }
+      for (const [mid, st] of state) {
+        await pgTx`update raw_materials set stock_qty = ${st.qty}, avg_cost = ${st.avg}, updated_at = now() where id = ${mid}`;
       }
 
       // Catat otomatis sebagai Pengeluaran (uang keluar beneran saat beli bahan baku) — cuma kalau

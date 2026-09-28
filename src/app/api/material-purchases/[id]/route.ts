@@ -233,15 +233,19 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         throw new Error(`Tidak bisa dihapus — bahan baku sudah dibeli/dipakai lagi setelah transaksi ini: ${blockedNames.join(', ')}.`);
       }
 
-      for (const it of items) {
-        const m = materialById.get(it.materialId);
-        if (!m) continue;
-        const curQty = Number(m.stock_qty) || 0;
-        const curAvg = Number(m.avg_cost) || 0;
-        const oldQty = curQty - it.qty;
+      // State berjalan per bahan baku, dibalik dari baris terakhir — bahan yang sama bisa muncul di
+      // lebih dari satu baris, jadi tiap reversal harus melihat hasil reversal sebelumnya.
+      const state = new Map([...materialById].map(([mid, m]) => [mid, { qty: Number(m.stock_qty) || 0, avg: Number(m.avg_cost) || 0 }]));
+      for (const it of [...items].reverse()) {
+        const st = state.get(it.materialId);
+        if (!st) continue;
+        const qty = st.qty - it.qty;
         // Kebalikan dari rumus rata-rata tertimbang saat pembelian: curAvg = (oldQty*oldAvg + qty*price) / curQty
-        const oldAvg = oldQty > 0 ? (curAvg * curQty - it.qty * it.price) / oldQty : 0;
-        await pgTx`update raw_materials set stock_qty = ${Math.max(0, oldQty)}, avg_cost = ${Math.max(0, oldAvg)}, updated_at = now() where id = ${it.materialId}`;
+        const avg = qty > 0 ? (st.avg * st.qty - it.qty * it.price) / qty : 0;
+        state.set(it.materialId, { qty, avg });
+      }
+      for (const [mid, st] of state) {
+        await pgTx`update raw_materials set stock_qty = ${Math.max(0, st.qty)}, avg_cost = ${Math.max(0, st.avg)}, updated_at = now() where id = ${mid}`;
       }
 
       if (purchase.expenseId) {
