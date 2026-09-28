@@ -65,6 +65,33 @@ export async function readProductsForDeltasPg(
   return { products, shortages, shortageDetails };
 }
 
+// Cek stok per gudang untuk delta keluar (negatif). `readProductsForDeltasPg` hanya mengecek stok
+// total produk, jadi tanpa ini gudang A (stok 2) bisa dikeluarkan 5 selama gudang B masih punya
+// stok — warehouse_stock A jadi -3. Baris warehouse_stock ikut dikunci (FOR UPDATE, urut id)
+// supaya dua transaksi keluar bersamaan dari gudang yang sama tidak lolos dari angka yang sama.
+export async function readWarehouseShortagesPg(
+  pgTx: PgTx,
+  warehouseId: string | null | undefined,
+  deltas: Map<string, number>,
+  names: Map<string, string>,
+): Promise<string[]> {
+  if (!warehouseId) return [];
+  const outIds = [...deltas].filter(([, d]) => d < 0).map(([pid]) => pid);
+  if (outIds.length === 0) return [];
+  const keys = outIds.map(pid => `${warehouseId}_${pid}`);
+  const rows = await pgTx<{ id: string; stock_qty: string }[]>`
+    select id, stock_qty from warehouse_stock where id in ${pgTx(keys)} order by id for update
+  `;
+  const qtyByKey = new Map(rows.map(r => [r.id, Number(r.stock_qty) || 0]));
+  const shortages: string[] = [];
+  outIds.forEach((pid, i) => {
+    const qty = qtyByKey.get(keys[i]) ?? 0;
+    const need = -deltas.get(pid)!;
+    if (qty < need) shortages.push(`${names.get(pid) || pid} (stok di gudang ini ${qty}, butuh ${need})`);
+  });
+  return shortages;
+}
+
 export async function applyStockDeltaPg(
   pgTx: PgTx,
   opts: { productId: string; product: ProductStockInfoPg; warehouseId?: string; delta: number },

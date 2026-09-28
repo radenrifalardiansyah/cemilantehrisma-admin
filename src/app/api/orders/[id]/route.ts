@@ -3,7 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { restoreOrderStockInTxPg, RestorableOrderItem } from '@/lib/order-stock-pg';
-import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
+import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { logHistory } from '@/lib/history';
 import { getSettings } from '@/lib/settings-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
@@ -105,6 +105,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           const stockDeltas = new Map([...deltas].map(([pid, d]) => [pid, -d] as [string, number]));
           const { products, shortages } = await readProductsForDeltasPg(pgTx, stockDeltas);
           if (shortages.length > 0) throw new OrderValidationError(`Stok tidak cukup: ${shortages.join(', ')}`);
+          const wsShortages = await readWarehouseShortagesPg(pgTx, order.warehouseId, stockDeltas, new Map([...products].map(([pid, p]) => [pid, p.name])));
+          if (wsShortages.length > 0) throw new OrderValidationError(`Stok gudang tidak cukup: ${wsShortages.join(', ')}`);
           for (const [pid, stockDelta] of stockDeltas) {
             const product = products.get(pid)!;
             await applyStockDeltaPg(pgTx, { productId: pid, product, warehouseId: order.warehouseId, delta: stockDelta });
@@ -203,6 +205,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (deltas.size > 0) {
           const { products, shortages } = await readProductsForDeltasPg(pgTx, deltas);
           if (shortages.length > 0) throw new OrderValidationError(`Stok tidak cukup: ${shortages.join(', ')}`);
+          const wsShortages = await readWarehouseShortagesPg(pgTx, warehouseId, deltas, new Map([...products].map(([pid, p]) => [pid, p.name])));
+          if (wsShortages.length > 0) throw new OrderValidationError(`Stok gudang tidak cukup: ${wsShortages.join(', ')}`);
           for (const [productId, delta] of deltas) {
             const product = products.get(productId)!;
             await applyStockDeltaPg(pgTx, { productId, product, warehouseId, delta });

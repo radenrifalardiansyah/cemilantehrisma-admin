@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
+import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
@@ -92,6 +92,11 @@ export async function POST(req: NextRequest) {
       const hasOpenPOItem = [...deltas.keys()].some(pid => !!products.get(pid)?.openPO);
       isPreOrder = data.isPreOrder === true && hasOpenPOItem;
       if (!isPreOrder && shortageDetails.length > 0) throw new Error(`Stok tidak cukup: ${shortageDetails.map(s => s.message).join(', ')}`);
+      if (!isPreOrder) {
+        const names = new Map([...products].map(([pid, p]) => [pid, p.name]));
+        const wsShortages = await readWarehouseShortagesPg(pgTx, data.warehouseId, deltas, names);
+        if (wsShortages.length > 0) throw new Error(`Stok gudang tidak cukup: ${wsShortages.join(', ')}`);
+      }
 
       // Snapshot HPP (costPrice) tiap item saat transaksi terjadi — costPrice produk adalah
       // rata-rata bergerak yang berubah tiap ada produksi baru, jadi HPP historis tidak bisa

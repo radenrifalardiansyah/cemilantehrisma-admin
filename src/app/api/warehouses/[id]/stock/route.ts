@@ -1,7 +1,7 @@
 import { NextRequest, after } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
+import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -61,6 +61,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (shortages.length > 0) throw new Error(`Stok tidak cukup: ${shortages.join(', ')}`);
 
       const product = products.get(productId)!;
+      const wsShortages = await readWarehouseShortagesPg(pgTx, warehouseId, new Map([[productId, delta]]), new Map([[productId, product.name]]));
+      if (wsShortages.length > 0) throw new Error(`Stok gudang tidak cukup: ${wsShortages.join(', ')}`);
       await applyStockDeltaPg(pgTx, { productId, product, warehouseId, delta });
       await writeStockLedgerEntryPg(pgTx, {
         productId, productName: product.name, warehouseId, warehouseName, type, qty, note: note ?? '',

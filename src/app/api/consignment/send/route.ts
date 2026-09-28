@@ -8,7 +8,7 @@ import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { revalidateStorefront } from '@/lib/revalidate';
-import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, type WsSnapshot } from '@/lib/stock-pg';
+import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, readWarehouseShortagesPg, type WsSnapshot } from '@/lib/stock-pg';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 
 interface SendItemInput { productId: string; productName: string; qty: number; hargaTitip: number }
@@ -113,6 +113,11 @@ export async function POST(req: NextRequest) {
         if (stockQty < it.qty) shortages.push(`${it.productName} (stok toko ${stockQty}, butuh ${it.qty})`);
       });
       if (shortages.length > 0) throw new Error(`Stok produk tidak cukup untuk dikirim: ${shortages.join(', ')}`);
+
+      const wsDeltas = new Map<string, number>();
+      items.forEach(it => wsDeltas.set(it.productId, (wsDeltas.get(it.productId) ?? 0) - it.qty));
+      const wsShortages = await readWarehouseShortagesPg(pgTx, data.warehouseId, wsDeltas, new Map(items.map(it => [it.productId, it.productName])));
+      if (wsShortages.length > 0) throw new Error(`Stok gudang asal tidak cukup untuk dikirim: ${wsShortages.join(', ')}`);
 
       const wsSnapshots: WsSnapshot[] = [];
       for (const [i, it] of items.entries()) {

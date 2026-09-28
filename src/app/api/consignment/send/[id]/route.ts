@@ -253,6 +253,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const rows = await pgTx<{ stock_qty: string }[]>`select stock_qty from warehouse_stock where id = ${key} for update`;
         const oldQty = rows[0] ? Number(rows[0].stock_qty) || 0 : 0;
         const newQty = oldQty + delta;
+        if (delta < 0 && newQty < 0) {
+          throw new Error(`Stok gudang asal tidak cukup untuk dikirim: ${productNameByPid.get(productId) ?? productId} (stok di gudang ${oldQty}, butuh ${-delta}).`);
+        }
         await pgTx`
           insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
           values (${key}, ${warehouseId}, ${productId}, ${productNameByPid.get(productId) ?? ''}, ${newQty}, now())
