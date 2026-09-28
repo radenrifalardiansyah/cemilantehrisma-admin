@@ -459,19 +459,25 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const loadLocations = async () => {
     setLocationsLoading(true);
-    const r = await fetch(`${API}/api/consignment/locations`, { headers });
-    if (r.ok) {
-      const { locations: ls } = await r.json() as { locations: ConsignmentLocation[] };
-      setLocations(ls);
-      const stockEntries = await Promise.all(ls.map(async l => {
-        const stockRes = await fetch(`${API}/api/consignment/locations/${l.id}/stock`, { headers });
-        const stock = stockRes.ok ? (await stockRes.json() as { stock: ConsignmentStockItem[] }).stock : [];
-        return [l.id, stock] as const;
-      }));
-      setLocationStock(Object.fromEntries(stockEntries));
-      await loadLocationStats(ls);
+    try {
+      const r = await fetch(`${API}/api/consignment/locations`, { headers });
+      if (r.ok) {
+        const { locations: ls } = await r.json() as { locations: ConsignmentLocation[] };
+        setLocations(ls);
+        const stockEntries = await Promise.all(ls.map(async l => {
+          const stockRes = await fetch(`${API}/api/consignment/locations/${l.id}/stock`, { headers });
+          const stock = stockRes.ok ? (await stockRes.json() as { stock: ConsignmentStockItem[] }).stock : [];
+          return [l.id, stock] as const;
+        }));
+        setLocationStock(Object.fromEntries(stockEntries));
+        await loadLocationStats(ls);
+      }
+    } catch {
+      // Koneksi gagal — biarkan data lama tampil; polling berikutnya akan mencoba lagi. Tidak dilempar
+      // ulang supaya pemanggil (mis. bulk delete) tidak ikut gagal dan tombolnya macet.
+    } finally {
+      setLocationsLoading(false);
     }
-    setLocationsLoading(false);
   };
   useEffect(() => { loadLocations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (locations.length > 0) loadLocationStats(locations); }, [locationPeriod, locationCustomFrom, locationCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -508,29 +514,39 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const saveLocation = async () => {
     if (!lForm.name.trim()) return;
     setSavingL(true);
-    const r = editingL
-      ? await fetch(`${API}/api/consignment/locations/${editingL.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) })
-      : await fetch(`${API}/api/consignment/locations`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) });
-    if (r.ok) { await loadLocations(); setShowLForm(false); toast.success(editingL ? 'Lokasi berhasil diperbarui.' : 'Lokasi berhasil ditambahkan.'); }
-    else {
-      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
-      toast.error(d.error ?? 'Gagal menyimpan lokasi.');
+    try {
+      const r = editingL
+        ? await fetch(`${API}/api/consignment/locations/${editingL.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) })
+        : await fetch(`${API}/api/consignment/locations`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) });
+      if (r.ok) { await loadLocations(); setShowLForm(false); toast.success(editingL ? 'Lokasi berhasil diperbarui.' : 'Lokasi berhasil ditambahkan.'); }
+      else {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(d.error ?? 'Gagal menyimpan lokasi.');
+      }
+    } catch {
+      toast.error('Gagal menyimpan lokasi — periksa koneksi internet.');
+    } finally {
+      setSavingL(false);
     }
-    setSavingL(false);
   };
   const deleteLocation = async (l: ConsignmentLocation) => {
     if (!await confirm({ message: `Hapus lokasi "${l.name}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setDeletingLId(l.id);
-    const r = await fetch(`${API}/api/consignment/locations/${l.id}`, { method: 'DELETE', headers });
-    if (r.ok) {
-      setLocations(prev => prev.filter(x => x.id !== l.id));
-      setSelectedLocations(s => { const n = new Set(s); n.delete(l.id); return n; });
-      toast.success(`"${l.name}" berhasil dihapus.`);
-    } else {
-      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
-      toast.error(d.error ?? 'Gagal menghapus lokasi.');
+    try {
+      const r = await fetch(`${API}/api/consignment/locations/${l.id}`, { method: 'DELETE', headers });
+      if (r.ok) {
+        setLocations(prev => prev.filter(x => x.id !== l.id));
+        setSelectedLocations(s => { const n = new Set(s); n.delete(l.id); return n; });
+        toast.success(`"${l.name}" berhasil dihapus.`);
+      } else {
+        const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(d.error ?? 'Gagal menghapus lokasi.');
+      }
+    } catch {
+      toast.error('Gagal menghapus lokasi — periksa koneksi internet.');
+    } finally {
+      setDeletingLId(null);
     }
-    setDeletingLId(null);
   };
 
   const locationStockTotals = (id: string) => {
@@ -549,8 +565,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     setBulkDeletingLocations(true);
     const count = selectedLocations.size;
     const ids = [...selectedLocations];
-    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/locations/${id}`, { method: 'DELETE', headers })));
-    const okIds = ids.filter((_, i) => results[i].ok);
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/locations/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
+    const okIds = ids.filter((_, i) => results[i]);
     setLocations(prev => prev.filter(l => !okIds.includes(l.id)));
     setSelectedLocations(new Set());
     if (okIds.length === count) toast.success(`${count} lokasi berhasil dihapus.`);
@@ -894,9 +910,15 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const loadShipments = async () => {
     setShipmentsLoading(true);
     const { from, to } = periodRange(shipmentPeriod, shipmentCustomFrom, shipmentCustomTo);
-    const r = await fetch(`${API}/api/consignment/send?from=${from}&to=${to}`, { headers });
-    if (r.ok) setShipments((await r.json() as { shipments: Shipment[] }).shipments);
-    setShipmentsLoading(false);
+    try {
+      const r = await fetch(`${API}/api/consignment/send?from=${from}&to=${to}`, { headers });
+      if (r.ok) setShipments((await r.json() as { shipments: Shipment[] }).shipments);
+    } catch {
+      // Koneksi gagal — biarkan data lama tampil; polling berikutnya akan mencoba lagi. Tidak dilempar
+      // ulang supaya pemanggil (mis. bulk delete) tidak ikut gagal dan tombolnya macet.
+    } finally {
+      setShipmentsLoading(false);
+    }
   };
   // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
   // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
@@ -1090,17 +1112,22 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const deleteShipment = async (s: Shipment) => {
     if (!await confirm({ message: `Hapus riwayat kirim ke "${s.locationName}"? Stok toko akan dikembalikan.`, danger: true })) return;
     setDeletingShipmentId(s.id);
-    const r = await fetch(`${API}/api/consignment/send/${s.id}`, { method: 'DELETE', headers });
-    if (r.ok) {
-      setShipments(prev => prev.filter(x => x.id !== s.id));
-      setSelectedShipments(sel => { const n = new Set(sel); n.delete(s.id); return n; });
-      toast.success('Riwayat kirim berhasil dihapus.');
-      await loadLocations();
-    } else {
-      const data = await r.json().catch(() => ({} as { error?: string }));
-      toast.error(data.error ?? 'Gagal menghapus riwayat kirim.');
+    try {
+      const r = await fetch(`${API}/api/consignment/send/${s.id}`, { method: 'DELETE', headers });
+      if (r.ok) {
+        setShipments(prev => prev.filter(x => x.id !== s.id));
+        setSelectedShipments(sel => { const n = new Set(sel); n.delete(s.id); return n; });
+        toast.success('Riwayat kirim berhasil dihapus.');
+        await loadLocations();
+      } else {
+        const data = await r.json().catch(() => ({} as { error?: string }));
+        toast.error(data.error ?? 'Gagal menghapus riwayat kirim.');
+      }
+    } catch {
+      toast.error('Gagal menghapus riwayat kirim — periksa koneksi internet.');
+    } finally {
+      setDeletingShipmentId(null);
     }
-    setDeletingShipmentId(null);
   };
 
   const printShipmentNota = async (s: Shipment) => {
@@ -1218,8 +1245,8 @@ _${storeHeader.name}_`.trim();
     setBulkDeletingShipments(true);
     const count = selectedShipments.size;
     const ids = [...selectedShipments];
-    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/send/${id}`, { method: 'DELETE', headers })));
-    const okIds = ids.filter((_, i) => results[i].ok);
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/send/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
+    const okIds = ids.filter((_, i) => results[i]);
     setShipments(prev => prev.filter(s => !okIds.includes(s.id)));
     setSelectedShipments(new Set());
     await loadLocations();
@@ -1325,9 +1352,15 @@ _${storeHeader.name}_`.trim();
   const loadRecaps = async () => {
     setRecapsLoading(true);
     const { from, to } = periodRange(recapPeriod, recapCustomFrom, recapCustomTo);
-    const r = await fetch(`${API}/api/consignment/recap?from=${from}&to=${to}`, { headers });
-    if (r.ok) setRecaps((await r.json() as { recaps: Recap[] }).recaps);
-    setRecapsLoading(false);
+    try {
+      const r = await fetch(`${API}/api/consignment/recap?from=${from}&to=${to}`, { headers });
+      if (r.ok) setRecaps((await r.json() as { recaps: Recap[] }).recaps);
+    } catch {
+      // Koneksi gagal — biarkan data lama tampil; polling berikutnya akan mencoba lagi. Tidak dilempar
+      // ulang supaya pemanggil (mis. bulk delete) tidak ikut gagal dan tombolnya macet.
+    } finally {
+      setRecapsLoading(false);
+    }
   };
   // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
   // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
@@ -1581,18 +1614,23 @@ _${storeHeader.name}_`.trim();
   const deleteRecap = async (r: Recap) => {
     if (!await confirm({ message: `Hapus riwayat rekap "${r.locationName}"? Stok titip di lokasi akan dikembalikan.`, danger: true })) return;
     setDeletingRecapId(r.id);
-    const res = await fetch(`${API}/api/consignment/recap/${r.id}`, { method: 'DELETE', headers });
-    if (res.ok) {
-      setRecaps(prev => prev.filter(x => x.id !== r.id));
-      setSelectedRecaps(sel => { const n = new Set(sel); n.delete(r.id); return n; });
-      toast.success('Riwayat rekap berhasil dihapus.');
-      await loadLocations();
-      refetchBalances();
-    } else {
-      const data = await res.json().catch(() => ({} as { error?: string }));
-      toast.error(data.error ?? 'Gagal menghapus riwayat rekap.');
+    try {
+      const res = await fetch(`${API}/api/consignment/recap/${r.id}`, { method: 'DELETE', headers });
+      if (res.ok) {
+        setRecaps(prev => prev.filter(x => x.id !== r.id));
+        setSelectedRecaps(sel => { const n = new Set(sel); n.delete(r.id); return n; });
+        toast.success('Riwayat rekap berhasil dihapus.');
+        await loadLocations();
+        refetchBalances();
+      } else {
+        const data = await res.json().catch(() => ({} as { error?: string }));
+        toast.error(data.error ?? 'Gagal menghapus riwayat rekap.');
+      }
+    } catch {
+      toast.error('Gagal menghapus riwayat rekap — periksa koneksi internet.');
+    } finally {
+      setDeletingRecapId(null);
     }
-    setDeletingRecapId(null);
   };
 
   const printRecapNota = async (r: Recap) => {
@@ -1732,11 +1770,13 @@ _${storeHeader.name}_`.trim();
     setBulkDeletingRecaps(true);
     const count = selectedRecaps.size;
     const ids = [...selectedRecaps];
-    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/recap/${id}`, { method: 'DELETE', headers })));
-    const okIds = ids.filter((_, i) => results[i].ok);
+    const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/recap/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
+    const okIds = ids.filter((_, i) => results[i]);
     setRecaps(prev => prev.filter(r => !okIds.includes(r.id)));
     setSelectedRecaps(new Set());
     await loadLocations();
+    // Rekap lunas yang dihapus membalik pendapatan di dompetnya — sama seperti deleteRecap satuan.
+    refetchBalances();
     if (okIds.length === count) toast.success(`${count} riwayat rekap berhasil dihapus.`);
     else toast.error(`Hanya ${okIds.length} dari ${count} riwayat rekap berhasil dihapus.`);
     setBulkDeletingRecaps(false);
@@ -1751,8 +1791,8 @@ _${storeHeader.name}_`.trim();
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/recap/${id}`, {
       method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ walletId: bulkMarkLunasWalletId }),
-    })));
-    const okCount = results.filter(r => r.ok).length;
+    }).then(r => r.ok).catch(() => false)));
+    const okCount = results.filter(Boolean).length;
     await loadRecaps();
     refetchBalances();
     setSelectedRecaps(new Set());
