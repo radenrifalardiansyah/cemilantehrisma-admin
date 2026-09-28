@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { wibDayStart } from '@/lib/date';
 
 // Tahap 6 migrasi (lihat plan gleaming-wondering-quokka.md) — pengganti pola lama yang ternyata
 // diduplikasi di 3 tempat (useWalletBalances di src/lib/useWallets.ts, WalletsTab.tsx, dan
@@ -44,6 +45,14 @@ export async function GET(req: NextRequest) {
 
   const sql = getSql();
 
+  // `?before=yyyy-mm-dd` (opsional) — hanya hitung transaksi SEBELUM hari itu (hari kalender WIB).
+  // Dipakai Jurnal Kas di Laporan Keuangan untuk saldo pembuka periode: saldoAwal + totalTx
+  // sebelum tanggal `from` periode yang dipilih.
+  const beforeParam = req.nextUrl.searchParams.get('before');
+  const before = beforeParam && /^\d{4}-\d{2}-\d{2}$/.test(beforeParam) ? beforeParam : null;
+  const byDate = before ? sql`and date < ${before}` : sql``;
+  const byCreatedAt = before ? sql`and created_at < ${wibDayStart(before).toDate()}` : sql``;
+
   // `wallets.initial_balance` digabung jadi salah satu "kind" di UNION ALL yang sama (bukan
   // query terpisah) — supaya SETIAP dompet (bahkan yang belum ada transaksi sama sekali) tetap
   // muncul di hasil group-by, dan tidak perlu lagi query daftar dompet secara terpisah.
@@ -62,23 +71,23 @@ export async function GET(req: NextRequest) {
     from (
       select id as wallet_id, initial_balance as amount, 'initial' as kind from wallets
       union all
-      select wallet_id, amount, 'income' as kind from income
+      select wallet_id, amount, 'income' as kind from income where true ${byDate}
       union all
-      select wallet_id, amount, 'expense' as kind from expenses
+      select wallet_id, amount, 'expense' as kind from expenses where true ${byDate}
       union all
-      select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal'
+      select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal' ${byDate}
       union all
-      select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive'
+      select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive' ${byDate}
       union all
-      select to_wallet_id as wallet_id, amount, 'transfer_in' as kind from wallet_transfers
+      select to_wallet_id as wallet_id, amount, 'transfer_in' as kind from wallet_transfers where true ${byDate}
       union all
-      select from_wallet_id as wallet_id, amount, 'transfer_out' as kind from wallet_transfers
+      select from_wallet_id as wallet_id, amount, 'transfer_out' as kind from wallet_transfers where true ${byDate}
       union all
       select wallet_id, total as amount, 'order_revenue' as kind from orders
-        where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
+        where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan' ${byCreatedAt}
       union all
       select wallet_id, total_revenue as amount, 'recap_revenue' as kind from consignment_recaps
-        where payment_status != 'belum_lunas'
+        where payment_status != 'belum_lunas' ${byCreatedAt}
     ) combined
     group by wallet_id
   `;

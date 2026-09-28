@@ -352,6 +352,12 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
 
   const { from, to } = periodRange(period, customFrom, customTo);
 
+  // Saldo pembuka Jurnal Kas untuk periode terpilih = Saldo Awal (sebelum pakai aplikasi) + seluruh
+  // transaksi SEBELUM tanggal `from`. Tanpa ini, periode selain "sejak awal" selalu mulai dari Saldo
+  // Awal sehingga semua baris saldo meleset sebesar transaksi periode-periode sebelumnya.
+  const [txBeforePeriod, setTxBeforePeriod] = useState(0);
+  const saldoAwalPeriode = saldoAwal + txBeforePeriod;
+
   // Generasi request — cegah respons periode LAMA yang datang belakangan menimpa (atau, lebih
   // buruk, tercampur sebagian dengan) data periode BARU yang sudah lebih dulu tampil.
   const loadIdRef = useRef(0);
@@ -360,24 +366,27 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     setLoading(true);
     try {
       const qs = `from=${from}&to=${to}`;
-      const [oRes, rRes, iRes, eRes, cRes] = await Promise.all([
+      const [oRes, rRes, iRes, eRes, cRes, bRes] = await Promise.all([
         fetch(`${API}/api/orders?${qs}`, { headers }),
         fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
         fetch(`${API}/api/income?${qs}`, { headers }),
         fetch(`${API}/api/expenses?${qs}`, { headers }),
         fetch(`${API}/api/capital?${qs}`, { headers }),
+        fetch(`${API}/api/wallets/balances?before=${from}`, { headers }),
       ]);
       const orders   = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
       const recaps   = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
       const income   = iRes.ok ? (await iRes.json() as { income: IncomeRecord[] }).income : [];
       const expenses = eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : [];
       const capital  = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
+      const txBefore = bRes.ok ? (await bRes.json() as { totalTx: number }).totalTx : 0;
       if (myLoadId !== loadIdRef.current) return;
       setOrders(orders);
       setRecaps(recaps);
       setIncome(income);
       setExpenses(expenses);
       setCapital(capital);
+      setTxBeforePeriod(txBefore);
     } finally { if (myLoadId === loadIdRef.current) setLoading(false); }
   };
   useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -543,7 +552,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   ].sort((a, b) => a.seconds - b.seconds);
 
   const journalWithSaldo = journal.reduce<(JournalEntry & { saldo: number })[]>((acc, j) => {
-    const prevSaldo = acc.length > 0 ? acc[acc.length - 1].saldo : saldoAwal;
+    const prevSaldo = acc.length > 0 ? acc[acc.length - 1].saldo : saldoAwalPeriode;
     acc.push({ ...j, saldo: prevSaldo + j.debit - j.kredit });
     return acc;
   }, []);
@@ -642,7 +651,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       // ── Sheet 2: Jurnal Kas ──
       const wsJK = wb.addWorksheet('Jurnal Kas');
       wsJK.columns = [{ key: 'tgl', width: 14 }, { key: 'jam', width: 10 }, { key: 'ket', width: 42 }, { key: 'debit', width: 18 }, { key: 'kredit', width: 18 }, { key: 'saldo', width: 18 }];
-      styleTitle(wsJK, 'JURNAL KAS — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to}) · Saldo Awal: ${formatRp(saldoAwal)}`, 6);
+      styleTitle(wsJK, 'JURNAL KAS — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to}) · Saldo Awal: ${formatRp(saldoAwalPeriode)}`, 6);
       styleHeader(wsJK, 3, ['Tanggal', 'Jam', 'Keterangan', 'Debit', 'Kredit', 'Saldo']);
       journalWithSaldo.forEach((j, i) => {
         const rowNum = 4 + i;
@@ -697,7 +706,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             incomeRows, totalPendapatan, hpp, labaKotor,
             expenseRows, totalBeban, totalBebanOperasional, labaBersih,
             totalModalMasuk, totalPrive,
-            saldoAwal, journal: journalRows,
+            saldoAwal: saldoAwalPeriode, journal: journalRows,
           }}
         />
       ).toBlob();
@@ -1213,6 +1222,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
               Saldo kas nyata sebelum mulai pencatatan di aplikasi ini (disimpan di browser ini saja, bukan data akuntansi baku). Dipakai juga sebagai dasar &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
             </p>
           </div>
+
+          <p className="text-xs px-1" style={{ color: 'var(--text-muted)' }}>
+            Saldo awal periode ini ({from}): <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(saldoAwalPeriode)}</span>
+          </p>
 
           {journalWithSaldo.length === 0 ? (
             <div className="card p-12 text-center">
