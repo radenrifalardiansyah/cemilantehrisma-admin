@@ -223,7 +223,9 @@ export default function IncomeTab({ creds }: { creds: string }) {
     setIncome([...manual, ...fromOrders, ...fromRecaps]);
     setLoading(false);
   };
-  useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
+  // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
+  useEffect(() => { setSelected(new Set()); load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (i: Income) => {

@@ -895,7 +895,9 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     if (r.ok) setShipments((await r.json() as { shipments: Shipment[] }).shipments);
     setShipmentsLoading(false);
   };
-  useEffect(() => { loadShipments(); }, [shipmentPeriod, shipmentCustomFrom, shipmentCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
+  // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
+  useEffect(() => { setSelectedShipments(new Set()); loadShipments(); }, [shipmentPeriod, shipmentCustomFrom, shipmentCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addSendRow    = () => setSendRows(prev => [...prev, { ...EMPTY_SEND_ROW }]);
   const removeSendRow = (i: number) => setSendRows(prev => prev.filter((_, idx) => idx !== i));
@@ -1324,7 +1326,9 @@ _${storeHeader.name}_`.trim();
     if (r.ok) setRecaps((await r.json() as { recaps: Recap[] }).recaps);
     setRecapsLoading(false);
   };
-  useEffect(() => { loadRecaps(); }, [recapPeriod, recapCustomFrom, recapCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
+  // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
+  useEffect(() => { setSelectedRecaps(new Set()); loadRecaps(); }, [recapPeriod, recapCustomFrom, recapCustomTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh — only the sub-tab currently in view (skips the pricier N+1 location/stock
   // fetch entirely while looking at Kirim/Rekap/Analitik). Each `loadX` already guards its
