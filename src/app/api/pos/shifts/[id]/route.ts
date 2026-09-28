@@ -25,8 +25,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (shift.status !== 'open') return Response.json({ error: 'Sesi kasir sudah ditutup.' }, { status: 409 });
 
   // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
+  // Pesanan yang dibatalkan tetap menyimpan shift_id-nya, jadi harus dikecualikan — uangnya tidak
+  // ada di laci, dan kalau ikut dihitung kasir terlihat kurang setor.
   const [{ total }] = await sql<{ total: string }[]>`
-    select coalesce(sum(total), 0) as total from orders where shift_id = ${id} and payment_method = 'cash'
+    select coalesce(sum(total), 0) as total from orders
+    where shift_id = ${id} and payment_method = 'cash' and status != 'dibatalkan'
   `;
   const cashSalesTotal = Number(total) || 0;
 
@@ -36,13 +39,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const difference = actual - expectedBalance;
   const closeNote = note?.trim() ?? '';
 
-  await sql`
+  const closed = await sql`
     update cashier_shifts set
       status = 'closed', closed_at = now(), closed_by = ${user.username},
       cash_sales_total = ${cashSalesTotal}, expected_balance = ${expectedBalance},
       actual_balance = ${actual}, difference = ${difference}, close_note = ${closeNote}
-    where id = ${id}
+    where id = ${id} and status = 'open'
   `;
+  // Dua request tutup yang bersamaan (mis. double-klik) sama-sama lolos cek status di atas — hanya
+  // yang pertama benar-benar menutup sesi.
+  if (closed.count === 0) return Response.json({ error: 'Sesi kasir sudah ditutup.' }, { status: 409 });
 
   const updatedData = {
     openedBy: shift.opened_by, openingBalance, note: shift.note ?? '', status: 'closed',
