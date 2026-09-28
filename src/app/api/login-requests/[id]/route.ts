@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
-import jwt from 'jsonwebtoken';
 import { recordLogin } from '@/lib/login-history';
 import { getLoginRequest } from '@/lib/login-requests';
-import type { AuthUser } from '@/lib/admin-auth';
+import { signAdminToken, type AuthUser } from '@/lib/admin-auth';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -27,11 +26,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   // approved — mint token baru untuk perangkat ini. Sesi yang menyetujui (di /respond) tidak
   // di-revoke, jadi keduanya aktif bersamaan (multi-device didukung secara sengaja).
   const user = request.user_payload as AuthUser;
-  const token = jwt.sign(
-    { username: user.username, role: user.role, uid: user.uid, mustChangePassword: user.mustChangePassword },
-    process.env.JWT_SECRET!,
-    { expiresIn: '7d' },
-  );
+  const token = signAdminToken(user);
   try {
     await recordLogin({ username: user.username, role: user.role, ip: request.ip, userAgent: request.user_agent });
   } catch {

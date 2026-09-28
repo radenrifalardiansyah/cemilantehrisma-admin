@@ -12,6 +12,21 @@ import jwt from 'jsonwebtoken';
 // reset / account deletion kill an already-issued 7-day token without needing a token blacklist.
 export type AuthUser = { username: string; role: string; uid?: string; mustChangePassword?: boolean; iat?: number };
 
+// Masa berlaku token sesi admin. Sesi diperpanjang otomatis (sliding) lewat /api/auth/refresh
+// selama aplikasi dipakai — lihat useSessionRefresh di page.tsx — jadi pengguna praktis hanya
+// logout kalau logout manual, atau tidak membuka aplikasi selama masa ini. Dulu 7 hari tanpa
+// perpanjangan, sehingga semua perangkat otomatis logout tepat seminggu setelah login.
+// Pencabutan sesi (kick admin, ganti password/role, akun dihapus) TIDAK bergantung pada masa
+// berlaku ini — tetap langsung berlaku lewat sessions_invalidated_at (lihat rbac.ts).
+export const ADMIN_SESSION_TTL = '365d';
+
+// Satu-satunya tempat menandatangani token sesi admin. Field bawaan JWT (iat/exp) dari token lama
+// sengaja dibuang supaya jsonwebtoken mengisi ulang iat = sekarang dan exp sesuai TTL.
+export function signAdminToken(user: AuthUser): string {
+  const payload: AuthUser = { username: user.username, role: user.role, uid: user.uid, mustChangePassword: user.mustChangePassword };
+  return jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: ADMIN_SESSION_TTL });
+}
+
 export function getAuthUser(request: Request): AuthUser | null {
   const token = request.headers.get('x-admin-auth') ?? '';
   if (!token) return null;

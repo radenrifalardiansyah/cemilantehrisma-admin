@@ -14,6 +14,7 @@ import LoginApprovalScreen from '@/components/LoginApprovalScreen';
 import ForceLogoutOverlay from '@/components/ForceLogoutOverlay';
 import type { NotificationDoc } from '@/components/NotificationBell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import ProductsTab, { isLowStock as isProductLowStock } from '@/components/tabs/ProductsTab';
@@ -361,6 +362,18 @@ function PageviewChart({ data }: { data: { date: string; views: number; visitors
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
+// Waktu terbit token (JWT `iat`, detik) — dibaca di client hanya untuk menentukan kapan sesi perlu
+// diperpanjang, bukan untuk verifikasi (itu tetap di server).
+const SESSION_REFRESH_AFTER_S = 24 * 60 * 60;
+function tokenIssuedAt(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { iat?: number };
+    return typeof payload.iat === 'number' ? payload.iat : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminPage() {
 
   // ── Auth ─────────────────────────────────────────────────
@@ -645,7 +658,12 @@ export default function AdminPage() {
     // tampil (mis. tab Analitik Mitra) saat login/refresh halaman.
     fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
     const res = await fetch('/api/me', { headers: { 'x-admin-auth': token } });
-    if (!res.ok) return false;
+    // Hanya 401 yang berarti token memang tidak berlaku (kedaluwarsa/dicabut). Error lain (5xx saat
+    // server cold start / database sesaat bermasalah) dilempar supaya pemanggil bisa mencoba lagi —
+    // dulu semua respons gagal dianggap "tidak valid" dan tokennya dihapus, jadi gangguan server
+    // sesaat saat aplikasi dibuka membuat pengguna ter-logout.
+    if (res.status === 401) return false;
+    if (!res.ok) throw new Error(`/api/me ${res.status}`);
     const { user, permissions, superAdmin } = await res.json() as {
       user: { username: string; role: string; email: string | null; avatar: string | null };
       permissions: Record<string, Partial<Record<Action, boolean>>>;
@@ -659,10 +677,21 @@ export default function AdminPage() {
   useEffect(() => {
     const saved = localStorage.getItem('admin_creds');
     if (!saved) { setChecking(false); return; }
-    applySession(saved).then(ok => {
-      if (!ok) localStorage.removeItem('admin_creds');
+    (async () => {
+      // Coba ulang saat gangguan jaringan/server — token hanya dihapus kalau server menyatakan
+      // tidak berlaku (applySession → false). Kalau tetap gagal, layar login tampil tapi token
+      // tetap disimpan, jadi muat ulang halaman berikutnya bisa langsung masuk lagi.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const ok = await applySession(saved);
+          if (!ok) localStorage.removeItem('admin_creds');
+          break;
+        } catch {
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+        }
+      }
       setChecking(false);
-    }).catch(() => setChecking(false));
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -689,6 +718,26 @@ export default function AdminPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menus, authed]);
+
+  // ── Sliding session ─────────────────────────────────────
+  // Perpanjang token selama aplikasi dipakai (saat dibuka/kembali ke tab, lalu tiap jam) supaya
+  // pengguna tidak pernah ter-logout karena token kedaluwarsa — hanya logout manual, atau sesi
+  // dicabut (kick admin, ganti password/role). Refresh cuma dikirim kalau token sudah berumur
+  // lebih dari sehari, supaya creds tidak berganti terus-menerus.
+  const refreshSession = useCallback(async () => {
+    if (!authed || !creds) return;
+    const iat = tokenIssuedAt(creds);
+    if (iat && Date.now() / 1000 - iat < SESSION_REFRESH_AFTER_S) return;
+    try {
+      const res = await fetch('/api/auth/refresh', { method: 'POST', headers: { 'x-admin-auth': creds } });
+      if (!res.ok) return; // 401 (sesi dicabut) ditangani heartbeat chat → ForceLogoutOverlay
+      const { token } = await res.json() as { token: string | null };
+      if (token) { localStorage.setItem('admin_creds', token); setCreds(token); }
+    } catch {
+      // Gagal jaringan — coba lagi di putaran berikutnya.
+    }
+  }, [authed, creds]);
+  useVisiblePolling(refreshSession, 60 * 60 * 1000, [refreshSession]);
 
   const login = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setLoginErr('');

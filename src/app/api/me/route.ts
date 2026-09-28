@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import jwt from 'jsonwebtoken';
 import { revalidateTag } from 'next/cache';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { getAuthUser, unauthorized, signAdminToken } from '@/lib/admin-auth';
 import { getSql } from '@/lib/db';
 import { getRolePermissionsMap, staleSessionReason, sessionExpired, SESSION_TAG } from '@/lib/rbac';
 import { fullAccessPermissions } from '@/lib/permissions';
@@ -108,11 +107,7 @@ export async function PATCH(req: NextRequest) {
   // mustChangePassword=true) keeps getting rejected by requirePermission/requireSuperAdmin on
   // every request after this one, even though the password was already changed successfully.
   const newToken = newPassword
-    ? jwt.sign(
-        { username: authUser.username, role: authUser.role, uid: authUser.uid, mustChangePassword: false },
-        process.env.JWT_SECRET!,
-        { expiresIn: '7d' },
-      )
+    ? signAdminToken({ username: authUser.username, role: authUser.role, uid: authUser.uid, mustChangePassword: false })
     : undefined;
 
   return Response.json({ ok: true, email: patch.email ?? null, avatar: patch.avatar ?? null, token: newToken });

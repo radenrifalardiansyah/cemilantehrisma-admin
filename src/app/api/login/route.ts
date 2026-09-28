@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import jwt from 'jsonwebtoken';
 import { getSql } from '@/lib/db';
 import { recordLogin } from '@/lib/login-history';
+import { signAdminToken } from '@/lib/admin-auth';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 import { createLoginRequest } from '@/lib/login-requests';
 import { PRESENCE_ONLINE_WINDOW_MS } from '@/lib/chat';
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true, pending: true, requestId: id, deviceLabel });
   }
 
-  const token = jwt.sign(user, process.env.JWT_SECRET!, { expiresIn: '7d' });
+  const token = signAdminToken(user);
 
   try {
     await recordLogin({ username: user.username, role: user.role, ip, userAgent });
