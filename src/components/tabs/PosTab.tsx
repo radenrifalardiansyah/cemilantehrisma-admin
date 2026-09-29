@@ -410,11 +410,21 @@ export default function PosTab({
       return (a.order ?? 9999) - (b.order ?? 9999);
     });
 
-  const addToCart = (id: string) => setCart(prev => {
-    const exists = prev.find(i => i.productId === id);
-    if (exists) return prev.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i);
-    return [...prev, { productId: id, qty: 1 }];
-  });
+  const addToCart = (id: string): boolean => {
+    const product = posProducts.find(p => p.id === id);
+    const currentQty = cart.find(i => i.productId === id)?.qty ?? 0;
+    // Open PO tidak dibatasi stok (pre-order) — hanya produk "Tersedia" (stok riil) yang dicek.
+    if (product && !product.openPO && currentQty + 1 > (product.stockQty ?? 0)) {
+      toast.error(`Stok ${product.name} tinggal ${product.stockQty ?? 0} pcs.`);
+      return false;
+    }
+    setCart(prev => {
+      const exists = prev.find(i => i.productId === id);
+      if (exists) return prev.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { productId: id, qty: 1 }];
+    });
+    return true;
+  };
   const [showPosScanner, setShowPosScanner] = useState(false);
   const handlePosScan = (text: string) => {
     const productId = resolveScannedProductId(text, posProducts);
@@ -424,7 +434,7 @@ export default function PosTab({
       toast.error(`${product.name} stoknya habis.`);
       return { ok: false, label: `${product.name} — stok habis` };
     }
-    addToCart(product.id);
+    if (!addToCart(product.id)) return { ok: false, label: `${product.name} — stok tidak cukup` };
     return { ok: true, label: `+1 ${product.name}` };
   };
   const removeFromCart = (id: string) => setCart(prev =>
