@@ -79,7 +79,7 @@ const getRawAnalytics = unstable_cache(
     };
   },
   ['admin-analytics-overview'],
-  { revalidate: 180 }
+  { revalidate: 180, tags: ['admin-analytics'] }
 );
 
 // Saldo kas riil sejak awal pencatatan — independen dari filter periode di atas, sama seperti
@@ -95,8 +95,8 @@ const getAllTimeCash = unstable_cache(
     const sql = getSql();
     const [totals] = await sql<{ total_modal: string; total_prive: string; total_income: string; total_expenses: string; total_orders: string; total_recaps: string }[]>`
       select
-        coalesce((select sum(amount) filter (where type = 'modal') from capital_entries), 0) as total_modal,
-        coalesce((select sum(amount) filter (where type = 'prive') from capital_entries), 0) as total_prive,
+        coalesce((select sum(amount) filter (where type = 'modal') from capital_entries where not is_adjustment), 0) as total_modal,
+        coalesce((select sum(amount) filter (where type = 'prive') from capital_entries where not is_adjustment), 0) as total_prive,
         coalesce((select sum(amount) from income), 0) as total_income,
         coalesce((select sum(amount) from expenses), 0) as total_expenses,
         coalesce((select sum(total) from orders where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'), 0) as total_orders,
@@ -111,7 +111,7 @@ const getAllTimeCash = unstable_cache(
     };
   },
   ['admin-analytics-alltime-cash'],
-  { revalidate: 600 }
+  { revalidate: 600, tags: ['admin-analytics'] }
 );
 
 export async function GET(req: NextRequest) {

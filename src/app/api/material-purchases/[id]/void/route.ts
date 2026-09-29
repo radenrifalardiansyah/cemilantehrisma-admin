@@ -120,6 +120,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
   if (reversed) revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
 
   return Response.json({ ok: true, reversed, skippedMaterials });
 }

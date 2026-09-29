@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
   }
   revalidateTag('admin-materials', { expire: 0 });
   if (purchaseData.expenseId) revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
 
   return Response.json({ id: purchaseId });
 }

@@ -56,6 +56,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for income update', err);
   }
   revalidateTag('admin-income', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -80,5 +81,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for income delete', err);
   }
   revalidateTag('admin-income', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ ok: true });
 }

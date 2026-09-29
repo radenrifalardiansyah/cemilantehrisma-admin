@@ -23,5 +23,6 @@ export async function POST(req: NextRequest) {
     await sql`delete from expenses where id in ${sql(deletableIds)}`;
   }
   revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ deleted: deletableIds.length, skipped });
 }

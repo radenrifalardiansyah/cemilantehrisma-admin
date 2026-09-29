@@ -72,6 +72,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for capital update', err);
   }
   revalidateTag('admin-capital', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -97,5 +98,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for capital delete', err);
   }
   revalidateTag('admin-capital', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ ok: true });
 }

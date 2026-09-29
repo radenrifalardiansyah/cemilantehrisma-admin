@@ -13,5 +13,6 @@ export async function POST(req: NextRequest) {
   const sql = getSql();
   await sql`delete from capital_entries where id in ${sql(ids)}`;
   revalidateTag('admin-capital', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ deleted: ids.length });
 }

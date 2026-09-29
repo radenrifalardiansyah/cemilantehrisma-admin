@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
@@ -169,6 +170,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!isPreOrder && deltas.size > 0) revalidateProductStock();
+  revalidateTag('admin-analytics', { expire: 0 });
 
   return Response.json({ id: orderId });
 }

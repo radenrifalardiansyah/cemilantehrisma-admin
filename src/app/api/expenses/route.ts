@@ -140,5 +140,6 @@ export async function POST(req: NextRequest) {
     console.error('Failed to write notification for expenses create', err);
   }
   revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ id });
 }

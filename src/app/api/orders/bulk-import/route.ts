@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
@@ -86,5 +87,6 @@ export async function POST(req: NextRequest) {
     console.error('Gagal menulis audit log impor massal pesanan:', err);
   }
 
+  if (created > 0) revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

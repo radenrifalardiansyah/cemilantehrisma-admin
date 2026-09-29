@@ -241,6 +241,7 @@ export async function POST(req: NextRequest) {
 
   revalidateTag('admin-materials', { expire: 0 });
   if (otherCost > 0) revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   revalidateProductStock();
 
   return Response.json({ id: batchId });

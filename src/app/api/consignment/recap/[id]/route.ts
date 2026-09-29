@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -34,6 +35,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       after: before ? { ...rowToRecap(before), paymentStatus: 'lunas', walletId: data.walletId ?? null } : null,
     });
   } catch {}
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ ok: true });
 }
 
@@ -136,6 +138,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   if (stockTouched) revalidateProductStock();
+  revalidateTag('admin-analytics', { expire: 0 });
   // Menghapus rekap mengubah total totalSold yang dijumlah di beranda storefront.
   after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });
@@ -371,6 +374,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   if (stockTouched) revalidateProductStock();
+  revalidateTag('admin-analytics', { expire: 0 });
   // Edit rekap menghitung ulang totalSold yang dijumlah di beranda storefront.
   after(() => revalidateStorefront('stats'));
   return Response.json({ ok: true });

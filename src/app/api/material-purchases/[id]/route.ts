@@ -182,6 +182,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
 
   return Response.json({ ok: true });
 }
@@ -278,6 +279,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
 
   return Response.json({ ok: true });
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -252,6 +253,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (items.some(it => it.qtyRetur > 0)) revalidateProductStock();
+  revalidateTag('admin-analytics', { expire: 0 });
   // "Terjual" di beranda storefront juga menghitung totalSold dari consignmentRecaps.
   after(() => revalidateStorefront('stats'));
 

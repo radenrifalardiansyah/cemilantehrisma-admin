@@ -65,7 +65,7 @@ const getRawProductReport = unstable_cache(
     };
   },
   ['admin-analytics-product-report'],
-  { revalidate: 180 },
+  { revalidate: 180, tags: ['admin-analytics'] },
 );
 
 export async function GET(req: NextRequest) {

@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -160,6 +161,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       console.error('Failed to write history for order edit', err);
     }
     revalidateProductStock();
+    revalidateTag('admin-analytics', { expire: 0 });
     return Response.json({ ok: true });
   }
 
@@ -248,6 +250,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   if (statusResult.stockTouched) revalidateProductStock();
+  revalidateTag('admin-analytics', { expire: 0 });
   // "Terjual" di beranda storefront dihitung dari qty pesanan berstatus 'selesai' — status
   // apapun yang berubah di sini bisa menggeser hitungan itu (jadi/lepas dari 'selesai').
   if (status !== undefined) after(() => revalidateStorefront('stats'));
@@ -287,5 +290,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   revalidateProductStock();
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ ok: true });
 }

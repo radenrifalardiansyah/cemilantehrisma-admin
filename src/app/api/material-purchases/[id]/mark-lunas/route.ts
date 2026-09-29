@@ -61,6 +61,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       console.error('Failed to write history for material purchase mark-lunas', err);
     }
     if (before.total > 0) revalidateTag('admin-expenses', { expire: 0 });
+    revalidateTag('admin-analytics', { expire: 0 });
   }
 
   return Response.json({ ok: true });

@@ -111,5 +111,6 @@ export async function POST(req: NextRequest) {
     console.error('Failed to write notification for income create', err);
   }
   revalidateTag('admin-income', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ id });
 }

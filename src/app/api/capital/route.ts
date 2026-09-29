@@ -141,5 +141,6 @@ export async function POST(req: NextRequest) {
     console.error('Failed to write notification for capital create', err);
   }
   revalidateTag('admin-capital', { expire: 0 });
+  revalidateTag('admin-analytics', { expire: 0 });
   return Response.json({ id });
 }
