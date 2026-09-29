@@ -22,7 +22,9 @@ import { wibDayStart } from '@/lib/date';
 // - `balances`: saldo per walletId (initialBalance dompet + semua transaksi milik dompet itu).
 // - `unassigned`: entri lama tanpa walletId (dari sebelum fitur Dompet ada) — dipakai WalletsTab &
 //   FinanceReportTab untuk bucket "Belum Ditentukan". Transfer antar dompet tidak pernah masuk
-//   sini (selalu antara 2 dompet nyata).
+//   sini (selalu antara 2 dompet nyata). Entri capital_entries ber-`is_adjustment` (tombol
+//   "Nolkan Saldo" di Modal & Prive) dikecualikan total dari modal/prive di bawah — itu murni
+//   penyeimbang pembukuan tanpa dompet, bukan kas riil yang "belum ditentukan dompetnya".
 // - `totalTx`: total transaksi SEMUA dompet + unassigned digabung, TANPA initialBalance dompet
 //   manapun dan TANPA transfer (saling meniadakan kalau dijumlah semua dompet) — dipakai
 //   FinanceReportTab untuk "allTimeTxSaldo" (ditambah `saldoAwal` terpisah di sana).
@@ -75,9 +77,9 @@ export async function GET(req: NextRequest) {
       union all
       select wallet_id, amount, 'expense' as kind from expenses where true ${byDate}
       union all
-      select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal' ${byDate}
+      select wallet_id, amount, 'modal' as kind from capital_entries where type = 'modal' and not is_adjustment ${byDate}
       union all
-      select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive' ${byDate}
+      select wallet_id, amount, 'prive' as kind from capital_entries where type = 'prive' and not is_adjustment ${byDate}
       union all
       select to_wallet_id as wallet_id, amount, 'transfer_in' as kind from wallet_transfers where true ${byDate}
       union all

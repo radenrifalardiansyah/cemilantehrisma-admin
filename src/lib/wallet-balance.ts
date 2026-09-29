@@ -65,8 +65,8 @@ export async function computeWalletBalance(
   const sql = pgTx ?? getSql();
   const [pgTotals] = await sql<{ total_modal: string; total_prive: string; total_in: string; total_out: string; total_income: string; total_expenses: string; total_orders: string; total_recaps: string }[]>`
     select
-      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal' and id != ${excludeCapitalEntryId ?? ''}), 0) as total_modal,
-      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive' and id != ${excludeCapitalEntryId ?? ''}), 0) as total_prive,
+      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'modal' and not is_adjustment and id != ${excludeCapitalEntryId ?? ''}), 0) as total_modal,
+      coalesce((select sum(amount) from capital_entries where wallet_id = ${walletId} and type = 'prive' and not is_adjustment and id != ${excludeCapitalEntryId ?? ''}), 0) as total_prive,
       coalesce((select sum(amount) from wallet_transfers where to_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_in,
       coalesce((select sum(amount) from wallet_transfers where from_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_out,
       coalesce((select sum(amount) from income where wallet_id = ${walletId}), 0) as total_income,

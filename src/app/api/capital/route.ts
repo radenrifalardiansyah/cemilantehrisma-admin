@@ -14,6 +14,7 @@ class CapitalValidationError extends Error {}
 
 interface CapitalEntryRow {
   id: string; type: string; amount: string; date: string; note: string | null; wallet_id: string | null;
+  is_adjustment: boolean;
   created_at: Date; updated_at: Date | null;
 }
 
@@ -30,6 +31,7 @@ function toEntry(r: CapitalEntryRow) {
     date: r.date,
     note: r.note ?? '',
     walletId: r.wallet_id,
+    isAdjustment: r.is_adjustment,
     createdAt: toTimestamp(r.created_at),
     updatedAt: toTimestamp(r.updated_at),
   };
@@ -78,6 +80,10 @@ export async function POST(req: NextRequest) {
     date: String(data.date ?? ''),
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
+    // Entri penyeimbang dari tombol "Nolkan Saldo" — murni pembukuan Modal & Prive, bukan
+    // pergerakan kas riil, jadi harus dikecualikan dari Jurnal Kas/Saldo Kas (lihat filter
+    // is_adjustment di wallets/balances/route.ts & FinanceReportTab.tsx).
+    isAdjustment: data.isAdjustment === true,
   };
   const id = randomUUID();
   const sql = getSql();
@@ -100,8 +106,8 @@ export async function POST(req: NextRequest) {
         }
       }
       await pgTx`
-        insert into capital_entries (id, type, amount, date, note, wallet_id, created_at, updated_at)
-        values (${id}, ${payload.type}, ${payload.amount}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
+        insert into capital_entries (id, type, amount, date, note, wallet_id, is_adjustment, created_at, updated_at)
+        values (${id}, ${payload.type}, ${payload.amount}, ${payload.date}, ${payload.note}, ${payload.walletId}, ${payload.isAdjustment}, now(), now())
       `;
     });
   } catch (err) {

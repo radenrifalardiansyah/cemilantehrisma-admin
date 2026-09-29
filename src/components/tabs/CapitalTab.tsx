@@ -66,6 +66,7 @@ interface CapitalEntry {
   id: string; type: 'modal' | 'prive'; amount: number; date: string; note: string;
   createdAt?: { seconds: number };
   walletId?: string | null;
+  isAdjustment?: boolean;
 }
 
 type EntryForm = { type: 'modal' | 'prive'; amount: string; date: string; note: string; walletId: string };
@@ -206,6 +207,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
         type, amount, date: todayISO(),
         note: 'Penyesuaian saldo modal bersih ke Rp 0 (otomatis, tidak memengaruhi saldo dompet)',
         walletId: null,
+        isAdjustment: true,
       }),
     });
     if (r.ok) {

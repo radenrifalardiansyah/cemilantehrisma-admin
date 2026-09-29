@@ -87,7 +87,7 @@ const dateWithRealTime = (dateStr: string, createdAt?: { seconds: number }) => {
   }
   return new Date(`${dateStr}T12:00:00`).getTime() / 1000;
 };
-interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string; createdAt?: { seconds: number }; walletId?: string | null }
+interface CapitalRecord { type: 'modal' | 'prive'; amount: number; date: string; note?: string; createdAt?: { seconds: number }; walletId?: string | null; isAdjustment?: boolean }
 
 interface JournalEntry { seconds: number; description: string; debit: number; kredit: number; invoiceNo?: string }
 
@@ -506,8 +506,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     .sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ key: category, label: category, value: amount }));
 
   // Modal & Prive TIDAK ikut Laba Rugi operasional — cuma info terpisah + masuk Jurnal Kas.
-  const totalModalMasuk = capital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0);
-  const totalPrive       = capital.filter(c => c.type === 'prive').reduce((s, c) => s + c.amount, 0);
+  // Entri ber-`isAdjustment` (tombol "Nolkan Saldo" di Modal & Prive) dikecualikan di sini — itu
+  // penyeimbang pembukuan tanpa dompet, bukan kas riil, jadi tidak boleh ikut Jurnal Kas/Saldo Kas.
+  const realCapital = capital.filter(c => !c.isAdjustment);
+  const totalModalMasuk = realCapital.filter(c => c.type === 'modal').reduce((s, c) => s + c.amount, 0);
+  const totalPrive       = realCapital.filter(c => c.type === 'prive').reduce((s, c) => s + c.amount, 0);
 
   // ── Rekonsiliasi Kas vs Laba ─────────────────────────────────
   // Menjembatani kenapa Laba Bersih (akrual) beda dari perubahan Saldo Kas riil periode ini:
@@ -544,7 +547,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       description: `${e.category} - ${e.description}`,
       debit: 0, kredit: e.amount,
     })),
-    ...capital.map(c => ({
+    ...realCapital.map(c => ({
       seconds: dateWithRealTime(c.date, c.createdAt),
       description: c.type === 'modal' ? `Modal Masuk${c.note ? ` - ${c.note}` : ''}` : `Prive Pemilik${c.note ? ` - ${c.note}` : ''}`,
       debit: c.type === 'modal' ? c.amount : 0, kredit: c.type === 'prive' ? c.amount : 0,
