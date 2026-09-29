@@ -441,7 +441,7 @@ export default function AdminPage() {
   const [webLoading, setWebLoading] = useState(false);
 
   // ── Analitik Bisnis (channel, laba rugi, bahan baku) — agregasi server-side ──
-  const [bizPeriod, setBizPeriod] = useState<PeriodKey>('30d');
+  const [bizPeriod, setBizPeriod] = useState<PeriodKey>('month');
   const [bizCustomFrom, setBizCustomFrom] = useState('');
   const [bizCustomTo, setBizCustomTo] = useState('');
   const [bizData, setBizData] = useState<BusinessAnalyticsData | null>(null);
