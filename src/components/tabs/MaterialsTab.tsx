@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Boxes, ShoppingBag, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck,
+  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import { cellText, cellNumber } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import MaterialPurchaseNotePDF, { type MaterialPurchaseNoteData } from '@/lib/pdf/MaterialPurchaseNotePDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import TopbarPortal from '@/components/TopbarPortal';
 import SearchSelect from '@/components/SearchSelect';
@@ -72,6 +73,11 @@ function todayISO() {
 function formatDateDisplay(iso?: string) {
   if (!iso) return '–';
   return new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function normalizePhone(raw: string) {
+  const d = raw.replace(/\D/g, '');
+  return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
 type SubTab = 'stok' | 'pembelian';
@@ -684,6 +690,78 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     if (r.ok) { toast.success('Pembelian ditandai lunas — sudah tercatat di Pengeluaran.'); await loadPurchases(); refetchBalances(); }
     else toast.error('Gagal menandai lunas.');
     setMarkingPurchaseId(null);
+  };
+
+  // ── Nota Pembelian: download PDF & kirim WA ──
+  // Nomor tujuan WA ambil dari Pengaturan > Kontak & Sosial Media > "WhatsApp Admin (Notifikasi
+  // Internal)" — beda dari nomor WhatsApp toko (yang dipakai buat kontak pelanggan di storefront).
+  const [adminWaNumber, setAdminWaNumber] = useState('');
+  useEffect(() => {
+    fetch(`${API}/api/settings`, { headers })
+      .then(async r => { if (r.ok) setAdminWaNumber(((await r.json() as { settings: { adminNotifyWhatsapp?: string } }).settings.adminNotifyWhatsapp ?? '').trim()); })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const walletNameById = new Map(wallets.map(w => [w.id, w.name]));
+  const buildPurchaseNoteData = (p: Purchase): MaterialPurchaseNoteData => ({
+    id: p.id,
+    date: p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds),
+    printedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    supplierName: p.supplierName,
+    items: p.items.map(it => ({ materialName: it.materialName, unit: it.unit, qty: it.qty, price: it.price, subtotal: it.subtotal })),
+    total: p.total,
+    paymentStatus: p.paymentStatus,
+    walletName: p.walletId ? walletNameById.get(p.walletId) : undefined,
+    note: p.note,
+    voided: p.voided,
+    voidNote: p.voidNote,
+  });
+
+  const [printingPurchasePdfId, setPrintingPurchasePdfId] = useState<string | null>(null);
+  const printPurchasePdf = async (p: Purchase) => {
+    setPrintingPurchasePdfId(p.id);
+    try {
+      const blob = await pdf(<MaterialPurchaseNotePDF data={buildPurchaseNoteData(p)} store={storeHeader} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nota-pembelian-${(p.supplierName || p.id).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat nota PDF.');
+    } finally {
+      setPrintingPurchasePdfId(null);
+    }
+  };
+
+  const sendPurchaseWhatsApp = (p: Purchase) => {
+    if (!adminWaNumber) { toast.error('Nomor WhatsApp Admin belum diisi di Pengaturan > Kontak & Sosial Media.'); return; }
+
+    const SEP = '─────────────────────';
+    const itemLines = p.items
+      .map((it, i) => `${i + 1}. ${it.materialName}\n   ${it.qty} ${it.unit} x ${formatRp(it.price)} = *${formatRp(it.subtotal)}*`)
+      .join('\n');
+    const pdfUrl = `${window.location.origin}/api/material-purchases/${p.id}/pdf`;
+
+    const message = `*NOTA PEMBELIAN BAHAN BAKU*
+${SEP}
+
+Supplier : *${p.supplierName || 'Tanpa nama'}*
+Tanggal  : ${p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}
+${SEP}
+${itemLines}
+${SEP}
+*Total : ${formatRp(p.total)}*
+Status : *${p.paymentStatus === 'belum_lunas' ? 'BELUM LUNAS' : 'LUNAS'}*
+${SEP}
+
+Nota PDF:
+${pdfUrl}`.trim();
+
+    window.open(`https://wa.me/${normalizePhone(adminWaNumber)}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(null);
@@ -1485,6 +1563,18 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                                               {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
                                             </button>
                                           )}
+                                          <Tooltip label="Download PDF nota">
+                                            <button onClick={() => printPurchasePdf(p)} disabled={printingPurchasePdfId === p.id}
+                                              className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Download PDF nota">
+                                              {printingPurchasePdfId === p.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip label="Kirim nota via WhatsApp">
+                                            <button onClick={() => sendPurchaseWhatsApp(p)}
+                                              className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Kirim nota via WhatsApp">
+                                              <MessageCircle size={12} />
+                                            </button>
+                                          </Tooltip>
                                           <Tooltip label="Edit">
                                             <button onClick={() => openEditPurchase(p)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Edit">
                                               <Pencil size={12} />
@@ -1553,6 +1643,18 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
                                         {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
                                       </button>
                                     )}
+                                    <Tooltip label="Download PDF nota">
+                                      <button onClick={() => printPurchasePdf(p)} disabled={printingPurchasePdfId === p.id}
+                                        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Download PDF nota">
+                                        {printingPurchasePdfId === p.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
+                                      </button>
+                                    </Tooltip>
+                                    <Tooltip label="Kirim nota via WhatsApp">
+                                      <button onClick={() => sendPurchaseWhatsApp(p)}
+                                        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Kirim nota via WhatsApp">
+                                        <MessageCircle size={12} />
+                                      </button>
+                                    </Tooltip>
                                     <Tooltip label="Edit">
                                       <button onClick={() => openEditPurchase(p)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Edit">
                                         <Pencil size={12} />

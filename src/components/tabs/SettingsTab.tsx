@@ -19,7 +19,7 @@ interface StoreSettings {
   storeName?: string; storeTagline?: string; storeDescription?: string; logo?: string;
   legalName?: string;
   ownerName?: string; ownerSignature?: string; ownerStamp?: string;
-  whatsapp?: string; instagramUrl?: string; tiktokUrl?: string; shopeeUrl?: string; mapsUrl?: string;
+  whatsapp?: string; adminNotifyWhatsapp?: string; instagramUrl?: string; tiktokUrl?: string; shopeeUrl?: string; mapsUrl?: string;
   address?: string; city?: string; region?: string; nib?: string; shopeeName?: string;
   // Website & SEO storefront (dipakai di metadata, sitemap, JSON-LD, PDF proposal/invoice).
   siteUrl?: string; seoTitle?: string; seoDescription?: string; seoKeywords?: string; googleSiteVerification?: string;
@@ -99,6 +99,7 @@ const FIELD_GROUPS = [
     id: 'contact', icon: <Phone size={15}/>, label: 'Kontak & Sosial Media',
     fields: [
       { key: 'whatsapp',      label: 'WhatsApp',   type: 'text', placeholder: '08xxx atau 628xxx' },
+      { key: 'adminNotifyWhatsapp', label: 'WhatsApp Admin (Notifikasi Internal)', type: 'text', placeholder: 'Nomor penerima kirim nota pembelian dari menu Bahan Baku' },
       { key: 'instagramUrl',  label: 'Instagram',  type: 'text', placeholder: 'https://instagram.com/...' },
       { key: 'tiktokUrl',     label: 'TikTok',     type: 'text', placeholder: 'https://tiktok.com/...' },
       { key: 'shopeeUrl',     label: 'Shopee',     type: 'text', placeholder: 'https://shopee.co.id/...' },
