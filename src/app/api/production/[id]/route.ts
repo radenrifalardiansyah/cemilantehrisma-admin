@@ -14,40 +14,25 @@ type Ctx = { params: Promise<{ id: string }> };
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
 interface OutputInput { productId: string; productName: string; yieldQty: number }
-interface ProductRow { stock_qty: string; cost_price: string | null; open_po: boolean }
+interface ProductRow { stock_qty: string; open_po: boolean }
 
 function outputSignature(outputs: { productId: string; yieldQty: number }[]) {
   return outputs.map(o => `${o.productId}:${o.yieldQty}`).sort().join('|');
 }
 
-// Reversal & re-terapan untuk bahan baku aman dilakukan kapan pun — avgCost bahan baku TIDAK
-// dipengaruhi produksi (hanya stockQty), jadi tambah-balik lalu kurangi-baru selalu tepat secara
-// kuantitas berapa pun urutan transaksi lain di antaranya.
+// Harga Modal produk murni manual (diatur di menu Produk) — edit/hapus batch produksi TIDAK
+// menimpanya, supaya HPP di Laporan Keuangan tidak ikut bergeser. costPerPcs batch tetap dicatat
+// di production_batches sendiri untuk referensi.
 //
-// Untuk produk hasil, stockQty TIDAK BOLEH dihitung ulang lewat reverse-lalu-apply seperti bahan
-// baku — kalau sebagian/semua hasil batch ini sudah terjual/dikirim konsinyasi setelah dibuat,
-// curQty saat edit sudah lebih kecil dari yieldQty batch ini; reverse (curQty - yieldQty) akan
-// negatif dan ke-clamp jadi 0, lalu apply menaruh yieldQty penuh lagi — diam-diam "mengembalikan"
-// stok yang sudah keluar (bug nyata yang pernah kejadian, lihat riwayat edit 2026-09-07 yang
-// mengembalikan stok Mie Kremes/Basreng ke angka produksi awal padahal sudah terjual/dikirim).
-// Makanya qty HANYA digeser sebesar SELISIH yieldQty lama->baru (0 kalau yieldQty produk itu tidak
-// berubah sama sekali) lewat `applyYieldDelta` di bawah — reverseProductState/applyProductState di
-// sini cuma dipakai untuk membaurkan HPP (rata-rata tertimbang, boleh sedikit meleset — cek &
-// koreksi manual lewat Edit Produk kalau HPP hasil akhirnya terasa tidak pas), bukan untuk qty.
-function reverseProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
-  const newQty = curQty - yieldQty;
-  const newCost = newQty > 0 ? (curCost * curQty - yieldQty * costPerPcs) / newQty : 0;
-  return { qty: Math.max(0, newQty), cost: Math.max(0, newCost) };
-}
-
+// stockQty TIDAK BOLEH dihitung ulang lewat reverse-lalu-apply — kalau sebagian/semua hasil batch
+// ini sudah terjual/dikirim konsinyasi setelah dibuat, curQty saat edit sudah lebih kecil dari
+// yieldQty batch ini; reverse (curQty - yieldQty) akan negatif dan ke-clamp jadi 0, lalu apply
+// menaruh yieldQty penuh lagi — diam-diam "mengembalikan" stok yang sudah keluar (bug nyata yang
+// pernah kejadian, lihat riwayat edit 2026-09-07 yang mengembalikan stok Mie Kremes/Basreng ke
+// angka produksi awal padahal sudah terjual/dikirim). Makanya qty HANYA digeser sebesar SELISIH
+// yieldQty lama->baru (0 kalau yieldQty produk itu tidak berubah sama sekali).
 function applyYieldDelta(curQty: number, oldYieldQty: number, newYieldQty: number) {
   return Math.max(0, curQty + (newYieldQty - oldYieldQty));
-}
-
-function applyProductState(curQty: number, curCost: number, yieldQty: number, costPerPcs: number) {
-  const newQty = curQty + yieldQty;
-  const newCost = newQty > 0 ? (curCost * curQty + yieldQty * costPerPcs) / newQty : costPerPcs;
-  return { qty: newQty, cost: newCost };
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -157,40 +142,33 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       }
 
       const productRows = await pgTx<(ProductRow & { id: string })[]>`
-        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
+        select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update
       `;
       const byId = new Map(productRows.map(r => [r.id, r]));
       newOutputs.forEach(o => { if (!byId.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
 
-      // Produk hasil: HPP dibaurkan lewat reverse-lalu-apply (rata-rata tertimbang bersifat
-      // asosiatif), TAPI qty digeser terpisah lewat selisih yieldQty lama->baru saja — lihat
-      // komentar di applyYieldDelta di atas untuk alasan kenapa qty tidak boleh direkonstruksi
-      // ulang dari yieldQty batch begitu saja.
+      // Produk hasil: qty digeser lewat selisih yieldQty lama->baru saja — lihat komentar di
+      // applyYieldDelta di atas untuk alasan kenapa qty tidak boleh direkonstruksi ulang dari
+      // yieldQty batch begitu saja. Harga Modal produk tidak disentuh sama sekali (murni manual).
       const oldByProduct = new Map(oldOutputs.map(o => [o.productId, o]));
       const newByProduct = new Map(newOutputs.map(o => [o.productId, o]));
-      const productState = new Map<string, { qty: number; cost: number }>();
+      const productQty = new Map<string, number>();
       productIds.forEach(pid => {
         const row2 = byId.get(pid);
-        const qty = row2 ? Number(row2.stock_qty) || 0 : 0;
-        const cost = row2?.cost_price != null ? Number(row2.cost_price) : 0;
-        productState.set(pid, { qty, cost });
+        productQty.set(pid, row2 ? Number(row2.stock_qty) || 0 : 0);
       });
       const outputsWithCost: BatchOutputRow[] = [];
       for (const pid of productIds) {
-        const st = productState.get(pid)!;
         const oldO = oldByProduct.get(pid);
         const newO = newByProduct.get(pid);
-        let costState = { qty: st.qty, cost: st.cost };
-        if (oldO) costState = reverseProductState(costState.qty, costState.cost, oldO.yieldQty, oldO.costPerPcs);
-        if (newO) costState = applyProductState(costState.qty, costState.cost, newO.yieldQty, costPerPcs);
-        const qty = applyYieldDelta(st.qty, oldO?.yieldQty ?? 0, newO?.yieldQty ?? 0);
-        productState.set(pid, { qty, cost: costState.cost });
+        const qty = applyYieldDelta(productQty.get(pid)!, oldO?.yieldQty ?? 0, newO?.yieldQty ?? 0);
+        productQty.set(pid, qty);
         if (newO) outputsWithCost.push({ ...newO, costPerPcs });
       }
       for (const pid of productIds) {
-        const st = productState.get(pid)!;
+        const qty = productQty.get(pid)!;
         const openPO = byId.get(pid)?.open_po ?? false;
-        await pgTx`update products set stock_qty = ${st.qty}, cost_price = ${st.cost}, stock = ${stockLabel(openPO, st.qty)}, updated_at = now() where id = ${pid}`;
+        await pgTx`update products set stock_qty = ${qty}, stock = ${stockLabel(openPO, qty)}, updated_at = now() where id = ${pid}`;
       }
 
       // Stok gudang: kembalikan efek batch lama di gudang lama, lalu terapkan output batch baru di
@@ -330,17 +308,16 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       }
 
       const productRows = await pgTx<(ProductRow & { id: string })[]>`
-        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
+        select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update
       `;
       const byId = new Map(productRows.map(r => [r.id, r]));
 
       for (const o of outputs) {
         const row2 = byId.get(o.productId);
         if (!row2) continue;
-        const curQty  = Number(row2.stock_qty) || 0;
-        const curCost = row2.cost_price != null ? Number(row2.cost_price) : 0;
-        const { qty, cost } = reverseProductState(curQty, curCost, o.yieldQty, o.costPerPcs);
-        await pgTx`update products set stock_qty = ${qty}, cost_price = ${cost}, stock = ${stockLabel(row2.open_po, qty)}, updated_at = now() where id = ${o.productId}`;
+        const curQty = Number(row2.stock_qty) || 0;
+        const qty = Math.max(0, curQty - o.yieldQty);
+        await pgTx`update products set stock_qty = ${qty}, stock = ${stockLabel(row2.open_po, qty)}, updated_at = now() where id = ${o.productId}`;
       }
 
       // Kembalikan stok gudang tujuan batch ini (batch lama sebelum fitur ini tidak punya warehouseId).

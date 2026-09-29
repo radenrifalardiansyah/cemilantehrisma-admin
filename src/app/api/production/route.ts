@@ -148,20 +148,21 @@ export async function POST(req: NextRequest) {
       const costPerPcs = totalCost / totalYieldQty;
       const outputsWithCost = outputs.map(o => ({ ...o, costPerPcs }));
 
-      const productRows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
-        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(outputs.map(o => o.productId))} order by id for update
+      const productRows = await pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`
+        select id, stock_qty, open_po from products where id in ${pgTx(outputs.map(o => o.productId))} order by id for update
       `;
       const productById = new Map(productRows.map(r => [r.id, r]));
       outputs.forEach(o => { if (!productById.has(o.productId)) throw new Error(`Produk "${o.productName}" tidak ditemukan.`); });
 
+      // Harga Modal produk murni manual (diatur di menu Produk) — produksi TIDAK menimpanya, supaya
+      // HPP di Laporan Keuangan tidak ikut bergeser tiap kali ada batch produksi baru. costPerPcs
+      // batch ini tetap dicatat di production_batches sendiri, untuk referensi biaya riil per batch.
       for (const o of outputs) {
         const row = productById.get(o.productId)!;
         const oldQty  = Number(row.stock_qty) || 0;
-        const oldCost = row.cost_price != null ? Number(row.cost_price) : 0;
         const newQty  = oldQty + o.yieldQty;
-        const newCost = newQty > 0 ? (oldQty * oldCost + o.yieldQty * costPerPcs) / newQty : costPerPcs;
         const newStock = row.open_po ? 'open_po' : newQty > 0 ? 'ready' : 'habis';
-        await pgTx`update products set stock_qty = ${newQty}, cost_price = ${newCost}, stock = ${newStock}, updated_at = now() where id = ${o.productId}`;
+        await pgTx`update products set stock_qty = ${newQty}, stock = ${newStock}, updated_at = now() where id = ${o.productId}`;
 
         await pgTx`
           insert into warehouse_stock (id, warehouse_id, product_id, product_name, stock_qty, updated_at)
