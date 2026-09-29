@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Landmark, Plus, Pencil, Trash2, X, Check, Loader2, Search,
-  ChevronLeft, ChevronRight, ArrowDownCircle, ArrowUpCircle,
+  ChevronLeft, ChevronRight, ArrowDownCircle, ArrowUpCircle, Scale,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -100,6 +100,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const [error,      setError]      = useState('');
   const [exporting,  setExporting]  = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [settling,   setSettling]   = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -183,6 +184,39 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const totalModal = entries.filter(e => e.type === 'modal').reduce((s, e) => s + e.amount, 0);
   const totalPrive = entries.filter(e => e.type === 'prive').reduce((s, e) => s + e.amount, 0);
   const saldoModal = totalModal - totalPrive;
+
+  // Catatan penyeimbang tanpa dompet (walletId: null) — computeWalletBalance hanya menjumlahkan
+  // entri yang wallet_id-nya cocok dengan dompet tertentu, jadi entri tanpa dompet tidak pernah
+  // menambah/mengurangi saldo dompet manapun, murni penyesuaian pembukuan Modal & Prive saja.
+  const settleSaldo = async () => {
+    if (saldoModal === 0 || settling) return;
+    const type: 'modal' | 'prive' = saldoModal > 0 ? 'prive' : 'modal';
+    const amount = Math.abs(saldoModal);
+    const ok = await confirm({
+      title: 'Nolkan Saldo Modal Bersih',
+      message: `Saldo modal bersih saat ini ${formatRp(saldoModal)}. Sistem akan mencatat "${type === 'prive' ? 'Prive Pemilik' : 'Modal Masuk'}" sebesar ${formatRp(amount)} agar saldo jadi Rp 0. Catatan ini murni penyesuaian pembukuan — tidak akan tercatat ke dompet manapun dan tidak mengubah saldo dompet.`,
+      confirmLabel: 'Ya, Nolkan',
+    });
+    if (!ok) return;
+    setSettling(true);
+    const r = await fetch(`${API}/api/capital`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type, amount, date: todayISO(),
+        note: 'Penyesuaian saldo modal bersih ke Rp 0 (otomatis, tidak memengaruhi saldo dompet)',
+        walletId: null,
+      }),
+    });
+    if (r.ok) {
+      await load();
+      toast.success('Saldo modal bersih berhasil dinolkan.');
+    } else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menolkan saldo.');
+    }
+    setSettling(false);
+  };
 
   const filtered = entries
     .filter(e => {
@@ -386,6 +420,14 @@ export default function CapitalTab({ creds }: { creds: string }) {
               </Tooltip>
             )}
             {entries.length > 0 && <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />}
+            {saldoModal !== 0 && (
+              <Tooltip label="Catat penyesuaian otomatis agar saldo modal bersih jadi Rp 0 (tidak memengaruhi dompet)">
+                <button onClick={settleSaldo} disabled={settling} className="btn-ghost text-xs flex-shrink-0 disabled:opacity-50" style={{ height: HEADER_BTN_H }}>
+                  {settling ? <Loader2 size={13} className="animate-spin" /> : <Scale size={13} />}
+                  <span className="hidden sm:inline">Nolkan Saldo</span>
+                </button>
+              </Tooltip>
+            )}
             <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
               <Plus size={13} /> <span className="hidden sm:inline">Catat Modal/Prive</span>
             </button>
