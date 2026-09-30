@@ -20,6 +20,7 @@ import { useToast } from '@/components/Toast';
 import { useViewMode } from '@/lib/useViewMode';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import ProductReportPDF from '@/lib/pdf/ProductReportPDF';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { toDataUri } from '@/lib/pdf/logo';
 
 const API = '';
@@ -100,6 +101,8 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   const [productMeta, setProductMeta] = useState<Map<string, ProductMeta>>(new Map());
   const [categories, setCategories]   = useState<Category[]>([]);
   const [printingPdf, setPrintingPdf] = useState(false);
+  const [exportingTrend, setExportingTrend] = useState(false);
+  const [printingTrendPdf, setPrintingTrendPdf] = useState(false);
 
   const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
   const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
@@ -268,6 +271,125 @@ export default function ProductReportTab({ creds }: { creds: string }) {
     } finally { setExporting(false); }
   };
 
+  // Tren harian: semua produk top-4 diekspor (bukan hanya yang garisnya sedang tampil), karena
+  // menyembunyikan garis cuma pengaturan tampilan grafik.
+  const trendTotals = trendProducts.map(p => dailyTrend.reduce((sum, d) => sum + Number(d[p.key] ?? 0), 0));
+
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportTrendExcel = async () => {
+    setExportingTrend(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Cemilan Teh Risma Admin';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Tren Harian');
+      const colCount = trendProducts.length + 2;
+      ws.columns = [{ key: 'tanggal', width: 16 }, ...trendProducts.map(p => ({ key: p.key, width: Math.max(16, p.name.length + 2) })), { key: 'total', width: 12 }];
+
+      ws.mergeCells(1, 1, 1, colCount);
+      const t = ws.getCell(1, 1);
+      t.value = 'TREN HARIAN PRODUK TERLARIS — CEMILAN TEH RISMA';
+      t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      t.alignment = { horizontal: 'center', vertical: 'middle' };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+      ws.mergeCells(2, 1, 2, colCount);
+      const sub = ws.getCell(2, 1);
+      sub.value = `Periode: ${periodLabel} (${from} s/d ${to}) · Qty terjual per hari`;
+      sub.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      sub.alignment = { horizontal: 'center', vertical: 'middle' };
+      sub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      ws.getRow(2).height = 20;
+
+      const head = ws.getRow(3);
+      ['Tanggal', ...trendProducts.map(p => p.name), 'Total'].forEach((h, i) => { head.getCell(i + 1).value = h; });
+      head.height = 24;
+      head.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+      ws.views = [{ state: 'frozen', ySplit: 3 }];
+
+      const line = { style: 'thin' as const, color: { argb: 'FFE5E7EB' } };
+      dailyTrend.forEach((d, i) => {
+        const row = ws.getRow(4 + i);
+        row.getCell(1).value = String(d.date);
+        let rowTotal = 0;
+        trendProducts.forEach((p, pi) => {
+          const q = Number(d[p.key] ?? 0);
+          rowTotal += q;
+          row.getCell(pi + 2).value = q;
+        });
+        row.getCell(colCount).value = rowTotal;
+        row.eachCell({ includeEmpty: true }, (cell, col) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
+          cell.border = { top: line, bottom: line, left: line, right: line };
+          if (col > 1) cell.alignment = { horizontal: 'right' };
+        });
+      });
+
+      const totalRow = ws.getRow(4 + dailyTrend.length);
+      totalRow.getCell(1).value = 'Total';
+      trendTotals.forEach((q, i) => { totalRow.getCell(i + 2).value = q; });
+      totalRow.getCell(colCount).value = trendTotals.reduce((a, b) => a + b, 0);
+      totalRow.eachCell({ includeEmpty: true }, (cell, col) => {
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE8CF' } };
+        cell.border = { top: { style: 'medium', color: { argb: 'FFC96018' } } };
+        if (col > 1) cell.alignment = { horizontal: 'right' };
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      saveBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `tren-harian-produk-${from}-sd-${to}.xlsx`);
+    } catch {
+      toast.error('Gagal membuat file Excel tren harian.');
+    } finally { setExportingTrend(false); }
+  };
+
+  const printTrendPdf = async () => {
+    setPrintingTrendPdf(true);
+    try {
+      // Lebar kolom: Tanggal 16% + Total 12%, sisanya dibagi rata untuk produk.
+      const prodWidth = `${(72 / Math.max(1, trendProducts.length)).toFixed(2)}%`;
+      const rows: (string | number)[][] = dailyTrend.map(d => [
+        shortDate(String(d.date)),
+        ...trendProducts.map(p => Number(d[p.key] ?? 0)),
+        trendProducts.reduce((sum, p) => sum + Number(d[p.key] ?? 0), 0),
+      ]);
+      rows.push(['Total', ...trendTotals, trendTotals.reduce((a, b) => a + b, 0)]);
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'TREN HARIAN PRODUK TERLARIS',
+            label: `${periodLabel}: ${from} s/d ${to}, qty terjual per hari`,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'Tanggal', width: '16%', bold: true },
+              ...trendProducts.map(p => ({ header: p.name, width: prodWidth, align: 'right' as const })),
+              { header: 'Total', width: '12%', align: 'right' as const, bold: true },
+            ],
+            rows,
+          }}
+        />
+      ).toBlob();
+      saveBlob(blob, `tren-harian-produk-${from}-sd-${to}.pdf`);
+    } catch {
+      toast.error('Gagal membuat PDF tren harian.');
+    } finally { setPrintingTrendPdf(false); }
+  };
+
   const printReportPdf = async () => {
     setPrintingPdf(true);
     try {
@@ -382,6 +504,18 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                  <Tooltip label="Export Excel">
+                    <button onClick={exportTrendExcel} disabled={exportingTrend} aria-label="Export Excel tren harian"
+                      className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingTrend ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Cetak PDF">
+                    <button onClick={printTrendPdf} disabled={printingTrendPdf} aria-label="Cetak PDF tren harian"
+                      className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {printingTrendPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                    </button>
+                  </Tooltip>
                   {trendProducts.map((p, i) => {
                     const hidden = hiddenTrendKeys.has(p.key);
                     return (
