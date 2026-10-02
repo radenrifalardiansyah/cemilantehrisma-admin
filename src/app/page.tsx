@@ -448,7 +448,7 @@ export default function AdminPage() {
   const [bizLoading, setBizLoading] = useState(false);
 
   // ── Analitik Mitra (kirim/pendapatan/pelunasan per lokasi konsinyasi) — agregasi server-side ──
-  const [mitraPeriod, setMitraPeriod] = useState<PeriodKey>('30d');
+  const [mitraPeriod, setMitraPeriod] = useState<PeriodKey>('month');
   const [mitraCustomFrom, setMitraCustomFrom] = useState('');
   const [mitraCustomTo, setMitraCustomTo] = useState('');
   const [mitraData, setMitraData] = useState<ConsignmentAnalyticsData | null>(null);
