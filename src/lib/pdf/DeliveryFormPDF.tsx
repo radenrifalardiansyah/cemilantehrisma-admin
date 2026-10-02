@@ -19,9 +19,12 @@ const s = StyleSheet.create({
   page: { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: '#FFFFFF', fontFamily: 'Helvetica', color: C.dark },
   cell: { width: '50%', height: '33.3333%', paddingHorizontal: 22, paddingTop: 14, paddingBottom: 10, borderColor: C.cut, borderStyle: 'dashed' },
 
-  logoRow: { alignItems: 'center' },
-  logo:    { width: 38, height: 38, objectFit: 'contain' },
-  brand:   { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.accent, marginTop: 2 },
+  logoRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  logoRing:  { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#F6D77A', backgroundColor: '#FFFFFF', overflow: 'hidden', marginRight: 8 },
+  logo:      { width: 36, height: 36, objectFit: 'cover' },
+  brandBox:  { justifyContent: 'center' },
+  brand1:    { fontSize: 13, fontFamily: 'Times-Bold', color: '#7A3F1A', lineHeight: 1.05 },
+  brand2:    { fontSize: 13, fontFamily: 'Times-Bold', color: '#D4891E', lineHeight: 1.05 },
   title:   { fontSize: 10.5, fontFamily: 'Helvetica-Bold', textAlign: 'center', textDecoration: 'underline', marginTop: 4 },
 
   metaRow:   { flexDirection: 'row', marginTop: 7 },
@@ -39,26 +42,30 @@ const s = StyleSheet.create({
   cJml:     { width: '20%', justifyContent: 'center' },
   tText:    { fontSize: 8.5, textAlign: 'center' },
 
-  bottom:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  paraf:      { fontSize: 9 },
-  totalWrap:  { flexDirection: 'row', alignItems: 'center' },
+  // Kotak Total menempel di bawah kolom Jml (berbagi garis tepi dengan tabel) — tanpa jarak vertikal.
+  bottom:     { flexDirection: 'row', alignItems: 'center' },
+  paraf:      { fontSize: 9, flexGrow: 1 },
   totalLabel: { fontSize: 9, marginRight: 6 },
-  totalBox:   { width: '58pt', height: 15, borderWidth: 0.8, borderColor: C.line },
+  totalBox:   { width: '20%', height: 22, borderLeftWidth: 0.8, borderRightWidth: 0.8, borderBottomWidth: 0.8, borderColor: C.line },
 
   footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 3, alignItems: 'center' },
   footerText: { fontSize: 6.5, color: C.muted, textAlign: 'center', lineHeight: 1.35 },
-  footerLink: { fontSize: 6.5, color: C.accent, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  footerLink: { fontSize: 6.5, color: C.accent, fontFamily: 'Helvetica-Oblique', textAlign: 'center' },
 });
 
 function Form({ store, index }: { store: StoreHeader; index: number }) {
   const col = index % 2;
   const row = Math.floor(index / 2);
-  const site = SITE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const contact = [store.phone && `WhatsApp ${store.phone}`, site].filter(Boolean).join('  |  ');
+  const [brandTop, ...rest] = store.name.split(' ');
+  const brandBottom = rest.join(' ');
   return (
     <View style={[s.cell, col === 0 ? { borderRightWidth: 0.6 } : {}, row < 2 ? { borderBottomWidth: 0.6 } : {}]}>
       <View style={s.logoRow}>
-        {store.logo ? <Image src={store.logo} style={s.logo} /> : <Text style={s.brand}>{store.name}</Text>}
+        {store.logo && <View style={s.logoRing}><Image src={store.logo} style={s.logo} /></View>}
+        <View style={s.brandBox}>
+          <Text style={s.brand1}>{brandTop}</Text>
+          {brandBottom ? <Text style={s.brand2}>{brandBottom}</Text> : null}
+        </View>
       </View>
       <Text style={s.title}>DAFTAR PENGIRIMAN PRODUK</Text>
 
@@ -84,15 +91,14 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
 
       <View style={s.bottom}>
         <Text style={s.paraf}>Paraf :</Text>
-        <View style={s.totalWrap}>
-          <Text style={s.totalLabel}>Total</Text>
-          <View style={s.totalBox} />
-        </View>
+        <Text style={s.totalLabel}>Total</Text>
+        <View style={s.totalBox} />
       </View>
 
       <View style={s.footer}>
-        <Text style={s.footerText}>{store.name}{store.address ? ` — ${store.address}` : ''}</Text>
-        {contact ? <Text style={s.footerLink}>{contact}</Text> : null}
+        {store.address ? <Text style={s.footerText}>{store.address}</Text> : null}
+        {store.phone ? <Text style={s.footerText}>WhatsApp {store.phone}</Text> : null}
+        <Text style={s.footerLink}>{SITE_URL}</Text>
       </View>
     </View>
   );
