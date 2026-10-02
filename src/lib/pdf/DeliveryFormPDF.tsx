@@ -62,7 +62,7 @@ const s = StyleSheet.create({
 
   footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 4, alignItems: 'center' },
   footerInfo: { alignItems: 'center' },
-  footerText: { fontSize: 6.5, color: C.muted, lineHeight: 1.35 },
+  footerText: { fontSize: 6.5, color: C.muted, lineHeight: 1.35, textAlign: 'center' },
   footerLink: { fontSize: 6.5, color: C.accent, lineHeight: 1.35, textAlign: 'center' },
 });
 
@@ -134,7 +134,8 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
 
       <View style={s.footer}>
         <View style={s.footerInfo}>
-          <Text style={s.footerLink}>{SITE_URL} ({store.tagline?.trim() || DEFAULT_SLOGAN})</Text>
+          <Text style={s.footerLink}>{SITE_URL}</Text>
+          <Text style={s.footerText}>{store.tagline?.trim() || DEFAULT_SLOGAN}</Text>
         </View>
       </View>
     </View>
