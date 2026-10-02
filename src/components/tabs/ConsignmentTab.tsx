@@ -35,6 +35,11 @@ import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
 import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
 import DeliveryFormPDF from '@/lib/pdf/DeliveryFormPDF';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import {
+  SHIPMENT_IMPORT_COLS, RECAP_IMPORT_COLS, downloadImportTemplate, readImportRows,
+  importDateToISO, importNumber, normName,
+} from '@/lib/consignment-import';
 import QRCode from 'qrcode';
 import { SITE_URL } from '@/lib/branding';
 import { toDataUri } from '@/lib/pdf/logo';
@@ -315,7 +320,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
 
   // ── Analitik Mitra (kirim/pendapatan/pelunasan lintas lokasi) — agregasi server-side ──
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<PeriodKey>('30d');
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<PeriodKey>('month');
   const [analyticsCustomFrom, setAnalyticsCustomFrom] = useState('');
   const [analyticsCustomTo, setAnalyticsCustomTo] = useState('');
   const [analyticsData, setAnalyticsData] = useState<ConsignmentAnalyticsData | null>(null);
@@ -927,6 +932,9 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [shipmentPageSize, setShipmentPageSize] = useState(10);
   const [selectedShipments, setSelectedShipments] = useState<Set<string>>(new Set());
   const [exportingShipments, setExportingShipments] = useState(false);
+  const [exportingShipmentsPdf, setExportingShipmentsPdf] = useState(false);
+  const [importingShipments, setImportingShipments] = useState(false);
+  const importShipmentFileRef = useRef<HTMLInputElement>(null);
   const [deletingShipmentId, setDeletingShipmentId] = useState<string | null>(null);
   const [bulkDeletingShipments, setBulkDeletingShipments] = useState(false);
   const [printingShipmentId, setPrintingShipmentId] = useState<string | null>(null);
@@ -1130,6 +1138,108 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       toast.error('Gagal membuat file Excel.');
     } finally {
       setExportingShipments(false);
+    }
+  };
+
+  const exportShipmentsPDF = async (rows: Shipment[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada riwayat kirim untuk diexport.'); return; }
+    setExportingShipmentsPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'RIWAYAT KIRIM STOK KONSINYASI',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'Tanggal', width: '14%' },
+              { header: 'Lokasi', width: '16%' },
+              { header: 'Gudang', width: '12%' },
+              { header: 'Produk', width: '28%' },
+              { header: 'Total Nilai', width: '14%', align: 'right', bold: true },
+              { header: 'Catatan', width: '16%' },
+            ],
+            rows: rows.map(s => [
+              formatDate(s.createdAt?.seconds), s.locationName, s.warehouseName || '-',
+              s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', '),
+              formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0)), s.note || '-',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riwayat-kirim-konsinyasi-${new Date().toLocaleDateString('en-CA')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} riwayat kirim (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingShipmentsPdf(false);
+    }
+  };
+
+  const downloadShipmentTemplate = () => downloadImportTemplate({
+    title: 'TEMPLATE IMPORT KIRIM STOK KONSINYASI — CEMILAN TEH RISMA',
+    sheetName: 'Template Kirim',
+    note: 'PETUNJUK: Kolom bertanda (*) wajib diisi. Satu baris = satu produk; baris dengan Lokasi, Gudang, Tanggal, dan Catatan yang sama digabung jadi satu pengiriman. '
+      + 'Nama Lokasi, Gudang, dan Produk harus sama persis dengan yang ada di sistem. Tanggal format YYYY-MM-DD (kosong = hari ini). Stok gudang akan berkurang. Jangan mengubah judul kolom di baris 3.',
+    cols: SHIPMENT_IMPORT_COLS,
+    filename: 'template-kirim-konsinyasi.xlsx',
+  });
+
+  const importShipmentsFromExcel = async (file: File) => {
+    setImportingShipments(true);
+    try {
+      const rows = await readImportRows(file, SHIPMENT_IMPORT_COLS);
+      if (rows.length === 0) { toast.error('Tidak ada data pada file tersebut.'); return; }
+
+      const errors: string[] = [];
+      type Group = { location: ConsignmentLocation; warehouse: ConsignmentWarehouse; date: string; note: string; items: { productId: string; productName: string; qty: number; hargaTitip: number }[] };
+      const groups = new Map<string, Group>();
+      for (const { rowNumber, values: v } of rows) {
+        const location  = locations.find(l => normName(l.name) === normName(v.location));
+        const warehouse = warehouses.find(w => normName(w.name) === normName(v.warehouse));
+        const product   = products.find(p => normName(p.name) === normName(v.product));
+        const date      = importDateToISO(v.date);
+        const qty       = importNumber(v.qty);
+        const harga     = importNumber(v.hargaTitip);
+        if (!location)  { errors.push(`Baris ${rowNumber}: lokasi "${v.location}" tidak ditemukan`); continue; }
+        if (!warehouse) { errors.push(`Baris ${rowNumber}: gudang "${v.warehouse}" tidak ditemukan`); continue; }
+        if (!product)   { errors.push(`Baris ${rowNumber}: produk "${v.product}" tidak ditemukan`); continue; }
+        if (!date)      { errors.push(`Baris ${rowNumber}: tanggal "${v.date}" tidak valid`); continue; }
+        if (!(qty > 0) || !(harga > 0)) { errors.push(`Baris ${rowNumber}: Qty dan Harga Titip harus lebih dari 0`); continue; }
+        const key = [location.id, warehouse.id, v.date.trim(), v.note.trim()].join('|');
+        const g = groups.get(key) ?? { location, warehouse, date, note: v.note.trim(), items: [] };
+        g.items.push({ productId: product.id, productName: product.name, qty, hargaTitip: harga });
+        groups.set(key, g);
+      }
+
+      let created = 0;
+      for (const g of groups.values()) {
+        const res = await fetch(`${API}/api/consignment/send`, {
+          method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId: g.location.id, locationName: g.location.name,
+            warehouseId: g.warehouse.id, warehouseName: g.warehouse.name,
+            items: g.items, note: g.note, date: g.date,
+          }),
+        });
+        if (res.ok) created++;
+        else errors.push(`${g.location.name}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'gagal disimpan'}`);
+      }
+      await Promise.all([loadShipments(), loadLocations()]);
+      if (created > 0) toast.success(`${created} pengiriman berhasil diimpor.${errors.length ? ` ${errors.length} baris/pengiriman dilewati.` : ''}`);
+      if (errors.length) toast.error(errors.slice(0, 3).join(' • ') + (errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ''));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImportingShipments(false);
     }
   };
 
@@ -1371,6 +1481,9 @@ _${storeHeader.name}_`.trim();
   const [recapPageSize, setRecapPageSize] = useState(10);
   const [selectedRecaps, setSelectedRecaps] = useState<Set<string>>(new Set());
   const [exportingRecaps, setExportingRecaps] = useState(false);
+  const [exportingRecapsPdf, setExportingRecapsPdf] = useState(false);
+  const [importingRecaps, setImportingRecaps] = useState(false);
+  const importRecapFileRef = useRef<HTMLInputElement>(null);
   const [deletingRecapId, setDeletingRecapId] = useState<string | null>(null);
   const [bulkDeletingRecaps, setBulkDeletingRecaps] = useState(false);
   const [printingRecapId, setPrintingRecapId] = useState<string | null>(null);
@@ -1632,6 +1745,132 @@ _${storeHeader.name}_`.trim();
       toast.error('Gagal membuat file Excel.');
     } finally {
       setExportingRecaps(false);
+    }
+  };
+
+  const exportRecapsPDF = async (rows: Recap[], label: string) => {
+    if (rows.length === 0) { toast.error('Tidak ada riwayat rekap untuk diexport.'); return; }
+    setExportingRecapsPdf(true);
+    try {
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'RIWAYAT REKAP KONSINYASI',
+            label,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'Tanggal', width: '12%' },
+              { header: 'Lokasi', width: '16%' },
+              { header: 'Produk', width: '24%' },
+              { header: 'Terjual', width: '8%', align: 'right' },
+              { header: 'Retur', width: '7%', align: 'right' },
+              { header: 'Reject', width: '7%', align: 'right' },
+              { header: 'Pendapatan', width: '14%', align: 'right', bold: true },
+              { header: 'Status', width: '12%' },
+            ],
+            rows: rows.map(r => [
+              formatDate(r.createdAt?.seconds), r.locationName,
+              r.items.map(it => it.productName).join(', '),
+              r.totalSold, r.totalRetur, r.totalReject, formatRp(r.totalRevenue),
+              r.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+            ]),
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riwayat-rekap-konsinyasi-${new Date().toLocaleDateString('en-CA')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${rows.length} riwayat rekap (${label}) ke PDF.`);
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setExportingRecapsPdf(false);
+    }
+  };
+
+  const downloadRecapTemplate = () => downloadImportTemplate({
+    title: 'TEMPLATE IMPORT REKAP KONSINYASI — CEMILAN TEH RISMA',
+    sheetName: 'Template Rekap',
+    note: 'PETUNJUK: Kolom bertanda (*) wajib diisi. Satu baris = satu produk; baris dengan Lokasi, Tanggal, Status Bayar, Dompet, Gudang, dan Catatan yang sama digabung jadi satu rekap. '
+      + 'Status Bayar: Lunas / Belum Lunas (kosong = Lunas). Dompet wajib jika Lunas. Gudang wajib jika ada Retur/Reject. '
+      + 'Qty tidak boleh melebihi stok titip di lokasi. Tanggal format YYYY-MM-DD (kosong = hari ini). Jangan mengubah judul kolom di baris 3.',
+    cols: RECAP_IMPORT_COLS,
+    filename: 'template-rekap-konsinyasi.xlsx',
+  });
+
+  const importRecapsFromExcel = async (file: File) => {
+    setImportingRecaps(true);
+    try {
+      const rows = await readImportRows(file, RECAP_IMPORT_COLS);
+      if (rows.length === 0) { toast.error('Tidak ada data pada file tersebut.'); return; }
+
+      const errors: string[] = [];
+      type Group = {
+        location: ConsignmentLocation; date: string; note: string; paymentStatus: 'lunas' | 'belum_lunas';
+        walletId: string | null; warehouse?: ConsignmentWarehouse;
+        items: { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number }[];
+      };
+      const groups = new Map<string, Group>();
+      for (const { rowNumber, values: v } of rows) {
+        const location = locations.find(l => normName(l.name) === normName(v.location));
+        const product  = products.find(p => normName(p.name) === normName(v.product));
+        const date     = importDateToISO(v.date);
+        const sold = importNumber(v.sold), retur = importNumber(v.retur), reject = importNumber(v.reject);
+        const payText = normName(v.payment);
+        const paymentStatus: 'lunas' | 'belum_lunas' | null =
+          !payText || payText === 'lunas' ? 'lunas' : payText === 'belum lunas' || payText === 'belum_lunas' ? 'belum_lunas' : null;
+        if (!location) { errors.push(`Baris ${rowNumber}: lokasi "${v.location}" tidak ditemukan`); continue; }
+        if (!product)  { errors.push(`Baris ${rowNumber}: produk "${v.product}" tidak ditemukan`); continue; }
+        if (!date)     { errors.push(`Baris ${rowNumber}: tanggal "${v.date}" tidak valid`); continue; }
+        if (!paymentStatus) { errors.push(`Baris ${rowNumber}: Status Bayar harus Lunas atau Belum Lunas`); continue; }
+        if ([sold, retur, reject].some(n => isNaN(n) || n < 0) || sold + retur + reject <= 0) {
+          errors.push(`Baris ${rowNumber}: isi minimal salah satu Terjual / Retur / Reject (angka positif)`); continue;
+        }
+        let walletId: string | null = null;
+        if (paymentStatus === 'lunas') {
+          const w = wallets.find(w => w.isActive && normName(w.name) === normName(v.wallet));
+          if (!w) { errors.push(`Baris ${rowNumber}: dompet "${v.wallet}" tidak ditemukan (wajib untuk status Lunas)`); continue; }
+          walletId = w.id;
+        }
+        let warehouse: ConsignmentWarehouse | undefined;
+        if (retur + reject > 0) {
+          warehouse = warehouses.find(w => normName(w.name) === normName(v.warehouse));
+          if (!warehouse) { errors.push(`Baris ${rowNumber}: gudang "${v.warehouse}" tidak ditemukan (wajib jika ada Retur/Reject)`); continue; }
+        }
+        const key = [location.id, v.date.trim(), paymentStatus, walletId ?? '', v.warehouse.trim().toLowerCase(), v.note.trim()].join('|');
+        const g = groups.get(key) ?? { location, date, note: v.note.trim(), paymentStatus, walletId, warehouse, items: [] };
+        if (!g.warehouse && warehouse) g.warehouse = warehouse;
+        g.items.push({ productId: product.id, productName: product.name, qtySold: sold, qtyRetur: retur, qtyReject: reject });
+        groups.set(key, g);
+      }
+
+      let created = 0;
+      for (const g of groups.values()) {
+        const res = await fetch(`${API}/api/consignment/recap`, {
+          method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId: g.location.id, locationName: g.location.name, items: g.items, note: g.note,
+            paymentStatus: g.paymentStatus, walletId: g.walletId,
+            warehouseId: g.warehouse?.id, warehouseName: g.warehouse?.name, date: g.date,
+          }),
+        });
+        if (res.ok) created++;
+        else errors.push(`${g.location.name}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'gagal disimpan'}`);
+      }
+      await Promise.all([loadRecaps(), loadLocations()]);
+      refetchBalances();
+      if (created > 0) toast.success(`${created} rekap berhasil diimpor.${errors.length ? ` ${errors.length} baris/rekap dilewati.` : ''}`);
+      if (errors.length) toast.error(errors.slice(0, 3).join(' • ') + (errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ''));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal membaca file Excel. Pastikan format sesuai template.');
+    } finally {
+      setImportingRecaps(false);
     }
   };
 
@@ -2454,11 +2693,31 @@ _${storeHeader.name}_`.trim();
                 </div>
               )}
               <div className="flex items-center gap-2 justify-end flex-shrink-0 w-full sm:w-auto">
+                <Tooltip label="Unduh Template">
+                  <button onClick={downloadShipmentTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    <ExcelIcon size={14} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={importingShipments ? 'Mengimpor…' : 'Upload Excel'}>
+                  <button onClick={() => importShipmentFileRef.current?.click()} disabled={importingShipments} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {importingShipments ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  </button>
+                </Tooltip>
+                <input ref={importShipmentFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importShipmentsFromExcel(f); e.target.value = ''; }} />
                 {shipments.length > 0 && (
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportShipmentsExcel(filteredShipments, 'sesuai filter')} disabled={exportingShipments} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       {exportingShipments ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {shipments.length > 0 && (
+                  <Tooltip label="Export PDF">
+                    <button onClick={() => exportShipmentsPDF(filteredShipments, 'sesuai filter')} disabled={exportingShipmentsPdf} aria-label="Export PDF"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingShipmentsPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
@@ -2685,11 +2944,31 @@ _${storeHeader.name}_`.trim();
                 </button>
               )}
               <div className="flex items-center gap-2 justify-end flex-shrink-0">
+                <Tooltip label="Unduh Template">
+                  <button onClick={downloadRecapTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    <ExcelIcon size={14} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={importingRecaps ? 'Mengimpor…' : 'Upload Excel'}>
+                  <button onClick={() => importRecapFileRef.current?.click()} disabled={importingRecaps} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {importingRecaps ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  </button>
+                </Tooltip>
+                <input ref={importRecapFileRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importRecapsFromExcel(f); e.target.value = ''; }} />
                 {recaps.length > 0 && (
                   <Tooltip label="Export Excel">
                     <button onClick={() => exportRecapsExcel(filteredRecaps, 'sesuai filter')} disabled={exportingRecaps} aria-label="Export Excel"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       {exportingRecaps ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {recaps.length > 0 && (
+                  <Tooltip label="Export PDF">
+                    <button onClick={() => exportRecapsPDF(filteredRecaps, 'sesuai filter')} disabled={exportingRecapsPdf} aria-label="Export PDF"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      {exportingRecapsPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                     </button>
                   </Tooltip>
                 )}
