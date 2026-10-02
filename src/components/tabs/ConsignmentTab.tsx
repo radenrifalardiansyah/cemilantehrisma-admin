@@ -34,6 +34,7 @@ import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
 import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
 import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
+import DeliveryFormPDF from '@/lib/pdf/DeliveryFormPDF';
 import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
@@ -429,6 +430,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [bulkDeletingLocations, setBulkDeletingLocations] = useState(false);
   const [exportingLocations, setExportingLocations] = useState(false);
   const [exportingLocationsPdf, setExportingLocationsPdf] = useState(false);
+  const [downloadingDeliveryForm, setDownloadingDeliveryForm] = useState(false);
   const [importingLocations, setImportingLocations] = useState(false);
   const importLocationFileRef = useRef<HTMLInputElement>(null);
 
@@ -684,6 +686,26 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       toast.error('Gagal membuat file Excel.');
     } finally {
       setExportingLocations(false);
+    }
+  };
+
+  const downloadDeliveryForm = async () => {
+    setDownloadingDeliveryForm(true);
+    try {
+      const blob = await pdf(<DeliveryFormPDF store={storeHeader} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'form-daftar-pengiriman-produk-cemilantehrisma.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Form Daftar Pengiriman Produk berhasil diunduh.');
+    } catch {
+      toast.error('Gagal membuat file PDF.');
+    } finally {
+      setDownloadingDeliveryForm(false);
     }
   };
 
@@ -2187,6 +2209,12 @@ _${storeHeader.name}_`.trim();
                     </button>
                   </Tooltip>
                 )}
+                <Tooltip label="Download Form Daftar Pengiriman (kosong, untuk dicetak)">
+                  <button onClick={downloadDeliveryForm} disabled={downloadingDeliveryForm} aria-label="Download Form Daftar Pengiriman"
+                    className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                    {downloadingDeliveryForm ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
+                  </button>
+                </Tooltip>
                 {locations.length > 0 && <ViewToggle mode={locationView} onChange={setLocationView} height={HEADER_BTN_H} />}
                 <button onClick={openCreateL} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Tambah Lokasi</span>
