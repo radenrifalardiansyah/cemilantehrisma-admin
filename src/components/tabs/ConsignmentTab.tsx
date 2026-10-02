@@ -35,6 +35,8 @@ import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
 import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
 import DeliveryFormPDF from '@/lib/pdf/DeliveryFormPDF';
+import QRCode from 'qrcode';
+import { SITE_URL } from '@/lib/branding';
 import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 
@@ -692,7 +694,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const downloadDeliveryForm = async () => {
     setDownloadingDeliveryForm(true);
     try {
-      const blob = await pdf(<DeliveryFormPDF store={storeHeader} />).toBlob();
+      const qr = await QRCode.toDataURL(SITE_URL, { width: 240, margin: 0, color: { dark: '#1E1008', light: '#FFFFFF' } });
+      const blob = await pdf(<DeliveryFormPDF store={storeHeader} qr={qr} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

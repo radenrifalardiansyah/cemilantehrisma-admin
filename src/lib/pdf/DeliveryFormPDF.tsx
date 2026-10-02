@@ -6,6 +6,8 @@ import type { StoreHeader } from './ShipmentNotePDF';
 // dicetak lalu digunting; Mitra, Tanggal, dan isi tabel diisi tangan oleh kurir saat antar.
 const COPIES = 6;
 const ROWS   = 5;
+const BORDER = 0.8;
+const JML_W  = 52; // lebar kolom Jml; kotak Total memakai lebar yang sama + 2 garis tepi
 
 const C = {
   accent: THEME_COLOR,
@@ -20,8 +22,7 @@ const s = StyleSheet.create({
   cell: { width: '50%', height: '33.3333%', paddingHorizontal: 22, paddingTop: 14, paddingBottom: 10, borderColor: C.cut, borderStyle: 'dashed' },
 
   logoRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  logoRing:  { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: '#F6D77A', backgroundColor: '#FFFFFF', overflow: 'hidden', marginRight: 8 },
-  logo:      { width: 36, height: 36, objectFit: 'cover' },
+  logo:      { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: '#FCD34D', objectFit: 'cover', marginRight: 8 },
   brandBox:  { justifyContent: 'center' },
   brand1:    { fontSize: 13, fontFamily: 'Times-Bold', color: '#7A3F1A', lineHeight: 1.05 },
   brand2:    { fontSize: 13, fontFamily: 'Times-Bold', color: '#D4891E', lineHeight: 1.05 },
@@ -34,26 +35,29 @@ const s = StyleSheet.create({
   metaLine:  { flexGrow: 1, borderBottomWidth: 0.5, borderBottomColor: C.line, marginLeft: 3, marginBottom: 2 },
 
   table:    { marginTop: 5, borderWidth: 0.8, borderColor: C.line },
-  tr:       { flexDirection: 'row', height: 24 },
+  tr:       { flexDirection: 'row', height: 22 },
   trBorder: { borderTopWidth: 0.8, borderTopColor: C.line },
   thead:    { backgroundColor: '#FDF0E6' },
   cNo:      { width: '11%', borderRightWidth: 0.8, borderRightColor: C.line, justifyContent: 'center' },
   cMenu:    { flexGrow: 1, flexBasis: 0, borderRightWidth: 0.8, borderRightColor: C.line, justifyContent: 'center' },
-  cJml:     { width: '20%', justifyContent: 'center' },
+  cJml:     { width: JML_W, justifyContent: 'center' },
   tText:    { fontSize: 8.5, textAlign: 'center' },
 
   // Kotak Total menempel di bawah kolom Jml (berbagi garis tepi dengan tabel) — tanpa jarak vertikal.
   bottom:     { flexDirection: 'row', alignItems: 'center' },
   paraf:      { fontSize: 9, flexGrow: 1 },
   totalLabel: { fontSize: 9, marginRight: 6 },
-  totalBox:   { width: '20%', height: 22, borderLeftWidth: 0.8, borderRightWidth: 0.8, borderBottomWidth: 0.8, borderColor: C.line },
+  totalBox:   { width: JML_W + 2 * BORDER, height: 22, borderLeftWidth: BORDER, borderRightWidth: BORDER, borderBottomWidth: BORDER, borderColor: C.line },
 
-  footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 3, alignItems: 'center' },
-  footerText: { fontSize: 6.5, color: C.muted, textAlign: 'center', lineHeight: 1.35 },
-  footerLink: { fontSize: 6.5, color: C.accent, fontFamily: 'Helvetica-Oblique', textAlign: 'center' },
+  footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 4, flexDirection: 'row', alignItems: 'center' },
+  footerInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0, marginRight: 6 },
+  footerText: { fontSize: 6.5, color: C.muted, lineHeight: 1.35 },
+  footerLine: { flexDirection: 'row', alignItems: 'center', marginTop: 1 },
+  footerLink: { fontSize: 6.5, color: C.accent, fontFamily: 'Helvetica-Oblique', marginLeft: 8 },
+  qr:         { width: 34, height: 34 },
 });
 
-function Form({ store, index }: { store: StoreHeader; index: number }) {
+function Form({ store, qr, index }: { store: StoreHeader; qr?: string; index: number }) {
   const col = index % 2;
   const row = Math.floor(index / 2);
   const [brandTop, ...rest] = store.name.split(' ');
@@ -61,7 +65,7 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
   return (
     <View style={[s.cell, col === 0 ? { borderRightWidth: 0.6 } : {}, row < 2 ? { borderBottomWidth: 0.6 } : {}]}>
       <View style={s.logoRow}>
-        {store.logo && <View style={s.logoRing}><Image src={store.logo} style={s.logo} /></View>}
+        {store.logo && <Image src={store.logo} style={s.logo} />}
         <View style={s.brandBox}>
           <Text style={s.brand1}>{brandTop}</Text>
           {brandBottom ? <Text style={s.brand2}>{brandBottom}</Text> : null}
@@ -96,19 +100,25 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
       </View>
 
       <View style={s.footer}>
-        {store.address ? <Text style={s.footerText}>{store.address}</Text> : null}
-        {store.phone ? <Text style={s.footerText}>WhatsApp {store.phone}</Text> : null}
-        <Text style={s.footerLink}>{SITE_URL}</Text>
+        <View style={s.footerInfo}>
+          {store.address ? <Text style={s.footerText}>{store.address}</Text> : null}
+          <View style={s.footerLine}>
+            {store.phone ? <Text style={s.footerText}>WhatsApp {store.phone}</Text> : null}
+            <Text style={store.phone ? s.footerLink : [s.footerLink, { marginLeft: 0 }]}>{SITE_URL}</Text>
+          </View>
+        </View>
+        {qr ? <Image src={qr} style={s.qr} /> : null}
       </View>
     </View>
   );
 }
 
-export default function DeliveryFormPDF({ store }: { store: StoreHeader }) {
+// `qr` = data-URI PNG QR code yang mengarah ke SITE_URL (dibuat oleh pemanggil, lihat makeStoreQr).
+export default function DeliveryFormPDF({ store, qr }: { store: StoreHeader; qr?: string }) {
   return (
     <Document title={`Daftar Pengiriman Produk — ${store.name}`}>
       <Page size="A4" style={s.page}>
-        {Array.from({ length: COPIES }, (_, i) => <Form key={i} store={store} index={i} />)}
+        {Array.from({ length: COPIES }, (_, i) => <Form key={i} store={store} qr={qr} index={i} />)}
       </Page>
     </Document>
   );
