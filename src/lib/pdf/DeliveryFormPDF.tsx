@@ -22,7 +22,8 @@ const s = StyleSheet.create({
   cell: { width: '50%', height: '33.3333%', paddingHorizontal: 22, paddingTop: 14, paddingBottom: 10, borderColor: C.cut, borderStyle: 'dashed' },
 
   logoRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  logo:      { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: '#FCD34D', objectFit: 'cover', marginRight: 8 },
+  logoRing:  { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: '#F5C451', padding: 1.5, backgroundColor: '#FFFFFF', marginRight: 8 },
+  logo:      { width: 38, height: 38, borderRadius: 19, objectFit: 'cover' },
   brandBox:  { justifyContent: 'center' },
   brand1:    { fontSize: 13, fontFamily: 'Times-Bold', color: '#7A3F1A', lineHeight: 1.05 },
   brand2:    { fontSize: 13, fontFamily: 'Times-Bold', color: '#D4891E', lineHeight: 1.05 },
@@ -52,6 +53,7 @@ const s = StyleSheet.create({
   footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 4, flexDirection: 'row', alignItems: 'center' },
   footerInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0, marginRight: 6 },
   footerText: { fontSize: 6.5, color: C.muted, lineHeight: 1.35 },
+  footerAccent: { fontSize: 6.5, color: C.accent, fontFamily: 'Helvetica-Oblique' },
   footerLine: { flexDirection: 'row', alignItems: 'center', marginTop: 1 },
   footerLink: { fontSize: 6.5, color: C.accent, fontFamily: 'Helvetica-Oblique', marginLeft: 8 },
   qr:         { width: 34, height: 34 },
@@ -65,7 +67,7 @@ function Form({ store, qr, index }: { store: StoreHeader; qr?: string; index: nu
   return (
     <View style={[s.cell, col === 0 ? { borderRightWidth: 0.6 } : {}, row < 2 ? { borderBottomWidth: 0.6 } : {}]}>
       <View style={s.logoRow}>
-        {store.logo && <Image src={store.logo} style={s.logo} />}
+        {store.logo && <View style={s.logoRing}><Image src={store.logo} style={s.logo} /></View>}
         <View style={s.brandBox}>
           <Text style={s.brand1}>{brandTop}</Text>
           {brandBottom ? <Text style={s.brand2}>{brandBottom}</Text> : null}
@@ -103,7 +105,7 @@ function Form({ store, qr, index }: { store: StoreHeader; qr?: string; index: nu
         <View style={s.footerInfo}>
           {store.address ? <Text style={s.footerText}>{store.address}</Text> : null}
           <View style={s.footerLine}>
-            {store.phone ? <Text style={s.footerText}>WhatsApp {store.phone}</Text> : null}
+            {store.phone ? <Text style={s.footerAccent}>WhatsApp {store.phone}</Text> : null}
             <Text style={store.phone ? s.footerLink : [s.footerLink, { marginLeft: 0 }]}>{SITE_URL}</Text>
           </View>
         </View>
