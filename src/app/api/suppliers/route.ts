@@ -1,12 +1,12 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { rowToSupplier, nextSupplierCode, type SupplierRow } from '@/lib/suppliers-pg';
 
-// Opened whenever the Supplier tab is opened, not on every session — plain TTL (no
-// invalidation tag) is enough here, same tradeoff as getAllUsernames/modules-and-menus.
+// Di-invalidate lewat tag 'admin-suppliers' setiap ada tambah/ubah/hapus/impor, supaya
+// daftar langsung segar setelah load() ulang di klien (TTL hanya sebagai jaring pengaman).
 // (Tahap 20 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
 const getCachedSuppliers = unstable_cache(
   async () => {
@@ -29,7 +29,7 @@ const getCachedSuppliers = unstable_cache(
     return rows.map(rowToSupplier);
   },
   ['admin-suppliers'],
-  { revalidate: 20 },
+  { revalidate: 20, tags: ['admin-suppliers'] },
 );
 
 export async function GET(req: NextRequest) {
@@ -51,5 +51,6 @@ export async function POST(req: NextRequest) {
     insert into suppliers (id, code, name, phone, address, note, created_at, updated_at)
     values (${id}, ${code}, ${data.name as string}, ${(data.phone as string) ?? ''}, ${(data.address as string) ?? ''}, ${(data.note as string) ?? ''}, now(), now())
   `;
+  revalidateTag('admin-suppliers', { expire: 0 });
   return Response.json({ id, code });
 }
