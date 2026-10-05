@@ -605,7 +605,7 @@ export default function StockReportTab({
   const [reportTxPage, setReportTxPage]         = useState(1);
   const [reportTxPageSize, setReportTxPageSize] = useState(10);
   const [reportLedger, setReportLedger]         = useState<TxEntry[]>([]);
-  const [reportLedgerLoading, setReportLedgerLoading] = useState(false);
+  const [reportLedgerLoading, setReportLedgerLoading] = useState(true);
   const [allWhStocks, setAllWhStocks]           = useState<WhStockRow[]>([]);
   const [allWhStocksLoading, setAllWhStocksLoading] = useState(false);
   const [exportingReport, setExportingReport]   = useState(false);
@@ -968,6 +968,12 @@ export default function StockReportTab({
       setPrintingCardId(null);
     }
   };
+
+  // Muatan awal: loader saja (tanpa filter periode/gudang & tombol export) sampai mutasi stok pertama
+  // selesai dimuat. `booted` mencegah loader penuh menutup filter saat periode diganti.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!reportLedgerLoading) setBooted(true); }, [reportLedgerLoading]);
+  if (!booted) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5 animate-fade-up">

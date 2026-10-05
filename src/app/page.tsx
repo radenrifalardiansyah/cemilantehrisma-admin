@@ -1526,6 +1526,7 @@ export default function AdminPage() {
         customerList={customerList}
         bankOptions={bankOptions}
         isActive={activeTab === 'pos'}
+        productsLoading={loading && posProducts.length === 0}
         username={adminUsername}
         onCartChange={setPosCartCount}
         onGoToOrders={() => setActiveTab('orders')}

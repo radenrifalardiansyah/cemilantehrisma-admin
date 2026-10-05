@@ -262,6 +262,7 @@ interface PosTabProps {
   customerList: PosCustomer[];
   bankOptions: PosBank[];
   isActive: boolean;
+  productsLoading?: boolean;
   username: string;
   onCartChange: (count: number) => void;
   onGoToOrders: () => void;
@@ -271,7 +272,7 @@ interface PosTabProps {
 
 export default function PosTab({
   creds, posProducts, posCategories, resellerList, customerList, bankOptions,
-  isActive, username, onCartChange, onGoToOrders, onRefresh, onRefreshStock,
+  isActive, productsLoading = false, username, onCartChange, onGoToOrders, onRefresh, onRefreshStock,
 }: PosTabProps) {
   const [posView,      setPosView]      = useState<PosView>('products');
   const [activeCat,    setActiveCat]    = useState<string>('semua');
@@ -842,7 +843,9 @@ export default function PosTab({
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-44 lg:pb-4 thin-scrollbar">
         {posProducts.length === 0 ? (
-          <PageLoader compact />
+          <div className="text-center py-16">
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada produk.</p>
+          </div>
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Produk tidak ditemukan.</p>
@@ -1603,6 +1606,12 @@ export default function PosTab({
       </div>
     </div>
   );
+
+  // Muatan awal produk: loader saja (tanpa kolom cari/kategori/keranjang). Wrapper display tetap
+  // mengikuti isActive karena PosTab selalu ter-mount walau tab Kasir tidak sedang dibuka.
+  if (productsLoading) {
+    return <div style={{ display: isActive ? 'block' : 'none' }}><PageLoader /></div>;
+  }
 
   return (
     <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
