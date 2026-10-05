@@ -13,12 +13,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as Record<string, unknown>;
+  if (typeof data.name !== 'string' || !data.name.trim()) {
+    return Response.json({ error: 'Nama bahan baku wajib diisi.' }, { status: 400 });
+  }
   const sql = getSql();
-  await sql`
-    update raw_materials set name = ${data.name as string}, unit = ${(data.unit as string) ?? ''},
+  const result = await sql`
+    update raw_materials set name = ${data.name.trim()}, unit = ${(data.unit as string) ?? ''},
       min_stock = ${Number(data.minStock) || 0}, updated_at = now()
     where id = ${id}
   `;
+  if (result.count === 0) return Response.json({ error: 'Bahan baku tidak ditemukan.' }, { status: 404 });
   revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ ok: true });
 }

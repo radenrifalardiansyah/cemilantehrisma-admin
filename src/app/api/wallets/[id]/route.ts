@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount } from '@/lib/validate-input';
 import { walletHasReferences, guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
 import { rowToWallet, type WalletRow } from '@/lib/wallets-pg';
@@ -22,13 +23,18 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const sql = getSql();
   const [before] = await sql<WalletRow[]>`select * from wallets where id = ${id}`;
+  if (!before) return Response.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
 
   const patch: Record<string, unknown> = {};
   if (typeof data.name === 'string' && data.name.trim()) patch.name = data.name.trim();
   if (['cash', 'bank', 'ewallet', 'other'].includes(data.type as string)) patch.type = data.type;
   if (typeof data.icon === 'string' && data.icon) patch.icon = data.icon;
   if (typeof data.color === 'string' && data.color) patch.color = data.color;
-  if (data.initialBalance !== undefined) patch.initialBalance = Number(data.initialBalance) || 0;
+  if (data.initialBalance !== undefined) {
+    const ib = parseMoneyAmount(data.initialBalance);
+    if (ib === null) return Response.json({ error: 'Saldo awal tidak valid.' }, { status: 400 });
+    patch.initialBalance = ib;
+  }
   if (typeof data.isActive === 'boolean') patch.isActive = data.isActive;
   if (typeof data.bankName === 'string') patch.bankName = data.bankName.trim() || null;
 
@@ -79,6 +85,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   const [before] = await sql<WalletRow[]>`select * from wallets where id = ${id}`;
+  if (!before) return Response.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
   await sql`delete from wallets where id = ${id}`;
   try {
     await logHistory(db, {

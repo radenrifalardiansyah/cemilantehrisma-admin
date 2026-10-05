@@ -23,7 +23,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (camelKey in data) patch[column] = data[camelKey];
   }
   if (Object.keys(patch).length > 0) {
-    await sql`update categories set ${sql(patch)}, updated_at = now() where id = ${id}`;
+    const result = await sql`update categories set ${sql(patch)}, updated_at = now() where id = ${id}`;
+    if (result.count === 0) return Response.json({ error: 'Kategori tidak ditemukan.' }, { status: 404 });
   }
   revalidateTag('admin-categories', { expire: 0 });
   after(() => revalidateStorefront('categories'));

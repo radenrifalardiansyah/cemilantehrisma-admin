@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount, parseDateKey } from '@/lib/validate-input';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { computeWalletBalance } from '@/lib/wallet-balance';
@@ -72,12 +73,14 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'capital', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
-  const amount = Number(data.amount) || 0;
+  const amount = parseMoneyAmount(data.amount) ?? 0;
   if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
+  const date = parseDateKey(data.date, true);
+  if (!date) return Response.json({ error: 'Tanggal tidak valid (format YYYY-MM-DD).' }, { status: 400 });
   const payload = {
     type: data.type === 'prive' ? 'prive' : 'modal',
     amount,
-    date: String(data.date ?? ''),
+    date,
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
     // Entri penyeimbang dari tombol "Nolkan Saldo" — murni pembukuan Modal & Prive, bukan

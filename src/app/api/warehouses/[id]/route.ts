@@ -27,10 +27,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const sql = getSql();
 
+  if (typeof data.name !== 'string' || !data.name.trim()) {
+    return Response.json({ error: 'Nama gudang wajib diisi.' }, { status: 400 });
+  }
   const [before] = await sql<WarehouseRow[]>`select id, name, location, description from warehouses where id = ${id}`;
+  if (!before) return Response.json({ error: 'Gudang tidak ditemukan.' }, { status: 404 });
 
   const after = {
-    name: data.name as string,
+    name: data.name.trim(),
     location: (data.location as string) ?? '',
     description: (data.description as string) ?? '',
   };

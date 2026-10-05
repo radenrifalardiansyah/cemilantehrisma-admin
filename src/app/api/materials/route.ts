@@ -29,11 +29,14 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
+  if (typeof data.name !== 'string' || !data.name.trim()) {
+    return Response.json({ error: 'Nama bahan baku wajib diisi.' }, { status: 400 });
+  }
   const sql = getSql();
   const id = randomUUID();
   await sql`
     insert into raw_materials (id, name, unit, min_stock, stock_qty, avg_cost, created_at, updated_at)
-    values (${id}, ${data.name as string}, ${(data.unit as string) ?? ''}, ${Number(data.minStock) || 0}, 0, 0, now(), now())
+    values (${id}, ${data.name.trim()}, ${(data.unit as string) ?? ''}, ${Number(data.minStock) || 0}, 0, 0, now(), now())
   `;
   revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ id });

@@ -3,25 +3,29 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount, parseDateKey } from '@/lib/validate-input';
 import { logHistory } from '@/lib/history';
 import { computeWalletBalance, guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 class CapitalValidationError extends Error {}
+class CapitalNotFoundError extends Error {}
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'capital', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as Record<string, unknown>;
-  const amount = Number(data.amount) || 0;
+  const amount = parseMoneyAmount(data.amount) ?? 0;
   if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
   const sql = getSql();
+  const date = parseDateKey(data.date, false);
+  if (!date) return Response.json({ error: 'Tanggal tidak valid (format YYYY-MM-DD).' }, { status: 400 });
   const payload = {
     type: data.type === 'prive' ? 'prive' : 'modal',
     amount,
-    date: String(data.date ?? ''),
+    date,
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
   };
@@ -31,6 +35,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
     await sql.begin(async (pgTx) => {
       [before] = await pgTx`select * from capital_entries where id = ${id}`;
+      if (!before) throw new CapitalNotFoundError('Data tidak ditemukan.');
 
       // Sama seperti POST — kunci &amp; validasi saldo hanya untuk Prive (penarikan). Kontribusi lama
       // entri ini sendiri dikeluarkan (excludeCapitalEntryId) supaya edit yang cuma ganti catatan
@@ -55,6 +60,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       });
     });
   } catch (err) {
+    if (err instanceof CapitalNotFoundError) return Response.json({ error: err.message }, { status: 404 });
     if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
     if (err instanceof CapitalValidationError) return Response.json({ error: err.message }, { status: 400 });
     throw err;
@@ -85,6 +91,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [before] = await sql`select * from capital_entries where id = ${id}`;
+  if (!before) return Response.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
   try {
     await sql.begin(async pgTx => {
       await guardWalletBalances(pgTx, [before?.wallet_id], async () => { await pgTx`delete from capital_entries where id = ${id}`; });

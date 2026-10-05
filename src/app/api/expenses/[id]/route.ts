@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount, parseDateKey } from '@/lib/validate-input';
 import { logHistory } from '@/lib/history';
 import { computeWalletBalance } from '@/lib/wallet-balance';
 
@@ -39,18 +40,21 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [before] = await sql<ExpenseRow[]>`select * from expenses where id = ${id}`;
+  if (!before) return Response.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
   const lockMsg = sourceLockMessage(before?.source_type);
   if (lockMsg) return Response.json({ error: lockMsg }, { status: 400 });
 
   const data = await req.json() as Record<string, unknown>;
-  const amount = Number(data.amount) || 0;
+  const amount = parseMoneyAmount(data.amount) ?? 0;
   if (amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
+  const date = parseDateKey(data.date, false);
+  if (!date) return Response.json({ error: 'Tanggal tidak valid (format YYYY-MM-DD).' }, { status: 400 });
   const payload = {
     category: (data.category as string | undefined) ?? 'Lainnya',
     description: (data.description as string | undefined) ?? '',
     amount,
     items: Array.isArray(data.items) ? data.items : [],
-    date: String(data.date ?? ''),
+    date,
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
   };
@@ -105,6 +109,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [before] = await sql<ExpenseRow[]>`select * from expenses where id = ${id}`;
+  if (!before) return Response.json({ error: 'Data tidak ditemukan.' }, { status: 404 });
   const lockMsg = sourceLockMessage(before?.source_type);
   if (lockMsg) return Response.json({ error: lockMsg }, { status: 400 });
 

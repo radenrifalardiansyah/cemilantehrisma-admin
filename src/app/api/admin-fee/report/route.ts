@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireSuperAdmin } from '@/lib/rbac';
 import { computeReport } from '@/lib/admin-fee';
+import { parseDateKey } from '@/lib/validate-input';
 
 export async function GET(req: NextRequest) {
   const guard = await requireSuperAdmin(req);
@@ -9,6 +10,10 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from');
   const to = searchParams.get('to');
   if (!from || !to) return Response.json({ error: 'Parameter from dan to wajib diisi.' }, { status: 400 });
+
+  if (!parseDateKey(from, false) || !parseDateKey(to, false) || from > to) {
+    return Response.json({ error: 'Periode tidak valid (format YYYY-MM-DD, from tidak boleh setelah to).' }, { status: 400 });
+  }
 
   const report = await computeReport(from, to);
   return Response.json(report);

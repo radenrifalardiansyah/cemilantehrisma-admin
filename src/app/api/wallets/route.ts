@@ -4,6 +4,7 @@ import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount } from '@/lib/validate-input';
 import { logHistory } from '@/lib/history';
 import { rowToWallet, type WalletRow } from '@/lib/wallets-pg';
 
@@ -34,6 +35,9 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Nama dompet wajib diisi.' }, { status: 400 });
   }
 
+  const initialBalance = data.initialBalance === undefined || data.initialBalance === '' ? 0 : parseMoneyAmount(data.initialBalance);
+  if (initialBalance === null) return Response.json({ error: 'Saldo awal tidak valid.' }, { status: 400 });
+
   const [{ max_order }] = await sql<{ max_order: number | null }[]>`select max(sort_order) as max_order from wallets`;
   const nextOrder = (max_order ?? -1) + 1;
 
@@ -42,7 +46,7 @@ export async function POST(req: NextRequest) {
     type: ['cash', 'bank', 'ewallet', 'other'].includes(data.type as string) ? data.type as string : 'cash',
     icon: typeof data.icon === 'string' && data.icon ? data.icon : 'Wallet',
     color: typeof data.color === 'string' && data.color ? data.color : '#D4691E',
-    initialBalance: Number(data.initialBalance) || 0,
+    initialBalance,
     isActive: true,
     order: nextOrder,
     bankName: typeof data.bankName === 'string' && data.bankName.trim() ? data.bankName.trim() : null,

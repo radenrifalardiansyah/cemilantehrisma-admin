@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount } from '@/lib/validate-input';
 import { computeWalletBalance, guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
 
@@ -19,7 +20,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const fromWalletId = typeof data.fromWalletId === 'string' ? data.fromWalletId : '';
   const toWalletId = typeof data.toWalletId === 'string' ? data.toWalletId : '';
-  const amount = Number(data.amount) || 0;
+  const amount = parseMoneyAmount(data.amount) ?? 0;
   if (!fromWalletId || !toWalletId) return Response.json({ error: 'Dompet asal dan tujuan wajib diisi.' }, { status: 400 });
   if (fromWalletId === toWalletId) return Response.json({ error: 'Dompet asal dan tujuan tidak boleh sama.' }, { status: 400 });
   if (amount <= 0) return Response.json({ error: 'Jumlah transfer harus lebih dari 0.' }, { status: 400 });

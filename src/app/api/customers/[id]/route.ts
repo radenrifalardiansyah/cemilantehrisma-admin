@@ -45,7 +45,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: `Kode "${codeTrim}" sudah digunakan pelanggan lain.` }, { status: 409 });
   }
 
-  await sql`
+  const result = await sql`
     update customers set
       name = ${name.trim()}, phone = ${phoneTrim}, code = ${codeTrim},
       type = ${type === 'company' ? 'company' : 'personal'},
@@ -53,6 +53,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       notes = ${notes?.trim() ?? ''}, updated_at = now()
     where id = ${id}
   `;
+  if (result.count === 0) return Response.json({ error: 'Pelanggan tidak ditemukan.' }, { status: 404 });
   revalidateTag('admin-customers', { expire: 0 });
   revalidateTag('admin-resellers', { expire: 0 });
   return Response.json({ ok: true });

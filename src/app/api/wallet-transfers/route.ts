@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { parseMoneyAmount } from '@/lib/validate-input';
 import { computeWalletBalance } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
 import { wibDateKey } from '@/lib/date';
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
 
   const fromWalletId = typeof data.fromWalletId === 'string' ? data.fromWalletId : '';
   const toWalletId = typeof data.toWalletId === 'string' ? data.toWalletId : '';
-  const amount = Number(data.amount) || 0;
+  const amount = parseMoneyAmount(data.amount) ?? 0;
   if (!fromWalletId || !toWalletId) return Response.json({ error: 'Dompet asal dan tujuan wajib diisi.' }, { status: 400 });
   if (fromWalletId === toWalletId) return Response.json({ error: 'Dompet asal dan tujuan tidak boleh sama.' }, { status: 400 });
   if (amount <= 0) return Response.json({ error: 'Jumlah transfer harus lebih dari 0.' }, { status: 400 });

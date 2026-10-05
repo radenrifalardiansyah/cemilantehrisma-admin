@@ -3,6 +3,7 @@ import { unstable_cache, revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getSql } from '@/lib/db';
 import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
+import { parseDateKey } from '@/lib/validate-input';
 import { computeReport, collectTransactionIds, serializeInvoiceRow, type AdminFeeInvoiceRow } from '@/lib/admin-fee';
 
 // Cached unfiltered — role-based filtering below stays outside the cache (per-request, not
@@ -38,6 +39,9 @@ export async function POST(req: NextRequest) {
   const data = await req.json() as { from?: string; to?: string; note?: string; dueDate?: string };
   const { from, to } = data;
   if (!from || !to) return Response.json({ error: 'Periode (from/to) wajib diisi.' }, { status: 400 });
+  if (!parseDateKey(from, false) || !parseDateKey(to, false) || from > to) {
+    return Response.json({ error: 'Periode tidak valid (format YYYY-MM-DD, from tidak boleh setelah to).' }, { status: 400 });
+  }
 
   const sql = getSql();
   const id = randomUUID();

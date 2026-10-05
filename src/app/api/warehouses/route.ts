@@ -39,7 +39,10 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const sql = getSql();
   const id = randomUUID();
-  const payload = { name: data.name as string, location: (data.location as string) ?? '', description: (data.description as string) ?? '' };
+  if (typeof data.name !== 'string' || !data.name.trim()) {
+    return Response.json({ error: 'Nama gudang wajib diisi.' }, { status: 400 });
+  }
+  const payload = { name: data.name.trim(), location: (data.location as string) ?? '', description: (data.description as string) ?? '' };
   await sql`
     insert into warehouses (id, name, location, description, created_at, updated_at)
     values (${id}, ${payload.name}, ${payload.location}, ${payload.description}, now(), now())

@@ -493,7 +493,18 @@ export default function ProductsTab({ creds }: { creds: string }) {
       setProducts(p => p.filter(x => !selected.has(x.id))); setSelected(new Set());
       toast.success(`${count} produk berhasil dihapus.`);
     } else {
-      toast.error('Gagal menghapus produk yang dipilih.');
+      // Server menghapus yang bisa dihapus dan mengembalikan daftar `failed` (mis. sudah punya
+      // riwayat stok/transaksi) — produk yang sudah terhapus harus hilang dari layar, hanya yang
+      // gagal yang tetap tampil dan tetap terpilih.
+      const d = await r.json().catch(() => null) as { deleted?: number; failed?: { id: string; error: string }[] } | null;
+      if (d?.failed && d.failed.length > 0) {
+        const failedIds = new Set(d.failed.map(f => f.id));
+        setProducts(p => p.filter(x => !selected.has(x.id) || failedIds.has(x.id)));
+        setSelected(new Set(failedIds));
+        toast.error(`${d.deleted ?? 0} produk dihapus, ${d.failed.length} gagal: ${d.failed[0].error}${d.failed.length > 1 ? ' (dan lainnya)' : ''}.`);
+      } else {
+        toast.error('Gagal menghapus produk yang dipilih.');
+      }
     }
     setBulkDeleting(false);
   };
