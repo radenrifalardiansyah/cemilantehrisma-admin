@@ -4,6 +4,7 @@ import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { getAuthUser } from '@/lib/admin-auth';
 import { requirePermission } from '@/lib/rbac';
+import { stockLabel } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 import { rowToProduct, productPatchFromBody, type ProductRow } from '@/lib/products-pg';
 
@@ -48,6 +49,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   await sql`update products set ${sql(patch)}, updated_at = now() where id = ${id}`;
+  // Label stok ('ready' | 'habis' | 'open_po') diturunkan dari qty + openPO — kalau openPO diubah
+  // dari sini, label harus dihitung ulang, kalau tidak storefront menampilkan status yang basi
+  // sampai ada pergerakan stok berikutnya.
+  if ('open_po' in patch) {
+    const [cur] = await sql<{ stock_qty: string; open_po: boolean }[]>`select stock_qty, open_po from products where id = ${id}`;
+    if (cur) await sql`update products set stock = ${stockLabel(cur.open_po, Number(cur.stock_qty) || 0)} where id = ${id}`;
+  }
   revalidateTag('admin-products', { expire: 0 });
   after(() => revalidateStorefront('products'));
   return Response.json({ ok: true });

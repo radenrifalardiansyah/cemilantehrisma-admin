@@ -174,6 +174,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   // Update status/paymentStatus saja (batalkan, tandai selesai, tandai lunas)
   const { status, paymentStatus, walletId } = body;
+  // Hanya status yang dikenali — status sembarang (typo) membuat pesanan lepas dari semua filter,
+  // dan 'selesai' memicu pemotongan stok.
+  if (status !== undefined && !['baru', 'selesai', 'dibatalkan'].includes(status)) {
+    return Response.json({ error: 'Status pesanan tidak valid.' }, { status: 400 });
+  }
+  if (paymentStatus !== undefined && !['lunas', 'belum_lunas'].includes(paymentStatus)) {
+    return Response.json({ error: 'Status pembayaran tidak valid.' }, { status: 400 });
+  }
   let statusResult: { orderBefore: ReturnType<typeof rowToOrder>; stockTouched: boolean };
 
   try {

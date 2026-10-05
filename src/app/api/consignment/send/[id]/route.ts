@@ -79,6 +79,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
             values (${wsKey}, ${shipment.warehouseId}, ${it.productId}, ${it.productName}, ${oldWsQty + it.qty}, now())
             on conflict (id) do update set stock_qty = ${oldWsQty + it.qty}, updated_at = now()
           `;
+          // Pasangan dari ledger 'out' saat kirim — tanpa ini Laporan Stok per gudang tidak cocok
+          // dengan warehouse_stock setelah riwayat kirim dihapus.
+          await writeStockLedgerEntryPg(pgTx, {
+            productId: it.productId, productName: it.productName, warehouseId: shipment.warehouseId, warehouseName: shipment.warehouseName,
+            type: 'in', qty: it.qty, note: `Hapus kirim konsinyasi – ${shipment.locationName ?? ''}`,
+          });
         }
       }
 
@@ -268,6 +274,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       // Log gudang baru untuk kiriman hasil edit — log lama dari kiriman sebelum diedit
       // dibiarkan sebagai riwayat historis (tidak dihapus/diubah).
+      // Pengembalian stok kiriman lama dicatat sebagai 'in' supaya ledger tetap seimbang dengan
+      // warehouse_stock (kiriman lama sebelum fitur gudang asal tidak pernah memotong gudang).
+      if (oldShipment.warehouseId) {
+        for (const it of oldItems) {
+          await writeStockLedgerEntryPg(pgTx, {
+            productId: it.productId, productName: it.productName, warehouseId: oldShipment.warehouseId, warehouseName: oldShipment.warehouseName,
+            type: 'in', qty: it.qty, note: `Edit kirim konsinyasi (kiriman lama dibatalkan) – ${oldShipment.locationName ?? ''}`,
+          });
+        }
+      }
       for (const it of newItems) {
         await writeStockLedgerEntryPg(pgTx, {
           productId: it.productId, productName: it.productName, warehouseId: data.warehouseId, warehouseName: data.warehouseName,
