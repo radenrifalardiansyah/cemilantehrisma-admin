@@ -25,6 +25,27 @@ function isRateLimited(key: string): boolean {
   return entry.count > MAX_ATTEMPTS;
 }
 
+// Batas percobaan GAGAL per username (selain per IP di atas) — IP dari x-forwarded-for bisa
+// dirotasi penyerang, tapi username yang diserang tetap sama. Dihitung hanya untuk percobaan yang
+// gagal dan di-reset saat login berhasil, supaya pemilik akun yang sah tidak ikut terkunci hanya
+// karena sering login.
+const loginFailures = new Map<string, { count: number; resetAt: number }>();
+const MAX_FAILURES_PER_USER = 10;
+
+function isUserLocked(identifier: string): boolean {
+  const entry = loginFailures.get(identifier);
+  if (!entry) return false;
+  if (Date.now() > entry.resetAt) { loginFailures.delete(identifier); return false; }
+  return entry.count >= MAX_FAILURES_PER_USER;
+}
+
+function recordFailure(identifier: string) {
+  const now = Date.now();
+  const entry = loginFailures.get(identifier);
+  if (!entry || now > entry.resetAt) loginFailures.set(identifier, { count: 1, resetAt: now + WINDOW_MS });
+  else entry.count++;
+}
+
 interface ProfileRow { username: string; role: string; must_change_password: boolean }
 
 export async function POST(req: NextRequest) {
@@ -39,6 +60,9 @@ export async function POST(req: NextRequest) {
   }
 
   const identifier = username.trim().toLowerCase();
+  if (isUserLocked(identifier)) {
+    return Response.json({ error: 'Terlalu banyak percobaan login untuk akun ini. Coba lagi dalam beberapa menit.' }, { status: 429 });
+  }
 
   // Login-nya sendiri ke Supabase Auth (Tahap 7 migrasi, lihat plan gleaming-wondering-quokka.md)
   // — hanya untuk verifikasi password. Ini panggilan REST terpisah dari Postgres/Firestore, jadi
@@ -48,6 +72,7 @@ export async function POST(req: NextRequest) {
     password,
   });
   if (error || !data.user) {
+    recordFailure(identifier);
     return Response.json({ error: 'Invalid credentials' }, { status: 401 });
   }
 
@@ -62,6 +87,7 @@ export async function POST(req: NextRequest) {
   }
 
   loginAttempts.delete(ip);
+  loginFailures.delete(identifier);
   const user = { username: profile.username, role: profile.role, uid: data.user.id, mustChangePassword: profile.must_change_password };
   const userAgent = req.headers.get('user-agent') || 'unknown';
 

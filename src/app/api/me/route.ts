@@ -60,7 +60,14 @@ export async function PATCH(req: NextRequest) {
   const sql = getSql();
   const patch: Record<string, unknown> = {};
   if (email !== undefined) patch.email = email ? email.trim().toLowerCase() : null;
-  if (avatar !== undefined) patch.avatar = avatar || null;
+  if (avatar !== undefined) {
+    // Avatar selalu hasil upload (URL https Cloudinary) — tolak string sembarang (data:/javascript:
+    // URL, atau teks sangat panjang) yang nanti dirender sebagai <img src> di banyak layar.
+    if (avatar && (typeof avatar !== 'string' || avatar.length > 500 || !/^https:\/\//i.test(avatar))) {
+      return Response.json({ error: 'Foto profil tidak valid.' }, { status: 400 });
+    }
+    patch.avatar = avatar || null;
+  }
 
   if (newPassword) {
     if (!currentPassword) {

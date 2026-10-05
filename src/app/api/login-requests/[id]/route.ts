@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { recordLogin } from '@/lib/login-history';
-import { getLoginRequest } from '@/lib/login-requests';
+import { getLoginRequest, APPROVED_TOKEN_WINDOW_MS } from '@/lib/login-requests';
+import { getSql } from '@/lib/db';
 import { signAdminToken, type AuthUser } from '@/lib/admin-auth';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -23,9 +24,27 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     return Response.json({ status: 'expired' });
   }
 
+  // Persetujuan hanya berlaku sebentar — tanpa batas ini, siapa pun yang memegang id permintaan
+  // bisa terus mencetak token baru dari snapshot lama (tanpa batas waktu).
+  const respondedAt = request.responded_at?.getTime() ?? 0;
+  if (!respondedAt || Date.now() - respondedAt > APPROVED_TOKEN_WINDOW_MS) {
+    return Response.json({ status: 'expired' });
+  }
+
   // approved — mint token baru untuk perangkat ini. Sesi yang menyetujui (di /respond) tidak
   // di-revoke, jadi keduanya aktif bersamaan (multi-device didukung secara sengaja).
   const user = request.user_payload as AuthUser;
+
+  // Snapshot role/password-sementara diambil saat login — pastikan akunnya masih ada dan role-nya
+  // belum berubah sejak itu, supaya role yang diturunkan/akun yang dihapus tidak tetap dapat token.
+  const [profile] = await getSql()<{ role: string; must_change_password: boolean }[]>`
+    select role, must_change_password from profiles where username = ${user.username}
+  `;
+  if (!profile || profile.role !== user.role) {
+    return Response.json({ status: 'expired' });
+  }
+  user.mustChangePassword = profile.must_change_password;
+
   const token = signAdminToken(user);
   try {
     await recordLogin({ username: user.username, role: user.role, ip: request.ip, userAgent: request.user_agent });

@@ -12,6 +12,16 @@ const MAX_BYTES = 900_000;
 // bawah yang tetap jadi batas sebenarnya.
 const MAX_BODY_BYTES = MAX_BYTES + 50_000;
 
+// Allowlist format raster saja — SVG sengaja tidak diizinkan (bisa memuat script), dan `file.type`
+// dikontrol klien sehingga tipe sebenarnya ditentukan dari magic bytes isi file, bukan dari header.
+function detectImageType(b: Buffer): string | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (b.length >= 6 && /^GIF8[79]a$/.test(b.subarray(0, 6).toString('latin1'))) return 'image/gif';
+  if (b.length >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const session = await requireSession(req);
   if (session instanceof Response) return session;
@@ -34,9 +44,6 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get('file') as File | null;
   if (!file) return Response.json({ error: 'No file' }, { status: 400 });
-  if (file.type && !file.type.startsWith('image/')) {
-    return Response.json({ error: 'Hanya file gambar yang bisa diunggah.' }, { status: 400 });
-  }
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -47,8 +54,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const detectedType = detectImageType(buffer);
+  if (!detectedType) {
+    return Response.json({ error: 'Format gambar tidak didukung. Gunakan JPG, PNG, WebP, atau GIF.' }, { status: 400 });
+  }
+
   try {
-    const url = await uploadToCloudinary(buffer, file.name, 'uploads', file.type || 'image/jpeg');
+    const url = await uploadToCloudinary(buffer, file.name, 'uploads', detectedType);
     return Response.json({ url });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Upload ke Cloudinary gagal.' }, { status: 502 });

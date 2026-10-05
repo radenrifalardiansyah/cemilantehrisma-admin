@@ -6,6 +6,9 @@ import type { AuthUser } from '@/lib/admin-auth';
 // chat.ts) — sesi yang sedang aktif harus menyetujui/menolak sebelum perangkat baru dapat token.
 export const PENDING_EXPIRY_MS = 2 * 60 * 1000;
 
+// Setelah disetujui, perangkat yang menunggu hanya punya jendela singkat ini untuk mengambil token.
+export const APPROVED_TOKEN_WINDOW_MS = 5 * 60 * 1000;
+
 export type LoginRequestStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 
 export interface LoginRequestRow {
