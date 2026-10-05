@@ -308,6 +308,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         throw new Error(`Tidak bisa dihapus — sebagian stok hasil produksi ini sudah terjual/keluar dari gudang: ${[...new Set(names)].join(', ')}.`);
       }
 
+      // Bahan baku dikunci SEBELUM produk — urutan yang sama dengan POST /api/production (bahan baku →
+      // produk → gudang). Sebelumnya di sini produk dikunci dulu, baru bahan baku → bisa deadlock
+      // dengan pencatatan produksi baru yang berjalan bersamaan.
+      const lockMaterialIds = materialsUsed.map(m => m.materialId);
+      if (lockMaterialIds.length > 0) {
+        await pgTx`select id from raw_materials where id in ${pgTx(lockMaterialIds)} order by id for update`;
+      }
+
       const productRows = await pgTx<(ProductRow & { id: string })[]>`
         select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update
       `;

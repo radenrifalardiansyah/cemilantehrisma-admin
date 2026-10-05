@@ -135,6 +135,21 @@ export async function POST(req: NextRequest) {
   try {
     await sql.begin(async pgTx => {
       const stockKeys = items.map(it => `${data.locationId}_${it.productId}`);
+      const productIds = [...new Set(items.map(it => it.productId))];
+
+      // Urutan kunci SERAGAM di seluruh alur stok: produk → stok gudang → stok titip (sama dengan
+      // pesanan/kirim konsinyasi). Sebelumnya stok titip dikunci lebih dulu, kebalikan dari kirim
+      // konsinyasi → dua transaksi bersamaan pada produk+lokasi yang sama bisa deadlock.
+      const productRows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
+        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
+      `;
+      const productById = new Map(productRows.map(r => [r.id, r]));
+
+      const returWsKeys = data.warehouseId ? items.filter(it => it.qtyRetur > 0).map(it => `${data.warehouseId}_${it.productId}`) : [];
+      if (returWsKeys.length > 0) {
+        await pgTx`select id from warehouse_stock where id in ${pgTx(returWsKeys)} order by id for update`;
+      }
+
       const stockRows = await pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`
         select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update
       `;
@@ -153,12 +168,6 @@ export async function POST(req: NextRequest) {
       // Snapshot HPP (costPrice) tiap produk saat rekap terjadi — dipakai Laporan Keuangan untuk
       // menghitung HPP barang konsinyasi yang benar-benar terjual (costPrice produk adalah rata-rata
       // bergerak, jadi HPP historis tidak bisa direkonstruksi ulang kalau tidak disimpan di sini).
-      const productIds = [...new Set(items.map(it => it.productId))];
-      const productRows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`
-        select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update
-      `;
-      const productById = new Map(productRows.map(r => [r.id, r]));
-
       recapItems = items.map((it, i) => {
         const stockRow = stockById.get(stockKeys[i])!;
         const hargaTitip = Number(stockRow.harga_titip) || 0;

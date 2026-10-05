@@ -4,6 +4,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { writeTransferLedgerEntryPg } from '@/lib/stock-pg';
+import { withDeadlockRetry } from '@/lib/db-retry';
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'stock', 'edit');
@@ -35,7 +36,10 @@ export async function POST(req: NextRequest) {
   const sql = getSql();
 
   try {
-    await sql.begin(async pgTx => {
+    await withDeadlockRetry(() => sql.begin(async pgTx => {
+      // Kunci kedua baris gudang sekaligus, urut id — transfer A→B dan B→A bersamaan pada produk yang
+      // sama tidak boleh saling menunggu (masing-masing mengunci asalnya dulu = deadlock).
+      await pgTx`select id from warehouse_stock where id in ${pgTx([`${fromWarehouseId}_${productId}`, `${toWarehouseId}_${productId}`])} order by id for update`;
       const [fromRow] = await pgTx<{ stock_qty: string }[]>`
         select stock_qty from warehouse_stock where id = ${`${fromWarehouseId}_${productId}`} for update
       `;
@@ -60,7 +64,7 @@ export async function POST(req: NextRequest) {
         fromWarehouseId, fromWarehouseName, toWarehouseId, toWarehouseName,
         qty, note: note ?? '',
       });
-    });
+    }));
 
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal transfer stok.' }, { status: 400 });

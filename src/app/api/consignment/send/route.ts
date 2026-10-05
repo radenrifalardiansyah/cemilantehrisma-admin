@@ -101,12 +101,10 @@ export async function POST(req: NextRequest) {
     await sql.begin(async pgTx => {
       const productIds = items.map(it => it.productId);
       const stockKeys  = items.map(it => `${data.locationId}_${it.productId}`);
-      const [productRows, stockRows] = await Promise.all([
-        pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update`,
-        pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update`,
-      ]);
+      // Urutan kunci SERAGAM: produk → stok gudang → stok titip (lihat warehouse-stock.ts). Stok titip
+      // dikunci paling akhir (setelah pengecekan gudang di bawah), bukan bersamaan dengan produk.
+      const productRows = await pgTx<{ id: string; stock_qty: string; cost_price: string | null; open_po: boolean }[]>`select id, stock_qty, cost_price, open_po from products where id in ${pgTx(productIds)} order by id for update`;
       const productById = new Map(productRows.map(r => [r.id, r]));
-      const stockById = new Map(stockRows.map(r => [r.id, r]));
 
       const shortages: string[] = [];
       items.forEach((it, i) => {
@@ -121,6 +119,9 @@ export async function POST(req: NextRequest) {
       items.forEach(it => wsDeltas.set(it.productId, (wsDeltas.get(it.productId) ?? 0) - it.qty));
       const wsShortages = await readWarehouseShortagesPg(pgTx, data.warehouseId, wsDeltas, new Map(items.map(it => [it.productId, it.productName])));
       if (wsShortages.length > 0) throw new Error(`Stok gudang asal tidak cukup untuk dikirim: ${wsShortages.join(', ')}`);
+
+      const stockRows = await pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update`;
+      const stockById = new Map(stockRows.map(r => [r.id, r]));
 
       const wsSnapshots: WsSnapshot[] = [];
       for (const [i, it] of items.entries()) {

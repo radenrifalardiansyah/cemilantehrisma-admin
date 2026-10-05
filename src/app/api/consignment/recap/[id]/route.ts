@@ -70,10 +70,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const productIds = returItems.map(it => it.productId);
       const wsKeys = returItems.map(it => `${recap.warehouseId}_${it.productId}`);
 
-      const [stockRows, productRows, wsRows] = await Promise.all([
-        stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
+      // Urutan kunci SERAGAM di seluruh alur stok: produk → stok gudang → stok titip. Query dikirim
+      // berurutan pada satu koneksi transaksi, jadi urutan di array ini = urutan penguncian.
+      const [productRows, wsRows, stockRows] = await Promise.all([
         productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
         wsKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from warehouse_stock where id in ${pgTx(wsKeys)} order by id for update` : [],
+        stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
       ]);
       const stockById = new Map(stockRows.map(r => [r.id, r]));
       const productById = new Map(productRows.map(r => [r.id, r]));
@@ -215,10 +217,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         throw new Error('Riwayat rekap baru saja diubah — muat ulang lalu coba lagi.');
       }
 
-      const [productRows, stockRows, wsRows] = await Promise.all([
+      // Urutan kunci SERAGAM: produk → stok gudang → stok titip (lihat catatan di atas).
+      const [productRows, wsRows, stockRows] = await Promise.all([
         productIds.length > 0 ? pgTx<{ id: string; stock_qty: string; open_po: boolean }[]>`select id, stock_qty, open_po from products where id in ${pgTx(productIds)} order by id for update` : [],
-        stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
         wsKeys.length > 0 ? pgTx<{ id: string; stock_qty: string }[]>`select id, stock_qty from warehouse_stock where id in ${pgTx(wsKeys)} order by id for update` : [],
+        stockKeys.length > 0 ? pgTx<{ id: string; stock_qty: string; harga_titip: string | null }[]>`select id, stock_qty, harga_titip from consignment_stock where id in ${pgTx(stockKeys)} order by id for update` : [],
       ]);
       const productById = new Map(productRows.map(r => [r.id, r]));
       const stockById = new Map(stockRows.map(r => [r.id, r]));

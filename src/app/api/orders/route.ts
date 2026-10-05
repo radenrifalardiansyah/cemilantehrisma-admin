@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { withDeadlockRetry } from '@/lib/db-retry';
 import { invalidQtyMessage } from '@/lib/validate-items';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateProductStock } from '@/lib/revalidate';
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
   // gleaming-wondering-quokka.md), jadi bisa digabung jadi SATU transaksi atomic — tidak ada lagi
   // kompensasi cross-database seperti versi sebelumnya (order Firestore + stok Postgres terpisah).
   try {
-    orderId = await sql.begin(async pgTx => {
+    orderId = await withDeadlockRetry(() => sql.begin(async pgTx => {
       const { products, shortageDetails } = await readProductsForDeltasPg(pgTx, deltas);
       // "Jual sebagai PO" adalah pilihan manual kasir (lihat checkbox di PosTab.tsx), lepas dari
       // stok saat ini — sengaja TIDAK otomatis dipicu oleh stok habis, supaya kasir yang menentukan
@@ -144,7 +145,7 @@ export async function POST(req: NextRequest) {
         )
       `;
       return id;
-    });
+    }));
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan transaksi.' }, { status: 400 });
   }

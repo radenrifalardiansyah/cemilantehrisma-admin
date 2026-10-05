@@ -1,5 +1,6 @@
 import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
+import { withDeadlockRetry } from '@/lib/db-retry';
 import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateStorefront } from '@/lib/revalidate';
 
@@ -9,7 +10,11 @@ import { revalidateStorefront } from '@/lib/revalidate';
 // mencatat entri 'out' di riwayat stok untuk audit trail. No-op kalau stok sudah 0.
 async function clearWarehouseProductStockTx(warehouseId: string, productId: string, note: string): Promise<void> {
   const sql = getSql();
-  await sql.begin(async pgTx => {
+  await withDeadlockRetry(() => sql.begin(async pgTx => {
+    // Urutan kunci SERAGAM di seluruh alur stok: produk → stok gudang → stok titip. Alur penjualan/edit/
+    // batal pesanan (stock-pg.ts) mengunci produk dulu; kalau di sini baris gudang dikunci lebih dulu,
+    // dua transaksi bersamaan pada produk+gudang yang sama bisa saling tunggu (deadlock).
+    await pgTx`select id from products where id = ${productId} for update`;
     const [wsRow] = await pgTx<{ stock_qty: string }[]>`select stock_qty from warehouse_stock where id = ${`${warehouseId}_${productId}`} for update`;
     const currentQty = wsRow ? Number(wsRow.stock_qty) || 0 : 0;
     if (currentQty <= 0) return;
@@ -25,7 +30,7 @@ async function clearWarehouseProductStockTx(warehouseId: string, productId: stri
     await writeStockLedgerEntryPg(pgTx, {
       productId, productName: product.name, warehouseId, type: 'out', qty: currentQty, note,
     });
-  });
+  }));
 }
 
 export async function clearWarehouseProductStock(warehouseId: string, productId: string, note: string): Promise<void> {
