@@ -17,8 +17,11 @@ function parseDate(v: string): Date | null {
   const ddmmyyyy = trimmed.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
   if (ddmmyyyy) {
     const [, d, m, y] = ddmmyyyy;
-    const dt = new Date(Number(y), Number(m) - 1, Number(d));
-    if (!isNaN(dt.getTime())) return dt;
+    // Tanggal kalender harus valid (31/02 jangan diam-diam jadi 3 Maret) dan dibaca sebagai
+    // tengah malam WIB, bukan zona waktu server, supaya tanggalnya tidak geser sehari di filter periode.
+    const check = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+    if (check.getUTCFullYear() !== Number(y) || check.getUTCMonth() !== Number(m) - 1 || check.getUTCDate() !== Number(d)) return null;
+    return new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00+07:00`);
   }
   const dt = new Date(trimmed);
   return isNaN(dt.getTime()) ? null : dt;
@@ -55,6 +58,10 @@ export async function POST(req: NextRequest) {
     if (!invoiceNo) invoiceNo = `IMP-${Date.now()}-${i}`;
     seenInvoices.add(invoiceNo);
 
+    const rawStatus = (row.status ?? '').toString().trim().toLowerCase();
+    const status = rawStatus === '' || rawStatus === 'done' ? 'selesai' : rawStatus;
+    if (!['baru', 'selesai', 'dibatalkan'].includes(status)) { skippedInvalid++; continue; }
+
     const subtotal = Number(row.subtotal) || total;
     const discountAmount = Number(row.discount) || 0;
     const itemsText = (row.itemsText ?? '').toString().trim();
@@ -64,12 +71,12 @@ export async function POST(req: NextRequest) {
 
     await sql`
       insert into orders (
-        id, invoice_no, date, customer_name, customer_phone, items, subtotal, discount, total, status, source, created_at
+        id, invoice_no, date, customer_name, customer_phone, items, subtotal, discount, total, status, source, stock_cut, created_at
       ) values (
         ${randomUUID()}, ${invoiceNo}, ${(row.date ?? '').toString().trim()},
         ${customerName}, ${(row.customerPhone ?? '').toString().trim()},
         ${JSON.stringify(items)}, ${subtotal}, ${discount ? JSON.stringify(discount) : null}, ${total},
-        ${(row.status ?? '').toString().trim() || 'selesai'}, 'kasir',
+        ${status}, 'kasir', true,
         ${parsedDate ?? new Date()}
       )
     `;
