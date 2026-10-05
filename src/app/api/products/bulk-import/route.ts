@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
     if (code && (existingCodes.has(code) || seenCodes.has(code))) { skippedDuplicate++; continue; }
 
     if (code) seenCodes.add(code);
-    const requestedStockQty = Number(row.stockQty) || 0;
+    // Negatif / bukan angka / tak hingga dianggap 0 — stok negatif merusak invarian total global = jumlah per gudang.
+    const rawStockQty = Number(row.stockQty);
+    const requestedStockQty = Number.isFinite(rawStockQty) && rawStockQty > 0 ? Math.floor(rawStockQty) : 0;
     if (requestedStockQty > 0 && !warehouseId) stockDroppedNoWarehouse++;
     const stockQty = warehouseId ? requestedStockQty : 0;
     const openPO   = !!row.openPO;

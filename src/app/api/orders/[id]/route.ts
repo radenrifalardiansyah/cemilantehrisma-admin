@@ -129,6 +129,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         }));
 
         const updateCols: Record<string, unknown> = { items: JSON.stringify(items), updated_at: new Date() };
+        // Kredit → cash/transfer/qris: uang diterima sekarang, jadi lunas — kecuali pemanggil menentukan status sendiri.
+        if (data.paymentStatus === undefined && order.paymentMethod === 'kredit' && data.paymentMethod !== undefined && data.paymentMethod !== 'kredit') {
+          data.paymentStatus = 'lunas';
+        }
         if (data.customerName !== undefined) updateCols.customer_name = data.customerName;
         if (data.customerPhone !== undefined) updateCols.customer_phone = data.customerPhone;
         if (data.subtotal !== undefined) updateCols.subtotal = data.subtotal;
