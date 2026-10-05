@@ -13,6 +13,7 @@ import { useConfirm } from '@/components/Confirm';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
+import PageLoader from '@/components/PageLoader';
 
 type Channel = 'online' | 'kasir' | 'consignment';
 type FeeType = 'percent' | 'fixed';
@@ -501,7 +502,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
               </div>
             </div>
             {loadingPaymentInfo ? (
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Memuat…</p>
+              <PageLoader compact />
             ) : (
               <>
                 <div>
@@ -677,11 +678,11 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
               {invoices.length > 0 && <ViewToggle mode={invoiceView} onChange={setInvoiceView} height={FORM_CTRL_H} />}
             </div>
             {invoices.length === 0 ? (
-              <div className="card">
-                <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {loadingInvoices ? 'Memuat…' : 'Belum ada invoice dibuat.'}
-                </p>
-              </div>
+              loadingInvoices ? <PageLoader compact /> : (
+                <div className="card">
+                  <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada invoice dibuat.</p>
+                </div>
+              )
             ) : invoiceView === 'table' ? (
               <div className="card overflow-hidden">
                 <div className="overflow-x-auto">

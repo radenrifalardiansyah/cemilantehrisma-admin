@@ -7,6 +7,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
+import PageLoader from '@/components/PageLoader';
 
 type Channel = 'online' | 'kasir' | 'consignment';
 type FeeType = 'percent' | 'fixed';
@@ -49,7 +50,7 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
 
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [detail, setDetail] = useState<InvoiceRecord | null>(null);
   const [txnModalChannel, setTxnModalChannel] = useState<Channel | null>(null);
@@ -140,6 +141,9 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
   const paid = invoices.filter(i => i.status === 'paid');
   const totalOutstanding = outstanding.reduce((s, i) => s + i.totalFee, 0);
 
+  // Muatan awal: loader saja, tombol refresh di bilah atas baru muncul setelah data ada.
+  if (loading && invoices.length === 0) return <PageLoader />;
+
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
@@ -188,7 +192,7 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
         </div>
         {outstanding.length === 0 ? (
           <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-            {loading ? 'Memuat…' : 'Tidak ada tagihan yang belum dibayar.'}
+            Tidak ada tagihan yang belum dibayar.
           </p>
         ) : (
           <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
@@ -235,7 +239,7 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
         </div>
         {paid.length === 0 ? (
           <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-            {loading ? 'Memuat…' : 'Belum ada pembayaran.'}
+            Belum ada pembayaran.
           </p>
         ) : (
           <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
