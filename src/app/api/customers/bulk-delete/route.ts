@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
@@ -20,5 +21,7 @@ export async function POST(req: NextRequest) {
   const skippedInUse = ids.length - deletable.length;
 
   if (deletable.length > 0) await sql`delete from customers where id in ${sql(deletable)}`;
+  revalidateTag('admin-customers', { expire: 0 });
+  revalidateTag('admin-resellers', { expire: 0 });
   return Response.json({ deleted: deletable.length, skippedInUse });
 }

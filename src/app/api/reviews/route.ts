@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 
@@ -22,7 +22,7 @@ const getCachedReviews = unstable_cache(
     return rows.map(rowToReview);
   },
   ['admin-reviews'],
-  { revalidate: 15 }
+  { revalidate: 15, tags: ['admin-reviews'] }
 );
 
 export async function GET(req: NextRequest) {
