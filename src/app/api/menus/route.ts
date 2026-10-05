@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { getAuthUser, unauthorized } from '@/lib/admin-auth';
-import { hasPermission, getRolePermissionsMap, checkPermission } from '@/lib/rbac';
+import { hasPermission, getRolePermissionsMap, checkPermission, staleSessionReason, sessionExpired, requireSession } from '@/lib/rbac';
 import { FEATURE_KEY_SET } from '@/lib/permissions';
 import { rowToModule, rowToMenu, type ModuleRow, type MenuRow } from '@/lib/nav-pg';
 
@@ -36,6 +36,8 @@ const getModulesAndMenus = unstable_cache(
 export async function GET(req: NextRequest) {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
+  const staleReason = await staleSessionReason(user);
+  if (staleReason !== false) return sessionExpired(staleReason);
 
   let { modules, menus } = await getModulesAndMenus();
 
@@ -88,8 +90,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requireSession(req);
+  if (user instanceof Response) return user;
   if (!(await hasPermission(user, 'menus', 'create'))) {
     return Response.json({ error: 'Anda tidak memiliki akses untuk aksi ini.' }, { status: 403 });
   }

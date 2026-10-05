@@ -1,12 +1,12 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 // Doc ID = token FCM itu sendiri — registrasi ulang token yang sama otomatis dedup lewat merge.
 export async function POST(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requireSession(req);
+  if (user instanceof Response) return user;
   const { token } = await req.json() as { token?: string };
   if (!token) return Response.json({ error: 'Token wajib diisi.' }, { status: 400 });
 
@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
 // sesinya sudah berakhir, jadi perangkat yang dipakai bergantian (mis. kios/tablet toko) tetap
 // menerima push (termasuk pesan chat pribadi) yang ditujukan untuk user yang sudah logout.
 export async function DELETE(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requireSession(req);
+  if (user instanceof Response) return user;
   const { token } = await req.json() as { token?: string };
   if (!token) return Response.json({ error: 'Token wajib diisi.' }, { status: 400 });
 

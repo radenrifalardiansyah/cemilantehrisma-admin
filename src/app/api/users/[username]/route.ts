@@ -16,9 +16,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { email, role, password } =
     await req.json() as { email?: string; role?: string; password?: string };
 
-  const check = assertCanEditUser(guard, username, { role });
-  if (!check.ok) return Response.json({ error: check.error }, { status: 400 });
-
   const sql = getSql();
   if (role) {
     const [roleRow] = await sql`select id from roles where id = ${role}`;
@@ -27,6 +24,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   const [profile] = await sql<ProfileRow[]>`select id, email, role, must_change_password, sessions_invalidated_at from profiles where username = ${username}`;
   if (!profile) return Response.json({ error: 'Pengguna tidak ditemukan.' }, { status: 404 });
+
+  const check = assertCanEditUser(guard, username, profile.role, { role });
+  if (!check.ok) return Response.json({ error: check.error }, { status: 400 });
 
   if (password) {
     const { error } = await getSupabaseAdmin().auth.admin.updateUserById(profile.id, { password });
@@ -57,11 +57,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { username } = await ctx.params;
 
-  const check = assertCanDeleteUser(guard, username);
+  const sql = getSql();
+  const [profile] = await sql<{ id: string; role: string }[]>`select id, role from profiles where username = ${username}`;
+
+  const check = assertCanDeleteUser(guard, username, profile?.role ?? '');
   if (!check.ok) return Response.json({ error: check.error }, { status: 400 });
 
-  const sql = getSql();
-  const [profile] = await sql<{ id: string }[]>`select id from profiles where username = ${username}`;
   if (profile) {
     const { error } = await getSupabaseAdmin().auth.admin.deleteUser(profile.id);
     if (error) return Response.json({ error: `Gagal menghapus akun otentikasi: ${error.message}` }, { status: 500 });

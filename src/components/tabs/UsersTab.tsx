@@ -156,11 +156,14 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
       body: JSON.stringify({ ids: [...selected] }),
     });
     if (r.ok) {
-      const d = await r.json() as { deleted: number; skippedSelf: number };
+      const d = await r.json() as { deleted: number; skippedSelf: number; failed?: number };
       await load();
       setSelected(new Set());
-      const extra = d.skippedSelf > 0 ? ` (akun sendiri dilewati)` : '';
-      toast.success(`${d.deleted} pengguna berhasil dihapus.${extra}`);
+      const extra = [
+        d.skippedSelf > 0 ? `${d.skippedSelf} dilewati (akun sendiri/Super Admin)` : '',
+        d.failed ? `${d.failed} gagal dihapus` : '',
+      ].filter(Boolean).join(', ');
+      toast.success(`${d.deleted} pengguna berhasil dihapus.${extra ? ` (${extra})` : ''}`);
     } else {
       toast.error('Gagal menghapus pengguna yang dipilih.');
     }

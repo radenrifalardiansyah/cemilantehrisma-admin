@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
-import { requirePermission } from '@/lib/rbac';
+import { requirePermission, assertCanCreateUser } from '@/lib/rbac';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 
 interface ProfileRow { username: string; email: string | null; role: string; created_at: Date }
@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
   if (!username || !password || !role) {
     return Response.json({ error: 'Username, password, dan role wajib diisi.' }, { status: 400 });
   }
+
+  const check = assertCanCreateUser(guard, role);
+  if (!check.ok) return Response.json({ error: check.error }, { status: 403 });
 
   const sql = getSql();
   const [roleRow] = await sql`select id from roles where id = ${role}`;

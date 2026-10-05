@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getAllAccounts } from '@/lib/chat-server';
 
 export async function GET(req: NextRequest) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
 
   const accounts = await getAllAccounts();
   return Response.json({ accounts });

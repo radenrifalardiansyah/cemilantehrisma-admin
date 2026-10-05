@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getSql } from '@/lib/db';
 import { getAllUsernames } from '@/lib/chat-server';
 import { directRoomId, TEAM_ROOM_ID } from '@/lib/chat';
@@ -48,8 +48,8 @@ const getUnreadRoomIds = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
 
   const unreadRoomIds = await getUnreadRoomIds(authUser.username);
   return Response.json({ totalUnread: unreadRoomIds.length, unreadRoomIds });

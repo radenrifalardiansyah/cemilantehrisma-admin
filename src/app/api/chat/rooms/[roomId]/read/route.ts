@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getSql } from '@/lib/db';
 import { canAccessRoom } from '@/lib/chat';
 
 type Ctx = { params: Promise<{ roomId: string }> };
 
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
   const { roomId } = await ctx.params;
   if (!canAccessRoom(roomId, authUser.username)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });

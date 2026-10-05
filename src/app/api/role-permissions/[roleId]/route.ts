@@ -16,6 +16,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: 'Super Admin selalu memiliki akses penuh dan tidak dapat diubah.' }, { status: 400 });
   }
 
+  // Role sendiri tidak boleh mengubah matriks izinnya — kalau boleh, pemegang
+  // role-permissions:edit bisa langsung memberi dirinya akses penuh (users, roles, dst).
+  if (roleId === guard.role) {
+    return Response.json({ error: 'Anda tidak dapat mengubah hak akses role Anda sendiri.' }, { status: 400 });
+  }
+
   const { permissions } = await req.json() as { permissions: Record<string, Partial<Record<Action, boolean>>> };
   if (!permissions || typeof permissions !== 'object') {
     return Response.json({ error: 'permissions wajib diisi.' }, { status: 400 });

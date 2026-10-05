@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requireSession(req);
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
 
   try {

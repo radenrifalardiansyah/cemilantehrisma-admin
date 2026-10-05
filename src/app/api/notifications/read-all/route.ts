@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
 // Batas 50 sama dengan query realtime yang didengarkan client (NotificationBell) — konsisten
 // dengan apa yang sedang ditampilkan, dan menjaga jumlah write per klik tetap kecil & flat.
 export async function PATCH(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requireSession(req);
+  if (user instanceof Response) return user;
 
   const db = getDb();
   const snap = await db.collection('notifications').orderBy('createdAt', 'desc').limit(50).get();

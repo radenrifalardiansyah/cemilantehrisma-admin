@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 
 // Auth admin panel pakai JWT custom (header x-admin-auth), bukan Firebase Auth — endpoint ini
 // menjembataninya: mint Firebase custom token untuk user yang sudah tervalidasi JWT-nya, supaya
@@ -13,8 +13,8 @@ import { getAuthUser, unauthorized } from '@/lib/admin-auth';
 // sama. Format custom token Firebase terdokumentasi publik & cukup ditandatangani manual pakai
 // `jsonwebtoken` (RS256 + private_key service account) — hasilnya identik dengan yang dibuat SDK.
 export async function GET(req: NextRequest) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+  const user = await requireSession(req);
+  if (user instanceof Response) return user;
 
   const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT ?? '{}') as { client_email: string; private_key: string };
   const now = Math.floor(Date.now() / 1000);

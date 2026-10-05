@@ -113,6 +113,18 @@ export async function requirePermission(
   return user;
 }
 
+// Guard untuk route yang cukup butuh login (tanpa izin fitur tertentu: chat, notifikasi, upload,
+// dst). Tetap menolak token yang sudah dicabut (kick/role & password diubah/akun dihapus) dan
+// token password sementara — getAuthUser saja hanya memverifikasi tanda tangan JWT.
+export async function requireSession(req: Request): Promise<AuthUser | Response> {
+  const user = getAuthUser(req);
+  if (!user) return unauthorized();
+  if (user.mustChangePassword) return passwordChangeRequired();
+  const staleReason = await staleSessionReason(user);
+  if (staleReason !== false) return sessionExpired(staleReason);
+  return user;
+}
+
 // Route guard for RMedia's own internal tooling (Biaya Admin) — deliberately bypasses
 // hasPermission/role_permissions entirely, unlike requirePermission. That matrix is editable
 // via the Hak Akses Role UI, so routing this through a featureKey would let `admin` be granted
@@ -148,8 +160,14 @@ export async function requireAdminOrSuperAdmin(req: Request): Promise<AuthUser |
 export function assertCanEditUser(
   actingUser: AuthUser,
   targetUsername: string,
+  targetRole: string,
   patch: { role?: string },
 ): { ok: true } | { ok: false; error: string } {
+  // Akun Super Admin hanya boleh diubah (termasuk reset password/email) oleh Super Admin lain —
+  // kalau tidak, `admin` dengan users:edit bisa mengambil alih akun Super Admin.
+  if (targetRole === 'super-admin' && actingUser.role !== 'super-admin') {
+    return { ok: false, error: 'Hanya Super Admin yang dapat mengubah akun Super Admin.' };
+  }
   if (patch.role !== undefined && actingUser.username === targetUsername) {
     return { ok: false, error: 'Anda tidak dapat mengubah role Anda sendiri.' };
   }
@@ -159,10 +177,24 @@ export function assertCanEditUser(
   return { ok: true };
 }
 
+export function assertCanCreateUser(
+  actingUser: AuthUser,
+  role: string,
+): { ok: true } | { ok: false; error: string } {
+  if (role === 'super-admin' && actingUser.role !== 'super-admin') {
+    return { ok: false, error: 'Hanya Super Admin yang dapat membuat akun Super Admin.' };
+  }
+  return { ok: true };
+}
+
 export function assertCanDeleteUser(
   actingUser: AuthUser,
   targetUsername: string,
+  targetRole: string,
 ): { ok: true } | { ok: false; error: string } {
+  if (targetRole === 'super-admin' && actingUser.role !== 'super-admin') {
+    return { ok: false, error: 'Hanya Super Admin yang dapat menghapus akun Super Admin.' };
+  }
   if (actingUser.username === targetUsername) {
     return { ok: false, error: 'Anda tidak dapat menghapus akun Anda sendiri.' };
   }

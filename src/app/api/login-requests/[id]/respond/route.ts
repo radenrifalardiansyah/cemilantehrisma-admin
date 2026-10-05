@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getSql } from '@/lib/db';
 import { getLoginRequest } from '@/lib/login-requests';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
   const { id } = await ctx.params;
 
   const { action, reason } = await req.json() as { action: 'approve' | 'reject'; reason?: string };

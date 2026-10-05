@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getSql } from '@/lib/db';
 import { canAccessRoom, TEAM_ROOM_ID } from '@/lib/chat';
 import { getRoomRecipients } from '@/lib/chat-server';
@@ -11,8 +11,8 @@ type Ctx = { params: Promise<{ roomId: string }> };
 interface MessageRow { id: string; text: string; sender_username: string; created_at: Date }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
   const { roomId } = await ctx.params;
   if (!canAccessRoom(roomId, authUser.username)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
@@ -49,8 +49,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
   const { roomId } = await ctx.params;
   if (!canAccessRoom(roomId, authUser.username)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });

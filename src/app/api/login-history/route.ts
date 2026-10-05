@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getAuthUser, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { getSql } from '@/lib/db';
 
 const HISTORY_DAYS = 7;
@@ -12,8 +12,8 @@ function toTimestamp(d: Date | null | undefined) {
 // Selalu scoped ke akun pemanggil sendiri (tidak menerima parameter username) — riwayat login
 // user lain bukan urusan profil pribadi siapa pun di sini.
 export async function GET(req: NextRequest) {
-  const authUser = getAuthUser(req);
-  if (!authUser) return unauthorized();
+  const authUser = await requireSession(req);
+  if (authUser instanceof Response) return authUser;
 
   const sql = getSql();
   const since = new Date(Date.now() - HISTORY_DAYS * 24 * 60 * 60 * 1000);

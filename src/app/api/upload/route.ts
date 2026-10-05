@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { validateAdminAuth, unauthorized } from '@/lib/admin-auth';
+import { requireSession } from '@/lib/rbac';
 import { uploadToCloudinary, cloudinaryConfigured } from '@/lib/cloudinary';
 
 // Browser compresses before sending (max ~1200px, quality 0.82) so typical upload is 80–200 KB.
@@ -13,7 +13,8 @@ const MAX_BYTES = 900_000;
 const MAX_BODY_BYTES = MAX_BYTES + 50_000;
 
 export async function POST(req: NextRequest) {
-  if (!validateAdminAuth(req)) return unauthorized();
+  const session = await requireSession(req);
+  if (session instanceof Response) return session;
 
   if (!cloudinaryConfigured()) {
     return Response.json(
