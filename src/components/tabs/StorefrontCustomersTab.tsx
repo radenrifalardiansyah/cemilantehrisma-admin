@@ -127,6 +127,9 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
     else toast.error(`${count - failed} akun terhapus, ${failed} gagal.`);
   };
 
+  // Muatan awal: loader saja — pencarian/filter/tombol baru tampil setelah datanya ada.
+  if (loading && customers.length === 0) return <PageLoader />;
+
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>

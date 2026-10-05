@@ -426,6 +426,12 @@ export default function ProductReportTab({ creds }: { creds: string }) {
     }
   };
 
+  // Muatan awal: loader saja (tanpa filter periode & tombol export) sampai data pertama selesai dimuat.
+  // `booted` mencegah loader penuh menutup filter saat periode diganti (itu cukup loader di area konten).
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!loading) setBooted(true); }, [loading]);
+  if (!booted) return <PageLoader />;
+
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>

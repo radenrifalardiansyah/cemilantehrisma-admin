@@ -1172,6 +1172,14 @@ ${pdfUrl}`.trim();
   ];
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
+  // Muatan awal: loader saja (tanpa switcher Stok/Pembelian & tombol aksi) sampai kedua daftar
+  // selesai dimuat pertama kali. `booted` mencegah loader penuh muncul lagi saat refresh.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    if (!materialsLoading && !purchasesLoading) setBooted(true);
+  }, [materialsLoading, purchasesLoading]);
+  if (!booted) return <PageLoader />;
+
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>

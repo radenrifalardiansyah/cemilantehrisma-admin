@@ -56,6 +56,9 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
     setExpandedId(cur => (cur === n.id ? null : n.id));
   };
 
+  // Muatan awal: loader saja — pencarian/filter/tombol baru tampil setelah datanya ada.
+  if (loading && notifications.length === 0) return <PageLoader />;
+
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>

@@ -2348,6 +2348,14 @@ _${storeHeader.name}_`.trim();
     }
   };
 
+  // Muatan awal: tampilkan loader saja (tanpa tab Lokasi/Kirim/Rekap/Analitik & tombol aksi) sampai
+  // ketiga daftar selesai dimuat pertama kali. `booted` mencegah loader penuh muncul lagi saat refresh.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    if (!locationsLoading && !shipmentsLoading && !recapsLoading) setBooted(true);
+  }, [locationsLoading, shipmentsLoading, recapsLoading]);
+  if (!booted) return <PageLoader />;
+
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>

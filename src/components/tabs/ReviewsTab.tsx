@@ -157,6 +157,9 @@ export default function ReviewsTab({ creds }: { creds: string }) {
     else toast.error(`${count - failed} ulasan terhapus, ${failed} gagal.`);
   };
 
+  // Muatan awal: loader saja — pencarian/filter/tombol baru tampil setelah datanya ada.
+  if (loading && reviews.length === 0) return <PageLoader />;
+
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>

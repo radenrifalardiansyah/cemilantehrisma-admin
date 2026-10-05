@@ -95,7 +95,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
 
   // ── Rates ──────────────────────────────────────────────────
   const [rates, setRates] = useState<Record<Channel, RateEntry[]>>({ online: [], kasir: [], consignment: [] });
-  const [loadingRates, setLoadingRates] = useState(false);
+  const [loadingRates, setLoadingRates] = useState(true);
   const todayIso = toISO(new Date());
   const [forms, setForms] = useState<Record<Channel, { type: FeeType; value: string; effectiveFrom: string }>>({
     online: { type: 'percent', value: '', effectiveFrom: todayIso },
@@ -156,7 +156,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
   const [loadingReport, setLoadingReport] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
-  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [clientName, setClientName] = useState('Cemilan Teh Risma');
   const [txnModalChannel, setTxnModalChannel] = useState<Channel | null>(null);
   const [note, setNote] = useState('');
@@ -362,6 +362,12 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
       )}
     </>
   );
+
+  // Muatan awal: loader saja (tanpa tab Pengaturan/Laporan/Rekening & tombol aksi) sampai tarif dan
+  // invoice selesai dimuat pertama kali. `booted` mencegah loader penuh muncul lagi saat refresh.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!loadingRates && !loadingInvoices) setBooted(true); }, [loadingRates, loadingInvoices]);
+  if (!booted) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

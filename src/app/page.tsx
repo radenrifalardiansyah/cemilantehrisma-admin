@@ -436,7 +436,7 @@ export default function AdminPage() {
   // bawah (pola sama seperti subView di FinanceReportTab / stokView di StockTab).
   const [dashSubView, setDashSubView] = useState<'ringkasan' | 'analitik-bisnis' | 'analitik-mitra' | 'analitik-web'>('ringkasan');
   const [dashData, setDashData] = useState<DashData | null>(null);
-  const [loading,  setLoading]  = useState(false);
+  const [loading,  setLoading]  = useState(true);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [webRange, setWebRange] = useState<7 | 30>(30);
   const [webLoading, setWebLoading] = useState(false);
@@ -1033,7 +1033,7 @@ export default function AdminPage() {
   );
 
   // ─── Dashboard (Analytics) content ───────────────────────
-  const dashboardContent = (
+  const dashboardBody = (
     <div className="p-4 lg:p-6 space-y-5">
 
       <TopbarPortal>
@@ -1517,7 +1517,7 @@ export default function AdminPage() {
       badges={{ orders: newOrdersCount }}
       onOpenNotification={handleOpenNotification}
     >
-      {activeTab === 'dashboard'  && dashboardContent}
+      {activeTab === 'dashboard'  && (loading && !dashData ? <PageLoader /> : dashboardBody)}
       <PosTab
         creds={creds}
         posProducts={posProducts}
