@@ -153,7 +153,8 @@ export default function CapitalTab({ creds }: { creds: string }) {
       setSelected(s => { const n = new Set(s); n.delete(id); return n; });
       toast.success('Berhasil dihapus.');
     } else {
-      toast.error('Gagal menghapus.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus.');
     }
     setDeletingId(null);
   };
@@ -173,7 +174,8 @@ export default function CapitalTab({ creds }: { creds: string }) {
       setSelected(new Set());
       toast.success(`${count} catatan berhasil dihapus.`);
     } else {
-      toast.error('Gagal menghapus yang dipilih.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus yang dipilih.');
     }
     setBulkDeleting(false);
   };

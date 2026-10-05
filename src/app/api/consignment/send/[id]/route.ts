@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { invalidQtyMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
 import { revalidateProductStock } from '@/lib/revalidate';
@@ -119,6 +120,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
     note?: string; items: SendItemInput[]; date?: string;
   };
+  const qtyError = invalidQtyMessage(data.items);
+  if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const newItems = data.items ?? [];
   if (newItems.length === 0) return Response.json({ error: 'Minimal 1 produk dikirim.' }, { status: 400 });
   if (!data.warehouseId) return Response.json({ error: 'Pilih gudang asal pengiriman.' }, { status: 400 });

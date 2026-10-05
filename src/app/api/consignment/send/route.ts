@@ -4,6 +4,7 @@ import { unstable_cache, revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { invalidQtyMessage } from '@/lib/validate-items';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
@@ -79,6 +80,8 @@ export async function POST(req: NextRequest) {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
     note?: string; items: SendItemInput[]; date?: string;
   };
+  const qtyError = invalidQtyMessage(data.items);
+  if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const items = mergeItems(data.items ?? []);
   if (items.length === 0) return Response.json({ error: 'Minimal 1 produk dikirim.' }, { status: 400 });
   if (!data.warehouseId) return Response.json({ error: 'Pilih gudang asal pengiriman.' }, { status: 400 });

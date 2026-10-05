@@ -3,7 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { walletHasReferences } from '@/lib/wallet-balance';
+import { walletHasReferences, guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
 import { rowToWallet, type WalletRow } from '@/lib/wallets-pg';
 
@@ -37,7 +37,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (camelKey in patch) sqlPatch[column] = patch[camelKey];
   }
   if (Object.keys(sqlPatch).length > 0) {
-    await sql`update wallets set ${sql(sqlPatch)}, updated_at = now() where id = ${id}`;
+    try {
+      await sql.begin(async pgTx => {
+        await guardWalletBalances(pgTx, ['initial_balance' in sqlPatch ? id : null], async () => {
+          await pgTx`update wallets set ${pgTx(sqlPatch)}, updated_at = now() where id = ${id}`;
+        });
+      });
+    } catch (err) {
+      if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
+      throw err;
+    }
   }
 
   try {

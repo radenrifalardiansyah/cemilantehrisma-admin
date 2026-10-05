@@ -4,6 +4,8 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { guardWalletBalances } from '@/lib/wallet-balance';
+import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
@@ -35,6 +37,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   };
   const newItems = data.items ?? [];
   if (newItems.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
+  const itemError = invalidPurchaseItemMessage(newItems);
+  if (itemError) return Response.json({ error: itemError }, { status: 400 });
   const newPaymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
   const date = data.date || wibDateKey(new Date());
 
@@ -131,23 +135,25 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const supplierName = data.supplierName ?? purchase.supplierName ?? '';
       const walletId = data.walletId !== undefined ? data.walletId : (purchase.walletId ?? null);
 
-      if (newPaymentStatus === 'lunas') {
-        expenseChangedLocal = true;
-        if (oldExpenseExists && oldExpenseId) {
-          await pgTx`update expenses set description = ${`Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`}, amount = ${total}, date = ${date}, wallet_id = ${walletId}, updated_at = now() where id = ${oldExpenseId}`;
-        } else {
-          expenseIdToStore = newExpenseId;
-          const itemNames = itemsWithSubtotal.map(it => it.materialName).join(', ');
-          await pgTx`
-            insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
-            values (${newExpenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`}, ${total}, ${date}, ${`Otomatis dari pembelian bahan baku (${itemNames})`}, ${walletId}, 'material-purchase', ${id}, now(), now())
-          `;
+      await guardWalletBalances(pgTx, [purchase.walletId ?? null, walletId], async () => {
+        if (newPaymentStatus === 'lunas') {
+          expenseChangedLocal = true;
+          if (oldExpenseExists && oldExpenseId) {
+            await pgTx`update expenses set description = ${`Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`}, amount = ${total}, date = ${date}, wallet_id = ${walletId}, updated_at = now() where id = ${oldExpenseId}`;
+          } else {
+            expenseIdToStore = newExpenseId;
+            const itemNames = itemsWithSubtotal.map(it => it.materialName).join(', ');
+            await pgTx`
+              insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
+              values (${newExpenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${supplierName || 'Tanpa nama'}`}, ${total}, ${date}, ${`Otomatis dari pembelian bahan baku (${itemNames})`}, ${walletId}, 'material-purchase', ${id}, now(), now())
+            `;
+          }
+        } else if (oldExpenseExists && oldExpenseId) {
+          expenseChangedLocal = true;
+          await pgTx`delete from expenses where id = ${oldExpenseId}`;
+          expenseIdToStore = null;
         }
-      } else if (oldExpenseExists && oldExpenseId) {
-        expenseChangedLocal = true;
-        await pgTx`delete from expenses where id = ${oldExpenseId}`;
-        expenseIdToStore = null;
-      }
+      });
 
       const purchaseUpdateLocal = {
         supplierId: data.supplierId ?? null, supplierName, items: itemsWithSubtotal, total, date,

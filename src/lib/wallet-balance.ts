@@ -1,6 +1,7 @@
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import type postgres from 'postgres';
 import { getSql } from '@/lib/db';
+import { getDb } from '@/lib/firebase-admin';
 
 // ISql: interface bersama Sql (koneksi pool) & TransactionSql (di dalam sql.begin(...)) — dipakai
 // supaya computeWalletBalance bisa menerima keduanya, tanpa butuh .begin()/.end() yang cuma ada
@@ -86,4 +87,47 @@ export async function computeWalletBalance(
 
   return initialBalance + totalIncome + totalOrders + totalRecaps + totalModal + totalTransfersIn
     - totalExpenses - totalPrive - totalTransfersOut;
+}
+
+// Dilempar kalau suatu perubahan (hapus/edit Pemasukan, Modal, Transfer, atau ubah Saldo Awal) akan
+// membuat saldo dompet jadi minus — Pengeluaran/Prive/Transfer baru sudah dicek begini sejak awal,
+// tapi kebalikannya (menghapus uang yang sudah terpakai) sebelumnya lolos tanpa cek apa pun.
+export class WalletBalanceError extends Error {}
+
+type PgTx = Parameters<typeof computeWalletBalance>[5] & object;
+
+// Jalankan `mutate` (di dalam transaksi `pgTx` milik pemanggil) lalu pastikan saldo tiap dompet yang
+// terdampak tidak jadi minus AKIBAT perubahan ini. Dompet yang memang sudah minus sebelumnya tidak
+// diblokir kalau perubahannya tidak memperburuk saldo. Dikunci per-dompet (advisory lock, urut
+// supaya tidak deadlock) seperti POST Pengeluaran/Prive, supaya tidak balapan dengan transaksi lain.
+export async function guardWalletBalances(
+  pgTx: PgTx,
+  walletIds: (string | null | undefined)[],
+  mutate: () => Promise<void>,
+): Promise<void> {
+  const ids = [...new Set(walletIds.filter((w): w is string => !!w))].sort();
+  const db = getDb();
+  for (const id of ids) await pgTx`select pg_advisory_xact_lock(hashtext(${id}))`;
+
+  const balanceOf = async (id: string) => {
+    const [w] = await pgTx<{ initial_balance: string; name: string }[]>`select initial_balance, name from wallets where id = ${id}`;
+    if (!w) return null;
+    return { name: w.name, balance: await computeWalletBalance(db, id, Number(w.initial_balance) || 0, undefined, undefined, pgTx) };
+  };
+
+  const before = new Map<string, number>();
+  for (const id of ids) { const b = await balanceOf(id); if (b) before.set(id, b.balance); }
+
+  await mutate();
+
+  for (const id of ids) {
+    const prev = before.get(id);
+    const after = await balanceOf(id);
+    if (prev === undefined || !after) continue;
+    if (after.balance < 0 && after.balance < prev) {
+      throw new WalletBalanceError(
+        `Saldo dompet "${after.name}" akan menjadi minus (Rp${Math.round(after.balance).toLocaleString('id-ID')}) karena uangnya sudah terpakai. Batalkan transaksi yang memakainya dulu.`,
+      );
+    }
+  }
 }

@@ -3,7 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
-import { computeWalletBalance } from '@/lib/wallet-balance';
+import { computeWalletBalance, guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -95,7 +95,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [before] = await sql<WalletTransferRow[]>`select * from wallet_transfers where id = ${id}`;
-  await sql`delete from wallet_transfers where id = ${id}`;
+  try {
+    await sql.begin(async pgTx => {
+      await guardWalletBalances(pgTx, [before?.from_wallet_id, before?.to_wallet_id], async () => { await pgTx`delete from wallet_transfers where id = ${id}`; });
+    });
+  } catch (err) {
+    if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
   try {
     const db = getDb();
     await logHistory(db, {

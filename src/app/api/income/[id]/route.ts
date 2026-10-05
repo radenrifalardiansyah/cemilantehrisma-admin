@@ -4,6 +4,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -34,13 +35,22 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
   };
-  await sql`
-    update income
-    set category = ${payload.category}, description = ${payload.description}, amount = ${payload.amount},
-        items = ${JSON.stringify(payload.items)}, date = ${payload.date}, note = ${payload.note},
-        wallet_id = ${payload.walletId}, updated_at = now()
-    where id = ${id}
-  `;
+  try {
+    await sql.begin(async pgTx => {
+      await guardWalletBalances(pgTx, [before?.wallet_id, payload.walletId], async () => {
+        await pgTx`
+          update income
+          set category = ${payload.category}, description = ${payload.description}, amount = ${payload.amount},
+              items = ${JSON.stringify(payload.items)}, date = ${payload.date}, note = ${payload.note},
+              wallet_id = ${payload.walletId}, updated_at = now()
+          where id = ${id}
+        `;
+      });
+    });
+  } catch (err) {
+    if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
   try {
     const db = getDb();
     await logHistory(db, {
@@ -66,7 +76,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [before] = await sql<IncomeRow[]>`select * from income where id = ${id}`;
-  await sql`delete from income where id = ${id}`;
+  try {
+    await sql.begin(async pgTx => {
+      await guardWalletBalances(pgTx, [before?.wallet_id], async () => { await pgTx`delete from income where id = ${id}`; });
+    });
+  } catch (err) {
+    if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
   try {
     const db = getDb();
     await logHistory(db, {

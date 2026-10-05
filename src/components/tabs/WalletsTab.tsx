@@ -455,7 +455,8 @@ export default function WalletsTab({ creds }: { creds: string }) {
       setTransferSelected(s => { const n = new Set(s); n.delete(t.id); return n; });
       toast.success('Transfer berhasil dihapus.');
     } else {
-      toast.error('Gagal menghapus transfer.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus transfer.');
     }
     setTransferDeletingId(null);
   };

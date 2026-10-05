@@ -4,6 +4,8 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { guardWalletBalances } from '@/lib/wallet-balance';
+import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
@@ -35,6 +37,8 @@ export async function POST(req: NextRequest) {
   };
   const items = data.items ?? [];
   if (items.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
+  const itemError = invalidPurchaseItemMessage(items);
+  if (itemError) return Response.json({ error: itemError }, { status: 400 });
   const paymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
   const date = data.date || wibDateKey(new Date());
 
@@ -93,10 +97,14 @@ export async function POST(req: NextRequest) {
 
       if (willCreateExpense) {
         const itemNames = itemsWithSubtotal.map(it => it.materialName).join(', ');
-        await pgTx`
-          insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
-          values (${expenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${data.supplierName || 'Tanpa nama'}`}, ${total}, ${date}, ${`Otomatis dari pembelian bahan baku (${itemNames})`}, ${data.walletId ?? null}, 'material-purchase', ${purchaseId}, now(), now())
-        `;
+        // Pembelian lunas = uang keluar dari dompet — dicek sama seperti Pengeluaran biasa supaya
+        // saldo dompet tidak tembus minus lewat jalur pembelian bahan baku.
+        await guardWalletBalances(pgTx, [data.walletId], async () => {
+          await pgTx`
+            insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
+            values (${expenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${data.supplierName || 'Tanpa nama'}`}, ${total}, ${date}, ${`Otomatis dari pembelian bahan baku (${itemNames})`}, ${data.walletId ?? null}, 'material-purchase', ${purchaseId}, now(), now())
+          `;
+        });
       }
     });
   } catch (err) {

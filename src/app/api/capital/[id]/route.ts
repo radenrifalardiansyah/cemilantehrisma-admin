@@ -4,7 +4,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { computeWalletBalance } from '@/lib/wallet-balance';
+import { computeWalletBalance, guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -45,14 +45,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      await pgTx`
-        update capital_entries
-        set type = ${payload.type}, amount = ${payload.amount}, date = ${payload.date},
-            note = ${payload.note}, wallet_id = ${payload.walletId}, updated_at = now()
-        where id = ${id}
-      `;
+      await guardWalletBalances(pgTx, [before?.wallet_id, payload.walletId], async () => {
+        await pgTx`
+          update capital_entries
+          set type = ${payload.type}, amount = ${payload.amount}, date = ${payload.date},
+              note = ${payload.note}, wallet_id = ${payload.walletId}, updated_at = now()
+          where id = ${id}
+        `;
+      });
     });
   } catch (err) {
+    if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
     if (err instanceof CapitalValidationError) return Response.json({ error: err.message }, { status: 400 });
     throw err;
   }
@@ -82,7 +85,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [before] = await sql`select * from capital_entries where id = ${id}`;
-  await sql`delete from capital_entries where id = ${id}`;
+  try {
+    await sql.begin(async pgTx => {
+      await guardWalletBalances(pgTx, [before?.wallet_id], async () => { await pgTx`delete from capital_entries where id = ${id}`; });
+    });
+  } catch (err) {
+    if (err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
   try {
     const db = getDb();
     const typeLabel = before?.type === 'prive' ? 'Modal Keluar' : 'Modal Masuk';

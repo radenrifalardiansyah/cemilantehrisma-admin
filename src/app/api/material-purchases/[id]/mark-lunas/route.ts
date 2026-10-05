@@ -4,6 +4,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { guardWalletBalances } from '@/lib/wallet-balance';
 import { logHistory } from '@/lib/history';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 
@@ -35,10 +36,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
       if (purchase.total > 0) {
         const itemNames = purchase.items.map(it => it.materialName).join(', ');
-        await pgTx`
-          insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
-          values (${expenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${purchase.supplierName || 'Tanpa nama'}`}, ${purchase.total}, ${purchase.date}, ${`Otomatis dari pembelian bahan baku (${itemNames}) — ditandai lunas`}, ${purchase.walletId}, 'material-purchase', ${id}, now(), now())
-        `;
+        await guardWalletBalances(pgTx, [purchase.walletId], async () => {
+          await pgTx`
+            insert into expenses (id, category, description, amount, date, note, wallet_id, source_type, source_id, created_at, updated_at)
+            values (${expenseId}, 'Bahan Baku', ${`Pembelian bahan baku - ${purchase.supplierName || 'Tanpa nama'}`}, ${purchase.total}, ${purchase.date}, ${`Otomatis dari pembelian bahan baku (${itemNames}) — ditandai lunas`}, ${purchase.walletId}, 'material-purchase', ${id}, now(), now())
+          `;
+        });
       }
       return { before: purchase, didMark: true };
     }));

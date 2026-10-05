@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { invalidQtyMessage } from '@/lib/validate-items';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateProductStock } from '@/lib/revalidate';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as OrderCreateBody;
+  const qtyError = invalidQtyMessage(data.items);
+  if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const db = getDb();
   // Kasir bisa mengedit tanggal & jam transaksi (mis. transaksi baru sempat diinput belakangan) —
   // kalau dikirim, itu yang jadi created_at (dipakai buat urutan & filter periode di Pesanan/

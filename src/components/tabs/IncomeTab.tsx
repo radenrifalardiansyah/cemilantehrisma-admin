@@ -287,7 +287,8 @@ export default function IncomeTab({ creds }: { creds: string }) {
       setSelected(s => { const n = new Set(s); n.delete(i.id); return n; });
       toast.success('Pemasukan berhasil dihapus.');
     } else {
-      toast.error('Gagal menghapus pemasukan.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus pemasukan.');
     }
     setDeletingId(null);
   };
@@ -307,7 +308,8 @@ export default function IncomeTab({ creds }: { creds: string }) {
       setSelected(new Set());
       toast.success(`${d.deleted} pemasukan berhasil dihapus.`);
     } else {
-      toast.error('Gagal menghapus pemasukan yang dipilih.');
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal menghapus pemasukan yang dipilih.');
     }
     setBulkDeleting(false);
   };

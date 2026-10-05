@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { invalidQtyMessage } from '@/lib/validate-items';
 import { restoreOrderStockInTxPg, RestorableOrderItem } from '@/lib/order-stock-pg';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { logHistory } from '@/lib/history';
@@ -55,6 +56,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const body = await req.json() as { status?: string; paymentStatus?: string; walletId?: string | null; items?: OrderItemInput[] } & Partial<OrderEditInput>;
+  const qtyError = invalidQtyMessage(body.items);
+  if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const db = getDb();
   const sql = getSql();
 
