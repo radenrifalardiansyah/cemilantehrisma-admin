@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { revalidateStorefront } from '@/lib/revalidate';
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest) {
     created++;
   }
 
-  if (created > 0) after(() => revalidateStorefront('categories'));
+  if (created > 0) {
+    revalidateTag('admin-categories', { expire: 0 });
+    after(() => revalidateStorefront('categories'));
+  }
   return Response.json({ created, skippedInvalid, skippedDuplicate });
 }

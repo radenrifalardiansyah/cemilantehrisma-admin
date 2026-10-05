@@ -598,7 +598,11 @@ _${storeName}_`.trim();
         paymentMethod: editPaymentMethod,
         ...(editPaymentMethod === 'cash' ? { amountPaid: editAmountPaidNum, changeAmount: editChangeAmount } : {}),
         ...(editPaymentMethod === 'transfer' ? { transferBank: editTransferBank, transferAmount: editTransferAmountNum } : {}),
-        ...(editPaymentMethod === 'kredit' ? { paymentStatus: editPaymentStatus } : {}),
+        // Kredit → cash/transfer: pembayaran sekarang diterima tunai/transfer, jadi status otomatis
+        // lunas (kalau tidak dikirim, server mempertahankan 'belum_lunas' dari kredit sebelumnya).
+        ...(editPaymentMethod === 'kredit'
+          ? { paymentStatus: editPaymentStatus }
+          : editingOrder.paymentMethod === 'kredit' ? { paymentStatus: 'lunas' as const } : {}),
         walletId: editWalletId || null,
         note: editNote.trim() || undefined,
         ...(txDate ? { transactionAt: txDate.toISOString(), date: txDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) } : {}),

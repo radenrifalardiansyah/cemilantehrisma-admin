@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
@@ -7,8 +8,9 @@ import { walletHasReferences } from '@/lib/wallet-balance';
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'wallets', 'delete');
   if (guard instanceof Response) return guard;
-  const { ids } = await req.json() as { ids: string[] };
-  if (!Array.isArray(ids) || ids.length === 0)
+  const body = await req.json() as { ids: unknown };
+  const ids = Array.isArray(body.ids) ? body.ids.filter((i): i is string => typeof i === 'string') : [];
+  if (ids.length === 0)
     return Response.json({ error: 'ids required' }, { status: 400 });
 
   const db = getDb();
@@ -22,5 +24,6 @@ export async function POST(req: NextRequest) {
   if (deletableIds.length > 0) {
     await sql`delete from wallets where id in ${sql(deletableIds)}`;
   }
+  if (deletableIds.length > 0) revalidateTag('admin-wallets', { expire: 0 });
   return Response.json({ deleted: deletableIds.length, skipped });
 }

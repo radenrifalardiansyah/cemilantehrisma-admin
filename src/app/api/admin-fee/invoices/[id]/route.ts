@@ -30,14 +30,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const sql = getSql();
-  if (data.status === 'cancelled') {
-    const [row] = await sql<{ status: string }[]>`select status from admin_fee_invoices where id = ${id}`;
-    if (!row) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
-    // Invoice yang sudah lunas tidak boleh dibatalkan begitu saja — uangnya sudah diterima,
-    // koreksi seharusnya lewat pembukuan/refund, bukan menghapus jejak tagihan yang sudah dibayar.
-    if (row.status === 'paid') {
-      return Response.json({ error: 'Invoice yang sudah lunas tidak bisa dibatalkan.' }, { status: 400 });
-    }
+  const [row] = await sql<{ status: string }[]>`select status from admin_fee_invoices where id = ${id}`;
+  if (!row) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
+  // Invoice yang sudah lunas tidak boleh dibatalkan begitu saja — uangnya sudah diterima,
+  // koreksi seharusnya lewat pembukuan/refund, bukan menghapus jejak tagihan yang sudah dibayar.
+  if (data.status === 'cancelled' && row.status === 'paid') {
+    return Response.json({ error: 'Invoice yang sudah lunas tidak bisa dibatalkan.' }, { status: 400 });
+  }
+  // Transisi yang diizinkan. 'paid' dan 'cancelled' final — invoice yang dibatalkan melepas
+  // transaksinya ke invoice berikutnya, jadi kalau diaktifkan lagi transaksi yang sama bisa
+  // tertagih dua kali.
+  const ALLOWED: Record<string, string[]> = {
+    draft: ['invoiced', 'paid', 'cancelled'],
+    invoiced: ['draft', 'paid', 'cancelled'],
+    paid: [],
+    cancelled: [],
+  };
+  if (data.status !== row.status && !(ALLOWED[row.status] ?? []).includes(data.status)) {
+    return Response.json({ error: `Status invoice tidak bisa diubah dari "${row.status}" ke "${data.status}".` }, { status: 400 });
   }
 
   // Superadmin bisa langsung menandai lunas manual (mis. bayar tunai/transfer langsung ke
