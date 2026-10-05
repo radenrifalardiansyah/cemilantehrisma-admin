@@ -6,12 +6,13 @@ import {
   Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 import {
-  Loader2, Globe, ShoppingCart, Store, Wallet, Package, Receipt, PieChart as PieIcon,
+  Globe, ShoppingCart, Store, Wallet, Package, Receipt, PieChart as PieIcon,
   Boxes, ArrowUpCircle, ArrowDownCircle, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
 import { SALDO_AWAL_KEY } from '@/lib/finance';
+import PageLoader from '@/components/PageLoader';
 
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };
@@ -185,9 +186,7 @@ export default function BusinessAnalyticsSection({
       )}
 
       {loading && !data && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       )}
 
       {data && (

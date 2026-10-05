@@ -23,6 +23,7 @@ import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -962,11 +963,7 @@ _${storeName}_`.trim();
   const totalRevenue = activeOrders.reduce((s, o) => s + (o.total ?? 0), 0);
   const avgOrder     = activeOrders.length ? totalRevenue / activeOrders.length : 0;
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">
@@ -1509,7 +1506,7 @@ _${storeName}_`.trim();
                 <div>
                   <label className="field-label">Produk</label>
                   {pickerLoading ? (
-                    <div className="flex items-center justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+                    <PageLoader compact />
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {editItems.map((it, i) => (

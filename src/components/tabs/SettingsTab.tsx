@@ -12,6 +12,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import { useViewMode } from '@/lib/useViewMode';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 
@@ -390,11 +391,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
   const uploadStamp     = (file?: File) => uploadImage(file, 'ownerStamp', f => compressImage(f, 800, true), setStampUploading, 'cap/stempel');
   const uploadQris      = (file?: File) => uploadImage(file, 'storeQrisImageUrl', compressLogo, setQrisUploading, 'QRIS');
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   const activeGroup = FIELD_GROUPS.find(g => g.id === activeGrp)!;
 
@@ -461,9 +458,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                 </div>
 
                 {banks === null ? (
-                  <div className="flex items-center justify-center py-10">
-                    <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} />
-                  </div>
+                  <PageLoader compact />
                 ) : filteredBanks.length === 0 ? (
                   <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
                     {banks.length === 0 ? 'Belum ada data bank — klik "Sinkronkan" untuk memuat daftar bawaan.' : 'Tidak ada bank yang cocok dengan pencarian.'}

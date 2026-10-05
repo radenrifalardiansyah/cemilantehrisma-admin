@@ -9,6 +9,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
+import PageLoader from '@/components/PageLoader';
 
 interface StorefrontReview {
   id: string;
@@ -199,9 +200,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
           </div>
 
           {loading ? (
-            <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Memuat ulasan…</p>
-            </div>
+            <PageLoader label="Memuat ulasan" />
           ) : paginated.length === 0 ? (
             <div className="card py-12 text-center">
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

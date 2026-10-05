@@ -22,6 +22,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import type { PosProduct } from '@/lib/pos-types';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -590,6 +591,10 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     .map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
+  // Muatan awal: tampilkan loader saja — tombol Catat Produksi/Export (di TopbarPortal) baru muncul
+  // setelah datanya ada.
+  if (batchesLoading && batches.length === 0) return <PageLoader />;
+
   return (
     <>
     <div className="p-4 lg:p-6 animate-fade-up space-y-5">
@@ -650,9 +655,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       </div>
 
       {batchesLoading && batches.length === 0 ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       ) : batches.length === 0 ? (
         <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
           <Factory size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />

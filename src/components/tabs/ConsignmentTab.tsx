@@ -42,6 +42,7 @@ import {
 } from '@/lib/consignment-import';
 import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -2371,7 +2372,8 @@ _${storeHeader.name}_`.trim();
 
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         {/* ════ LOKASI ═════════════════════════════════════════ */}
-        {subTab === 'lokasi' && (
+        {subTab === 'lokasi' && (locationsLoading && locations.length === 0) && <PageLoader />}
+        {subTab === 'lokasi' && !(locationsLoading && locations.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
             {locations.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
@@ -2463,9 +2465,7 @@ _${storeHeader.name}_`.trim();
             </div>
 
             {locationsLoading && locations.length === 0 ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              </div>
+              <PageLoader compact />
             ) : locations.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <Store size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -2657,7 +2657,8 @@ _${storeHeader.name}_`.trim();
         )}
 
         {/* ════ KIRIM STOK ═════════════════════════════════════ */}
-        {subTab === 'kirim' && (
+        {subTab === 'kirim' && (shipmentsLoading && shipments.length === 0) && <PageLoader />}
+        {subTab === 'kirim' && !(shipmentsLoading && shipments.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               {PERIOD_OPTIONS.map(p => (
@@ -2726,7 +2727,7 @@ _${storeHeader.name}_`.trim();
             </div>
 
             {shipmentsLoading && shipments.length === 0 ? (
-              <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+              <PageLoader compact />
             ) : shipments.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <Send size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -2894,7 +2895,8 @@ _${storeHeader.name}_`.trim();
         )}
 
         {/* ════ REKAP HARIAN ═══════════════════════════════════ */}
-        {subTab === 'rekap' && (
+        {subTab === 'rekap' && (recapsLoading && recaps.length === 0) && <PageLoader />}
+        {subTab === 'rekap' && !(recapsLoading && recaps.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               {PERIOD_OPTIONS.map(p => (
@@ -2978,7 +2980,7 @@ _${storeHeader.name}_`.trim();
             </div>
 
             {recapsLoading && recaps.length === 0 ? (
-              <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+              <PageLoader compact />
             ) : recaps.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <ClipboardList size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -3476,7 +3478,7 @@ _${storeHeader.name}_`.trim();
 
                 {recapLocationId && (
                   recapStockLoading ? (
-                    <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+                    <PageLoader compact />
                   ) : recapStock.length === 0 ? (
                     <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Tidak ada stok titip di lokasi ini.</p>
                   ) : (
@@ -3689,7 +3691,7 @@ _${storeHeader.name}_`.trim();
             </div>
             <div className="modal-body">
               {historyLoading ? (
-                <div className="flex items-center justify-center py-14"><Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>
+                <PageLoader compact />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

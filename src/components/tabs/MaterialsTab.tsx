@@ -23,6 +23,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1196,7 +1197,8 @@ ${pdfUrl}`.trim();
 
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         {/* ════ STOK ═══════════════════════════════════════════ */}
-        {subTab === 'stok' && (
+        {subTab === 'stok' && (materialsLoading && materials.length === 0) && <PageLoader />}
+        {subTab === 'stok' && !(materialsLoading && materials.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-5">
             {/* Header: search + actions in one row */}
             <div className="flex flex-row items-center gap-2 sm:gap-3">
@@ -1262,9 +1264,7 @@ ${pdfUrl}`.trim();
             </div>
 
             {materialsLoading && materials.length === 0 ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              </div>
+              <PageLoader compact />
             ) : materials.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <Boxes size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -1451,7 +1451,8 @@ ${pdfUrl}`.trim();
         )}
 
         {/* ════ PEMBELIAN ══════════════════════════════════════ */}
-        {subTab === 'pembelian' && (
+        {subTab === 'pembelian' && (purchasesLoading && purchases.length === 0) && <PageLoader />}
+        {subTab === 'pembelian' && !(purchasesLoading && purchases.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-5">
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -1509,9 +1510,7 @@ ${pdfUrl}`.trim();
               </div>
 
               {purchasesLoading && purchases.length === 0 ? (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} />
-                </div>
+                <PageLoader compact />
               ) : purchases.length === 0 ? (
                 <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat pembelian.</p>
               ) : (

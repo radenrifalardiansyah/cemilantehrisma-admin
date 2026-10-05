@@ -9,6 +9,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { useViewMode } from '@/lib/useViewMode';
+import PageLoader from '@/components/PageLoader';
 
 interface StorefrontCustomer {
   id: string;
@@ -157,9 +158,7 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
           </div>
 
           {loading ? (
-            <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Memuat akun…</p>
-            </div>
+            <PageLoader label="Memuat akun" />
           ) : paginated.length === 0 ? (
             <div className="card py-12 text-center">
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

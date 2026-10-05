@@ -19,6 +19,7 @@ import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import FilterSelect from '@/components/FilterSelect';
+import PageLoader from '@/components/PageLoader';
 
 const HEADER_BTN_H = 34;
 
@@ -560,11 +561,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
     });
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

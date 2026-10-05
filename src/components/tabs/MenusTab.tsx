@@ -10,6 +10,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import { resolveIcon } from '@/lib/icon-registry';
 import { FEATURE_KEYS } from '@/lib/permissions';
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
+import PageLoader from '@/components/PageLoader';
 
 interface EditState {
   id: string; moduleId: string; parentId: string; featureKey: string; label: string; icon: string; isActive: boolean;
@@ -229,11 +230,7 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
     );
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

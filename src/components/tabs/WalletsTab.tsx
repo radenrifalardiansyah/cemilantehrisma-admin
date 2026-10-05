@@ -24,6 +24,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { resolveIcon } from '@/lib/icon-registry';
 import { activeWalletOptions, type WalletDoc } from '@/lib/useWallets';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -615,11 +616,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
   const totalAktif = wallets.filter(w => w.isActive).reduce((s, w) => s + (balances[w.id] ?? 0), 0);
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <>

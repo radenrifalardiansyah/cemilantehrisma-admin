@@ -24,6 +24,7 @@ import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWal
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { resolveScannedProductId } from '@/lib/scan';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
+import PageLoader from '@/components/PageLoader';
 import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
@@ -841,9 +842,7 @@ export default function PosTab({
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-44 lg:pb-4 thin-scrollbar">
         {posProducts.length === 0 ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-          </div>
+          <PageLoader compact />
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Produk tidak ditemukan.</p>
@@ -1439,9 +1438,7 @@ export default function PosTab({
         </div>
         <div className="modal-body">
           {reportLoading && !reportData ? (
-            <div className="flex items-center justify-center py-14">
-              <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-            </div>
+            <PageLoader compact />
           ) : !reportData || reportData.count === 0 ? (
             <div className="py-10 text-center">
               <BarChart2 size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />

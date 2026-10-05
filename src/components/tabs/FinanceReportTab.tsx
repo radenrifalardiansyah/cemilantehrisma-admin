@@ -19,6 +19,7 @@ import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import { SALDO_AWAL_KEY } from '@/lib/finance';
 import type { WalletDoc } from '@/lib/useWallets';
 import { resolveIcon } from '@/lib/icon-registry';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 
@@ -838,9 +839,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       ) : subView === 'laba-rugi' ? (
         <div className="space-y-5">
           <GlossaryPanel open={showGlossary} onToggle={() => setShowGlossary(v => !v)} items={GLOSSARY_LABA_RUGI} />

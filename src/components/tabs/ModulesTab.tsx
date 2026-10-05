@@ -19,6 +19,7 @@ import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import type { ModuleDoc, Action } from '@/types/rbac';
+import PageLoader from '@/components/PageLoader';
 
 const HEADER_BTN_H = 34;
 
@@ -346,11 +347,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
     });
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

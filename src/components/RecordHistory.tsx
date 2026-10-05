@@ -4,8 +4,9 @@
 // transaksi (Pesanan, Produksi, Pembelian Bahan, Konsinyasi, dll) supaya siapa membuat/mengubah/
 // menghapus data itu bisa dilihat langsung dari menunya sendiri, tanpa pindah ke halaman Riwayat.
 import { useEffect, useState } from 'react';
-import { FileClock, ChevronRight, Loader2, User as UserIcon } from 'lucide-react';
+import { FileClock, ChevronRight, User as UserIcon } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
+import PageLoader from '@/components/PageLoader';
 import {
   type AuditEntry, ACTION_META, DIRECTION_COLOR, directionFor, avatarIconFor,
   formatDateTime, HistoryEntryDetail,
@@ -45,9 +46,7 @@ export function RecordHistoryPanel({ creds, entity, entityId }: { creds: string;
     <div className="px-4 pb-4 pt-3 space-y-2" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
       <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Riwayat</p>
       {entries === null ? (
-        <div className="flex items-center justify-center py-4">
-          <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       ) : entries.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat perubahan untuk data ini.</p>
       ) : (

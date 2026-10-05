@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, ChevronLeft, ChevronRight, Loader2, User as UserIcon } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, User as UserIcon } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
 import { useViewMode } from '@/lib/useViewMode';
 import { HISTORY_ENTITIES, historyEntityLabel } from '@/lib/history-entities';
+import PageLoader from '@/components/PageLoader';
 import {
   type AuditEntry, ACTION_META, DIRECTION_COLOR, directionFor, avatarIconFor,
   formatDateTime, HistoryEntryDetail,
@@ -106,11 +107,7 @@ export default function HistoryTab({ creds }: { creds: string }) {
   const goPage = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
   const rowNumber = (i: number) => (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + i + 1;
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

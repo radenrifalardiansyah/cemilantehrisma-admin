@@ -53,6 +53,7 @@ import TopListChart from '@/components/dashboard/TopListChart';
 import BusinessAnalyticsSection, { type BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import { type PeriodKey, periodRange } from '@/lib/period';
+import PageLoader from '@/components/PageLoader';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -838,10 +839,7 @@ export default function AdminPage() {
   // ─── Screens: Loading & Login ────────────────────────────
   if (checking) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--ground)' }}>
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 border-[3px] rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-        <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Memuat dashboard…</p>
-      </div>
+      <PageLoader label="Memuat dashboard" compact />
     </div>
   );
 
@@ -1066,9 +1064,7 @@ export default function AdminPage() {
       <div className="space-y-5">
       {/* Loading */}
       {loading && !dashData && (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       )}
 
       {dashData && (

@@ -18,6 +18,7 @@ import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import SearchableSelect from '@/components/SearchableSelect';
 import type { Role, Action } from '@/types/rbac';
+import PageLoader from '@/components/PageLoader';
 
 const HEADER_BTN_H = 34;
 
@@ -339,11 +340,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
     });
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

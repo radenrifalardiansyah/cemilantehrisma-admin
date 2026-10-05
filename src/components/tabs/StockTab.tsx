@@ -20,6 +20,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -420,9 +421,7 @@ function TxList({
   };
 
   if (loading) return (
-    <div className="flex justify-center py-12">
-      <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
+    <PageLoader compact />
   );
 
   if (entries.length === 0) return (
@@ -835,11 +834,7 @@ export default function StockTab({
   };
 
   // ── Loading ──
-  if (loading) return (
-    <div className="flex items-center justify-center py-32">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   const inTx       = transactions.filter(t => t.type === 'in');
   const outTx      = transactions.filter(t => t.type === 'out' || t.type === 'reject');
@@ -1161,9 +1156,7 @@ export default function StockTab({
             </div>
 
             {stockLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              </div>
+              <PageLoader compact />
             ) : mergedStocks.length === 0 ? (
               <div className="rounded-2xl p-16 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <Package size={24} style={{ color: 'var(--accent)', margin: '0 auto 10px', display: 'block' }} />
@@ -1302,9 +1295,7 @@ export default function StockTab({
             </div>
 
             {txLoading && inTx.length === 0 ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              </div>
+              <PageLoader compact />
             ) : inTx.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <TrendingUp size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -1358,9 +1349,7 @@ export default function StockTab({
             </div>
 
             {txLoading && outTx.length === 0 ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              </div>
+              <PageLoader compact />
             ) : outTx.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <TrendingDown size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -1414,9 +1403,7 @@ export default function StockTab({
             </div>
 
             {txLoading && transferTx.length === 0 ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              </div>
+              <PageLoader compact />
             ) : transferTx.length === 0 ? (
               <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
                 <ArrowLeftRight size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />

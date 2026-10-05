@@ -22,6 +22,7 @@ import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import ProductReportPDF from '@/lib/pdf/ProductReportPDF';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { toDataUri } from '@/lib/pdf/logo';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -454,9 +455,7 @@ export default function ProductReportTab({ creds }: { creds: string }) {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       ) : (
         <div className="space-y-5">
           {/* Ringkasan */}

@@ -20,6 +20,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
+import PageLoader from '@/components/PageLoader';
 
 const API       = '';
 const HEADER_BTN_H = 34;
@@ -697,11 +698,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
     company:  resellers.filter(r => (r.type ?? 'personal') === 'company').length,
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   return (
     <div className="p-4 lg:p-6 space-y-5">

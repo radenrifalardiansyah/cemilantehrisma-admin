@@ -7,6 +7,7 @@ import Tooltip from '@/components/Tooltip';
 import { FEATURE_KEYS, getFeatureKeyDef } from '@/lib/permissions';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { Role, Action, ModuleDoc, MenuDoc } from '@/types/rbac';
+import PageLoader from '@/components/PageLoader';
 
 type Matrix = Record<string, Partial<Record<Action, boolean>>>;
 
@@ -151,11 +152,7 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
     setSaving(false);
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   // ── Build module → top-menu → child-menu tree, driven by Struktur Menu /
   // Modul (order, icon, grouping) — with a fallback group for any featureKey

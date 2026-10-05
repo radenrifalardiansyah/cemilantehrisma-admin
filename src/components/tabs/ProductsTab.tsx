@@ -29,6 +29,7 @@ import ColorThemePicker from '@/components/ColorThemePicker';
 import QRCodeModal from '@/components/QRCodeModal';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 
@@ -822,11 +823,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
     </div>
   );
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 size={28} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
-  );
+  if (loading) return <PageLoader />;
 
   // ═══════════════════════════════════════════════════════════════════
   // RENDER

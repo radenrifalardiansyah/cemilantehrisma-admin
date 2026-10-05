@@ -10,6 +10,7 @@ import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { TYPE_LABEL, fullTime } from '@/components/NotificationDetailModal';
 import { TYPE_ICON, timeAgo, type NotificationDoc } from '@/components/NotificationBell';
+import PageLoader from '@/components/PageLoader';
 
 const HEADER_BTN_H = 34;
 
@@ -96,9 +97,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
           </div>
 
           {loading ? (
-            <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Memuat notifikasi…</p>
-            </div>
+            <PageLoader label="Memuat notifikasi" />
           ) : paginated.length === 0 ? (
             <div className="card py-12 text-center">
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

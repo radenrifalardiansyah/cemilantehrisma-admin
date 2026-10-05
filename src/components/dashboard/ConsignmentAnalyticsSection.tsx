@@ -5,11 +5,12 @@ import {
   Tooltip, ResponsiveContainer, Cell, PieChart, Pie, LabelList,
 } from 'recharts';
 import {
-  Loader2, Store, Wallet, Package, ArrowDownCircle, ArrowUpCircle,
+  Store, Wallet, Package, ArrowDownCircle, ArrowUpCircle,
   PieChart as PieIcon, TrendingUp, Boxes, Receipt, ChevronRight, BarChart3,
 } from 'lucide-react';
 import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
+import PageLoader from '@/components/PageLoader';
 
 export interface ConsignmentAnalyticsData {
   period: { from: string; to: string };
@@ -232,9 +233,7 @@ export default function ConsignmentAnalyticsSection({
       )}
 
       {loading && !data && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        </div>
+        <PageLoader compact />
       )}
 
       {data && (

@@ -21,6 +21,7 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import StockReportPDF from '@/lib/pdf/StockReportPDF';
 import StockCardPDF from '@/lib/pdf/StockCardPDF';
 import { toDataUri } from '@/lib/pdf/logo';
+import PageLoader from '@/components/PageLoader';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -200,9 +201,7 @@ function TxList({
   };
 
   if (loading) return (
-    <div className="flex justify-center py-12">
-      <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-    </div>
+    <PageLoader compact />
   );
 
   if (entries.length === 0) return (
@@ -1114,9 +1113,7 @@ export default function StockReportTab({
           <ViewToggle mode={historyView} onChange={setHistoryView} height={HEADER_BTN_H} />
         </div>
         {reportLedgerLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-          </div>
+          <PageLoader compact />
         ) : (
           <>
             <TxList entries={paginatedReportTx} loading={false} emptyLabel="Tidak ada mutasi stok di periode ini"
