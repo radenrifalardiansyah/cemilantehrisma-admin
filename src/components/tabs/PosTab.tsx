@@ -80,6 +80,7 @@ interface ReceiptData {
 // (nama, alamat, telepon, logo), dengan fallback ke nilai hardcoded lama kalau belum diisi.
 interface StoreInfo {
   storeName?: string; address?: string; city?: string; whatsapp?: string; logo?: string;
+  storeBankName?: string; storeBankAccountNumber?: string; storeBankAccountHolder?: string;
   posWarehouseId?: string; posWarehouseName?: string;
 }
 
@@ -124,7 +125,7 @@ function normalizePhone(raw: string) {
 // Struk lengkap (bukan cuma link PDF) dikirim lewat WhatsApp — dibuat sedekat mungkin dengan
 // struk cetak (nama toko, alamat, telepon, rincian item, total, pembayaran) supaya pelanggan
 // tetap dapat rincian belanja meski tidak menerima struk fisik.
-function formatWAMessage(receipt: ReceiptData, store: { name: string; address: string; phone: string }) {
+function formatWAMessage(receipt: ReceiptData, store: { name: string; address: string; phone: string; bank?: { name: string; accountNumber: string; accountHolder?: string } }) {
   const SEP = '─────────────────────';
   const itemLines = receipt.items
     .map((it, i) => `${i + 1}. ${it.name}${it.weight ? ` (${it.weight})` : ''}\n   ${it.qty} x ${formatCurrency(it.price)} = *${formatCurrency(it.subtotal)}*`)
@@ -137,6 +138,9 @@ function formatWAMessage(receipt: ReceiptData, store: { name: string; address: s
     : receipt.paymentMethod === 'kredit'
     ? `Status  : *BELUM LUNAS (KREDIT)*`
     : `Transfer ${receipt.transferBank ?? ''} : ${formatCurrency(receipt.transferAmount ?? 0)}`;
+  const bankLines = receipt.paymentMethod === 'kredit' && store.bank
+    ? `\nSilakan transfer ke:\n*${store.bank.name}*\nNo. Rek : *${store.bank.accountNumber}*\n${store.bank.accountHolder ? `a.n.    : ${store.bank.accountHolder}\n` : ''}${SEP}\n`
+    : '';
   const pdfLines = receipt.pdfUrl ? `\nInvoice PDF:\n${receipt.pdfUrl}\n${SEP}\n` : '';
 
   return `*${store.name.toUpperCase()}*
@@ -155,7 +159,7 @@ Subtotal : ${formatCurrency(receipt.subtotal)}
 ${discountLine}*Total    : ${formatCurrency(receipt.total)}*
 ${paymentLines}
 ${SEP}
-${pdfLines}Terima kasih telah berbelanja!
+${bankLines}${pdfLines}Terima kasih telah berbelanja!
 _${store.name}_`.trim();
 }
 
@@ -766,7 +770,12 @@ export default function PosTab({
     if (!lastReceipt) return;
     const phone = waPhoneDraft.trim();
     if (!phone) { toast.error('Isi nomor WhatsApp pelanggan dulu.'); return; }
-    const message = formatWAMessage(lastReceipt, { name: storeName, address: storeAddress, phone: storePhone });
+    const message = formatWAMessage(lastReceipt, {
+      name: storeName, address: storeAddress, phone: storePhone,
+      bank: storeInfo.storeBankAccountNumber?.trim()
+        ? { name: storeInfo.storeBankName?.trim() || 'Bank', accountNumber: storeInfo.storeBankAccountNumber.trim(), accountHolder: storeInfo.storeBankAccountHolder?.trim() || undefined }
+        : undefined,
+    });
     window.open(
       `https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`,
       '_blank'

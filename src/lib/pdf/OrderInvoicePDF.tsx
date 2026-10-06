@@ -23,6 +23,8 @@ export interface OrderInvoiceData {
   changeAmount?:  number;
   transferBank?:  string;
   transferAmount?: number;
+  // Rekening toko — hanya ditampilkan di invoice yang belum lunas.
+  bank?:          { name: string; accountNumber: string; accountHolder?: string };
 }
 
 const rp = (n: number) =>
@@ -94,6 +96,11 @@ const s = StyleSheet.create({
   paymentLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.border },
   paymentKey: { fontSize: 8.5, color: C.muted },
   paymentVal: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark },
+
+  bankBox: { marginTop: 14, padding: 10, backgroundColor: C.amberBg, borderRadius: 6 },
+  bankLabel: { fontSize: 8, color: C.amber, textTransform: 'uppercase', marginBottom: 4 },
+  bankLine: { fontSize: 9.5, color: C.dark, marginTop: 1 },
+  bankNumber: { fontSize: 12, fontFamily: 'Helvetica-Bold', color: C.dark, marginTop: 2 },
 
   noteBox: { marginTop: 14, padding: 10, backgroundColor: C.accentBg, borderRadius: 6 },
   noteLabel: { fontSize: 8, color: C.muted, textTransform: 'uppercase', marginBottom: 3 },
@@ -213,6 +220,16 @@ export default function OrderInvoicePDF({ data, store }: { data: OrderInvoiceDat
             )}
           </View>
         </View>
+
+        {!isLunas && data.bank?.accountNumber && (
+          <View style={s.bankBox} wrap={false}>
+            <Text style={s.bankLabel}>Pembayaran via Transfer</Text>
+            <Text style={s.bankLine}>{data.bank.name}</Text>
+            <Text style={s.bankNumber}>{data.bank.accountNumber}</Text>
+            {data.bank.accountHolder && <Text style={s.bankLine}>a.n. {data.bank.accountHolder}</Text>}
+            <Text style={[s.bankLine, { color: C.muted, fontSize: 8.5 }]}>Mohon transfer sebesar {rp(data.total)} dan kirim bukti transfer.</Text>
+          </View>
+        )}
 
         {data.note && (
           <View style={s.noteBox}>

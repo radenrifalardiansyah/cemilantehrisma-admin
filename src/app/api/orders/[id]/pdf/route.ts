@@ -47,6 +47,7 @@ export async function GET(
     const settings = await getSettings() as {
       storeName?: string; storeTagline?: string; address?: string; city?: string;
       whatsapp?: string; logo?: string;
+      storeBankName?: string; storeBankAccountNumber?: string; storeBankAccountHolder?: string;
     };
     const store: StoreHeader = {
       name: settings.storeName?.trim() || 'Cemilan Teh Risma',
@@ -75,6 +76,13 @@ export async function GET(
       changeAmount:   order.changeAmount,
       transferBank:   order.transferBank,
       transferAmount: order.transferAmount,
+      bank: settings.storeBankAccountNumber?.trim()
+        ? {
+            name: settings.storeBankName?.trim() || 'Bank',
+            accountNumber: settings.storeBankAccountNumber.trim(),
+            accountHolder: settings.storeBankAccountHolder?.trim() || undefined,
+          }
+        : undefined,
     };
 
     const buffer = await renderToBuffer(

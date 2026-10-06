@@ -210,7 +210,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   }, [orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko — dipakai saat cetak ulang struk ──
-  interface StoreInfo { storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string; }
+  interface StoreInfo { storeName?: string; storeTagline?: string; address?: string; city?: string; whatsapp?: string; logo?: string; storeBankName?: string; storeBankAccountNumber?: string; storeBankAccountHolder?: string; }
   const [storeInfo, setStoreInfo] = useState<StoreInfo>({});
   useEffect(() => {
     fetch(`${API}/api/settings`, { headers }).then(async r => {
@@ -235,6 +235,14 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     logo: invoiceLogoDataUri,
   };
 
+  const storeBank = storeInfo.storeBankAccountNumber?.trim()
+    ? {
+        name: storeInfo.storeBankName?.trim() || 'Bank',
+        accountNumber: storeInfo.storeBankAccountNumber.trim(),
+        accountHolder: storeInfo.storeBankAccountHolder?.trim() || undefined,
+      }
+    : undefined;
+
   const [printingInvoiceId, setPrintingInvoiceId] = useState<string | null>(null);
   const buildInvoiceData = (o: Order): OrderInvoiceData => ({
     invoiceNo:      o.invoiceNo || o.id,
@@ -255,6 +263,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     changeAmount:   o.changeAmount,
     transferBank:   o.transferBank,
     transferAmount: o.transferAmount,
+    bank:           storeBank,
   });
 
   const printInvoicePdf = async (o: Order) => {
@@ -295,6 +304,9 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
       ? `Transfer ${o.transferBank ?? ''} : ${formatRp(o.transferAmount ?? 0)}`
       : '';
     const pdfUrl = `${window.location.origin}/api/orders/${o.id}/pdf`;
+    const bankLines = o.paymentStatus === 'belum_lunas' && storeBank
+      ? `\nSilakan transfer ke:\n*${storeBank.name}*\nNo. Rek : *${storeBank.accountNumber}*\n${storeBank.accountHolder ? `a.n.    : ${storeBank.accountHolder}\n` : ''}${SEP}\n`
+      : '';
 
     const message = `*${storeName.toUpperCase()}*
 ${storeAddress ? `${storeAddress}\n` : ''}${storePhone}
@@ -312,7 +324,7 @@ Subtotal : ${formatRp(o.subtotal)}
 ${discountLine}*Total    : ${formatRp(o.total)}*
 ${paymentLines}
 ${SEP}
-
+${bankLines}
 Invoice PDF:
 ${pdfUrl}
 
