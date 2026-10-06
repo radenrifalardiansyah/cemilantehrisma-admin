@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# skema produksi hasil pg_dump untuk staging (scripts/staging-schema.mjs)
+.staging-schema.sql
