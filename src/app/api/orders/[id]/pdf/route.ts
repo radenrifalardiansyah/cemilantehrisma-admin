@@ -76,6 +76,7 @@ export async function GET(
       changeAmount:   order.changeAmount,
       transferBank:   order.transferBank,
       transferAmount: order.transferAmount,
+      dueDate:        order.dueDate,
       bank: settings.storeBankAccountNumber?.trim()
         ? {
             name: settings.storeBankName?.trim() || 'Bank',

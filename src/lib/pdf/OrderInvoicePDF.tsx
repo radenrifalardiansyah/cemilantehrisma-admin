@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
+import { formatDueDate } from '@/lib/receivable';
 import type { StoreHeader } from './ShipmentNotePDF';
 
 export interface OrderInvoiceItem { name: string; weight?: string; qty: number; price: number; subtotal: number }
@@ -23,6 +24,7 @@ export interface OrderInvoiceData {
   changeAmount?:  number;
   transferBank?:  string;
   transferAmount?: number;
+  dueDate?:       string; // yyyy-mm-dd — hanya ditampilkan bila belum lunas
   // Rekening toko — hanya ditampilkan di invoice yang belum lunas.
   bank?:          { name: string; accountNumber: string; accountHolder?: string };
 }
@@ -136,6 +138,12 @@ export default function OrderInvoicePDF({ data, store }: { data: OrderInvoiceDat
               <Text style={s.docMetaLabel}>Tanggal:</Text>
               <Text style={s.docMetaValue}>{data.date}</Text>
             </View>
+            {!isLunas && data.dueDate && (
+              <View style={s.docMetaRow}>
+                <Text style={s.docMetaLabel}>Jatuh Tempo:</Text>
+                <Text style={[s.docMetaValue, { color: C.amber }]}>{formatDueDate(data.dueDate)}</Text>
+              </View>
+            )}
             {data.printedAt && (
               <View style={s.docMetaRow}>
                 <Text style={s.docMetaLabel}>Dicetak:</Text>

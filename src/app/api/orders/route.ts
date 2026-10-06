@@ -11,6 +11,7 @@ import { revalidateProductStock } from '@/lib/revalidate';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
+import { isValidDueDate } from '@/lib/receivable';
 import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
 
 // `orders` dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab
@@ -55,7 +56,7 @@ interface OrderCreateBody {
   paymentMethod?: string; paymentStatus?: string; amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   warehouseId?: string; warehouseName?: string; walletId?: string | null; shiftId?: string;
-  invoiceNo?: string; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
+  invoiceNo?: string; dueDate?: string; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -69,6 +70,10 @@ export async function POST(req: NextRequest) {
   // kalau dikirim, itu yang jadi created_at (dipakai buat urutan & filter periode di Pesanan/
   // Laporan Keuangan). Kalau tidak dikirim, pakai waktu server seperti biasa.
   const createdAt = data.transactionAt ? new Date(data.transactionAt) : new Date();
+
+  // Jatuh tempo hanya bermakna untuk pesanan belum lunas (kredit) — kolomnya baru ada setelah
+  // scripts/add-order-due-date.mjs dijalankan, jadi tidak disertakan di INSERT bila kosong.
+  const dueDate = isValidDueDate(data.dueDate) && (data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')) === 'belum_lunas' ? data.dueDate : undefined;
 
   const deltas = new Map<string, number>();
   for (const item of data.items ?? []) {
@@ -130,7 +135,7 @@ export async function POST(req: NextRequest) {
           id, invoice_no, date, customer_name, customer_phone, customer_id, items, subtotal, discount, total,
           status, source, delivery_method, address, note, payment_method, payment_status,
           amount_paid, change_amount, transfer_bank, transfer_amount, transfer_proof_url,
-          stock_cut, warehouse_id, warehouse_name, wallet_id, shift_id, created_at
+          stock_cut, warehouse_id, warehouse_name, wallet_id, shift_id, created_at${dueDate ? pgTx`, due_date` : pgTx``}
         ) values (
           ${id}, ${finalInvoiceNo ?? null}, ${data.date ?? null},
           ${data.customerName ?? ''}, ${data.customerPhone ?? null}, ${data.customerId ?? null},
@@ -141,7 +146,7 @@ export async function POST(req: NextRequest) {
           ${data.amountPaid ?? null}, ${data.changeAmount ?? null},
           ${data.transferBank ?? null}, ${data.transferAmount ?? null}, ${data.transferProofUrl ?? null},
           ${!isPreOrder}, ${data.warehouseId ?? null}, ${data.warehouseName ?? null},
-          ${data.walletId ?? null}, ${data.shiftId ?? null}, ${createdAt}
+          ${data.walletId ?? null}, ${data.shiftId ?? null}, ${createdAt}${dueDate ? pgTx`, ${dueDate}` : pgTx``}
         )
       `;
       return id;

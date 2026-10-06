@@ -9,7 +9,8 @@ import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, w
 import { logHistory } from '@/lib/history';
 import { getSettings } from '@/lib/settings-pg';
 import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
-import { rowToOrder, OrderRow } from '@/lib/orders-pg';
+import { rowToOrder, syncInvoicePaymentStatus, OrderRow } from '@/lib/orders-pg';
+import { isValidDueDate } from '@/lib/receivable';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -22,6 +23,8 @@ interface OrderEditInput {
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   paymentStatus?: 'lunas' | 'belum_lunas'; note?: string;
   date?: string; transactionAt?: string; walletId?: string | null;
+  // yyyy-mm-dd; string kosong = hapus jatuh tempo.
+  dueDate?: string;
 }
 
 // Kegagalan yang diketahui (bukan/sudah dibatalkan, stok kurang) — dilempar dari dalam transaksi
@@ -148,6 +151,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (data.note !== undefined) updateCols.note = data.note;
         if (data.walletId !== undefined) updateCols.wallet_id = data.walletId;
         if (data.date !== undefined) updateCols.date = data.date;
+        if (data.dueDate !== undefined) {
+          if (data.dueDate !== '' && !isValidDueDate(data.dueDate)) throw new OrderValidationError('Format jatuh tempo tidak valid.');
+          updateCols.due_date = data.dueDate || null;
+        }
         if (data.transactionAt !== undefined) updateCols.created_at = new Date(data.transactionAt);
 
         await pgTx`update orders set ${pgTx(updateCols, ...Object.keys(updateCols))} where id = ${id}`;
@@ -167,6 +174,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     } catch (err) {
       console.error('Failed to write history for order edit', err);
     }
+    await syncInvoicePaymentStatus(sql, txResult.orderBefore.invoiceNo, data.paymentStatus);
     revalidateProductStock();
     revalidateTag('admin-analytics', { expire: 0 });
     return Response.json({ ok: true });
@@ -264,6 +272,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     console.error('Failed to write history for order status update', err);
   }
 
+  await syncInvoicePaymentStatus(sql, statusResult.orderBefore.invoiceNo, paymentStatus);
   if (statusResult.stockTouched) revalidateProductStock();
   revalidateTag('admin-analytics', { expire: 0 });
   // "Terjual" di beranda storefront dihitung dari qty pesanan berstatus 'selesai' — status

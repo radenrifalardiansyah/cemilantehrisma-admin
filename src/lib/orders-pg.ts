@@ -40,6 +40,7 @@ export interface OrderRow {
   warehouse_name: string | null;
   wallet_id: string | null;
   shift_id: string | null;
+  due_date?: string | null;
   created_at: Date;
   updated_at: Date | null;
 }
@@ -80,6 +81,7 @@ export function rowToOrder(r: OrderRow) {
     warehouseName: r.warehouse_name ?? undefined,
     walletId: r.wallet_id,
     shiftId: r.shift_id ?? undefined,
+    dueDate: r.due_date ?? undefined,
     createdAt: toTimestamp(r.created_at),
     updatedAt: toTimestamp(r.updated_at),
   };
@@ -98,4 +100,21 @@ export async function resolveUniqueInvoiceNo(pgTx: PgTx, invoiceNo: string | und
     candidate = `${invoiceNo}-${suffix}`;
   }
   return candidate;
+}
+
+// PDF invoice storefront (/api/invoice/[id]) membaca status bayar dari tabel `invoices` yang
+// disalin saat transaksi dibuat — tidak mengikuti pesanan. Sinkronkan tiap status bayar pesanan
+// berubah supaya link lama yang sudah dikirim ke pelanggan tidak terus menampilkan "belum lunas".
+// Best-effort: gagal di sini tidak boleh menggagalkan perubahan pesanannya.
+export async function syncInvoicePaymentStatus(
+  sql: PgTx,
+  invoiceNo: string | undefined | null,
+  paymentStatus: string | undefined,
+): Promise<void> {
+  if (!invoiceNo || (paymentStatus !== 'lunas' && paymentStatus !== 'belum_lunas')) return;
+  try {
+    await sql`update invoices set payment_status = ${paymentStatus} where invoice_no = ${invoiceNo}`;
+  } catch (err) {
+    console.error('Failed to sync invoice payment status', err);
+  }
 }

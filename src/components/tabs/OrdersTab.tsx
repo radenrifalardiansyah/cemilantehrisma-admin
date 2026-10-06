@@ -24,6 +24,7 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
+import { dueInfo, formatDueDate } from '@/lib/receivable';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -46,6 +47,7 @@ interface Order {
   deliveryMethod?: 'pickup' | 'delivery'; address?: string; note?: string;
   stockRestored?: boolean;
   walletId?: string | null;
+  dueDate?: string;
 }
 
 interface EditItem { productId?: string; name: string; weight: string; qty: number; price: number; }
@@ -71,8 +73,17 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // Belum Lunas bisa terjadi di transaksi Kredit (Reseller) dari Kasir — order lain selalu lunas seketika.
-function PaymentStatusBadge({ paymentStatus }: { paymentStatus?: 'lunas' | 'belum_lunas' }) {
-  return paymentStatus === 'belum_lunas' ? <span className="badge badge-red">Belum Lunas</span> : null;
+function PaymentStatusBadge({ paymentStatus, dueDate, status }: { paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string; status?: string }) {
+  if (paymentStatus !== 'belum_lunas') return null;
+  const due = status === 'dibatalkan' ? null : dueInfo(dueDate);
+  return (
+    <>
+      <span className="badge badge-red">Belum Lunas</span>
+      {due?.state === 'overdue' && <span className="badge badge-red">Terlambat {due.days} hari</span>}
+      {due?.state === 'today' && <span className="badge badge-amber">Jatuh tempo hari ini</span>}
+      {due?.state === 'upcoming' && dueDate && <span className="badge badge-amber">Tempo {formatDueDate(dueDate)}</span>}
+    </>
+  );
 }
 
 function Checkbox({ checked, indeterminate, onChange }: {
@@ -263,6 +274,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     changeAmount:   o.changeAmount,
     transferBank:   o.transferBank,
     transferAmount: o.transferAmount,
+    dueDate:        o.dueDate,
     bank:           storeBank,
   });
 
@@ -304,6 +316,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
       ? `Transfer ${o.transferBank ?? ''} : ${formatRp(o.transferAmount ?? 0)}`
       : '';
     const pdfUrl = `${window.location.origin}/api/orders/${o.id}/pdf`;
+    const dueNote = o.paymentStatus === 'belum_lunas' && o.dueDate ? `Jatuh tempo : ${formatDueDate(o.dueDate)}\n` : '';
     const bankLines = o.paymentStatus === 'belum_lunas' && storeBank
       ? `\nSilakan transfer ke:\n*${storeBank.name}*\nNo. Rek : *${storeBank.accountNumber}*\n${storeBank.accountHolder ? `a.n.    : ${storeBank.accountHolder}\n` : ''}${SEP}\n`
       : '';
@@ -323,7 +336,7 @@ ${SEP}
 Subtotal : ${formatRp(o.subtotal)}
 ${discountLine}*Total    : ${formatRp(o.total)}*
 ${paymentLines}
-${SEP}
+${dueNote}${SEP}
 ${bankLines}
 Invoice PDF:
 ${pdfUrl}
@@ -331,6 +344,37 @@ ${pdfUrl}
 Terima kasih telah berbelanja!
 _${storeName}_`.trim();
 
+    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  // Pengingat tagihan untuk pesanan kredit yang belum lunas — tone menyesuaikan jatuh tempo.
+  const sendReminderWhatsApp = (o: Order) => {
+    const phone = o.customerPhone?.trim();
+    if (!phone) { toast.error('Nomor WhatsApp pelanggan belum diisi di pesanan ini.'); return; }
+    const due = dueInfo(o.dueDate);
+    const dueLine = o.dueDate && due
+      ? due.state === 'overdue' ? `Jatuh tempo : ${formatDueDate(o.dueDate)} (*terlambat ${due.days} hari*)\n`
+      : due.state === 'today' ? `Jatuh tempo : *hari ini* (${formatDueDate(o.dueDate)})\n`
+      : `Jatuh tempo : ${formatDueDate(o.dueDate)}\n`
+      : '';
+    const bankLines = storeBank
+      ? `\nSilakan transfer ke:\n*${storeBank.name}*\nNo. Rek : *${storeBank.accountNumber}*\n${storeBank.accountHolder ? `a.n.    : ${storeBank.accountHolder}\n` : ''}`
+      : '';
+    const pdfUrl = `${window.location.origin}/api/orders/${o.id}/pdf`;
+    const message = `*${storeName.toUpperCase()}*
+
+Halo *${o.customerName}*,
+Kami mengingatkan bahwa pesanan Anda masih *belum lunas*:
+
+No. Invoice : *${o.invoiceNo}*
+Tanggal     : ${formatDate(o)}
+${dueLine}Total tagihan: *${formatRp(o.total)}*
+${bankLines}
+Rincian invoice:
+${pdfUrl}
+
+Jika sudah membayar, mohon kirim bukti transfer. Terima kasih 🙏
+_${storeName}_`.trim();
     window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
@@ -477,6 +521,13 @@ _${storeName}_`.trim();
       || o.customerPhone?.toLowerCase().includes(q);
   });
 
+  const receivables = orders.reduce((acc, o) => {
+    if (o.paymentStatus !== 'belum_lunas' || o.status === 'dibatalkan') return acc;
+    acc.count += 1; acc.total += o.total;
+    if (dueInfo(o.dueDate)?.state === 'overdue') { acc.overdueCount += 1; acc.overdueTotal += o.total; }
+    return acc;
+  }, { count: 0, total: 0, overdueCount: 0, overdueTotal: 0 });
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
   const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
@@ -529,6 +580,7 @@ _${storeName}_`.trim();
   const [editPaymentStatus, setEditPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [editWalletId, setEditWalletId] = useState('');
   const [editNote, setEditNote] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
   const [addProductId, setAddProductId] = useState('');
   const [pickerProducts, setPickerProducts] = useState<PickerProduct[]>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
@@ -561,6 +613,7 @@ _${storeName}_`.trim();
     setEditPaymentStatus(o.paymentStatus ?? 'lunas');
     setEditWalletId(o.walletId ?? '');
     setEditNote(o.note ?? '');
+    setEditDueDate(o.dueDate ?? '');
     setAddProductId('');
     setEditingOrder(o);
   };
@@ -618,6 +671,7 @@ _${storeName}_`.trim();
           : editingOrder.paymentMethod === 'kredit' ? { paymentStatus: 'lunas' as const } : {}),
         walletId: editWalletId || null,
         note: editNote.trim() || undefined,
+        dueDate: editPaymentMethod === 'kredit' && editPaymentStatus === 'belum_lunas' ? editDueDate : '',
         ...(txDate ? { transactionAt: txDate.toISOString(), date: txDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) } : {}),
       }),
     });
@@ -1088,6 +1142,19 @@ _${storeName}_`.trim();
             </div>
           )}
 
+          {receivables.count > 0 && (
+            <div className="card px-4 py-3 flex items-center gap-x-6 gap-y-1 flex-wrap text-xs" style={{ borderColor: 'var(--border-2)' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Piutang belum lunas</span>
+              <span className="font-extrabold tabular text-sm" style={{ color: 'var(--danger)' }}>{formatRp(receivables.total)}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{receivables.count} pesanan</span>
+              {receivables.overdueCount > 0 && (
+                <span className="font-bold" style={{ color: 'var(--danger)' }}>
+                  {receivables.overdueCount} terlambat · {formatRp(receivables.overdueTotal)}
+                </span>
+              )}
+            </div>
+          )}
+
           {filtered.length === 0 ? (
             <div className="card py-12 text-center">
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada pesanan yang cocok.</p>
@@ -1131,6 +1198,13 @@ _${storeName}_`.trim();
                     {printingInvoiceId === o.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                   </button>
                 </Tooltip>
+                {o.customerPhone && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
+                  <Tooltip label="Kirim Pengingat Tagihan">
+                    <button onClick={() => sendReminderWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--warning-bg, var(--surface-2))', color: 'var(--warning, var(--text-secondary))' }} title="Kirim Pengingat Tagihan">
+                      <AlertTriangle size={12} />
+                    </button>
+                  </Tooltip>
+                )}
                 {o.customerPhone && (
                   <Tooltip label="Kirim Invoice via WhatsApp">
                     <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
@@ -1177,7 +1251,7 @@ _${storeName}_`.trim();
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
-                      <PaymentStatusBadge paymentStatus={o.paymentStatus} />
+                      <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} />
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
                       {o.invoiceNo} · {formatDate(o)}
@@ -1232,7 +1306,7 @@ _${storeName}_`.trim();
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
-                      <PaymentStatusBadge paymentStatus={o.paymentStatus} />
+                      <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} />
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
                       {o.invoiceNo} · {formatDate(o)}
@@ -1257,6 +1331,13 @@ _${storeName}_`.trim();
                         {printingInvoiceId === o.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
                       </button>
                     </Tooltip>
+                    {o.customerPhone && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
+                      <Tooltip label="Kirim Pengingat Tagihan">
+                        <button onClick={() => sendReminderWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--warning-bg, var(--surface-2))', color: 'var(--warning, var(--text-secondary))' }} title="Kirim Pengingat Tagihan">
+                          <AlertTriangle size={12} />
+                        </button>
+                      </Tooltip>
+                    )}
                     {o.customerPhone && (
                       <Tooltip label="Kirim Invoice via WhatsApp">
                         <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
@@ -1624,6 +1705,13 @@ _${storeName}_`.trim();
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {editPaymentMethod === 'kredit' && editPaymentStatus === 'belum_lunas' && (
+                  <div>
+                    <label className="field-label">Jatuh Tempo</label>
+                    <input type="date" value={editDueDate} onChange={e => setEditDueDate(e.target.value)} className="input" />
                   </div>
                 )}
 

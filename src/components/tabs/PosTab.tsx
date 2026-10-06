@@ -1,5 +1,6 @@
 'use client';
 
+import { addDaysWib, formatDueDate } from '@/lib/receivable';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
@@ -73,7 +74,7 @@ interface ReceiptData {
   paymentMethod: PaymentMethod;
   amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
-  customerName: string; customerPhone: string; cashier: string; pdfUrl?: string;
+  customerName: string; customerPhone: string; cashier: string; pdfUrl?: string; dueDate?: string;
 }
 
 // Info toko diambil dari /api/settings — dipakai untuk melengkapi struk cetak & pesan WA
@@ -133,10 +134,11 @@ function formatWAMessage(receipt: ReceiptData, store: { name: string; address: s
   const discountLine = receipt.discount && receipt.discount.amount > 0
     ? `Diskon (${receipt.discount.label}) : -${formatCurrency(receipt.discount.amount)}\n`
     : '';
+  const dueLine = receipt.paymentMethod === 'kredit' && receipt.dueDate ? `\nJatuh tempo : *${formatDueDate(receipt.dueDate)}*` : '';
   const paymentLines = receipt.paymentMethod === 'cash'
     ? `Tunai   : ${formatCurrency(receipt.amountPaid ?? 0)}\nKembali : ${formatCurrency(receipt.changeAmount ?? 0)}`
     : receipt.paymentMethod === 'kredit'
-    ? `Status  : *BELUM LUNAS (KREDIT)*`
+    ? `Status  : *BELUM LUNAS (KREDIT)*${dueLine}`
     : `Transfer ${receipt.transferBank ?? ''} : ${formatCurrency(receipt.transferAmount ?? 0)}`;
   const bankLines = receipt.paymentMethod === 'kredit' && store.bank
     ? `\nSilakan transfer ke:\n*${store.bank.name}*\nNo. Rek : *${store.bank.accountNumber}*\n${store.bank.accountHolder ? `a.n.    : ${store.bank.accountHolder}\n` : ''}${SEP}\n`
@@ -310,6 +312,8 @@ export default function PosTab({
   const [processing,   setProcessing]   = useState(false);
   const [processErr,   setProcessErr]   = useState('');
   const [invoiceNo,    setInvoiceNo]    = useState('');
+  // Jatuh tempo transaksi kredit (yyyy-mm-dd, opsional) — default 14 hari dari hari ini.
+  const [dueDate,      setDueDate]      = useState(() => addDaysWib(14));
   const [lastReceipt,  setLastReceipt]  = useState<ReceiptData | null>(null);
   const [receiptPrintedAt, setReceiptPrintedAt] = useState('');
   const [waPhoneDraft, setWaPhoneDraft] = useState('');
@@ -473,7 +477,7 @@ export default function PosTab({
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
     setSelectedCustRef(''); setTxDateTime(() => nowLocalInput());
-    setProcessing(false); setProcessErr(''); setInvoiceNo(''); setLastReceipt(null); setWaPhoneDraft('');
+    setProcessing(false); setProcessErr(''); setInvoiceNo(''); setLastReceipt(null); setWaPhoneDraft(''); setDueDate(addDaysWib(14));
   };
 
   // ── Foto bukti transfer: kompres, upload, & coba baca nominal otomatis ──
@@ -733,7 +737,7 @@ export default function PosTab({
           paymentMethod,
           ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
           ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
-          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas' } : { walletId }),
+          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas', ...(dueDate ? { dueDate } : {}) } : { walletId }),
           ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
           ...(currentShift ? { shiftId: currentShift.id } : {}),
@@ -753,6 +757,7 @@ export default function PosTab({
         ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
         ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
         customerName: finalCustName, customerPhone: custPhone, cashier: username, pdfUrl,
+        ...(paymentMethod === 'kredit' && dueDate ? { dueDate } : {}),
       });
       if (paymentMethod !== 'kredit' && walletId) setLastWallet(paymentMethod, walletId);
       if (cartHasOpenPO && sellAsPO) toast.success('Pesanan PO tersimpan sebagai "Baru" — tandai Selesai di menu Pesanan begitu barangnya siap, baru stoknya dipotong.');
@@ -1118,9 +1123,24 @@ export default function PosTab({
                 ))}
               </div>
               {paymentMethod === 'kredit' && (
-                <p className="text-xs mt-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
-                  Transaksi dicatat sebagai <strong>Belum Lunas</strong> — stok tetap berkurang sekarang, tapi belum dihitung sebagai pendapatan di Laporan Keuangan sampai ditandai Lunas di menu Pesanan.
-                </p>
+                <>
+                  <p className="text-xs mt-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
+                    Transaksi dicatat sebagai <strong>Belum Lunas</strong> — stok tetap berkurang sekarang, tapi belum dihitung sebagai pendapatan di Laporan Keuangan sampai ditandai Lunas di menu Pesanan.
+                  </p>
+                  <div className="mt-3">
+                    <label className="field-label">Jatuh Tempo</label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {[7, 14, 30].map(d => (
+                        <button key={d} type="button" onClick={() => setDueDate(addDaysWib(d))}
+                          className="btn-ghost px-2.5 py-1.5 text-xs font-semibold"
+                          style={dueDate === addDaysWib(d) ? { background: 'var(--accent-bg)', color: 'var(--accent-dark)' } : undefined}>
+                          {d} hari
+                        </button>
+                      ))}
+                      <input type="date" value={dueDate} min={addDaysWib(0)} onChange={e => setDueDate(e.target.value)} className="input text-sm" style={{ width: 'auto' }} />
+                    </div>
+                  </div>
+                </>
               )}
               {paymentMethod !== 'kredit' && (
                 <div className="mt-3">
