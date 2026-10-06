@@ -24,6 +24,7 @@ export interface OrderInvoiceData {
   changeAmount?:  number;
   transferBank?:  string;
   transferAmount?: number;
+  returnTotal?:   number; // total nilai retur yang sudah dipotong dari invoice
   dueDate?:       string; // yyyy-mm-dd — hanya ditampilkan bila belum lunas
   // Rekening toko — hanya ditampilkan di invoice yang belum lunas.
   bank?:          { name: string; accountNumber: string; accountHolder?: string };
@@ -208,6 +209,12 @@ export default function OrderInvoicePDF({ data, store }: { data: OrderInvoiceDat
                 {/* "-" biasa, bukan tanda minus Unicode (−, U+2212) — font standar react-pdf
                     tidak punya glyph itu, hasilnya karakter hilang di invoice yang dikirim ke pelanggan. */}
                 <Text style={[s.totalsVal, { color: C.green }]}>- {rp(data.discount.amount)}</Text>
+              </View>
+            )}
+            {data.returnTotal != null && data.returnTotal > 0 && (
+              <View style={s.totalsLine}>
+                <Text style={[s.totalsKey, { color: C.amber }]}>Sudah termasuk retur</Text>
+                <Text style={[s.totalsVal, { color: C.amber }]}>- {rp(data.returnTotal)}</Text>
               </View>
             )}
             <View style={s.totalsFinalLine}>

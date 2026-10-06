@@ -41,8 +41,15 @@ export interface OrderRow {
   wallet_id: string | null;
   shift_id: string | null;
   due_date?: string | null;
+  returns?: unknown;
   created_at: Date;
   updated_at: Date | null;
+}
+
+export interface OrderReturn {
+  at: string; by: string; amount: number; reason?: string; restocked: boolean;
+  settlement: 'potong_piutang' | 'dompet';
+  items: { name: string; weight?: string; qty: number; price: number }[];
 }
 
 export function toTimestamp(d: Date | null | undefined) {
@@ -82,6 +89,7 @@ export function rowToOrder(r: OrderRow) {
     walletId: r.wallet_id,
     shiftId: r.shift_id ?? undefined,
     dueDate: r.due_date ?? undefined,
+    returns: (parseJsonb(r.returns ?? null) as OrderReturn[] | null) ?? [],
     createdAt: toTimestamp(r.created_at),
     updatedAt: toTimestamp(r.updated_at),
   };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle, Undo2 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cellText, cellNumber } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
@@ -48,6 +48,7 @@ interface Order {
   stockRestored?: boolean;
   walletId?: string | null;
   dueDate?: string;
+  returns?: { at: string; amount: number }[];
 }
 
 interface EditItem { productId?: string; name: string; weight: string; qty: number; price: number; }
@@ -275,6 +276,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     transferBank:   o.transferBank,
     transferAmount: o.transferAmount,
     dueDate:        o.dueDate,
+    returnTotal:    o.returns?.reduce((s, r) => s + r.amount, 0) || undefined,
     bank:           storeBank,
   });
 
@@ -376,6 +378,54 @@ ${pdfUrl}
 Jika sudah membayar, mohon kirim bukti transfer. Terima kasih 🙏
 _${storeName}_`.trim();
     window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  // ── Retur per item ──
+  // Pesanan dikoreksi di server (qty, diskon proporsional, total). Pesanan kredit belum lunas:
+  // piutang otomatis terpotong; selain itu uang dikembalikan dari dompet pesanan.
+  const [returnOrder, setReturnOrder] = useState<Order | null>(null);
+  const [returnQtys, setReturnQtys] = useState<number[]>([]);
+  const [returnReason, setReturnReason] = useState('');
+  const [returnRestock, setReturnRestock] = useState(true);
+  const [submittingReturn, setSubmittingReturn] = useState(false);
+  const openReturn = (o: Order) => {
+    setReturnOrder(o); setReturnQtys(o.items.map(() => 0)); setReturnReason(''); setReturnRestock(true);
+  };
+  const returnPreview = (() => {
+    if (!returnOrder) return { refund: 0, remainingQty: 0, returnedQty: 0 };
+    const oldSub = returnOrder.items.reduce((s, it) => s + it.price * it.qty, 0);
+    const newSub = returnOrder.items.reduce((s, it, i) => s + it.price * (it.qty - (returnQtys[i] ?? 0)), 0);
+    const oldDisc = returnOrder.discount?.amount ?? 0;
+    const newDisc = oldSub > 0 ? Math.round(oldDisc * (newSub / oldSub)) : 0;
+    return {
+      refund: Math.max(0, returnOrder.total - Math.max(0, newSub - newDisc)),
+      remainingQty: returnOrder.items.reduce((s, it, i) => s + it.qty - (returnQtys[i] ?? 0), 0),
+      returnedQty: returnQtys.reduce((s, q) => s + q, 0),
+    };
+  })();
+  const submitReturn = async () => {
+    if (!returnOrder || returnPreview.returnedQty === 0) return;
+    setSubmittingReturn(true);
+    const r = await fetch(`${API}/api/orders/${returnOrder.id}/return`, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: returnQtys.map((qty, index) => ({ index, qty })).filter(i => i.qty > 0),
+        reason: returnReason.trim() || undefined,
+        restock: returnRestock,
+      }),
+    });
+    const d = await r.json().catch(() => ({})) as { error?: string; refund?: number; settlement?: string };
+    if (r.ok) {
+      await load();
+      refetchBalances();
+      toast.success(d.settlement === 'potong_piutang'
+        ? `Retur dicatat — piutang berkurang ${formatRp(d.refund ?? 0)}.`
+        : `Retur dicatat — ${formatRp(d.refund ?? 0)} dikembalikan dari dompet.`);
+      setReturnOrder(null);
+    } else {
+      toast.error(d.error ?? 'Gagal memproses retur.');
+    }
+    setSubmittingReturn(false);
   };
 
   // ── Cetak ulang struk pesanan ──
@@ -1212,6 +1262,13 @@ _${storeName}_`.trim();
                     </button>
                   </Tooltip>
                 )}
+                {o.status !== 'dibatalkan' && o.items.reduce((s, it) => s + it.qty, 0) > 1 && (
+                  <Tooltip label="Retur Barang">
+                    <button onClick={() => openReturn(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Retur Barang">
+                      <Undo2 size={12} />
+                    </button>
+                  </Tooltip>
+                )}
                 {o.status !== 'dibatalkan' && (
                   <Tooltip label="Edit">
                     <button onClick={() => openEdit(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit Pesanan">
@@ -1252,6 +1309,7 @@ _${storeName}_`.trim();
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} />
+                      {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
                       {o.invoiceNo} · {formatDate(o)}
@@ -1307,6 +1365,7 @@ _${storeName}_`.trim();
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} />
+                      {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
                       {o.invoiceNo} · {formatDate(o)}
@@ -1342,6 +1401,13 @@ _${storeName}_`.trim();
                       <Tooltip label="Kirim Invoice via WhatsApp">
                         <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
                           <MessageCircle size={12} />
+                        </button>
+                      </Tooltip>
+                    )}
+                    {o.status !== 'dibatalkan' && o.items.reduce((s, it) => s + it.qty, 0) > 1 && (
+                      <Tooltip label="Retur Barang">
+                        <button onClick={() => openReturn(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Retur Barang">
+                          <Undo2 size={12} />
                         </button>
                       </Tooltip>
                     )}
@@ -1479,6 +1545,69 @@ _${storeName}_`.trim();
             <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
               Batal
             </button>
+          </div>
+        </div>
+      )}
+
+      {returnOrder && (
+        <div className="modal-overlay" onClick={() => !submittingReturn && setReturnOrder(null)}>
+          <div className="modal-sheet modal-md" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Undo2 size={17} /></div>
+                <div>
+                  <p className="modal-title">Retur Barang</p>
+                  <p className="modal-subtitle">{returnOrder.invoiceNo} · {returnOrder.customerName}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setReturnOrder(null)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="space-y-2">
+                {returnOrder.items.map((it, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{it.name}{it.weight ? ` (${it.weight})` : ''}</p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{it.qty} x {formatRp(it.price)}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button type="button" disabled={(returnQtys[i] ?? 0) <= 0} onClick={() => setReturnQtys(q => q.map((v, j) => j === i ? v - 1 : v))}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)' }}><Minus size={12} /></button>
+                      <span className="w-6 text-center text-sm font-bold tabular">{returnQtys[i] ?? 0}</span>
+                      <button type="button" disabled={(returnQtys[i] ?? 0) >= it.qty} onClick={() => setReturnQtys(q => q.map((v, j) => j === i ? v + 1 : v))}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)' }}><Plus size={12} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="field-label">Alasan retur (opsional)</label>
+                <input type="text" value={returnReason} onChange={e => setReturnReason(e.target.value)} className="input" placeholder="Mis. kemasan rusak, salah varian" />
+              </div>
+              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={returnRestock} onChange={e => setReturnRestock(e.target.checked)} />
+                Kembalikan barang ke stok (hilangkan centang bila barang rusak/tidak layak jual)
+              </label>
+              <div className="px-3 py-2 rounded-xl text-xs" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
+                {returnOrder.paymentStatus === 'belum_lunas'
+                  ? <>Pesanan ini masih <strong>belum lunas</strong> — nilai retur <strong>memotong piutang</strong>, tidak ada uang keluar dari dompet.</>
+                  : <>Pesanan sudah lunas — nilai retur <strong>dikembalikan dari dompet</strong> pesanan{returnOrder.walletId ? '' : ' (pesanan ini belum punya dompet, saldo dompet tidak berubah)'}.</>}
+                <p className="mt-1 text-sm font-extrabold">Nilai retur: {formatRp(returnPreview.refund)}</p>
+                {returnPreview.returnedQty > 0 && returnPreview.remainingQty === 0 && (
+                  <p className="mt-1" style={{ color: 'var(--danger)' }}>Semua item diretur — gunakan &quot;Batalkan Pesanan&quot; untuk membatalkan seluruh pesanan.</p>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setReturnOrder(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+              <button onClick={submitReturn} disabled={submittingReturn || returnPreview.returnedQty === 0 || returnPreview.remainingQty === 0}
+                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {submittingReturn ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
+                Proses Retur
+              </button>
+            </div>
           </div>
         </div>
       )}

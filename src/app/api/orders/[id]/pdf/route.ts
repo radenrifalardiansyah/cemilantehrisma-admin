@@ -77,6 +77,7 @@ export async function GET(
       transferBank:   order.transferBank,
       transferAmount: order.transferAmount,
       dueDate:        order.dueDate,
+      returnTotal:    order.returns.reduce((s, r) => s + r.amount, 0) || undefined,
       bank: settings.storeBankAccountNumber?.trim()
         ? {
             name: settings.storeBankName?.trim() || 'Bank',
