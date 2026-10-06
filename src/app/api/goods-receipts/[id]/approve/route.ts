@@ -46,14 +46,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const grItems = (parseJsonb(gr.items as string | GrItem[] | null) as GrItem[] | null) ?? [];
       const items = buildGrItems(poItems, await receivedByMaterial(pgTx, po.id, gr.id), grItems);
 
-      const doRef = gr.supplier_do_number ? ` / DO supplier ${gr.supplier_do_number}` : '';
       purchaseData = await createPurchaseTx(pgTx, {
         purchaseId, expenseId,
         supplierId: po.supplier_id,
         supplierName: po.supplier_name,
         items: items.map(it => ({ materialId: it.materialId, materialName: it.materialName, unit: it.unit, qty: it.qty, price: it.price })),
         date: gr.received_date,
-        note: `Dari ${po.po_number} / ${gr.gr_number}${doRef}${gr.note ? ` — ${gr.note}` : ''}`,
+        note: `Dari ${po.po_number} / ${gr.gr_number} / ${gr.do_number}${gr.note ? ` — ${gr.note}` : ''}`,
         walletId, paymentStatus,
         poId: po.id, grId: gr.id,
       });

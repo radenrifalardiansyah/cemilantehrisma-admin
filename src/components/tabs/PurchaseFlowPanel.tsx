@@ -38,7 +38,7 @@ interface Po {
   status: PoStatus; cancelNote: string | null; received: Record<string, number>;
 }
 interface Gr {
-  id: string; grNumber: string; doNumber: string; supplierDoNumber: string; poId: string;
+  id: string; grNumber: string; doNumber: string; poId: string;
   poNumber: string | null; supplierName: string | null; items: GrItem[]; total: number;
   receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null;
   purchaseId: string | null; cancelNote: string | null;
@@ -249,7 +249,6 @@ ${pdfUrl}`.trim();
   const [editingGr, setEditingGr] = useState<Gr | null>(null);
   const [gRows, setGRows] = useState<GrRowInput[]>([]);
   const [gDate, setGDate] = useState(todayISO());
-  const [gSupplierDo, setGSupplierDo] = useState('');
   const [gNote, setGNote] = useState('');
   const [gWallet, setGWallet] = useState('');
   const [gPayment, setGPayment] = useState<'lunas' | 'belum_lunas'>('lunas');
@@ -258,7 +257,7 @@ ${pdfUrl}`.trim();
   function openEditGr(g: Gr) {
     setEditingGr(g);
     setGRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, orderedQty: it.orderedQty, qty: String(it.qty), price: String(Math.round(it.price)) })));
-    setGDate(g.receivedDate); setGSupplierDo(g.supplierDoNumber); setGNote(g.note);
+    setGDate(g.receivedDate); setGNote(g.note);
     setGWallet(g.walletId ?? ''); setGPayment(g.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
   }
   const grTotal = gRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
@@ -270,7 +269,7 @@ ${pdfUrl}`.trim();
     try {
       const body = {
         items: gRows.map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 })),
-        receivedDate: gDate, supplierDoNumber: gSupplierDo, note: gNote, walletId: gWallet || null, paymentStatus: gPayment,
+        receivedDate: gDate, note: gNote, walletId: gWallet || null, paymentStatus: gPayment,
       };
       const res = await fetch(`/api/goods-receipts/${editingGr.id}`, { method: 'PUT', headers: jsonHeaders, body: JSON.stringify(body) });
       const d = await res.json().catch(() => ({})) as { error?: string };
@@ -339,7 +338,7 @@ ${pdfUrl}`.trim();
   const q = search.trim().toLowerCase();
   const filteredPos = pos.filter(p => !q || p.poNumber.toLowerCase().includes(q) || p.supplierName.toLowerCase().includes(q));
   const filteredGrs = grs.filter(g => !q || g.grNumber.toLowerCase().includes(q) || g.doNumber.toLowerCase().includes(q)
-    || (g.poNumber ?? '').toLowerCase().includes(q) || (g.supplierName ?? '').toLowerCase().includes(q) || g.supplierDoNumber.toLowerCase().includes(q));
+    || (g.poNumber ?? '').toLowerCase().includes(q) || (g.supplierName ?? '').toLowerCase().includes(q));
   const [poView, setPoView] = useViewMode('purchase-orders');
   const [grView, setGrView] = useViewMode('goods-receipts');
   const mode = view === 'po' ? poView : grView;
@@ -362,7 +361,7 @@ ${pdfUrl}`.trim();
   const itemsText = (items: { materialName: string; qty: number; unit: string }[]) => items.map(it => `${it.materialName} (${formatQty(it.qty)} ${it.unit})`).join(', ');
   const rowsForExport = (): (string | number)[][] => view === 'po'
     ? filteredPos.map((p, i) => [i + 1, p.poNumber, formatDateDisplay(p.date), p.supplierName, itemsText(p.items), p.total, PO_BADGE[p.status].label, p.expectedDate ? formatDateDisplay(p.expectedDate) : '-', p.note || '-'])
-    : filteredGrs.map((g, i) => [i + 1, g.grNumber, g.doNumber, g.supplierDoNumber || '-', g.poNumber ?? '-', g.supplierName ?? '-', formatDateDisplay(g.receivedDate), itemsText(g.items), g.total, GR_BADGE[g.status].label]);
+    : filteredGrs.map((g, i) => [i + 1, g.grNumber, g.doNumber, g.poNumber ?? '-', g.supplierName ?? '-', formatDateDisplay(g.receivedDate), itemsText(g.items), g.total, GR_BADGE[g.status].label]);
 
   const exportExcel = async () => {
     if (total === 0) { toast.error('Tidak ada data untuk diexport.'); return; }
@@ -374,7 +373,7 @@ ${pdfUrl}`.trim();
             columns: [{ header: 'No', width: 6 }, { header: 'No. PO', width: 18 }, { header: 'Tanggal', width: 14 }, { header: 'Supplier', width: 24 }, { header: 'Bahan Baku', width: 44 }, { header: 'Total', width: 16 }, { header: 'Status', width: 18 }, { header: 'Estimasi Tiba', width: 14 }, { header: 'Catatan', width: 28 }],
             rows: rowsForExport() }
         : { sheet: 'Penerimaan Barang', title: 'PENERIMAAN BARANG (GR) BAHAN BAKU — CEMILAN TEH RISMA', filename: `penerimaan-barang-cemilantehrisma-${day}.xlsx`,
-            columns: [{ header: 'No', width: 6 }, { header: 'No. GR', width: 18 }, { header: 'No. DO', width: 18 }, { header: 'No. DO Supplier', width: 18 }, { header: 'No. PO', width: 18 }, { header: 'Supplier', width: 24 }, { header: 'Tgl Terima', width: 14 }, { header: 'Bahan Baku', width: 44 }, { header: 'Total', width: 16 }, { header: 'Status', width: 22 }],
+            columns: [{ header: 'No', width: 6 }, { header: 'No. GR', width: 18 }, { header: 'No. DO', width: 24 }, { header: 'No. PO', width: 18 }, { header: 'Supplier', width: 24 }, { header: 'Tgl Terima', width: 14 }, { header: 'Bahan Baku', width: 44 }, { header: 'Total', width: 16 }, { header: 'Status', width: 22 }],
             rows: rowsForExport() });
       toast.success(`Berhasil export ${total} data ke Excel.`);
     } catch { toast.error('Gagal membuat file Excel.'); }
@@ -391,7 +390,7 @@ ${pdfUrl}`.trim();
         ? { title: 'PURCHASE ORDER BAHAN BAKU', label: 'sesuai filter', generatedAt, rows,
             columns: [{ header: 'No', width: '4%', align: 'center' as const }, { header: 'No. PO', width: '12%' }, { header: 'Tanggal', width: '9%' }, { header: 'Supplier', width: '13%' }, { header: 'Bahan Baku', width: '25%' }, { header: 'Total', width: '10%', align: 'right' as const, bold: true }, { header: 'Status', width: '10%', align: 'center' as const }, { header: 'Est. Tiba', width: '9%' }, { header: 'Catatan', width: '8%' }] }
         : { title: 'PENERIMAAN BARANG (GR) BAHAN BAKU', label: 'sesuai filter', generatedAt, rows,
-            columns: [{ header: 'No', width: '4%', align: 'center' as const }, { header: 'No. GR', width: '11%' }, { header: 'No. DO', width: '11%' }, { header: 'DO Supplier', width: '9%' }, { header: 'No. PO', width: '11%' }, { header: 'Supplier', width: '10%' }, { header: 'Tgl Terima', width: '8%' }, { header: 'Bahan Baku', width: '15%' }, { header: 'Total', width: '10%', align: 'right' as const, bold: true }, { header: 'Status', width: '11%', align: 'center' as const }] };
+            columns: [{ header: 'No', width: '4%', align: 'center' as const }, { header: 'No. GR', width: '11%' }, { header: 'No. DO', width: '15%' }, { header: 'No. PO', width: '11%' }, { header: 'Supplier', width: '10%' }, { header: 'Tgl Terima', width: '8%' }, { header: 'Bahan Baku', width: '14%' }, { header: 'Total', width: '10%', align: 'right' as const, bold: true }, { header: 'Status', width: '11%', align: 'center' as const }] };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const blob = await pdf(<GenericTablePDF store={storeHeader} data={data} /> as any).toBlob();
       const url = URL.createObjectURL(blob);
@@ -627,7 +626,7 @@ ${pdfUrl}`.trim();
                           <span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span>
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          {g.supplierName} · dari {g.poNumber} · {formatDateDisplay(g.receivedDate)}{g.supplierDoNumber ? ` · DO supplier ${g.supplierDoNumber}` : ''}
+                          {g.supplierName} · dari {g.poNumber} · {formatDateDisplay(g.receivedDate)}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -669,7 +668,7 @@ ${pdfUrl}`.trim();
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber} <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span></p>
                   <div className="mt-1"><span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span></div>
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{g.supplierName} · dari {g.poNumber}</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(g.receivedDate)}{g.supplierDoNumber ? ` · DO supplier ${g.supplierDoNumber}` : ''}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(g.receivedDate)}</p>
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{grItemsText(g)}</p>
                   <p className="text-base font-extrabold tabular mt-2" style={{ color: 'var(--success)' }}>{formatRp(g.total)}</p>
                 </div>
@@ -845,8 +844,8 @@ ${pdfUrl}`.trim();
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label style={fieldLabel}>No. DO dari Supplier</label>
-                    <input type="text" value={gSupplierDo} onChange={e => setGSupplierDo(e.target.value)} placeholder="Nomor surat jalan supplier" className="input" />
+                    <label style={fieldLabel}>No. DO (otomatis)</label>
+                    <input type="text" value={editingGr.doNumber} readOnly className="input" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontWeight: 700 }} />
                   </div>
                   <div>
                     <label style={fieldLabel}>Tanggal Terima <span style={{ color: 'var(--danger)' }}>*</span></label>

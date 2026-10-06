@@ -4,7 +4,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { nextDocNumber, periodOf } from '@/lib/doc-number';
+import { nextDocNumber, periodOf, supplierDoCode } from '@/lib/doc-number';
 import { rowToGr, receivedByMaterial, remainingItems, mergePoItems, type GrRow, type PoRow, type PoItem } from '@/lib/purchase-orders-pg';
 import { wibDateKey } from '@/lib/date';
 
@@ -21,12 +21,13 @@ export async function GET(req: NextRequest) {
 }
 
 // "Buat GR" dari sebuah PO — satu klik: item terisi otomatis dari sisa PO yang belum diterima,
-// nomor GR & DO terbuat bersamaan. Qty/harga/No. DO supplier diedit setelahnya (PUT) sebelum approve.
+// nomor GR & DO terbuat bersamaan. Nomor DO memuat kode supplier & berurut per supplier
+// (DO-SUP001-202610-0001). Qty/harga diedit setelahnya (PUT) sebelum approve.
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'create');
   if (guard instanceof Response) return guard;
-  const { poId, receivedDate, supplierDoNumber, note } = await req.json() as {
-    poId: string; receivedDate?: string; supplierDoNumber?: string; note?: string;
+  const { poId, receivedDate, note } = await req.json() as {
+    poId: string; receivedDate?: string; note?: string;
   };
   if (!poId) return Response.json({ error: 'poId wajib diisi.' }, { status: 400 });
   const receivedOn = receivedDate || wibDateKey(new Date());
@@ -52,11 +53,13 @@ export async function POST(req: NextRequest) {
       if (items.length === 0) throw new Error('Semua item PO ini sudah diterima.');
       total = items.reduce((s, it) => s + it.subtotal, 0);
       const period = periodOf(receivedOn);
+      const [sup] = po.supplier_id ? await pgTx<{ code: string | null }[]>`select code from suppliers where id = ${po.supplier_id}` : [];
+      const supCode = supplierDoCode(sup?.code, po.supplier_name);
       grNumber = await nextDocNumber(pgTx, 'GR', period);
-      doNumber = await nextDocNumber(pgTx, 'DO', period);
+      doNumber = await nextDocNumber(pgTx, `DO-${supCode}`, period);
       await pgTx`
-        insert into goods_receipts (id, gr_number, do_number, supplier_do_number, po_id, items, total, received_date, note, status, token, created_by, created_at)
-        values (${id}, ${grNumber}, ${doNumber}, ${supplierDoNumber?.trim() ?? ''}, ${poId}, ${JSON.stringify(items)}, ${total}, ${receivedOn}, ${note ?? ''}, 'draft', ${token}, ${guard.username}, now())
+        insert into goods_receipts (id, gr_number, do_number, po_id, items, total, received_date, note, status, token, created_by, created_at)
+        values (${id}, ${grNumber}, ${doNumber}, ${poId}, ${JSON.stringify(items)}, ${total}, ${receivedOn}, ${note ?? ''}, 'draft', ${token}, ${guard.username}, now())
       `;
     });
   } catch (err) {

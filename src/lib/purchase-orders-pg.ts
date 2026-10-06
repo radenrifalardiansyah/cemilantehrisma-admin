@@ -30,7 +30,7 @@ export function rowToPo(r: PoRow, opts?: { includeToken?: boolean }) {
 }
 
 export interface GrRow {
-  id: string; gr_number: string; do_number: string; supplier_do_number: string; po_id: string;
+  id: string; gr_number: string; do_number: string; supplier_do_number?: string; po_id: string;
   items: unknown; total: string; received_date: string; note: string; status: string;
   wallet_id: string | null; payment_status: string | null; purchase_id: string | null; token: string;
   created_by: string | null; approved_by: string | null; approved_at: Date | null;
@@ -40,7 +40,7 @@ export interface GrRow {
 }
 export function rowToGr(r: GrRow, opts?: { includeToken?: boolean }) {
   return {
-    id: r.id, grNumber: r.gr_number, doNumber: r.do_number, supplierDoNumber: r.supplier_do_number, poId: r.po_id,
+    id: r.id, grNumber: r.gr_number, doNumber: r.do_number, poId: r.po_id,
     poNumber: r.po_number ?? null, supplierName: r.supplier_name ?? null,
     items: (parseJsonb(r.items as string | GrItem[] | null) as GrItem[] | null) ?? [],
     total: Number(r.total), receivedDate: r.received_date, note: r.note, status: r.status as GrStatus,

@@ -20,14 +20,14 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   return Response.json({ goodsReceipt: rowToGr(row) });
 }
 
-// Edit GR hanya saat draft: qty yang benar-benar datang, harga di nota supplier, No. DO supplier,
+// Edit GR hanya saat draft: qty yang benar-benar datang, harga di nota supplier,
 // tanggal terima, catatan, serta dompet/status bayar (boleh diisi dulu, final saat approve).
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'materials', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
-    items: GrItemInput[]; receivedDate?: string; supplierDoNumber?: string; note?: string;
+    items: GrItemInput[]; receivedDate?: string; note?: string;
     walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas';
   };
   const sql = getSql();
@@ -47,7 +47,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       await pgTx`
         update goods_receipts set
           items = ${JSON.stringify(items)}, total = ${total}, received_date = ${data.receivedDate || row.received_date},
-          supplier_do_number = ${data.supplierDoNumber?.trim() ?? ''}, note = ${data.note ?? ''},
+          note = ${data.note ?? ''},
           wallet_id = ${data.walletId ?? null}, payment_status = ${data.paymentStatus ?? null}, updated_at = now()
         where id = ${id}
       `;
@@ -59,7 +59,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
     await logHistory(getDb(), {
       entity: 'goods-receipts', entityId: id, entityLabel: `${before.grNumber} - Rp${total}`,
-      action: 'update', actor: guard, before, after: { ...before, total, supplierDoNumber: data.supplierDoNumber ?? '' },
+      action: 'update', actor: guard, before, after: { ...before, total },
     });
   } catch (err) {
     console.error('Failed to write history for GR update', err);

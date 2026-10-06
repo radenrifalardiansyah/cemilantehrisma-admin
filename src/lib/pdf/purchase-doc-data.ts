@@ -9,7 +9,7 @@ export interface PoLike {
   date: string; expectedDate: string | null; note: string; status: PoStatus; cancelNote: string | null;
 }
 export interface GrLike {
-  grNumber: string; doNumber: string; supplierDoNumber: string; poNumber: string | null; supplierName: string | null;
+  grNumber: string; doNumber: string; poNumber: string | null; supplierName: string | null;
   items: GrItem[]; total: number; receivedDate: string; note: string; status: GrStatus; cancelNote: string | null;
 }
 
@@ -36,7 +36,7 @@ export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, su
   return {
     kind, number: kind === 'do' ? gr.doNumber : gr.grNumber, date: formatDocDate(gr.receivedDate), printedAt: printedNow(),
     supplierName: gr.supplierName ?? '', supplierPhone,
-    refPoNumber: gr.poNumber ?? undefined, refGrNumber: gr.grNumber, supplierDoNumber: gr.supplierDoNumber || undefined,
+    refPoNumber: gr.poNumber ?? undefined, refGrNumber: gr.grNumber, refDoNumber: gr.doNumber,
     items: gr.items, total: gr.total, note: gr.note || undefined, ...status,
   };
 }

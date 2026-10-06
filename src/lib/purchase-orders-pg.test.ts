@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildGrItems, mergePoItems, remainingItems, type PoItem } from './purchase-orders-pg';
-import { periodOf } from './doc-number';
+import { periodOf, supplierDoCode } from './doc-number';
 
 const po: PoItem[] = [
   { materialId: 'tepung', materialName: 'Tepung', unit: 'kg', qty: 10, price: 12000, subtotal: 120000 },
@@ -54,5 +54,14 @@ describe('buildGrItems', () => {
   });
   it('menolak bahan yang sudah diterima penuh', () => {
     expect(() => buildGrItems(po, new Map([['gula', 5]]), [{ materialId: 'gula', qty: 1 }])).toThrow(/sudah diterima penuh/);
+  });
+});
+
+describe('supplierDoCode', () => {
+  it('memakai kode master supplier bila ada', () => expect(supplierDoCode('sup-001', 'CV Apa Saja')).toBe('SUP001'));
+  it('membentuk inisial nama tanpa bentuk badan usaha bila kode kosong', () => {
+    expect(supplierDoCode(null, 'PT. FKS Food Sejahtera Tbk')).toBe('FFS');
+    expect(supplierDoCode('', 'UD Sumber Tani')).toBe('ST');
+    expect(supplierDoCode(undefined, '   ')).toBe('XXX');
   });
 });

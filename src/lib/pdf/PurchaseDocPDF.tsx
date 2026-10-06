@@ -20,7 +20,7 @@ export interface PurchaseDocData {
   supplierPhone?: string;
   refPoNumber?: string;        // GR/DO: PO asal
   refGrNumber?: string;        // DO: GR asal
-  supplierDoNumber?: string;   // GR/DO: nomor DO dari supplier
+  refDoNumber?: string;        // GR: nomor DO yang ikut terbuat
   expectedDate?: string;       // PO
   items: (PoItem | GrItem)[];
   total: number;
@@ -158,7 +158,7 @@ export function PurchaseDocPage({ data, store }: { data: PurchaseDocData; store:
             <Text style={s.infoLabel}>Referensi</Text>
             {data.refPoNumber && <Text style={s.infoValue}>PO: {data.refPoNumber}</Text>}
             {k === 'do' && data.refGrNumber && <Text style={s.infoSub}>GR: {data.refGrNumber}</Text>}
-            <Text style={s.infoSub}>No. DO supplier: {data.supplierDoNumber || '-'}</Text>
+            {k === 'gr' && data.refDoNumber && <Text style={s.infoSub}>DO: {data.refDoNumber}</Text>}
             {data.statusLabel && (
               <Text style={[s.badge, TONE[data.statusTone ?? 'warn']]}>{data.statusLabel}</Text>
             )}

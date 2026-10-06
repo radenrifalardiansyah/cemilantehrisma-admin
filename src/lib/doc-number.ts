@@ -20,3 +20,15 @@ export async function nextDocNumber(pgTx: PgTx, prefix: string, yyyymm: string):
 export function periodOf(dateKey: string): string {
   return dateKey.slice(0, 7).replace('-', '');
 }
+
+// Kode supplier untuk nomor DO (mis. 'SUP001'). Pakai kode di master supplier kalau ada; kalau tidak
+// (supplier lama tanpa kode / ditulis manual di PO) dibentuk dari inisial nama, tanpa bentuk badan
+// usaha: "PT. FKS Food Sejahtera Tbk" -> "FFST". Selalu huruf besar/angka, maks 6 karakter.
+export function supplierDoCode(code: string | null | undefined, name: string): string {
+  const clean = (code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (clean) return clean.slice(0, 6);
+  const words = name.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/)
+    .filter(w => w && !['PT', 'CV', 'UD', 'TBK', 'PD', 'TOKO'].includes(w));
+  const initials = words.map(w => w[0]).join('');
+  return (initials || 'XXX').slice(0, 6);
+}
