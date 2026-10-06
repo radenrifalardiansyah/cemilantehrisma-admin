@@ -36,7 +36,6 @@ import {
 // the register's stock/harga fresh while Kasir stays open — no Firestore quota to worry about.
 const STOCK_POLL_MS = 20_000;
 
-const MAIN_APP = process.env.NEXT_PUBLIC_API_URL ?? 'https://cemilantehrisma.vercel.app';
 
 // Ingat dompet terakhir dipakai per metode pembayaran (localStorage saja) supaya kasir
 // biasanya tidak perlu pilih ulang tiap transaksi — cukup konfirmasi, bukan wajib mikir.
@@ -724,7 +723,7 @@ export default function PosTab({
     try {
       const now   = txDateTime ? new Date(txDateTime) : new Date();
       const pad   = (n: number) => n.toString().padStart(2, '0');
-      const invNo = `INV-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const invNoDraft = `INV-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
       const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       const finalCustName = custName.trim() || 'Pelanggan Umum';
       // Item bebas input tidak punya productId — server (/api/orders) sudah didesain untuk skip
@@ -736,17 +735,17 @@ export default function PosTab({
         }),
         ...customItems.map(ci => ({ name: ci.name, weight: '', qty: ci.qty, price: ci.price, subtotal: ci.price * ci.qty })),
       ];
-      const res = await fetch(`${MAIN_APP}/api/admin/invoice-pdf`, {
+      const res = await fetch('/api/pos/invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
         body: JSON.stringify({
-          invoiceNo: invNo, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, logo: '', halalLogo: '',
-          source: 'kasir',
+          invoiceNo: invNoDraft, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
           paymentStatus: paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas',
         }),
       });
       if (!res.ok) throw new Error('Gagal generate PDF');
-      const { url: pdfUrl } = await res.json() as { url: string };
+      // Nomor final dari server (dijamin unik) — dipakai juga untuk pesanan & struk.
+      const { url: pdfUrl, invoiceNo: invNo } = await res.json() as { url: string; invoiceNo: string };
       const reseller = selectedReseller;
       const selectedCustomer = selectedCustRef.startsWith('customer:')
         ? customerList.find(c => c.id === selectedCustRef.slice('customer:'.length))

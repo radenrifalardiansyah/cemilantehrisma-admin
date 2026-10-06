@@ -9,6 +9,7 @@ import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } f
 import { logHistory } from '@/lib/history';
 import { revalidateProductStock } from '@/lib/revalidate';
 import { rowToOrder, OrderRow } from '@/lib/orders-pg';
+import { computeReturn } from '@/lib/order-return';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -58,16 +59,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         throw new ReturnValidationError('Semua item diretur — gunakan "Batalkan Pesanan" untuk membatalkan seluruh pesanan.');
       }
 
-      // Diskon dikurangi proporsional terhadap subtotal baru supaya pelanggan tidak mendapat
-      // diskon penuh atas barang yang tinggal sebagian.
-      const oldSubtotal = oldItems.reduce((s, it) => s + it.price * it.qty, 0);
-      const newSubtotal = newItems.reduce((s, it) => s + it.price * it.qty, 0);
       const orderDiscount = order.discount as { amount: number; label: string } | null;
-      const oldDiscount = orderDiscount?.amount ?? 0;
-      const newDiscountAmount = oldSubtotal > 0 ? Math.round(oldDiscount * (newSubtotal / oldSubtotal)) : 0;
+      const { newSubtotal, newDiscountAmount, newTotal, refund } = computeReturn(
+        oldItems, orderDiscount?.amount ?? 0, order.total, i => returnQty.get(i) ?? 0,
+      );
       const newDiscount = orderDiscount && newDiscountAmount > 0 ? { ...orderDiscount, amount: newDiscountAmount } : null;
-      const newTotal = Math.max(0, newSubtotal - newDiscountAmount);
-      const refund = Math.max(0, order.total - newTotal);
 
       const stockCut = order.stockCut === true || (order.source === 'kasir' && order.stockCut === undefined);
       let stockTouched = false;

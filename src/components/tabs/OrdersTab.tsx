@@ -25,6 +25,7 @@ import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWal
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import { dueInfo, formatDueDate } from '@/lib/receivable';
+import { computeReturn } from '@/lib/order-return';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -393,15 +394,7 @@ _${storeName}_`.trim();
   };
   const returnPreview = (() => {
     if (!returnOrder) return { refund: 0, remainingQty: 0, returnedQty: 0 };
-    const oldSub = returnOrder.items.reduce((s, it) => s + it.price * it.qty, 0);
-    const newSub = returnOrder.items.reduce((s, it, i) => s + it.price * (it.qty - (returnQtys[i] ?? 0)), 0);
-    const oldDisc = returnOrder.discount?.amount ?? 0;
-    const newDisc = oldSub > 0 ? Math.round(oldDisc * (newSub / oldSub)) : 0;
-    return {
-      refund: Math.max(0, returnOrder.total - Math.max(0, newSub - newDisc)),
-      remainingQty: returnOrder.items.reduce((s, it, i) => s + it.qty - (returnQtys[i] ?? 0), 0),
-      returnedQty: returnQtys.reduce((s, q) => s + q, 0),
-    };
+    return computeReturn(returnOrder.items, returnOrder.discount?.amount ?? 0, returnOrder.total, i => returnQtys[i] ?? 0);
   })();
   const submitReturn = async () => {
     if (!returnOrder || returnPreview.returnedQty === 0) return;
