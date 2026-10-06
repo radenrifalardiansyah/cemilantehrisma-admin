@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle, Undo2 } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle, Undo2, HandCoins } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cellText, cellNumber } from '@/lib/excel-cell';
 import { pdf } from '@react-pdf/renderer';
@@ -26,6 +26,7 @@ import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import { dueInfo, formatDueDate } from '@/lib/receivable';
 import { computeReturn } from '@/lib/order-return';
+import { paymentProblem } from '@/lib/installment';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -50,6 +51,7 @@ interface Order {
   walletId?: string | null;
   dueDate?: string;
   returns?: { at: string; amount: number }[];
+  paidAmount?: number;
 }
 
 interface EditItem { productId?: string; name: string; weight: string; qty: number; price: number; }
@@ -75,12 +77,13 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // Belum Lunas bisa terjadi di transaksi Kredit (Reseller) dari Kasir — order lain selalu lunas seketika.
-function PaymentStatusBadge({ paymentStatus, dueDate, status }: { paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string; status?: string }) {
+function PaymentStatusBadge({ paymentStatus, dueDate, status, paid }: { paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string; status?: string; paid?: number }) {
   if (paymentStatus !== 'belum_lunas') return null;
   const due = status === 'dibatalkan' ? null : dueInfo(dueDate);
   return (
     <>
       <span className="badge badge-red">Belum Lunas</span>
+      {paid != null && paid > 0 && <span className="badge badge-amber">Dibayar {formatRp(paid)}</span>}
       {due?.state === 'overdue' && <span className="badge badge-red">Terlambat {due.days} hari</span>}
       {due?.state === 'today' && <span className="badge badge-amber">Jatuh tempo hari ini</span>}
       {due?.state === 'upcoming' && dueDate && <span className="badge badge-amber">Tempo {formatDueDate(dueDate)}</span>}
@@ -277,6 +280,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
     transferBank:   o.transferBank,
     transferAmount: o.transferAmount,
     dueDate:        o.dueDate,
+    paidAmount:     o.paidAmount || undefined,
     returnTotal:    o.returns?.reduce((s, r) => s + r.amount, 0) || undefined,
     bank:           storeBank,
   });
@@ -319,7 +323,10 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
       ? `Transfer ${o.transferBank ?? ''} : ${formatRp(o.transferAmount ?? 0)}`
       : '';
     const pdfUrl = `${window.location.origin}/api/orders/${o.id}/pdf`;
-    const dueNote = o.paymentStatus === 'belum_lunas' && o.dueDate ? `Jatuh tempo : ${formatDueDate(o.dueDate)}\n` : '';
+    const paidNote = o.paymentStatus === 'belum_lunas' && (o.paidAmount ?? 0) > 0
+      ? `Sudah dibayar : ${formatRp(o.paidAmount!)}\n*Sisa tagihan : ${formatRp(o.total - o.paidAmount!)}*\n`
+      : '';
+    const dueNote = paidNote + (o.paymentStatus === 'belum_lunas' && o.dueDate ? `Jatuh tempo : ${formatDueDate(o.dueDate)}\n` : '');
     const bankLines = o.paymentStatus === 'belum_lunas' && storeBank
       ? `\nSilakan transfer ke:\n*${storeBank.name}*\nNo. Rek : *${storeBank.accountNumber}*\n${storeBank.accountHolder ? `a.n.    : ${storeBank.accountHolder}\n` : ''}${SEP}\n`
       : '';
@@ -371,7 +378,7 @@ Kami mengingatkan bahwa pesanan Anda masih *belum lunas*:
 
 No. Invoice : *${o.invoiceNo}*
 Tanggal     : ${formatDate(o)}
-${dueLine}Total tagihan: *${formatRp(o.total)}*
+${dueLine}${(o.paidAmount ?? 0) > 0 ? `Total pesanan : ${formatRp(o.total)}\nSudah dibayar : ${formatRp(o.paidAmount!)}\nSisa tagihan  : *${formatRp(Math.max(0, o.total - o.paidAmount!))}*` : `Total tagihan: *${formatRp(o.total)}*`}
 ${bankLines}
 Rincian invoice:
 ${pdfUrl}
@@ -379,6 +386,75 @@ ${pdfUrl}
 Jika sudah membayar, mohon kirim bukti transfer. Terima kasih 🙏
 _${storeName}_`.trim();
     window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  // ── Pembayaran bertahap (cicilan) pesanan kredit ──
+  interface PaymentEntry { id: string; amount: number; walletId: string | null; paidAt: string; note: string; createdBy: string }
+  const [payOrder, setPayOrder] = useState<Order | null>(null);
+  const [payments, setPayments] = useState<PaymentEntry[] | null>(null);
+  const [payAmountRaw, setPayAmountRaw] = useState('');
+  const [payWalletId, setPayWalletId] = useState('');
+  const [payDate, setPayDate] = useState('');
+  const [payNote, setPayNote] = useState('');
+  const [submittingPay, setSubmittingPay] = useState(false);
+  const [deletingPayId, setDeletingPayId] = useState<string | null>(null);
+  const payPaid = payOrder ? (payOrder.paidAmount ?? 0) : 0;
+  const payRemaining = payOrder ? Math.max(0, payOrder.total - payPaid) : 0;
+
+  const loadPayments = async (orderId: string) => {
+    const r = await fetch(`${API}/api/orders/${orderId}/payments`, { headers });
+    setPayments(r.ok ? (await r.json() as { payments: PaymentEntry[] }).payments : []);
+  };
+  const openPayment = (o: Order) => {
+    setPayOrder(o); setPayments(null); setPayWalletId(o.walletId ?? ''); setPayNote('');
+    setPayDate(new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10));
+    setPayAmountRaw(String(Math.max(0, o.total - (o.paidAmount ?? 0))));
+    loadPayments(o.id);
+  };
+  const refreshPayOrder = async (orderId: string) => {
+    await load();
+    await loadPayments(orderId);
+    refetchBalances();
+  };
+  const submitPayment = async () => {
+    if (!payOrder) return;
+    const amount = Number(payAmountRaw);
+    const problem = paymentProblem(payOrder.total, payPaid, amount);
+    if (problem) { toast.error(problem); return; }
+    if (!payWalletId) { toast.error('Pilih dompet tujuan pembayaran.'); return; }
+    setSubmittingPay(true);
+    const r = await fetch(`${API}/api/orders/${payOrder.id}/payments`, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, walletId: payWalletId, paidAt: payDate ? `${payDate}T12:00:00+07:00` : undefined, note: payNote }),
+    });
+    const d = await r.json().catch(() => ({})) as { error?: string; remaining?: number; paidOff?: boolean };
+    if (r.ok) {
+      toast.success(d.paidOff ? 'Pembayaran tercatat — pesanan LUNAS.' : `Pembayaran tercatat — sisa tagihan ${formatRp(d.remaining ?? 0)}.`);
+      await refreshPayOrder(payOrder.id);
+      if (d.paidOff) setPayOrder(null);
+      else {
+        setPayOrder(o => o ? { ...o, paidAmount: (o.paidAmount ?? 0) + amount } : o);
+        setPayAmountRaw(String(d.remaining ?? 0)); setPayNote('');
+      }
+    } else {
+      toast.error(d.error ?? 'Gagal mencatat pembayaran.');
+    }
+    setSubmittingPay(false);
+  };
+  const deletePayment = async (p: PaymentEntry) => {
+    if (!payOrder) return;
+    if (!await confirm({ message: `Batalkan pembayaran ${formatRp(p.amount)}? Uangnya dikeluarkan lagi dari dompet.`, danger: true })) return;
+    setDeletingPayId(p.id);
+    const r = await fetch(`${API}/api/orders/${payOrder.id}/payments/${p.id}`, { method: 'DELETE', headers });
+    if (r.ok) {
+      toast.success('Pembayaran dibatalkan.');
+      setPayOrder(o => o ? { ...o, paidAmount: Math.max(0, (o.paidAmount ?? 0) - p.amount), paymentStatus: 'belum_lunas' } : o);
+      await refreshPayOrder(payOrder.id);
+    } else {
+      const d = await r.json().catch(() => ({})) as { error?: string };
+      toast.error(d.error ?? 'Gagal membatalkan pembayaran.');
+    }
+    setDeletingPayId(null);
   };
 
   // ── Retur per item ──
@@ -566,8 +642,9 @@ _${storeName}_`.trim();
 
   const receivables = orders.reduce((acc, o) => {
     if (o.paymentStatus !== 'belum_lunas' || o.status === 'dibatalkan') return acc;
-    acc.count += 1; acc.total += o.total;
-    if (dueInfo(o.dueDate)?.state === 'overdue') { acc.overdueCount += 1; acc.overdueTotal += o.total; }
+    const left = Math.max(0, o.total - (o.paidAmount ?? 0));
+    acc.count += 1; acc.total += left;
+    if (dueInfo(o.dueDate)?.state === 'overdue') { acc.overdueCount += 1; acc.overdueTotal += left; }
     return acc;
   }, { count: 0, total: 0, overdueCount: 0, overdueTotal: 0 });
 
@@ -1217,6 +1294,13 @@ _${storeName}_`.trim();
                     </button>
                   </Tooltip>
                 )}
+                {o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
+                  <Tooltip label="Catat Pembayaran / Cicilan">
+                    <button onClick={() => openPayment(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Catat Pembayaran / Cicilan">
+                      <HandCoins size={12} />
+                    </button>
+                  </Tooltip>
+                )}
                 {o.paymentStatus === 'belum_lunas' && (
                   <button onClick={() => { setMarkLunasOrder(o); setMarkLunasWalletId(o.walletId ?? ''); }} disabled={markingLunasId === o.id}
                     className="btn-ghost px-2 py-2 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
@@ -1301,7 +1385,7 @@ _${storeName}_`.trim();
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
-                      <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} />
+                      <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
@@ -1357,7 +1441,7 @@ _${storeName}_`.trim();
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
-                      <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} />
+                      <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
@@ -1431,6 +1515,13 @@ _${storeName}_`.trim();
                         <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
                           className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Tandai Selesai">
                           {markingId === o.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                        </button>
+                      </Tooltip>
+                    )}
+                    {o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
+                      <Tooltip label="Catat Pembayaran / Cicilan">
+                        <button onClick={() => openPayment(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--success)' }} title="Catat Pembayaran / Cicilan">
+                          <HandCoins size={12} />
                         </button>
                       </Tooltip>
                     )}
@@ -1542,6 +1633,88 @@ _${storeName}_`.trim();
         </div>
       )}
 
+      {payOrder && (
+        <div className="modal-overlay" onClick={() => !submittingPay && setPayOrder(null)}>
+          <div className="modal-sheet modal-md" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><HandCoins size={17} /></div>
+                <div>
+                  <p className="modal-title">Catat Pembayaran</p>
+                  <p className="modal-subtitle">{payOrder.invoiceNo} · {payOrder.customerName}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setPayOrder(null)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[
+                  { label: 'Total', val: formatRp(payOrder.total), color: 'var(--text-primary)' },
+                  { label: 'Sudah dibayar', val: formatRp(payPaid), color: 'var(--success)' },
+                  { label: 'Sisa tagihan', val: formatRp(payRemaining), color: 'var(--danger)' },
+                ].map(c => (
+                  <div key={c.label} className="rounded-xl py-2 px-1" style={{ background: 'var(--surface-2)' }}>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+                    <p className="text-xs font-extrabold tabular" style={{ color: c.color }}>{c.val}</p>
+                  </div>
+                ))}
+              </div>
+
+              {payments === null ? (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Memuat riwayat pembayaran…</p>
+              ) : payments.length > 0 && (
+                <div className="space-y-1">
+                  <p className="field-label">Riwayat pembayaran</p>
+                  {payments.map(p => (
+                    <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {new Date(p.paidAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })}
+                        {p.note ? ` · ${p.note}` : ''}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <strong className="tabular">{formatRp(p.amount)}</strong>
+                        <button onClick={() => deletePayment(p)} disabled={deletingPayId === p.id} className="btn-ghost p-1" style={{ color: 'var(--danger)' }} title="Batalkan pembayaran">
+                          {deletingPayId === p.id ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="field-label">Jumlah dibayar <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <NumberInput value={payAmountRaw} onChange={setPayAmountRaw} />
+                  <button type="button" onClick={() => setPayAmountRaw(String(payRemaining))} className="text-[11px] mt-1 font-semibold" style={{ color: 'var(--accent)' }}>Pas sisa tagihan</button>
+                </div>
+                <div>
+                  <label className="field-label">Tanggal</label>
+                  <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="input" />
+                </div>
+              </div>
+              <div>
+                <label className="field-label">Masuk ke dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <SearchSelect value={payWalletId} onChange={setPayWalletId} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+              </div>
+              <div>
+                <label className="field-label">Catatan (opsional)</label>
+                <input type="text" value={payNote} onChange={e => setPayNote(e.target.value)} className="input" placeholder="Mis. DP, cicilan ke-2" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setPayOrder(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
+              <button onClick={submitPayment} disabled={submittingPay || !payAmountRaw || !payWalletId || payRemaining <= 0} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {submittingPay ? <Loader2 size={14} className="animate-spin" /> : <HandCoins size={14} />}
+                Catat Pembayaran
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {returnOrder && (
         <div className="modal-overlay" onClick={() => !submittingReturn && setReturnOrder(null)}>
           <div className="modal-sheet modal-md" onClick={e => e.stopPropagation()}>
@@ -1621,6 +1794,11 @@ _${storeName}_`.trim();
               <Tooltip label="Tutup"><button onClick={() => setMarkLunasOrder(null)} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
             <div className="modal-body">
+              {(markLunasOrder.paidAmount ?? 0) > 0 && (
+                <p className="text-xs mb-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
+                  Sudah dicicil {formatRp(markLunasOrder.paidAmount ?? 0)} — yang masuk ke dompet sekarang hanya <strong>sisa {formatRp(Math.max(0, markLunasOrder.total - (markLunasOrder.paidAmount ?? 0)))}</strong>.
+                </p>
+              )}
               <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
               <SearchSelect value={markLunasWalletId} onChange={setMarkLunasWalletId}
                 options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />

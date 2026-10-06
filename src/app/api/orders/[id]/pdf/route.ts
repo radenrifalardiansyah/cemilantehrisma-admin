@@ -5,6 +5,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { getSettings } from '@/lib/settings-pg';
 import { rowToOrder, type OrderRow } from '@/lib/orders-pg';
+import { paidAmountOf } from '@/lib/order-payments-pg';
 import OrderInvoicePDF, { type OrderInvoiceData } from '@/lib/pdf/OrderInvoicePDF';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 
@@ -43,6 +44,7 @@ export async function GET(
     const [orderRow] = await sql<OrderRow[]>`select * from orders where id = ${id}`;
     if (!orderRow) return new NextResponse('Pesanan tidak ditemukan.', { status: 404 });
     const order = rowToOrder(orderRow);
+    const paidAmount = await paidAmountOf(sql, id);
 
     const settings = await getSettings() as {
       storeName?: string; storeTagline?: string; address?: string; city?: string;
@@ -77,6 +79,7 @@ export async function GET(
       transferBank:   order.transferBank,
       transferAmount: order.transferAmount,
       dueDate:        order.dueDate,
+      paidAmount:     paidAmount || undefined,
       returnTotal:    order.returns.reduce((s, r) => s + r.amount, 0) || undefined,
       bank: settings.storeBankAccountNumber?.trim()
         ? {

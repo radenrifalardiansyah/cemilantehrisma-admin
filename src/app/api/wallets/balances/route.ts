@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
   const beforeParam = req.nextUrl.searchParams.get('before');
   const before = beforeParam && /^\d{4}-\d{2}-\d{2}$/.test(beforeParam) ? beforeParam : null;
   const byDate = before ? sql`and date < ${before}` : sql``;
+  const byPaidAt = before ? sql`and paid_at < ${wibDayStart(before).toDate()}` : sql``;
   const byCreatedAt = before ? sql`and created_at < ${wibDayStart(before).toDate()}` : sql``;
 
   // `wallets.initial_balance` digabung jadi salah satu "kind" di UNION ALL yang sama (bukan
@@ -86,7 +87,10 @@ export async function GET(req: NextRequest) {
       select from_wallet_id as wallet_id, amount, 'transfer_out' as kind from wallet_transfers where true ${byDate}
       union all
       select wallet_id, total as amount, 'order_revenue' as kind from orders
-        where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan' ${byCreatedAt}
+        where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
+          and not exists (select 1 from order_payments p where p.order_id = orders.id) ${byCreatedAt}
+      union all
+      select wallet_id, amount, 'order_revenue' as kind from order_payments where true ${byPaidAt}
       union all
       select wallet_id, total_revenue as amount, 'recap_revenue' as kind from consignment_recaps
         where payment_status != 'belum_lunas' ${byCreatedAt}

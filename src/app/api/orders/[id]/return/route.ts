@@ -10,6 +10,7 @@ import { logHistory } from '@/lib/history';
 import { revalidateProductStock } from '@/lib/revalidate';
 import { rowToOrder, OrderRow } from '@/lib/orders-pg';
 import { computeReturn } from '@/lib/order-return';
+import { paidAmountOf } from '@/lib/order-payments-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -65,6 +66,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       );
       const newDiscount = orderDiscount && newDiscountAmount > 0 ? { ...orderDiscount, amount: newDiscountAmount } : null;
 
+      // Pesanan yang sudah dicicil: retur hanya lewat pemotongan sisa tagihan. Kalau sudah lunas
+      // atau nilai baru di bawah uang yang sudah diterima, perlu pengembalian uang ke pelanggan
+      // yang belum didukung di sini — batalkan pembayarannya dulu.
+      const paidSoFar = await paidAmountOf(pgTx, id);
+      if (paidSoFar > 0 && (order.paymentStatus !== 'belum_lunas' || newTotal < paidSoFar)) {
+        throw new ReturnValidationError('Pesanan ini sudah ada pembayaran cicilan — retur hanya bisa selama total baru tidak di bawah uang yang sudah diterima. Batalkan sebagian pembayaran dulu.');
+      }
+
       const stockCut = order.stockCut === true || (order.source === 'kasir' && order.stockCut === undefined);
       let stockTouched = false;
       if (restock && stockCut) {
@@ -110,6 +119,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           update orders set items = ${JSON.stringify(newItems)}, subtotal = ${newSubtotal},
             discount = ${newDiscount ? JSON.stringify(newDiscount) : null}, total = ${newTotal},
             returns = ${JSON.stringify(returns)}, updated_at = now()
+            ${paidSoFar > 0 && paidSoFar >= newTotal ? pgTx`, payment_status = 'lunas'` : pgTx``}
           where id = ${id}
         `;
       };

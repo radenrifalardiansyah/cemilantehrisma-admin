@@ -29,6 +29,7 @@ export async function walletHasReferences(db: Firestore, walletId: string): Prom
       or exists(select 1 from income where wallet_id = ${walletId})
       or exists(select 1 from expenses where wallet_id = ${walletId})
       or exists(select 1 from orders where wallet_id = ${walletId})
+      or exists(select 1 from order_payments where wallet_id = ${walletId})
       or exists(select 1 from consignment_recaps where wallet_id = ${walletId})
       or exists(select 1 from material_purchases where wallet_id = ${walletId})
       as exists
@@ -72,7 +73,9 @@ export async function computeWalletBalance(
       coalesce((select sum(amount) from wallet_transfers where from_wallet_id = ${walletId} and id != ${excludeTransferId ?? ''}), 0) as total_out,
       coalesce((select sum(amount) from income where wallet_id = ${walletId}), 0) as total_income,
       coalesce((select sum(amount) from expenses where wallet_id = ${walletId} and id != ${excludeExpenseId ?? ''}), 0) as total_expenses,
-      coalesce((select sum(total) from orders where wallet_id = ${walletId} and status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'), 0) as total_orders,
+      coalesce((select sum(total) from orders where wallet_id = ${walletId} and status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
+        and not exists (select 1 from order_payments p where p.order_id = orders.id)), 0)
+        + coalesce((select sum(amount) from order_payments where wallet_id = ${walletId}), 0) as total_orders,
       coalesce((select sum(total_revenue) from consignment_recaps where wallet_id = ${walletId} and payment_status != 'belum_lunas'), 0) as total_recaps
   `;
 

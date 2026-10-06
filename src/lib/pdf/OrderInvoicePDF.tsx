@@ -24,6 +24,7 @@ export interface OrderInvoiceData {
   changeAmount?:  number;
   transferBank?:  string;
   transferAmount?: number;
+  paidAmount?:    number; // cicilan yang sudah diterima — ditampilkan bersama sisa tagihan bila belum lunas
   returnTotal?:   number; // total nilai retur yang sudah dipotong dari invoice
   dueDate?:       string; // yyyy-mm-dd — hanya ditampilkan bila belum lunas
   // Rekening toko — hanya ditampilkan di invoice yang belum lunas.
@@ -221,6 +222,18 @@ export default function OrderInvoicePDF({ data, store }: { data: OrderInvoiceDat
               <Text style={s.totalsFinalKey}>Total</Text>
               <Text style={s.totalsFinalVal}>{rp(data.total)}</Text>
             </View>
+            {!isLunas && data.paidAmount != null && data.paidAmount > 0 && (
+              <>
+                <View style={s.paymentLine}>
+                  <Text style={s.paymentKey}>Sudah dibayar (cicilan)</Text>
+                  <Text style={s.paymentVal}>{rp(data.paidAmount)}</Text>
+                </View>
+                <View style={s.totalsLine}>
+                  <Text style={[s.totalsFinalKey, { color: C.amber }]}>Sisa tagihan</Text>
+                  <Text style={[s.totalsFinalVal, { color: C.amber, fontSize: 11 }]}>{rp(Math.max(0, data.total - data.paidAmount))}</Text>
+                </View>
+              </>
+            )}
             {data.paymentMethod === 'cash' && data.amountPaid != null && (
               <View style={s.paymentLine}>
                 <Text style={s.paymentKey}>Dibayar {rp(data.amountPaid)} · Kembalian</Text>
@@ -242,7 +255,7 @@ export default function OrderInvoicePDF({ data, store }: { data: OrderInvoiceDat
             <Text style={s.bankLine}>{data.bank.name}</Text>
             <Text style={s.bankNumber}>{data.bank.accountNumber}</Text>
             {data.bank.accountHolder && <Text style={s.bankLine}>a.n. {data.bank.accountHolder}</Text>}
-            <Text style={[s.bankLine, { color: C.muted, fontSize: 8.5 }]}>Mohon transfer sebesar {rp(data.total)} dan kirim bukti transfer.</Text>
+            <Text style={[s.bankLine, { color: C.muted, fontSize: 8.5 }]}>Mohon transfer sebesar {rp(Math.max(0, data.total - (data.paidAmount ?? 0)))} dan kirim bukti transfer.</Text>
           </View>
         )}
 

@@ -26,15 +26,16 @@ import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
 // to date. (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md.)
 async function fetchOrders(from: string | null, to: string | null, limit: number) {
   const sql = getSql();
+  const paid = sql`(select coalesce(sum(amount), 0) from order_payments p where p.order_id = o.id)`;
   let rows: OrderRow[];
   if (from && to) {
-    rows = await sql<OrderRow[]>`select * from orders where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+    rows = await sql<OrderRow[]>`select o.*, ${paid} as paid_amount from orders o where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
   } else if (from) {
-    rows = await sql<OrderRow[]>`select * from orders where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+    rows = await sql<OrderRow[]>`select o.*, ${paid} as paid_amount from orders o where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
   } else if (to) {
-    rows = await sql<OrderRow[]>`select * from orders where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+    rows = await sql<OrderRow[]>`select o.*, ${paid} as paid_amount from orders o where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
   } else {
-    rows = await sql<OrderRow[]>`select * from orders order by created_at desc limit ${limit}`;
+    rows = await sql<OrderRow[]>`select o.*, ${paid} as paid_amount from orders o order by created_at desc limit ${limit}`;
   }
   return rows.map(rowToOrder);
 }

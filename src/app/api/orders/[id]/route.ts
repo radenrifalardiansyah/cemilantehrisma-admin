@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, after } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
@@ -12,6 +13,7 @@ import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { rowToOrder, syncInvoicePaymentStatus, OrderRow } from '@/lib/orders-pg';
 import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
+import { paidAmountOf } from '@/lib/order-payments-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -79,6 +81,20 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
         const order = rowToOrder(orderRow);
         if (order.status === 'dibatalkan') throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diedit.');
+        // Pesanan yang sudah menerima cicilan: status/metode bayar hanya berubah lewat pembayaran
+        // (Catat Pembayaran), dan total tidak boleh di bawah uang yang sudah diterima.
+        const paidSoFar = await paidAmountOf(pgTx, id);
+        if (paidSoFar > 0) {
+          if (data.paymentMethod !== undefined && data.paymentMethod !== 'kredit') {
+            throw new OrderValidationError('Pesanan ini sudah ada pembayaran cicilan — metode bayar tidak bisa diubah dari Kredit.');
+          }
+          if (data.paymentStatus !== undefined && data.paymentStatus !== order.paymentStatus) {
+            throw new OrderValidationError('Pesanan ini sudah ada pembayaran cicilan — ubah status lewat Catat Pembayaran / batalkan pembayarannya.');
+          }
+          if (data.total !== undefined && data.total < paidSoFar) {
+            throw new OrderValidationError(`Total baru di bawah uang yang sudah diterima (Rp${paidSoFar.toLocaleString('id-ID')}) — batalkan sebagian pembayaran dulu.`);
+          }
+        }
 
         // Pertahankan snapshot HPP (costPrice) tiap item lama — costPrice produk adalah rata-rata
         // bergerak, jadi baris yang qty/harganya diedit tetap pakai costPrice lama; hanya baris
@@ -158,6 +174,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         }
         if (data.transactionAt !== undefined) updateCols.created_at = new Date(data.transactionAt);
 
+        if (paidSoFar > 0 && data.total !== undefined) {
+          updateCols.payment_status = paidSoFar >= data.total ? 'lunas' : 'belum_lunas';
+        }
+
         await pgTx`update orders set ${pgTx(updateCols, ...Object.keys(updateCols))} where id = ${id}`;
         const stockDeltas = new Map([...deltas].map(([pid, d]) => [pid, -d] as [string, number]));
         return { orderBefore: order, orderAfter: { ...order, ...updateCols, items }, stockDeltas };
@@ -205,11 +225,29 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (status !== undefined && order.status === 'dibatalkan') {
         throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diubah statusnya lagi.');
       }
+      const paidSoFar = await paidAmountOf(pgTx, id);
+      if (paidSoFar > 0) {
+        if (status === 'dibatalkan') {
+          throw new OrderValidationError(`Pesanan ini sudah menerima cicilan Rp${paidSoFar.toLocaleString('id-ID')} — batalkan pembayarannya dulu (uang dikembalikan ke pelanggan), baru pesanan dibatalkan.`);
+        }
+        if (paymentStatus === 'belum_lunas' && order.paymentStatus === 'lunas') {
+          throw new OrderValidationError('Pesanan ini lunas lewat cicilan — batalkan pembayarannya di Riwayat Pembayaran.');
+        }
+      }
 
       const updateCols: Record<string, unknown> = { updated_at: new Date() };
       if (status !== undefined) updateCols.status = status;
       if (paymentStatus !== undefined) updateCols.payment_status = paymentStatus;
       if (walletId !== undefined) updateCols.wallet_id = walletId;
+      // "Tandai Lunas" pada pesanan yang sudah dicicil: sisa tagihan dicatat sebagai pembayaran
+      // terakhir ke dompet yang dipilih (bukan total penuh lagi — sebagian sudah masuk dompet).
+      if (paymentStatus === 'lunas' && order.paymentStatus === 'belum_lunas' && paidSoFar > 0 && order.total > paidSoFar) {
+        if (!walletId) throw new OrderValidationError('Pilih dompet untuk pelunasan sisa tagihan.');
+        await pgTx`
+          insert into order_payments (id, order_id, wallet_id, amount, paid_at, note, created_by)
+          values (${randomUUID()}, ${id}, ${walletId}, ${order.total - paidSoFar}, now(), 'Pelunasan', ${guard.username})
+        `;
+      }
 
       // Pesanan (online ATAU kasir "Buka PO") ditandai selesai → baru sekarang stoknya dipotong.
       if (status === 'selesai' && !order.stockCut) {
@@ -305,6 +343,9 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const [orderRow] = await pgTx<OrderRow[]>`select * from orders where id = ${id} for update`;
       if (!orderRow) return null; // sudah tidak ada — hapus dianggap sukses (idempotent)
       const order = rowToOrder(orderRow);
+      if (await paidAmountOf(pgTx, id) > 0) {
+        throw new Error('Pesanan ini punya catatan pembayaran cicilan — batalkan pembayarannya dulu sebelum menghapus pesanan.');
+      }
       await restoreOrderStockInTxPg(pgTx, toRestorable(order));
       if (order.voucherCode) await pgTx`update vouchers set used_count = greatest(used_count - 1, 0) where code = ${order.voucherCode}`;
       await pgTx`delete from orders where id = ${id}`;

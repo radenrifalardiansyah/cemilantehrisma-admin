@@ -42,6 +42,7 @@ export interface OrderRow {
   shift_id: string | null;
   due_date?: string | null;
   voucher_code?: string | null;
+  paid_amount?: string | null;
   returns?: unknown;
   created_at: Date;
   updated_at: Date | null;
@@ -91,6 +92,8 @@ export function rowToOrder(r: OrderRow) {
     shiftId: r.shift_id ?? undefined,
     dueDate: r.due_date ?? undefined,
     voucherCode: r.voucher_code ?? undefined,
+    // Total cicilan yang sudah diterima (0 untuk pesanan tanpa cicilan) — hanya terisi di daftar pesanan.
+    paidAmount: Number(r.paid_amount) || 0,
     returns: (parseJsonb(r.returns ?? null) as OrderReturn[] | null) ?? [],
     createdAt: toTimestamp(r.created_at),
     updatedAt: toTimestamp(r.updated_at),
