@@ -23,7 +23,7 @@ import PageLoader from '@/components/PageLoader';
 const HEADER_BTN_H = 34;
 
 interface AppUser {
-  username: string; email: string | null; role: string; createdAt?: { seconds: number };
+  username: string; email: string | null; role: string; createdAt?: { seconds: number }; twoFactor?: boolean;
 }
 
 interface EditState {
@@ -146,6 +146,17 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
       toast.error(d.error ?? 'Gagal menghapus pengguna.');
     }
     setDeletingId(null);
+  };
+
+  // Hanya super admin (dicek server) — untuk akun yang kehilangan HP & kode pemulihan.
+  const resetTwoFactor = async (u: AppUser) => {
+    if (!await confirm({ message: `Reset autentikasi 2 langkah "${u.username}"? Akun itu bisa masuk hanya dengan password sampai mengaktifkannya lagi.`, danger: true })) return;
+    const r = await fetch(`/api/users/${u.username}/2fa`, { method: 'DELETE', headers });
+    if (r.ok) { await load(); toast.success(`2FA "${u.username}" direset.`); }
+    else {
+      const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(d.error ?? 'Gagal mereset 2FA.');
+    }
   };
 
   const bulkDelete = async () => {
@@ -437,6 +448,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                         <p className="text-sm font-bold truncate flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                           {u.username}
                           {self && <span className="badge badge-gray">Anda</span>}
+                          {u.twoFactor && <span className="badge badge-green">2FA</span>}
                         </p>
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                           {[u.email, `Terdaftar ${formatDate(u)}`].filter(Boolean).join(' · ')}
@@ -444,6 +456,13 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                       </div>
                       <span className="badge badge-amber flex-shrink-0">{roleName(u.role)}</span>
                       <div className="flex items-center gap-1 flex-shrink-0">
+                        {can('edit') && u.twoFactor && !self && (
+                          <Tooltip label="Reset 2FA">
+                            <button onClick={() => resetTwoFactor(u)} className="btn-ghost p-2" style={{ color: 'var(--text-muted)' }}>
+                              <ShieldCheck size={13} />
+                            </button>
+                          </Tooltip>
+                        )}
                         {can('edit') && (
                           <Tooltip label="Edit">
                             <button onClick={() => openEdit(u)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
@@ -484,6 +503,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                       <p className="text-sm font-bold truncate max-w-full flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                         {u.username}
                         {self && <span className="badge badge-gray">Anda</span>}
+                        {u.twoFactor && <span className="badge badge-green">2FA</span>}
                       </p>
                       <span className="badge badge-amber">{roleName(u.role)}</span>
                       <p className="text-xs truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
@@ -491,6 +511,13 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                       </p>
                     </div>
                     <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
+                      {can('edit') && u.twoFactor && !self && (
+                        <Tooltip label="Reset 2FA">
+                          <button onClick={() => resetTwoFactor(u)} className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }}>
+                            <ShieldCheck size={12} />
+                          </button>
+                        </Tooltip>
+                      )}
                       {can('edit') && (
                         <Tooltip label="Edit">
                           <button onClick={() => openEdit(u)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>

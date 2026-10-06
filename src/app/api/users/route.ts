@@ -3,16 +3,16 @@ import { getSql } from '@/lib/db';
 import { requirePermission, assertCanCreateUser } from '@/lib/rbac';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 
-interface ProfileRow { username: string; email: string | null; role: string; created_at: Date }
+interface ProfileRow { username: string; email: string | null; role: string; created_at: Date; totp_enabled: boolean }
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'users', 'view');
   if (guard instanceof Response) return guard;
 
   const sql = getSql();
-  const rows = await sql<ProfileRow[]>`select username, email, role, created_at from profiles order by created_at asc`;
+  const rows = await sql<ProfileRow[]>`select username, email, role, created_at, totp_enabled from profiles order by created_at asc`;
   const users = rows.map(r => ({
-    username: r.username, email: r.email, role: r.role,
+    username: r.username, email: r.email, role: r.role, twoFactor: r.totp_enabled,
     createdAt: { seconds: Math.floor(r.created_at.getTime() / 1000), nanoseconds: 0 },
   }));
   return Response.json({ users });

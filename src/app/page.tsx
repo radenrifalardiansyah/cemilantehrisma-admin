@@ -375,6 +375,11 @@ function tokenIssuedAt(token: string): number | null {
   }
 }
 
+interface LoginResult {
+  token?: string; mustChangePassword?: boolean; pending?: boolean; requestId?: string; deviceLabel?: string;
+  twoFactor?: boolean; challenge?: string; recoveryLeft?: number;
+}
+
 export default function AdminPage() {
 
   // ── Auth ─────────────────────────────────────────────────
@@ -384,6 +389,10 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [creds,    setCreds]    = useState('');
   const [loginErr, setLoginErr] = useState('');
+  // Autentikasi 2 langkah: setelah password benar server mengirim `challenge`; sesi baru terbit setelah kode benar.
+  const [twoFactor, setTwoFactor] = useState<{ challenge: string } | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorBusy, setTwoFactorBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
   // Set right after login when the server reports mustChangePassword=true (Firebase Auth
@@ -754,23 +763,58 @@ export default function AdminPage() {
       body: JSON.stringify({ username, password }),
     });
     if (res.ok) {
-      const data = await res.json() as { token?: string; mustChangePassword?: boolean; pending?: boolean; requestId?: string; deviceLabel?: string };
-      if (data.pending && data.requestId) {
-        // Akun ini sedang online di sesi lain — tunggu sesi itu menerima/menolak (lihat
-        // LoginApprovalScreen.tsx) sebelum token benar-benar diterbitkan.
-        setPendingApproval({ requestId: data.requestId, deviceLabel: data.deviceLabel ?? 'perangkat lain', tempPassword: password });
+      const data = await res.json() as LoginResult;
+      if (data.twoFactor && data.challenge) {
+        setTwoFactor({ challenge: data.challenge }); setTwoFactorCode('');
         return;
       }
-      if (data.mustChangePassword) {
-        // Password sementara — jangan buka dashboard dulu, minta ganti password dulu.
-        setPendingChange({ token: data.token!, tempPassword: password });
-        return;
-      }
-      localStorage.setItem('admin_creds', data.token!);
-      await applySession(data.token!);
+      await handleLoginResult(data);
     } else {
-      setFieldErrors({ username: ' ', password: ' ' });
-      setLoginErr('Username/email atau password salah.');
+      setFieldErrors({ username: ' ', password: ' ' });
+      setLoginErr(res.status === 429 ? 'Terlalu banyak percobaan login. Coba lagi dalam beberapa menit.' : 'Username/email atau password salah.');
+    }
+  };
+
+  // Hasil login yang sudah lolos semua verifikasi (password, dan kode 2FA bila aktif).
+  const handleLoginResult = async (data: LoginResult) => {
+    if (data.pending && data.requestId) {
+      // Akun ini sedang online di sesi lain — tunggu sesi itu menerima/menolak (lihat
+      // LoginApprovalScreen.tsx) sebelum token benar-benar diterbitkan.
+      setPendingApproval({ requestId: data.requestId, deviceLabel: data.deviceLabel ?? 'perangkat lain', tempPassword: password });
+      return;
+    }
+    if (data.mustChangePassword) {
+      // Password sementara — jangan buka dashboard dulu, minta ganti password dulu.
+      setPendingChange({ token: data.token!, tempPassword: password });
+      return;
+    }
+    localStorage.setItem('admin_creds', data.token!);
+    await applySession(data.token!);
+  };
+
+  const submitTwoFactor = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!twoFactor || !twoFactorCode.trim()) return;
+    setTwoFactorBusy(true); setLoginErr('');
+    try {
+      const res = await fetch('/api/login/2fa', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge: twoFactor.challenge, code: twoFactorCode }),
+      });
+      const data = await res.json().catch(() => ({})) as LoginResult & { error?: string; expired?: boolean };
+      if (!res.ok) {
+        setLoginErr(data.error ?? 'Kode salah.');
+        if (data.expired) { setTwoFactor(null); setPassword(''); }
+        return;
+      }
+      setTwoFactor(null); setTwoFactorCode('');
+      if (data.recoveryLeft !== undefined) {
+        // Kode pemulihan terpakai — ingatkan sisanya supaya bisa dibuat ulang dari Profil.
+        alert(`Anda masuk memakai kode pemulihan. Sisa kode pemulihan: ${data.recoveryLeft}. Buat kode baru dari menu Profil › Keamanan.`);
+      }
+      await handleLoginResult(data);
+    } finally {
+      setTwoFactorBusy(false);
     }
   };
 
@@ -958,6 +1002,31 @@ export default function AdminPage() {
             <h1 className="text-2xl font-extrabold mb-1 login-field" style={{ color: 'var(--text-primary)', animationDelay: '0.04s' }}>Masuk</h1>
             <p className="text-sm mb-8 login-field" style={{ color: 'var(--text-muted)', animationDelay: '0.08s' }}>Dashboard Admin Cemilan Teh Risma</p>
 
+            {twoFactor ? (
+            <form onSubmit={submitTwoFactor} className="space-y-4" noValidate>
+              <div className="login-field">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Kode Autentikasi 2 Langkah</label>
+                <input type="text" inputMode="text" value={twoFactorCode} autoFocus
+                  onChange={e => { setTwoFactorCode(e.target.value); setLoginErr(''); }}
+                  className="input tabular" placeholder="6 digit dari aplikasi autentikator" autoComplete="one-time-code" />
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Buka aplikasi autentikator di HP Anda. HP hilang? Masukkan salah satu kode pemulihan.
+                </p>
+              </div>
+              {loginErr && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium animate-scale-in"
+                  style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {loginErr}
+                </div>
+              )}
+              <button type="submit" disabled={twoFactorBusy || !twoFactorCode.trim()} className="btn-primary w-full justify-center py-3 text-sm">
+                {twoFactorBusy ? 'Memeriksa…' : 'Verifikasi'}
+              </button>
+              <button type="button" onClick={() => { setTwoFactor(null); setTwoFactorCode(''); setLoginErr(''); }} className="btn-ghost w-full justify-center py-2.5 text-xs">
+                Kembali
+              </button>
+            </form>
+            ) : (
             <form onSubmit={login} className="space-y-4" noValidate>
               <div className="login-field" style={{ animationDelay: '0.12s' }}>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Username atau Email</label>
@@ -997,6 +1066,7 @@ export default function AdminPage() {
                 Masuk ke Dashboard
               </button>
             </form>
+            )}
 
             {canInstall && !installed && (
               <button

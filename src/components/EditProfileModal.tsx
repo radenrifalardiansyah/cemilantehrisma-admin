@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { UserCog, X, Check, Loader2, Eye, EyeOff, Camera } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
+import TwoFactorSection from '@/components/TwoFactorSection';
 
 // Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
 type SerializedTimestamp = { seconds: number; nanoseconds: number };
@@ -226,6 +227,11 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
                   className="input" placeholder="Konfirmasi password baru"
                 />
               </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+              <p className="field-label" style={{ marginBottom: 10 }}>Keamanan — Autentikasi 2 Langkah</p>
+              <TwoFactorSection creds={creds} />
             </div>
 
             <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>

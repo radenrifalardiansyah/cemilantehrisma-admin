@@ -1,10 +1,8 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
-import { recordLogin } from '@/lib/login-history';
-import { signAdminToken } from '@/lib/admin-auth';
+import jwt from 'jsonwebtoken';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
-import { createLoginRequest } from '@/lib/login-requests';
-import { PRESENCE_ONLINE_WINDOW_MS } from '@/lib/chat';
+import { finishLogin } from '@/lib/login-finish';
 
 // Best-effort brute-force guard: in-memory per serverless instance, so it resets
 // on cold start and isn't shared across concurrent instances/regions — not a
@@ -46,7 +44,11 @@ function recordFailure(identifier: string) {
   else entry.count++;
 }
 
-interface ProfileRow { username: string; role: string; must_change_password: boolean }
+interface ProfileRow { username: string; role: string; must_change_password: boolean; totp_enabled: boolean }
+
+// Tantangan 2FA: token pendek (5 menit) yang HANYA membuktikan password sudah benar — bukan sesi.
+// Ditukar jadi sesi di /api/login/2fa setelah kode kedua diverifikasi.
+const TWO_FACTOR_CHALLENGE_TTL = '5m';
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
 
   const sql = getSql();
   const [profile] = await sql<ProfileRow[]>`
-    select username, role, must_change_password from profiles where id = ${data.user.id}
+    select username, role, must_change_password, totp_enabled from profiles where id = ${data.user.id}
   `;
   if (!profile) {
     // Akun ada di Supabase Auth tapi baris profil Postgres-nya hilang (mis. race backfill,
@@ -88,27 +90,12 @@ export async function POST(req: NextRequest) {
 
   loginAttempts.delete(ip);
   loginFailures.delete(identifier);
-  const user = { username: profile.username, role: profile.role, uid: data.user.id, mustChangePassword: profile.must_change_password };
-  const userAgent = req.headers.get('user-agent') || 'unknown';
 
-  // Akun ini sedang dipakai di sesi lain (heartbeat chat masih "hidup", lihat lib/chat.ts) —
-  // jangan langsung terbitkan token baru, minta persetujuan dari sesi yang sedang aktif dulu.
-  // Lihat /api/login-requests/[id] (poll perangkat ini) dan /api/login-requests/pending
-  // (poll sesi aktif) untuk kelanjutan alurnya.
-  const [presenceRow] = await sql<{ last_seen: Date | null }[]>`select last_seen from presence where username = ${profile.username}`;
-  const alreadyOnline = !!presenceRow?.last_seen && Date.now() - presenceRow.last_seen.getTime() < PRESENCE_ONLINE_WINDOW_MS;
-  if (alreadyOnline) {
-    const { id, deviceLabel } = await createLoginRequest({ username: profile.username, ip, userAgent, userPayload: user });
-    return Response.json({ ok: true, pending: true, requestId: id, deviceLabel });
+  // Akun dengan autentikasi 2 langkah: password benar BELUM cukup — minta kode kedua dulu.
+  if (profile.totp_enabled) {
+    const challenge = jwt.sign({ purpose: '2fa', uid: data.user.id }, process.env.JWT_SECRET!, { expiresIn: TWO_FACTOR_CHALLENGE_TTL });
+    return Response.json({ ok: true, twoFactor: true, challenge });
   }
 
-  const token = signAdminToken(user);
-
-  try {
-    await recordLogin({ username: user.username, role: user.role, ip, userAgent });
-  } catch {
-    // Best-effort — gagal mencatat riwayat login tidak boleh menggagalkan login yang sudah valid.
-  }
-
-  return Response.json({ ok: true, token, user, mustChangePassword: profile.must_change_password });
+  return finishLogin({ profile, uid: data.user.id, ip, userAgent: req.headers.get('user-agent') || 'unknown' });
 }
