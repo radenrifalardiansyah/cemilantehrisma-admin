@@ -409,7 +409,12 @@ export default function PosTab({
     setVoucherChecking(true); setVoucherError('');
     const r = await fetch('/api/vouchers/validate', {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, subtotal: cartSubtotal }),
+      body: JSON.stringify({
+        code, subtotal: cartSubtotal,
+        // Identitas pelanggan untuk batas pemakaian per pelanggan (akun terpilih / reseller, atau nomor HP).
+        customerId: selectedReseller?.customerId ?? (selectedCustRef.startsWith('customer:') ? selectedCustRef.slice('customer:'.length) : undefined),
+        phone: custPhone,
+      }),
     });
     const d = await r.json().catch(() => ({})) as { error?: string; code?: string; rule?: VoucherRule };
     if (r.ok && d.code && d.rule) { setVoucher({ code: d.code, rule: d.rule }); setVoucherInput(''); setDiscountRaw(''); }

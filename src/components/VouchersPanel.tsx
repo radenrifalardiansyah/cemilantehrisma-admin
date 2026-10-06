@@ -11,17 +11,17 @@ import { useConfirm } from '@/components/Confirm';
 interface Voucher {
   code: string; description: string; type: 'percent' | 'nominal'; value: number;
   minPurchase: number; maxDiscount: number; validFrom: string; validUntil: string;
-  usageLimit: number; usedCount: number; isActive: boolean;
+  usageLimit: number; perCustomerLimit: number; usedCount: number; isActive: boolean;
 }
 interface Form {
   code: string; isNew: boolean; description: string; type: 'percent' | 'nominal'; value: string;
-  minPurchase: string; maxDiscount: string; validFrom: string; validUntil: string; usageLimit: string; isActive: boolean;
+  minPurchase: string; maxDiscount: string; validFrom: string; validUntil: string; usageLimit: string; perCustomerLimit: string; isActive: boolean;
 }
 
 const rp = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const emptyForm = (): Form => ({
   code: '', isNew: true, description: '', type: 'percent', value: '', minPurchase: '', maxDiscount: '',
-  validFrom: '', validUntil: '', usageLimit: '', isActive: true,
+  validFrom: '', validUntil: '', usageLimit: '', perCustomerLimit: '', isActive: true,
 });
 
 // Kelola voucher diskon yang dipakai di Kasir. Voucher yang sudah pernah dipakai tidak bisa
@@ -49,7 +49,7 @@ export default function VouchersPanel({ creds }: { creds: string }) {
   const edit = (v: Voucher) => setForm({
     code: v.code, isNew: false, description: v.description, type: v.type, value: String(v.value),
     minPurchase: v.minPurchase ? String(v.minPurchase) : '', maxDiscount: v.maxDiscount ? String(v.maxDiscount) : '',
-    validFrom: v.validFrom, validUntil: v.validUntil, usageLimit: v.usageLimit ? String(v.usageLimit) : '', isActive: v.isActive,
+    validFrom: v.validFrom, validUntil: v.validUntil, usageLimit: v.usageLimit ? String(v.usageLimit) : '', perCustomerLimit: v.perCustomerLimit ? String(v.perCustomerLimit) : '', isActive: v.isActive,
   });
 
   const save = async () => {
@@ -58,7 +58,7 @@ export default function VouchersPanel({ creds }: { creds: string }) {
     const body = {
       code: form.code, description: form.description, type: form.type, value: Number(form.value),
       minPurchase: Number(form.minPurchase) || 0, maxDiscount: Number(form.maxDiscount) || 0,
-      validFrom: form.validFrom, validUntil: form.validUntil, usageLimit: Number(form.usageLimit) || 0, isActive: form.isActive,
+      validFrom: form.validFrom, validUntil: form.validUntil, usageLimit: Number(form.usageLimit) || 0, perCustomerLimit: Number(form.perCustomerLimit) || 0, isActive: form.isActive,
     };
     const r = await fetch(form.isNew ? '/api/vouchers' : `/api/vouchers/${encodeURIComponent(form.code)}`, {
       method: form.isNew ? 'POST' : 'PUT', headers, body: JSON.stringify(body),
@@ -117,6 +117,7 @@ export default function VouchersPanel({ creds }: { creds: string }) {
                     {v.minPurchase > 0 ? ` · min. belanja ${rp(v.minPurchase)}` : ''}
                     {v.validFrom || v.validUntil ? ` · ${v.validFrom || '…'} s/d ${v.validUntil || '…'}` : ''}
                     {` · dipakai ${v.usedCount}${v.usageLimit > 0 ? `/${v.usageLimit}` : 'x'}`}
+                    {v.perCustomerLimit > 0 ? ` · maks ${v.perCustomerLimit}× per pelanggan` : ''}
                   </p>
                   {v.description && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{v.description}</p>}
                 </div>
@@ -189,10 +190,19 @@ export default function VouchersPanel({ creds }: { creds: string }) {
                   <input type="date" value={form.validUntil} onChange={e => set('validUntil', e.target.value)} className="input" />
                 </div>
               </div>
-              <div>
-                <label className="field-label">Kuota Pemakaian</label>
-                <NumberInput value={form.usageLimit} onChange={v => set('usageLimit', v)} className="input" placeholder="0 = tanpa batas" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="field-label">Kuota Total</label>
+                  <NumberInput value={form.usageLimit} onChange={v => set('usageLimit', v)} className="input" placeholder="0 = tanpa batas" />
+                </div>
+                <div>
+                  <label className="field-label">Maks. per Pelanggan</label>
+                  <NumberInput value={form.perCustomerLimit} onChange={v => set('perCustomerLimit', v)} className="input" placeholder="0 = tanpa batas" />
+                </div>
               </div>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)', marginTop: -6 }}>
+                Batas per pelanggan dikenali dari akun (online) atau nomor HP / pelanggan terpilih (Kasir). Kalau diisi, voucher TIDAK bisa dipakai pada transaksi tanpa nomor HP (mis. &quot;Pelanggan Umum&quot;).
+              </p>
               <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
                 <input type="checkbox" checked={form.isActive} onChange={e => set('isActive', e.target.checked)} /> Aktif
               </label>

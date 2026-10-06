@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
   const [dupe] = await sql`select code from vouchers where code = ${code}`;
   if (dupe) return Response.json({ error: 'Kode voucher sudah dipakai.' }, { status: 400 });
   await sql`
-    insert into vouchers (code, description, type, value, min_purchase, max_discount, valid_from, valid_until, usage_limit, is_active)
-    values (${code}, ${v.description}, ${v.type}, ${v.value}, ${v.minPurchase}, ${v.maxDiscount}, ${v.validFrom}, ${v.validUntil}, ${v.usageLimit}, ${v.isActive})
+    insert into vouchers (code, description, type, value, min_purchase, max_discount, valid_from, valid_until, usage_limit, per_customer_limit, is_active)
+    values (${code}, ${v.description}, ${v.type}, ${v.value}, ${v.minPurchase}, ${v.maxDiscount}, ${v.validFrom}, ${v.validUntil}, ${v.usageLimit}, ${v.perCustomerLimit}, ${v.isActive})
   `;
   return Response.json({ code });
 }

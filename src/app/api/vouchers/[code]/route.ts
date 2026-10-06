@@ -17,7 +17,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const rows = await sql`
     update vouchers set description = ${v.description}, type = ${v.type}, value = ${v.value},
       min_purchase = ${v.minPurchase}, max_discount = ${v.maxDiscount}, valid_from = ${v.validFrom},
-      valid_until = ${v.validUntil}, usage_limit = ${v.usageLimit}, is_active = ${v.isActive}, updated_at = now()
+      valid_until = ${v.validUntil}, usage_limit = ${v.usageLimit}, per_customer_limit = ${v.perCustomerLimit}, is_active = ${v.isActive}, updated_at = now()
     where code = ${code} returning code
   `;
   if (rows.length === 0) return Response.json({ error: 'Voucher tidak ditemukan.' }, { status: 404 });

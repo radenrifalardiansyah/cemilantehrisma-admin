@@ -15,7 +15,7 @@ import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
 import { paymentProblem } from '@/lib/installment';
 import { computeVoucherDiscount, normalizeVoucherCode, voucherDiscountLabel } from '@/lib/voucher';
-import { voucherProblem, voucherRule, type VoucherRow } from '@/lib/vouchers-pg';
+import { voucherProblem, voucherRule, customerVoucherUses, hasVoucherIdentity, type VoucherRow } from '@/lib/vouchers-pg';
 import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
 
 // `orders` dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab
@@ -144,7 +144,8 @@ export async function POST(req: NextRequest) {
       if (voucherCode) {
         const itemsSubtotal = (data.items ?? []).reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
         const [voucher] = await pgTx<VoucherRow[]>`select * from vouchers where code = ${voucherCode} for update`;
-        const problem = voucherProblem(voucher, itemsSubtotal);
+        const uses = voucher ? await customerVoucherUses(pgTx, voucherCode, { customerId: data.customerId, phone: data.customerPhone }) : 0;
+        const problem = voucherProblem(voucher, itemsSubtotal, new Date(), uses, hasVoucherIdentity({ customerId: data.customerId, phone: data.customerPhone }));
         if (problem) throw new Error(problem);
         const amount = computeVoucherDiscount(voucherRule(voucher), itemsSubtotal);
         finalSubtotal = itemsSubtotal;

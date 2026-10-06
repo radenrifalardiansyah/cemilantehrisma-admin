@@ -1,7 +1,7 @@
 // Validasi body voucher (dipakai POST dan PUT) — nilai di-clamp di server, bukan hanya di form.
 export interface ParsedVoucher {
   description: string | null; type: 'percent' | 'nominal'; value: number; minPurchase: number; maxDiscount: number;
-  validFrom: string | null; validUntil: string | null; usageLimit: number; isActive: boolean;
+  validFrom: string | null; validUntil: string | null; usageLimit: number; perCustomerLimit: number; isActive: boolean;
 }
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
@@ -22,7 +22,7 @@ export function parseVoucherBody(b: Record<string, unknown>): { value: ParsedVou
       description: typeof b.description === 'string' && b.description.trim() ? b.description.trim().slice(0, 120) : null,
       type, value,
       minPurchase: num(b.minPurchase), maxDiscount: num(b.maxDiscount),
-      validFrom, validUntil, usageLimit: num(b.usageLimit),
+      validFrom, validUntil, usageLimit: num(b.usageLimit), perCustomerLimit: num(b.perCustomerLimit),
       isActive: b.isActive !== false,
     },
   };
