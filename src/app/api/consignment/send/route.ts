@@ -9,6 +9,7 @@ import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { revalidateProductStock } from '@/lib/revalidate';
+import { notifyProductLowStock } from '@/lib/low-stock';
 import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, readWarehouseShortagesPg, type WsSnapshot } from '@/lib/stock-pg';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 
@@ -195,6 +196,10 @@ export async function POST(req: NextRequest) {
 
   revalidateTag('admin-consignment-shipments-list', { expire: 0 });
   revalidateProductStock();
+  // Stok toko berkurang saat barang dikirim ke mitra — beri tahu kalau produknya jadi menipis.
+  const sentByProduct = new Map<string, number>();
+  for (const it of items) sentByProduct.set(it.productId, (sentByProduct.get(it.productId) ?? 0) - it.qty);
+  await notifyProductLowStock(db, sentByProduct, guard, `kirim konsinyasi ke ${data.locationName}`);
 
   return Response.json({ id: shipmentId });
 }

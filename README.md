@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Admin Cemilan Teh Risma
 
-## Getting Started
+Panel admin (Next.js) untuk toko: Kasir, Pesanan, Stok multi-gudang, Konsinyasi, Produksi, Keuangan, dan pengaturan.
+Berbagi satu database Postgres (Supabase) dengan aplikasi website pelanggan (repo `cemilantehrisma`).
 
-First, run the development server:
+> Next.js di proyek ini versi baru dengan perubahan API — baca [AGENTS.md](AGENTS.md) dan dokumen di
+> `node_modules/next/dist/docs/` sebelum menulis kode.
+
+## Menjalankan
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # cek build produksi
+npm test         # tes unit (Vitest) — logika murni, tanpa database
+npm run lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variable (`.env.local`, jangan di-commit)
+`DATABASE_URL` (pooler) · `DIRECT_URL` (koneksi langsung, untuk skrip) · `JWT_SECRET` ·
+`FIREBASE_SERVICE_ACCOUNT` (JSON) · `NEXT_PUBLIC_FIREBASE_*` · `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` /
+`SUPABASE_SECRET_KEY` / `SUPABASE_JWKS_URL` · `CLOUDINARY_*` · `REVALIDATE_SECRET` · `NEXT_PUBLIC_API_URL`
+(alamat website pelanggan) · `CRON_SECRET` (hanya untuk endpoint pengingat piutang).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Arsitektur singkat
+- **Postgres (Supabase)**: semua data bisnis — pesanan, stok, dompet, voucher, dsb. Skema diubah lewat skrip di `scripts/`.
+- **Firebase Auth/Supabase Auth**: verifikasi password login. Sesi admin = JWT sendiri (`src/lib/admin-auth.ts`).
+- **Firestore**: hanya notifikasi in-app & token push (`notifications`, `fcmTokens`).
+- **Izin**: RBAC per fitur (`src/lib/permissions.ts`, `src/lib/rbac.ts`); super admin punya semua izin.
+- Logika yang menyentuh uang/stok selalu di dalam satu transaksi Postgres dengan baris dikunci (`for update`) dan urutan kunci
+  seragam (produk → gudang → stok titip) supaya tidak deadlock.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Skrip migrasi database (`scripts/`)
+Semua **aditif dan aman diulang** (`if not exists`). Jalankan sekali per environment: `node scripts/<nama>.mjs`
+(memakai `DIRECT_URL` dari `.env.local`). Di environment baru jalankan berurutan:
 
-## Learn More
+| Skrip | Isi |
+|---|---|
+| `add-order-due-date` | `orders.due_date` — jatuh tempo pesanan kredit |
+| `add-order-returns` | `orders.returns` — riwayat retur per item |
+| `create-vouchers` | tabel `vouchers` + `orders.voucher_code` |
+| `add-voucher-per-customer-limit` | `vouchers.per_customer_limit` |
+| `add-invoice-token` | `invoices.token` — token di link PDF invoice publik |
+| `add-profile-2fa` | kolom TOTP di `profiles` (autentikasi 2 langkah) |
+| `create-order-payments` | tabel `order_payments` — cicilan/DP pesanan kredit |
+| `add-stock-ledger-opname-cols` | `stock_ledger.unit_cost` & `kind` — selisih opname di Laporan Keuangan |
 
-To learn more about Next.js, take a look at the following resources:
+Skrip lama (`add-wallet-bank-name`, `add-master-bank-logo`, `add-consignment-location-logo`, `create-login-approval-tables`,
+`add-fk-constraints`, …) sudah dijalankan di produksi. `seed-admin.mjs` membuat akun super admin pertama.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## GitHub Actions (`.github/workflows/`)
+- **Supabase Keepalive** — tiap Senin, mencegah project Supabase gratis di-pause. Butuh secret `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT`.
+  (Memakai Node 22 karena `firebase-admin` 14 mensyaratkannya.)
+- **Pengingat piutang jatuh tempo** (`overdue-orders.yml`) — **jadwal otomatis sengaja dimatikan**; hanya bisa dijalankan manual.
+  Untuk mengaktifkan: isi secret `ADMIN_BASE_URL` & `CRON_SECRET` (sama dengan env di hosting), lalu buka komentar `schedule`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Menguji dengan aman (JANGAN arahkan uji ke produksi)
+`.env.local` menunjuk ke database dan Firebase **produksi**. Menjalankan aplikasi dengan env itu lalu membuat transaksi uji akan
+menulis ke produksi (termasuk notifikasi push ke HP admin). Cara aman yang dipakai selama pengembangan:
+1. `pg_dump --schema-only --schema=public` dari produksi (hanya baca), muat ke Postgres lokal sementara (`initdb` + `pg_ctl`).
+2. Jalankan `next dev` dengan `DATABASE_URL`/`DIRECT_URL` ke database lokal itu, `JWT_SECRET` bebas, dan
+   `FIREBASE_SERVICE_ACCOUNT` **palsu** (kunci RSA acak dengan project fiktif) — Google menolak semua permintaannya, jadi tidak ada
+   tulis ke Firestore produksi. Buat token admin uji sendiri dengan `jsonwebtoken` memakai `JWT_SECRET` itu.
+3. Panggil API dengan skrip, bersihkan, lalu hentikan server dan hapus database lokal.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Hal yang perlu diingat
+- **Voucher**: dikelola di Pengaturan → Voucher Diskon; dipakai di Kasir dan checkout website. Potongan **selalu dihitung ulang
+  di server**. Voucher dengan "Maks. per Pelanggan" butuh identitas pelanggan (akun / nomor HP ≥ 9 digit).
+- **Cicilan/DP**: pesanan yang punya baris `order_payments` dihitung ke saldo dompet dari pembayarannya, bukan dari total pesanan.
+  Pendapatan di Laporan Keuangan tetap diakui saat pesanan lunas penuh.
+- **Stok opname**: selisih dicatat di buku stok (`kind = 'opname'`, dinilai pada Harga Modal) dan ikut Laba Bersih.
+- **Link invoice publik** memuat token (`?t=`); invoice lama tanpa token tetap terbuka agar link yang sudah terkirim tidak putus.

@@ -21,6 +21,7 @@ export interface BusinessAnalyticsData {
   cash: { allTimeTx: number };
   expenseByCategory: { category: string; amount: number }[];
   incomeByCategory: { category: string; amount: number }[];
+  products?: { lowStockCount: number; outOfStockCount: number };
   materials: {
     totalValue: number; count: number; lowStockCount: number;
     topByValue: { id: string; name: string; unit: string; stockQty: number; avgCost: number; value: number }[];
@@ -351,6 +352,16 @@ export default function BusinessAnalyticsSection({
               )}
             </div>
           </div>
+
+          {/* Stok Produk — hanya tampil kalau ada yang perlu perhatian */}
+          {data.products && (data.products.lowStockCount > 0 || data.products.outOfStockCount > 0) && (
+            <div className="card px-5 py-4 flex items-center gap-2 flex-wrap">
+              <AlertTriangle size={15} style={{ color: 'var(--warning, #B45309)' }} />
+              <p className="text-sm font-bold flex-1" style={{ color: 'var(--text-primary)' }}>Stok Produk Perlu Perhatian</p>
+              {data.products.lowStockCount > 0 && <span className="badge badge-amber">{data.products.lowStockCount} menipis</span>}
+              {data.products.outOfStockCount > 0 && <span className="badge badge-red">{data.products.outOfStockCount} habis</span>}
+            </div>
+          )}
 
           {/* Bahan Baku */}
           <div className="card overflow-hidden">

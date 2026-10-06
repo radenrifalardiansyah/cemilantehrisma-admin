@@ -188,6 +188,13 @@ export async function GET(req: NextRequest) {
   }));
   const totalMaterialValue = materialsWithValue.reduce((s, m) => s + m.value, 0);
   const lowStockCount = materials.filter(isMaterialLowStock).length;
+  // ── Produk jadi — snapshot kondisi saat ini: menipis (≤ batas minimum) & habis ──
+  const [productStock] = await getSql()<{ low: string; out: string }[]>`
+    select
+      count(*) filter (where not open_po and min_stock > 0 and stock_qty > 0 and stock_qty <= min_stock) as low,
+      count(*) filter (where not open_po and stock_qty <= 0 and published) as out
+    from products
+  `;
   const topByValue = [...materialsWithValue].sort((a, b) => b.value - a.value).slice(0, 8);
 
   // ── Tren harian per channel — bucket pakai hari kalender WIB, bukan UTC, supaya tidak selisih
@@ -221,6 +228,7 @@ export async function GET(req: NextRequest) {
     cash: { allTimeTx: allTimeTxSaldo },
     expenseByCategory: [...expenseByCategoryMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     incomeByCategory: [...incomeByCategoryMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
+    products: { lowStockCount: Number(productStock.low) || 0, outOfStockCount: Number(productStock.out) || 0 },
     materials: { totalValue: totalMaterialValue, count: materials.length, lowStockCount, topByValue },
     dailyTrend,
   });
