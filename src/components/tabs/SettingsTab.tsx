@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Globe, Plus, Pencil, Trash2, X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Globe, Plus, Pencil, Trash2, X, Search, ChevronLeft, ChevronRight, TicketPercent } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -13,6 +13,7 @@ import { useViewMode } from '@/lib/useViewMode';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import PageLoader from '@/components/PageLoader';
+import VouchersPanel from '@/components/VouchersPanel';
 
 const API = '';
 
@@ -153,6 +154,10 @@ const FIELD_GROUPS = [
       { key: 'seoKeywords',            label: 'Kata Kunci SEO (pisahkan koma)', type: 'textarea', placeholder: 'keripik kimpul, mie kremes, cemilan bogor' },
       { key: 'googleSiteVerification', label: 'Kode Verifikasi Google Search Console', type: 'text', placeholder: 'Isi content dari meta google-site-verification' },
     ],
+  },
+  {
+    id: 'vouchers', icon: <TicketPercent size={15}/>, label: 'Voucher Diskon',
+    fields: [],
   },
   {
     id: 'sync', icon: <Database size={15}/>, label: 'Sinkronisasi Data',
@@ -427,7 +432,9 @@ export default function SettingsTab({ creds }: { creds: string }) {
               <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{activeGroup.label}</p>
             </div>
 
-            {activeGrp === 'sync' ? (
+            {activeGrp === 'vouchers' ? (
+              <VouchersPanel creds={creds} />
+            ) : activeGrp === 'sync' ? (
               <div className="space-y-3">
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Daftar bank &amp; e-wallet yang muncul di dropdown pilihan bank (mis. form Dompet, Reseller, Biaya Admin).
@@ -747,6 +754,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
             </div>
             )}
 
+            {activeGrp !== 'vouchers' && (
             <div className="flex justify-end pt-4 mt-1" style={{ borderTop: '1px solid var(--border-2)' }}>
               <button
                 onClick={save}
@@ -757,6 +765,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                 {saved ? 'Tersimpan' : 'Simpan'}
               </button>
             </div>
+            )}
           </div>
         </div>
       </div>

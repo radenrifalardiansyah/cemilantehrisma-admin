@@ -11,7 +11,10 @@ import { revalidateProductStock } from '@/lib/revalidate';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
+import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
+import { computeVoucherDiscount, normalizeVoucherCode, voucherDiscountLabel } from '@/lib/voucher';
+import { voucherProblem, voucherRule, type VoucherRow } from '@/lib/vouchers-pg';
 import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
 
 // `orders` dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab
@@ -56,7 +59,7 @@ interface OrderCreateBody {
   paymentMethod?: string; paymentStatus?: string; amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   warehouseId?: string; warehouseName?: string; walletId?: string | null; shiftId?: string;
-  invoiceNo?: string; dueDate?: string; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
+  invoiceNo?: string; dueDate?: string; voucherCode?: string; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -86,6 +89,12 @@ export async function POST(req: NextRequest) {
   let itemsWithCost: OrderItemInput[] = [];
   let finalInvoiceNo: string | undefined;
   let orderId = '';
+  // Voucher dihitung ulang di server dari item pesanan (bukan percaya angka klien), dan kuotanya
+  // diambil atomik di transaksi yang sama dengan pembuatan pesanan.
+  const voucherCode = normalizeVoucherCode(data.voucherCode);
+  let finalSubtotal = Number(data.subtotal) || 0;
+  let finalDiscount: { amount: number; label: string } | null = data.discount ?? null;
+  let finalTotal = Number(data.total) || 0;
 
   // Stok DAN dokumen order sekarang sama-sama di Postgres (Tahap 9-12 Fase 2 — lihat plan
   // gleaming-wondering-quokka.md), jadi bisa digabung jadi SATU transaksi atomic — tidak ada lagi
@@ -128,6 +137,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      if (voucherCode) {
+        const itemsSubtotal = (data.items ?? []).reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
+        const [voucher] = await pgTx<VoucherRow[]>`select * from vouchers where code = ${voucherCode} for update`;
+        const problem = voucherProblem(voucher, itemsSubtotal);
+        if (problem) throw new Error(problem);
+        const amount = computeVoucherDiscount(voucherRule(voucher), itemsSubtotal);
+        finalSubtotal = itemsSubtotal;
+        finalDiscount = { amount, label: voucherDiscountLabel(voucherCode) };
+        finalTotal = itemsSubtotal - amount;
+        await pgTx`update vouchers set used_count = used_count + 1, updated_at = now() where code = ${voucherCode}`;
+      }
+
       finalInvoiceNo = await resolveUniqueInvoiceNo(pgTx, data.invoiceNo);
       const id = randomUUID();
       await pgTx`
@@ -135,18 +156,18 @@ export async function POST(req: NextRequest) {
           id, invoice_no, date, customer_name, customer_phone, customer_id, items, subtotal, discount, total,
           status, source, delivery_method, address, note, payment_method, payment_status,
           amount_paid, change_amount, transfer_bank, transfer_amount, transfer_proof_url,
-          stock_cut, warehouse_id, warehouse_name, wallet_id, shift_id, created_at${dueDate ? pgTx`, due_date` : pgTx``}
+          stock_cut, warehouse_id, warehouse_name, wallet_id, shift_id, created_at${dueDate ? pgTx`, due_date` : pgTx``}${voucherCode ? pgTx`, voucher_code` : pgTx``}
         ) values (
           ${id}, ${finalInvoiceNo ?? null}, ${data.date ?? null},
           ${data.customerName ?? ''}, ${data.customerPhone ?? null}, ${data.customerId ?? null},
-          ${JSON.stringify(itemsWithCost)}, ${Number(data.subtotal) || 0}, ${data.discount ? JSON.stringify(data.discount) : null}, ${Number(data.total) || 0},
+          ${JSON.stringify(itemsWithCost)}, ${finalSubtotal}, ${finalDiscount ? JSON.stringify(finalDiscount) : null}, ${finalTotal},
           ${isPreOrder ? 'baru' : 'selesai'}, 'kasir',
           ${data.deliveryMethod ?? null}, ${data.address ?? null}, ${data.note ?? null},
           ${data.paymentMethod ?? null}, ${data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')},
           ${data.amountPaid ?? null}, ${data.changeAmount ?? null},
           ${data.transferBank ?? null}, ${data.transferAmount ?? null}, ${data.transferProofUrl ?? null},
           ${!isPreOrder}, ${data.warehouseId ?? null}, ${data.warehouseName ?? null},
-          ${data.walletId ?? null}, ${data.shiftId ?? null}, ${createdAt}${dueDate ? pgTx`, ${dueDate}` : pgTx``}
+          ${data.walletId ?? null}, ${data.shiftId ?? null}, ${createdAt}${dueDate ? pgTx`, ${dueDate}` : pgTx``}${voucherCode ? pgTx`, ${voucherCode}` : pgTx``}
         )
       `;
       return id;
@@ -169,7 +190,7 @@ export async function POST(req: NextRequest) {
     await notify(db, {
       type: 'order_new',
       title: 'Pesanan baru',
-      message: `Pesanan ${finalInvoiceNo ?? orderId} senilai Rp${(Number(data.total) || 0).toLocaleString('id-ID')} — oleh ${guard.username}.`,
+      message: `Pesanan ${finalInvoiceNo ?? orderId} senilai Rp${finalTotal.toLocaleString('id-ID')} — oleh ${guard.username}.`,
       link: 'orders',
       entityCollection: 'orders', entityId: orderId,
       actor: guard,
@@ -178,7 +199,10 @@ export async function POST(req: NextRequest) {
     console.error('Failed to send notification for new order', err);
   }
 
-  if (!isPreOrder && deltas.size > 0) revalidateProductStock();
+  if (!isPreOrder && deltas.size > 0) {
+    revalidateProductStock();
+    await notifyProductLowStock(db, deltas, guard, `penjualan ${finalInvoiceNo ?? ''}`.trim());
+  }
   revalidateTag('admin-analytics', { expire: 0 });
 
   return Response.json({ id: orderId });

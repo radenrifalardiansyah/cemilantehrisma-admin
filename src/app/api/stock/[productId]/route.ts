@@ -3,6 +3,8 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateProductStock } from '@/lib/revalidate';
+import { getDb } from '@/lib/firebase-admin';
+import { notifyProductLowStock } from '@/lib/low-stock';
 
 type Ctx = { params: Promise<{ productId: string }> };
 
@@ -53,5 +55,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
 
   revalidateProductStock();
+  if (delta < 0) await notifyProductLowStock(getDb(), new Map([[productId, delta]]), guard, 'stok keluar');
   return Response.json({ ok: true });
 }

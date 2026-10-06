@@ -1,6 +1,7 @@
 'use client';
 
 import { addDaysWib, formatDueDate } from '@/lib/receivable';
+import { computeVoucherDiscount, voucherDiscountLabel, type VoucherRule } from '@/lib/voucher';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
@@ -292,6 +293,11 @@ export default function PosTab({
   const [custPhone,    setCustPhone]    = useState('');
   const [discountType, setDiscountType] = useState<'percent' | 'nominal'>('percent');
   const [discountRaw,  setDiscountRaw]  = useState('');
+  // Voucher menggantikan diskon manual selama terpasang; angka final tetap dihitung ulang server.
+  const [voucher, setVoucher] = useState<{ code: string; rule: VoucherRule } | null>(null);
+  const [voucherInput, setVoucherInput] = useState('');
+  const [voucherChecking, setVoucherChecking] = useState(false);
+  const [voucherError, setVoucherError] = useState('');
   const [sellAsPO,     setSellAsPO]     = useState(false);
   const [paymentMethod,     setPaymentMethod]     = useState<PaymentMethod>('cash');
   const [walletId,          setWalletId]          = useState('');
@@ -381,12 +387,30 @@ export default function PosTab({
   // sini nilai negatif membuat discountAmount ikut negatif dan justru MENAMBAH total, bukan
   // menguranginya.
   const discountNum    = Math.max(0, parseFloat(discountRaw) || 0);
-  const discountAmount = discountType === 'percent'
+  // Voucher hanya berlaku selama subtotal memenuhi minimum belanjanya (keranjang bisa berubah
+  // setelah voucher dipasang).
+  const voucherActive  = !!voucher && cartSubtotal >= voucher.rule.minPurchase;
+  const discountAmount = voucherActive
+    ? computeVoucherDiscount(voucher!.rule, cartSubtotal)
+    : discountType === 'percent'
     ? Math.min(Math.round(cartSubtotal * discountNum / 100), cartSubtotal)
     : Math.min(discountNum, cartSubtotal);
-  const discountLabel = discountType === 'percent' ? `${discountNum}%` : formatCurrency(discountAmount);
+  const discountLabel = voucherActive ? voucherDiscountLabel(voucher!.code) : discountType === 'percent' ? `${discountNum}%` : formatCurrency(discountAmount);
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
   const cartTotal = cartSubtotal - discountAmount;
+  const applyVoucher = async () => {
+    const code = voucherInput.trim();
+    if (!code) return;
+    setVoucherChecking(true); setVoucherError('');
+    const r = await fetch('/api/vouchers/validate', {
+      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, subtotal: cartSubtotal }),
+    });
+    const d = await r.json().catch(() => ({})) as { error?: string; code?: string; rule?: VoucherRule };
+    if (r.ok && d.code && d.rule) { setVoucher({ code: d.code, rule: d.rule }); setVoucherInput(''); setDiscountRaw(''); }
+    else setVoucherError(d.error ?? 'Voucher tidak valid.');
+    setVoucherChecking(false);
+  };
   const hasCart   = cartItems.length > 0 || customItems.length > 0;
   // Kalau keranjang berisi produk "Buka PO", kasir BOLEH (tidak otomatis) menandai transaksi ini
   // sebagai PO lewat checkbox "Jual sebagai PO" — lepas dari stok saat ini. Kalau ditandai, server
@@ -474,6 +498,7 @@ export default function PosTab({
     setPosView('products'); setActiveCat('semua'); setQuery(''); clearCart();
     setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw('');
     setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw(''); setSellAsPO(false);
+    setVoucher(null); setVoucherInput(''); setVoucherError('');
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
     setSelectedCustRef(''); setTxDateTime(() => nowLocalInput());
@@ -598,6 +623,7 @@ export default function PosTab({
     if (!held) { toast.error('Gagal menahan transaksi.'); return; }
     setHeldTransactions(prev => [...prev, held]);
     clearCart(); setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw('');
+    setVoucher(null); setVoucherInput(''); setVoucherError('');
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setOcrStatus('idle'); setSelectedCustRef(''); setProcessErr('');
     setPosView('products');
@@ -734,6 +760,7 @@ export default function PosTab({
         body: JSON.stringify({
           invoiceNo: invNo, date: dateStr, transactionAt: now.toISOString(), customerName: finalCustName, customerPhone: custPhone, items,
           subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, pdfUrl,
+          ...(voucherActive ? { voucherCode: voucher!.code } : {}),
           paymentMethod,
           ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
           ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
@@ -1071,6 +1098,16 @@ export default function PosTab({
             {/* Discount */}
             <div className="card p-4">
               <p className="section-label mb-3 flex items-center gap-1.5"><Tag size={11} /> Diskon (opsional)</p>
+              {voucher && (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
+                  <span>
+                    Voucher <strong>{voucher.code}</strong> terpasang
+                    {!voucherActive && <> — <strong style={{ color: 'var(--danger)' }}>belum berlaku (minimal belanja {formatCurrency(voucher.rule.minPurchase)})</strong></>}
+                  </span>
+                  <button onClick={() => { setVoucher(null); setVoucherError(''); }} className="btn-ghost px-2 py-1 text-xs" style={{ color: 'var(--danger)' }}>Lepas</button>
+                </div>
+              )}
+              {!voucher && (
               <div className="flex gap-2">
                 <div className="flex rounded-xl overflow-hidden border text-xs font-bold flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
                   {(['percent', 'nominal'] as const).map(t => (
@@ -1092,6 +1129,20 @@ export default function PosTab({
                   <button onClick={() => setDiscountRaw('')} className="btn-ghost px-3 text-xs" style={{ color: 'var(--danger)' }}>✕</button>
                 )}
               </div>
+              )}
+              {!voucher && (
+                <div className="mt-2">
+                  <div className="flex gap-2">
+                    <input type="text" value={voucherInput} onChange={e => { setVoucherInput(e.target.value.toUpperCase()); setVoucherError(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter') applyVoucher(); }}
+                      className="input flex-1" placeholder="Kode voucher" />
+                    <button onClick={applyVoucher} disabled={!voucherInput.trim() || voucherChecking || !hasCart} className="btn-ghost px-4 text-xs font-bold">
+                      {voucherChecking ? <Loader2 size={13} className="animate-spin" /> : 'Pakai'}
+                    </button>
+                  </div>
+                  {voucherError && <p className="text-xs mt-1.5" style={{ color: 'var(--danger)' }}>{voucherError}</p>}
+                </div>
+              )}
               {discountAmount > 0 && (
                 <p className="text-xs mt-2 font-medium" style={{ color: 'var(--success)' }}>
                   Hemat {formatCurrency(discountAmount)} → bayar {formatCurrency(cartTotal)}

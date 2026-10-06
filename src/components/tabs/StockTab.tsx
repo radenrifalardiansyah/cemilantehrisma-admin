@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
   X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, ChevronLeft, Package,
-  ArrowLeftRight, Clock, ImageIcon, Ban, Search,
+  ArrowLeftRight, Clock, ImageIcon, Ban, Search, ClipboardCheck,
 } from 'lucide-react';
 import { useViewMode, type ViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -21,6 +21,7 @@ import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
+import StockOpnamePanel from '@/components/StockOpnamePanel';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -28,13 +29,14 @@ const HEADER_BTN_H = 34;
 // longer interval than Kasir/Pesanan since this one is pricier per tick.
 const STOCK_POLL_MS = 45_000;
 
-type SubTab = 'stok' | 'masuk' | 'keluar' | 'transfer';
+type SubTab = 'stok' | 'masuk' | 'keluar' | 'transfer' | 'opname';
 
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stok',     label: 'Stok',     Icon: Warehouse },
   { id: 'masuk',    label: 'Masuk',    Icon: TrendingUp },
   { id: 'keluar',   label: 'Keluar',   Icon: TrendingDown },
   { id: 'transfer', label: 'Transfer', Icon: ArrowLeftRight },
+  { id: 'opname',   label: 'Opname',   Icon: ClipboardCheck },
 ];
 
 // pageSize bisa Infinity (opsi "Semua" di PageSizeSelect) — (1 - 1) * Infinity = NaN di JS,
@@ -702,7 +704,7 @@ export default function StockTab({
   useEffect(() => { loadWarehouses(); }, []);
 
   useEffect(() => {
-    if (subTab !== 'stok') loadTx();
+    if (subTab !== 'stok' && subTab !== 'opname') loadTx();
   }, [subTab]);
 
   // Auto-refresh — only the sub-tab/view currently in front: the selected warehouse's stock
@@ -713,7 +715,7 @@ export default function StockTab({
     if (subTab === 'stok') {
       if (stokView === 'stock' && selectedWarehouse) loadStock(selectedWarehouse.id, true);
       else loadWarehouses(true);
-    } else {
+    } else if (subTab !== 'opname') {
       loadTx();
     }
   };
@@ -1266,6 +1268,10 @@ export default function StockTab({
         )}
 
         {/* ════ MASUK ═══════════════════════════════════════════ */}
+        {subTab === 'opname' && (
+          <StockOpnamePanel creds={creds} warehouses={warehouses} products={products} onDone={() => loadWarehouses(true)} />
+        )}
+
         {subTab === 'masuk' && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-4">
             <div className="flex flex-row items-center gap-2 sm:gap-3">

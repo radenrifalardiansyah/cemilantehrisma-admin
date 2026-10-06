@@ -423,7 +423,7 @@ export default function AdminPage() {
     switch (n.type) {
       case 'order_new':
       case 'payment_proof': setHighlightOrderId(n.entityId); break;
-      case 'stock_low': setHighlightMaterialId(n.entityId); break;
+      case 'stock_low': if (n.entityCollection !== 'products') setHighlightMaterialId(n.entityId); break;
       case 'consignment_overdue':
       case 'consignment_recap': setHighlightRecapId(n.entityId); break;
       case 'consignment_send': setHighlightShipmentId(n.entityId); break;

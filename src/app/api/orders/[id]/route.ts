@@ -10,6 +10,7 @@ import { logHistory } from '@/lib/history';
 import { getSettings } from '@/lib/settings-pg';
 import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { rowToOrder, syncInvoicePaymentStatus, OrderRow } from '@/lib/orders-pg';
+import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -70,7 +71,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   // race seperti versi Firestore sebelumnya, dan tidak ada lagi kompensasi cross-database.
   if (Array.isArray(body.items)) {
     const data = body as OrderEditInput;
-    let txResult: { orderBefore: ReturnType<typeof rowToOrder>; orderAfter: Record<string, unknown> };
+    let txResult: { orderBefore: ReturnType<typeof rowToOrder>; orderAfter: Record<string, unknown>; stockDeltas: Map<string, number> };
 
     try {
       txResult = await sql.begin(async pgTx => {
@@ -158,7 +159,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (data.transactionAt !== undefined) updateCols.created_at = new Date(data.transactionAt);
 
         await pgTx`update orders set ${pgTx(updateCols, ...Object.keys(updateCols))} where id = ${id}`;
-        return { orderBefore: order, orderAfter: { ...order, ...updateCols, items } };
+        const stockDeltas = new Map([...deltas].map(([pid, d]) => [pid, -d] as [string, number]));
+        return { orderBefore: order, orderAfter: { ...order, ...updateCols, items }, stockDeltas };
       });
     } catch (err) {
       if (err instanceof OrderNotFoundError) return Response.json({ error: err.message }, { status: 404 });
@@ -176,6 +178,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     }
     await syncInvoicePaymentStatus(sql, txResult.orderBefore.invoiceNo, data.paymentStatus);
     revalidateProductStock();
+    await notifyProductLowStock(db, txResult.stockDeltas, guard, `edit pesanan ${txResult.orderBefore.invoiceNo ?? ''}`.trim());
     revalidateTag('admin-analytics', { expire: 0 });
     return Response.json({ ok: true });
   }
@@ -190,11 +193,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (paymentStatus !== undefined && !['lunas', 'belum_lunas'].includes(paymentStatus)) {
     return Response.json({ error: 'Status pembayaran tidak valid.' }, { status: 400 });
   }
-  let statusResult: { orderBefore: ReturnType<typeof rowToOrder>; stockTouched: boolean };
+  let statusResult: { orderBefore: ReturnType<typeof rowToOrder>; stockTouched: boolean; stockDeltas: Map<string, number> };
 
   try {
     statusResult = await sql.begin(async pgTx => {
       let stockTouched = false;
+      let stockDeltas = new Map<string, number>();
       const [orderRow] = await pgTx<OrderRow[]>`select * from orders where id = ${id} for update`;
       if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
       const order = rowToOrder(orderRow);
@@ -241,6 +245,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
             });
           }
           stockTouched = true;
+          stockDeltas = deltas;
         }
 
         updateCols.stock_cut = true;
@@ -250,12 +255,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // Batalkan pesanan → kembalikan stok yang sudah dipotong (sekali saja per pesanan)
       if (status === 'dibatalkan') {
         await restoreOrderStockInTxPg(pgTx, toRestorable(order));
+        // Kuota voucher yang dipakai pesanan ini dikembalikan (sekali — kode dikosongkan).
+        if (order.voucherCode) {
+          await pgTx`update vouchers set used_count = greatest(used_count - 1, 0) where code = ${order.voucherCode}`;
+          updateCols.voucher_code = null;
+        }
         updateCols.stock_restored = true;
         stockTouched = true;
       }
 
       await pgTx`update orders set ${pgTx(updateCols, ...Object.keys(updateCols))} where id = ${id}`;
-      return { orderBefore: order, stockTouched };
+      return { orderBefore: order, stockTouched, stockDeltas };
     });
   } catch (err) {
     if (err instanceof OrderNotFoundError) return Response.json({ error: err.message }, { status: 404 });
@@ -274,6 +284,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   await syncInvoicePaymentStatus(sql, statusResult.orderBefore.invoiceNo, paymentStatus);
   if (statusResult.stockTouched) revalidateProductStock();
+  await notifyProductLowStock(db, statusResult.stockDeltas, guard, `pesanan ${statusResult.orderBefore.invoiceNo ?? ''} selesai`.trim());
   revalidateTag('admin-analytics', { expire: 0 });
   // "Terjual" di beranda storefront dihitung dari qty pesanan berstatus 'selesai' — status
   // apapun yang berubah di sini bisa menggeser hitungan itu (jadi/lepas dari 'selesai').
@@ -295,6 +306,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       if (!orderRow) return null; // sudah tidak ada — hapus dianggap sukses (idempotent)
       const order = rowToOrder(orderRow);
       await restoreOrderStockInTxPg(pgTx, toRestorable(order));
+      if (order.voucherCode) await pgTx`update vouchers set used_count = greatest(used_count - 1, 0) where code = ${order.voucherCode}`;
       await pgTx`delete from orders where id = ${id}`;
       return order;
     });
