@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import {
   Loader2, RefreshCw, Percent, Coins, History, FileDown, Receipt, CheckCircle2, Landmark, X, ListChecks, Send, Building2, XCircle,
 } from 'lucide-react';
@@ -685,9 +686,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
             </div>
             {invoices.length === 0 ? (
               loadingInvoices ? <PageLoader compact /> : (
-                <div className="card">
-                  <p className="px-5 py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada invoice dibuat.</p>
-                </div>
+                <EmptyAddCard label="Belum ada invoice" hint="Invoice admin fee akan muncul di sini setelah dibuat." />
               )
             ) : invoiceView === 'table' ? (
               <div className="card overflow-hidden">

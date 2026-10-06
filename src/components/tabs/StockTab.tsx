@@ -1152,11 +1152,7 @@ export default function StockTab({
             {stockLoading ? (
               <PageLoader compact />
             ) : mergedStocks.length === 0 ? (
-              <div className="rounded-2xl p-16 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <Package size={24} style={{ color: 'var(--accent)', margin: '0 auto 10px', display: 'block' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada stok</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan stok lewat menu <strong>Masuk</strong>.</p>
-              </div>
+              <EmptyAddCard label="Catat Stok Masuk" onClick={() => openTxModal('in')} hint="Belum ada stok. Tambahkan stok lewat transaksi Masuk." />
             ) : (() => {
               const withCat = mergedStocks.map(s => ({ ...s, category: products.find(p => p.id === s.productId)?.category ?? '' }));
               const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;

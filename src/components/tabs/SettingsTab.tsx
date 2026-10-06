@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { Loader2, Check, Store, Phone, Shield, Clock, Save, Database, RefreshCw, Landmark, Warehouse, Wallet, Palette, Globe, Plus, Pencil, Trash2, X, Search, ChevronLeft, ChevronRight, TicketPercent } from 'lucide-react';
 import ScrollChips from '@/components/ScrollChips';
 import SearchSelect from '@/components/SearchSelect';
@@ -466,10 +467,10 @@ export default function SettingsTab({ creds }: { creds: string }) {
 
                 {banks === null ? (
                   <PageLoader compact />
+                ) : banks.length === 0 ? (
+                  <EmptyAddCard label="Tambah Bank" onClick={openNewBank} hint='Atau klik "Sinkronkan" untuk memuat daftar bawaan.' />
                 ) : filteredBanks.length === 0 ? (
-                  <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
-                    {banks.length === 0 ? 'Belum ada data bank — klik "Sinkronkan" untuk memuat daftar bawaan.' : 'Tidak ada bank yang cocok dengan pencarian.'}
-                  </p>
+                  <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada bank yang cocok dengan pencarian.</p>
                 ) : (
                   <>
                     <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>

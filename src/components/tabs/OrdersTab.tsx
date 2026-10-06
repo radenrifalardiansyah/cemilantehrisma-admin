@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { Loader2, RefreshCw, Trash2, ChevronLeft, ChevronRight, Receipt, TrendingUp, ShoppingBag, Upload, ShoppingCart, Globe, Truck, Package, MapPin, FileText, CheckCircle2, Ban, Pencil, X, Plus, Minus, Search, Check, Printer, AlertTriangle, MessageCircle, Undo2, HandCoins } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cellText, cellNumber } from '@/lib/excel-cell';
@@ -1241,11 +1242,7 @@ _${storeName}_`.trim();
 
       {/* Orders list */}
       {orders.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🧾</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pesanan</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pesanan dari Kasir maupun checkout Website akan muncul di sini otomatis.</p>
-        </div>
+        <EmptyAddCard label="Belum ada pesanan" hint="Pesanan dari Kasir maupun checkout Website akan muncul di sini otomatis." />
       ) : (
         <>
           {/* Select-all bar */}

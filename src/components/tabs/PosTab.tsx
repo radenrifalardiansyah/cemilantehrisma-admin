@@ -1,6 +1,7 @@
 'use client';
 
 import { addDaysWib, formatDueDate } from '@/lib/receivable';
+import EmptyAddCard from '../EmptyAddCard';
 import { computeVoucherDiscount, voucherDiscountLabel, type VoucherRule } from '@/lib/voucher';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
@@ -897,9 +898,7 @@ export default function PosTab({
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-44 lg:pb-4 thin-scrollbar">
         {posProducts.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada produk.</p>
-          </div>
+          <EmptyAddCard label="Belum ada produk" hint="Tambahkan produk lewat menu Produk." />
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Produk tidak ditemukan.</p>

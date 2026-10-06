@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { Search, ChevronLeft, ChevronRight, User as UserIcon } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import PageSizeSelect from '@/components/PageSizeSelect';
@@ -158,11 +159,7 @@ export default function HistoryTab({ creds }: { creds: string }) {
       </div>
 
       {entries.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🕒</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat pada periode ini</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Riwayat akan tercatat otomatis setiap kali ada transaksi dibuat, diubah, atau dihapus.</p>
-        </div>
+        <EmptyAddCard label="Belum ada riwayat pada periode ini" hint="Riwayat akan tercatat otomatis setiap kali ada transaksi dibuat, diubah, atau dihapus." />
       ) : paginated.length === 0 ? (
         <div className="card py-12 text-center">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada riwayat yang cocok.</p>

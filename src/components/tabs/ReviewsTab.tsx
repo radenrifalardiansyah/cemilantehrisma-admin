@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { Search, Trash2, Star, Check, X, RefreshCw, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -205,11 +206,13 @@ export default function ReviewsTab({ creds }: { creds: string }) {
           {loading ? (
             <PageLoader label="Memuat ulasan" />
           ) : paginated.length === 0 ? (
-            <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                {reviews.length === 0 ? 'Belum ada ulasan masuk.' : 'Tidak ada ulasan yang cocok.'}
-              </p>
-            </div>
+            reviews.length === 0 ? (
+              <EmptyAddCard label="Belum ada ulasan masuk" hint="Ulasan dari pelanggan website akan muncul di sini." />
+            ) : (
+              <div className="card py-12 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada ulasan yang cocok.</p>
+              </div>
+            )
           ) : view === 'table' ? (
             <div className="space-y-2">
               <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>

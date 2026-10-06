@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { Search, Trash2, Smartphone, Globe, RefreshCw, Check, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -163,11 +164,13 @@ export default function StorefrontCustomersTab({ creds }: { creds: string }) {
           {loading ? (
             <PageLoader label="Memuat akun" />
           ) : paginated.length === 0 ? (
-            <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                {customers.length === 0 ? 'Belum ada akun terdaftar.' : 'Tidak ada akun yang cocok.'}
-              </p>
-            </div>
+            customers.length === 0 ? (
+              <EmptyAddCard label="Belum ada akun terdaftar" hint="Akun pelanggan website akan muncul setelah mereka mendaftar." />
+            ) : (
+              <div className="card py-12 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada akun yang cocok.</p>
+              </div>
+            )
           ) : view === 'table' ? (
             <div className="space-y-2">
               <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>

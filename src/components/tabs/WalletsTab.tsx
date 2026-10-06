@@ -160,13 +160,13 @@ export default function WalletsTab({ creds }: { creds: string }) {
       setTransfers(transferList);
       setBalances(nextBalances);
       setUnassigned(nextUnassigned);
-    } finally {
-      // Selalu matikan spinner awal, terlepas dari menang/kalahnya balapan `myLoadId` —
-      // mount-effect (non-silent) dan poll pertama dari useVisiblePolling (silent) sama-sama
-      // jalan di commit yang sama; kalau load awal kalah balapan, guard di atas skip
-      // penyetelan data-nya, tapi spinner tetap wajib mati karena data terbaru sudah/akan
-      // disetel oleh load yang menang.
-      if (!silent) setLoading(false);
+      // Spinner dimatikan hanya oleh load TERBARU, setelah datanya disetel. Mount-effect
+      // (non-silent) dan poll pertama useVisiblePolling (silent) jalan di commit yang sama;
+      // load awal kalah balapan, dan kalau ia mematikan spinner sendiri, tab sempat menampilkan
+      // "Tambah Dompet" (daftar kosong) sampai load pemenang selesai.
+      setLoading(false);
+    } catch {
+      if (myLoadId === loadIdRef.current) setLoading(false);
     }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps

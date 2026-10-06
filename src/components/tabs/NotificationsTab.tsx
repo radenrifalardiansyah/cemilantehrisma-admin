@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { Bell, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useNotifications } from '@/components/NotificationsProvider';
 import { useViewMode } from '@/lib/useViewMode';
@@ -102,11 +103,13 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
           {loading ? (
             <PageLoader label="Memuat notifikasi" />
           ) : paginated.length === 0 ? (
-            <div className="card py-12 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                {notifications.length === 0 ? 'Belum ada notifikasi.' : 'Tidak ada notifikasi yang cocok.'}
-              </p>
-            </div>
+            notifications.length === 0 ? (
+              <EmptyAddCard label="Belum ada notifikasi" />
+            ) : (
+              <div className="card py-12 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada notifikasi yang cocok.</p>
+              </div>
+            )
           ) : view === 'table' ? (
             <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
               {paginated.map((n, idx) => {

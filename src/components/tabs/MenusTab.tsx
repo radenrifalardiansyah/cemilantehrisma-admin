@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import EmptyAddCard from '../EmptyAddCard';
 import { ListTree, Plus, Pencil, Trash2, X, Check, Loader2, ChevronUp, ChevronDown, EyeOff, CornerDownRight } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -251,7 +252,9 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
               )}
             </div>
             {tops.length === 0 ? (
-              <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada menu di modul ini.</p>
+              <div className="p-4">
+                <EmptyAddCard label={can('create') ? 'Tambah Menu' : 'Belum ada menu di modul ini'} onClick={can('create') ? () => openNew(mod.id, null) : undefined} minHeight={120} />
+              </div>
             ) : tops.map((m, idx) => renderNode(m, tops, idx, 0, `${idx + 1}`))}
           </div>
         );
