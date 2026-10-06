@@ -1619,7 +1619,7 @@ export default function AdminPage() {
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
       {activeTab === 'materials'  && (
         <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
-          onHighlightHandled={() => setHighlightMaterialId(null)} />
+          onHighlightHandled={() => setHighlightMaterialId(null)} canApprove={can('materials', 'approve')} />
       )}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {activeTab === 'consignment' && (

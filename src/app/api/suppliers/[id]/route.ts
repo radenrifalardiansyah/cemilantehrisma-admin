@@ -28,10 +28,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   // Tolak kalau supplier ini masih punya riwayat pembelian bahan baku — kalau dibolehkan,
   // material_purchases.supplier_id jadi menunjuk ke baris yang sudah tidak ada.
-  const [{ exists }] = await sql<{ exists: boolean }[]>`select exists(select 1 from material_purchases where supplier_id = ${id}) as exists`;
+  const [{ exists }] = await sql<{ exists: boolean }[]>`select (exists(select 1 from material_purchases where supplier_id = ${id}) or exists(select 1 from purchase_orders where supplier_id = ${id})) as exists`;
   if (exists) {
     return Response.json(
-      { error: 'Supplier ini masih punya riwayat pembelian bahan baku — tidak bisa dihapus.' },
+      { error: 'Supplier ini masih punya riwayat pembelian/PO bahan baku — tidak bisa dihapus.' },
       { status: 400 },
     );
   }

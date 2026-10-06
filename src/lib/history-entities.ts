@@ -6,6 +6,8 @@ export const HISTORY_ENTITIES: { key: string; label: string }[] = [
   { key: 'orders',              label: 'Pesanan' },
   { key: 'production',          label: 'Produksi' },
   { key: 'material-purchases',  label: 'Pembelian Bahan' },
+  { key: 'purchase-orders',     label: 'Purchase Order' },
+  { key: 'goods-receipts',      label: 'Penerimaan Barang (GR)' },
   { key: 'materials',           label: 'Bahan Baku' },
   { key: 'consignment',         label: 'Konsinyasi' },
   { key: 'stock',                label: 'Stok' },

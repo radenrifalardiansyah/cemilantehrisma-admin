@@ -25,6 +25,8 @@ export interface PurchaseRow {
   total: string; date: string; payment_status: string; expense_id: string | null;
   note: string; wallet_id: string | null;
   voided: boolean; voided_at: Date | null; void_note: string | null;
+  source?: string; po_id?: string | null; gr_id?: string | null;
+  po_number?: string | null; gr_number?: string | null;
   created_at: Date; updated_at: Date | null;
 }
 export function rowToPurchase(r: PurchaseRow) {
@@ -34,6 +36,8 @@ export function rowToPurchase(r: PurchaseRow) {
     total: Number(r.total), date: r.date, paymentStatus: r.payment_status, expenseId: r.expense_id,
     note: r.note, walletId: r.wallet_id,
     voided: r.voided, voidedAt: toTimestamp(r.voided_at), voidNote: r.void_note,
+    source: r.source ?? 'manual', poId: r.po_id ?? null, grId: r.gr_id ?? null,
+    poNumber: r.po_number ?? null, grNumber: r.gr_number ?? null,
     createdAt: toTimestamp(r.created_at), updatedAt: toTimestamp(r.updated_at),
   };
 }

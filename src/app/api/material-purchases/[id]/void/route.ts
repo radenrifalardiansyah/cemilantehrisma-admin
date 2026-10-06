@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
-import { getSql, parseJsonb } from '@/lib/db';
+import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
+import { voidPurchaseTx, type VoidPurchaseResult } from '@/lib/material-purchase-core';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const db = getDb();
   const sql = getSql();
 
-  let before: ReturnType<typeof rowToPurchase>;
+  let before: VoidPurchaseResult['before'];
   let purchaseUpdate: Record<string, unknown>;
   let expenseDeleted: boolean;
   let reversed: boolean;
@@ -32,73 +32,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   try {
     ({ before, purchaseUpdate, expenseDeleted, reversed, skippedMaterials } = await sql.begin(async pgTx => {
-      const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
-      if (!row) throw new Error('Pembelian tidak ditemukan.');
-      const purchase = rowToPurchase(row);
-      if (purchase.voided) throw new Error('Pembelian ini sudah dibatalkan sebelumnya.');
-
-      const items = purchase.items;
-      const materialIds = items.map(it => it.materialId);
-      const materialRows = materialIds.length > 0
-        ? await pgTx<{ id: string; stock_qty: string; avg_cost: string }[]>`select id, stock_qty, avg_cost from raw_materials where id in ${pgTx(materialIds)} order by id for update`
-        : [];
-      const materialById = new Map(materialRows.map(r => [r.id, r]));
-
-      // Perbandingan lewat subquery, bukan JS Date `row.created_at` — sama seperti PUT & DELETE.
-      const [laterPurchaseRows, laterBatchRows] = await Promise.all([
-        pgTx<{ items: unknown }[]>`select items from material_purchases where created_at > (select created_at from material_purchases where id = ${id}) and id != ${id}`,
-        pgTx<{ materials_used: unknown }[]>`select materials_used from production_batches where created_at > (select created_at from material_purchases where id = ${id})`,
-      ]);
-      const touchedAfter = new Set<string>();
-      laterPurchaseRows.forEach(r => {
-        ((parseJsonb(r.items) as { materialId: string }[] | null) ?? []).forEach(it => touchedAfter.add(it.materialId));
-      });
-      laterBatchRows.forEach(r => {
-        ((parseJsonb(r.materials_used) as { materialId: string }[] | null) ?? []).forEach(m => touchedAfter.add(m.materialId));
-      });
-
-      const blockedNames = [...new Set(items.filter(it => touchedAfter.has(it.materialId)).map(it => it.materialName))];
-      const canReverse = blockedNames.length === 0;
-
-      if (canReverse) {
-        // State berjalan per bahan baku, dibalik dari baris terakhir — sama seperti DELETE.
-        const state = new Map([...materialById].map(([mid, m]) => [mid, { qty: Number(m.stock_qty) || 0, avg: Number(m.avg_cost) || 0 }]));
-        for (const it of [...items].reverse()) {
-          const st = state.get(it.materialId);
-          if (!st) continue;
-          const qty = st.qty - it.qty;
-          // Kebalikan dari rumus rata-rata tertimbang saat pembelian — sama seperti DELETE.
-          const avg = qty > 0 ? (st.avg * st.qty - it.qty * it.price) / qty : 0;
-          state.set(it.materialId, { qty, avg });
-        }
-        for (const [mid, st] of state) {
-          await pgTx`update raw_materials set stock_qty = ${Math.max(0, st.qty)}, avg_cost = ${Math.max(0, st.avg)}, updated_at = now() where id = ${mid}`;
-        }
-      }
-
-      let deleted = false;
-      if (purchase.expenseId) {
-        const [expenseRow] = await pgTx<{ id: string }[]>`select id from expenses where id = ${purchase.expenseId}`;
-        if (expenseRow) {
-          await pgTx`delete from expenses where id = ${purchase.expenseId}`;
-          deleted = true;
-        }
-      }
-
-      const voidNote = note?.trim() ?? '';
-      await pgTx`
-        update material_purchases set
-          voided = true, voided_at = now(), void_note = ${voidNote},
-          payment_status = 'belum_lunas', expense_id = null, updated_at = now()
-        where id = ${id}
-      `;
-      return {
-        before: purchase,
-        purchaseUpdate: { voided: true, voidNote, paymentStatus: 'belum_lunas', expenseId: null },
-        expenseDeleted: deleted,
-        reversed: canReverse,
-        skippedMaterials: blockedNames,
-      };
+      const [gr] = await pgTx<{ gr_id: string | null }[]>`select gr_id from material_purchases where id = ${id}`;
+      if (gr?.gr_id) throw new Error('Pembelian ini berasal dari Penerimaan Barang (GR) — batalkan lewat GR-nya supaya status PO ikut benar.');
+      return voidPurchaseTx(pgTx, id, note?.trim() ?? '');
     }));
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal membatalkan pembelian.' }, { status: 400 });

@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
 
   // Sama seperti DELETE satuan — lewati id yang masih punya riwayat pembelian bahan baku.
   const linkedRows = await sql<{ supplier_id: string }[]>`
-    select distinct supplier_id from material_purchases where supplier_id in ${sql(ids)}
+    select supplier_id from material_purchases where supplier_id in ${sql(ids)}
+    union select supplier_id from purchase_orders where supplier_id in ${sql(ids)}
   `;
   const linkedToPurchase = new Set(linkedRows.map(r => r.supplier_id));
   const deletable = ids.filter(id => !linkedToPurchase.has(id));

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Boxes, ShoppingBag, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle,
+  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle, ClipboardList,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -24,6 +24,7 @@ import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
+import PurchaseFlowPanel from '@/components/tabs/PurchaseFlowPanel';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -81,9 +82,11 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
-type SubTab = 'stok' | 'pembelian';
+type SubTab = 'stok' | 'po' | 'gr' | 'pembelian';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stok',      label: 'Stok',      Icon: Boxes },
+  { id: 'po',        label: 'Purchase Order', Icon: ClipboardList },
+  { id: 'gr',        label: 'Penerimaan (GR)', Icon: PackageCheck },
   { id: 'pembelian', label: 'Pembelian', Icon: ShoppingBag },
 ];
 
@@ -91,12 +94,13 @@ interface RawMaterial { id: string; name: string; unit: string; stockQty: number
 // Menipis = stok masih ada tapi sudah di batas minimum yang diset admin.
 export const isLowStock = (m: Pick<RawMaterial, 'stockQty' | 'minStock'>) =>
   (m.minStock ?? 0) > 0 && m.stockQty > 0 && m.stockQty <= (m.minStock ?? 0);
-interface Supplier { id: string; name: string }
+interface Supplier { id: string; name: string; phone?: string }
 interface PurchaseItem { materialId: string; materialName: string; unit: string; qty: number; price: number; subtotal: number }
 interface Purchase {
   id: string; supplierId?: string | null; supplierName: string; items: PurchaseItem[]; total: number; note?: string;
   date?: string; paymentStatus?: 'lunas' | 'belum_lunas'; expenseId?: string | null; createdAt?: { seconds: number };
   voided?: boolean; voidNote?: string; walletId?: string | null;
+  source?: 'manual' | 'po'; grId?: string | null; poNumber?: string | null; grNumber?: string | null;
 }
 
 type MaterialForm = { name: string; unit: string; minStock: string };
@@ -143,8 +147,10 @@ function detectPurchaseColumn(header: string): PurchaseTemplateKey | null {
   return null;
 }
 
-export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled }: {
+export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled, canApprove = false }: {
   creds: string; highlightMaterialId?: string | null; onHighlightHandled?: () => void;
+  /** Hak `approve` di menu Bahan Baku — boleh meng-approve / membatalkan GR yang sudah di-approve. */
+  canApprove?: boolean;
 }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -1459,6 +1465,22 @@ ${pdfUrl}`.trim();
         )}
 
         {/* ════ PEMBELIAN ══════════════════════════════════════ */}
+        {/* ════ PURCHASE ORDER & PENERIMAAN (GR) ═══════════════ */}
+        {(subTab === 'po' || subTab === 'gr') && (
+          <PurchaseFlowPanel
+            creds={creds}
+            view={subTab}
+            onSwitchView={setSubTab}
+            materials={materials}
+            suppliers={suppliers}
+            walletOptions={walletOptions}
+            walletBalances={walletBalances}
+            storeHeader={storeHeader}
+            canApprove={canApprove}
+            onStockChanged={() => { loadMaterials(); loadPurchases(); refetchBalances(); }}
+          />
+        )}
+
         {subTab === 'pembelian' && (purchasesLoading && purchases.length === 0) && <PageLoader />}
         {subTab === 'pembelian' && !(purchasesLoading && purchases.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-5">
@@ -1559,6 +1581,7 @@ ${pdfUrl}`.trim();
                                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
                                       {p.voided && <span className="badge badge-gray flex-shrink-0">Dibatalkan</span>}
                                       {!p.voided && p.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
+                                      {p.grId && <span className="badge badge-blue flex-shrink-0" title="Pembelian ini dibuat dari Penerimaan Barang — ubah/batalkan lewat menu Penerimaan (GR)">dari {p.poNumber ?? 'PO'} · {p.grNumber ?? 'GR'}</span>}
                                     </div>
                                     <div className="flex items-center gap-2 flex-shrink-0">
                                       <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
@@ -1582,23 +1605,29 @@ ${pdfUrl}`.trim();
                                               <MessageCircle size={12} />
                                             </button>
                                           </Tooltip>
+                                          {!p.grId && (
                                           <Tooltip label="Edit">
                                             <button onClick={() => openEditPurchase(p)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Edit">
                                               <Pencil size={12} />
                                             </button>
                                           </Tooltip>
+                                          )}
+                                          {!p.grId && (
                                           <Tooltip label="Hapus">
                                             <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
                                               className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
                                               {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                             </button>
                                           </Tooltip>
+                                          )}
+                                          {!p.grId && (
                                           <Tooltip label="Batalkan pembelian">
                                             <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
                                               className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
                                               {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                                             </button>
                                           </Tooltip>
+                                          )}
                                         </>
                                       )}
                                       <RecordHistoryButton open={purchaseHistoryId === p.id} onToggle={() => togglePurchaseHistory(p.id)} />
@@ -1635,6 +1664,7 @@ ${pdfUrl}`.trim();
                                 </div>
                                 {p.voided && <div className="text-center mt-1"><span className="badge badge-gray">Dibatalkan</span></div>}
                                 {!p.voided && p.paymentStatus === 'belum_lunas' && <div className="text-center mt-1"><span className="badge badge-amber">Belum Lunas</span></div>}
+                                {p.grId && <div className="text-center mt-1"><span className="badge badge-blue">dari {p.poNumber ?? 'PO'} · {p.grNumber ?? 'GR'}</span></div>}
                                 <p className="text-xs text-center mt-1" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
                                 <p className="text-xs text-center mt-1.5" style={{ color: 'var(--text-secondary)' }}>
                                   {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
@@ -1662,23 +1692,29 @@ ${pdfUrl}`.trim();
                                         <MessageCircle size={12} />
                                       </button>
                                     </Tooltip>
+                                    {!p.grId && (
                                     <Tooltip label="Edit">
                                       <button onClick={() => openEditPurchase(p)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Edit">
                                         <Pencil size={12} />
                                       </button>
                                     </Tooltip>
+                                    )}
+                                    {!p.grId && (
                                     <Tooltip label="Hapus">
                                       <button onClick={() => deletePurchase(p)} disabled={deletingPurchaseId === p.id}
                                         className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
                                         {deletingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                       </button>
                                     </Tooltip>
+                                    )}
+                                    {!p.grId && (
                                     <Tooltip label="Batalkan pembelian">
                                       <button onClick={() => voidPurchase(p)} disabled={voidingPurchaseId === p.id}
                                         className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }} title="Batalkan (kalau tidak bisa dihapus)">
                                         {voidingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                                       </button>
                                     </Tooltip>
+                                    )}
                                   </>
                                 )}
                                 <RecordHistoryButton open={purchaseHistoryId === p.id} onToggle={() => togglePurchaseHistory(p.id)} />

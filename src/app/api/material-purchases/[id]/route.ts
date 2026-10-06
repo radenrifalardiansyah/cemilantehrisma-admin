@@ -55,6 +55,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
       if (!row) throw new Error('Pembelian tidak ditemukan.');
       const purchase = rowToPurchase(row);
+      if (row.gr_id) throw new Error('Pembelian ini berasal dari Penerimaan Barang (GR) — ubah/batalkan lewat GR-nya supaya status PO ikut benar.');
       if (purchase.voided) throw new Error('Pembelian ini sudah dibatalkan dan tidak bisa diedit.');
       let expenseChangedLocal = false;
       const oldItems = purchase.items;
@@ -212,6 +213,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
       if (!row) throw new Error('Pembelian tidak ditemukan.');
       const purchase = rowToPurchase(row);
+      if (row.gr_id) throw new Error('Pembelian ini berasal dari Penerimaan Barang (GR) — ubah/batalkan lewat GR-nya supaya status PO ikut benar.');
       let deleted = false;
       // Pembelian yang sudah di-void stoknya SUDAH dikembalikan oleh route void (atau sengaja
       // dibiarkan kalau reversal-nya dilewati) — jangan dikembalikan lagi di sini, cukup hapus

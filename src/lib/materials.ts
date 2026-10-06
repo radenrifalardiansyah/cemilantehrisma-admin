@@ -8,7 +8,8 @@ import { getSql, parseJsonb } from '@/lib/db';
 export async function referencedMaterialIds(): Promise<Set<string>> {
   const sql = getSql();
   const [purchaseRows, batchRows, adjustmentRows] = await Promise.all([
-    sql<{ items: unknown }[]>`select items from material_purchases`,
+    // PO ikut dihitung: bahan yang masih ada di PO terbuka tidak boleh dihapus (GR-nya butuh bahan itu).
+    sql<{ items: unknown }[]>`select items from material_purchases union all select items from purchase_orders where status not in ('batal')`,
     sql<{ materials_used: unknown }[]>`select materials_used from production_batches`,
     sql<{ material_id: string }[]>`select distinct material_id from material_adjustments`,
   ]);

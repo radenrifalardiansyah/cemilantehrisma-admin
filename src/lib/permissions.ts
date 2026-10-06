@@ -29,7 +29,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'finance-report',   label: 'Laporan Keuangan',   actions: ['view'] },
   { key: 'product-report',   label: 'Laporan Produk',     actions: ['view'] },
   { key: 'stock',            label: 'Gudang',             actions: ['view', 'edit'] },
-  { key: 'materials',        label: 'Bahan Baku',         actions: CRUD },
+  // `approve` = menyetujui/membatalkan Penerimaan Barang (GR) yang memasukkan pembelian ke stok.
+  { key: 'materials',        label: 'Bahan Baku',         actions: [...CRUD, 'approve'] },
   { key: 'suppliers',        label: 'Supplier',           actions: CRUD },
   { key: 'production',       label: 'Produksi',           actions: CRUD },
   { key: 'stock-report',     label: 'Laporan Stok',       actions: ['view'] },

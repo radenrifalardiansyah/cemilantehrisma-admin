@@ -1,4 +1,4 @@
-export type Action = 'view' | 'create' | 'edit' | 'delete';
+export type Action = 'view' | 'create' | 'edit' | 'delete' | 'approve';
 
 export interface Role {
   id: string;
