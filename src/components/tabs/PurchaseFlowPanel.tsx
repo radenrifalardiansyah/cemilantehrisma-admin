@@ -518,7 +518,10 @@ ${pdfUrl}`.trim();
 
   const isEmpty = view === 'po' ? pos.length === 0 : grs.length === 0;
 
+  // Modal dirender di LUAR pembungkus animate-fade-up: elemen ber-`transform` menjadi acuan posisi
+  // `fixed`, sehingga overlay modal di dalamnya terkurung di kotak panel (bukan menutupi layar).
   return (
+    <>
     <div className="p-4 lg:p-6 animate-fade-up space-y-4">
       {isEmpty ? (
         view === 'po'
@@ -704,6 +707,8 @@ ${pdfUrl}`.trim();
       )}
       </>
       )}
+
+    </div>
 
       {/* ════ MODAL: FORM PO ════ */}
       {showPoForm && (
@@ -948,6 +953,6 @@ ${pdfUrl}`.trim();
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
