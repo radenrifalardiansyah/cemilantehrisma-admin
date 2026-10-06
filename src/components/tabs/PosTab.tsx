@@ -74,7 +74,7 @@ interface ReceiptData {
   paymentMethod: PaymentMethod;
   amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
-  customerName: string; customerPhone: string; cashier: string; pdfUrl?: string; dueDate?: string;
+  customerName: string; customerPhone: string; cashier: string; pdfUrl?: string; dueDate?: string; downPayment?: number;
 }
 
 // Info toko diambil dari /api/settings — dipakai untuk melengkapi struk cetak & pesan WA
@@ -135,10 +135,13 @@ function formatWAMessage(receipt: ReceiptData, store: { name: string; address: s
     ? `Diskon (${receipt.discount.label}) : -${formatCurrency(receipt.discount.amount)}\n`
     : '';
   const dueLine = receipt.paymentMethod === 'kredit' && receipt.dueDate ? `\nJatuh tempo : *${formatDueDate(receipt.dueDate)}*` : '';
+  const dpLines = receipt.paymentMethod === 'kredit' && receipt.downPayment
+    ? `\nDP dibayar  : ${formatCurrency(receipt.downPayment)}\n*Sisa tagihan : ${formatCurrency(receipt.total - receipt.downPayment)}*`
+    : '';
   const paymentLines = receipt.paymentMethod === 'cash'
     ? `Tunai   : ${formatCurrency(receipt.amountPaid ?? 0)}\nKembali : ${formatCurrency(receipt.changeAmount ?? 0)}`
     : receipt.paymentMethod === 'kredit'
-    ? `Status  : *BELUM LUNAS (KREDIT)*${dueLine}`
+    ? `Status  : *BELUM LUNAS (KREDIT)*${dpLines}${dueLine}`
     : `Transfer ${receipt.transferBank ?? ''} : ${formatCurrency(receipt.transferAmount ?? 0)}`;
   const bankLines = receipt.paymentMethod === 'kredit' && store.bank
     ? `\nSilakan transfer ke:\n*${store.bank.name}*\nNo. Rek : *${store.bank.accountNumber}*\n${store.bank.accountHolder ? `a.n.    : ${store.bank.accountHolder}\n` : ''}${SEP}\n`
@@ -319,6 +322,9 @@ export default function PosTab({
   const [invoiceNo,    setInvoiceNo]    = useState('');
   // Jatuh tempo transaksi kredit (yyyy-mm-dd, opsional) — default 14 hari dari hari ini.
   const [dueDate,      setDueDate]      = useState(() => addDaysWib(14));
+  // DP (bayar di muka) opsional untuk transaksi kredit — jadi pembayaran pertama, sisanya piutang.
+  const [dpRaw,        setDpRaw]        = useState('');
+  const [dpWalletId,   setDpWalletId]   = useState('');
   const [lastReceipt,  setLastReceipt]  = useState<ReceiptData | null>(null);
   const [receiptPrintedAt, setReceiptPrintedAt] = useState('');
   const [waPhoneDraft, setWaPhoneDraft] = useState('');
@@ -420,6 +426,7 @@ export default function PosTab({
   const amountPaidNum      = parseFloat(amountPaidRaw) || 0;
   const changeAmount       = amountPaidNum - cartTotal;
   const transferAmountNum  = parseFloat(transferAmountRaw) || 0;
+  const dpNum              = paymentMethod === 'kredit' ? Math.floor(parseFloat(dpRaw) || 0) : 0;
   const transferDiff       = transferAmountNum - cartTotal;
   const selectedReseller = selectedCustRef.startsWith('reseller:')
     ? resellerList.find(r => r.id === selectedCustRef.slice('reseller:'.length))
@@ -430,6 +437,7 @@ export default function PosTab({
   const canProcess = hasCart
     && (paymentMethod !== 'cash'     || amountPaidNum >= cartTotal)
     && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= cartTotal))
+    && (paymentMethod !== 'kredit'   || !dpRaw || (dpNum > 0 && dpNum < cartTotal && !!dpWalletId))
     && (paymentMethod === 'kredit'   || !!walletId);
 
   const filteredProducts = (activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat))
@@ -501,7 +509,7 @@ export default function PosTab({
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
     setSelectedCustRef(''); setTxDateTime(() => nowLocalInput());
-    setProcessing(false); setProcessErr(''); setInvoiceNo(''); setLastReceipt(null); setWaPhoneDraft(''); setDueDate(addDaysWib(14));
+    setProcessing(false); setProcessErr(''); setInvoiceNo(''); setLastReceipt(null); setWaPhoneDraft(''); setDueDate(addDaysWib(14)); setDpRaw(''); setDpWalletId('');
   };
 
   // ── Foto bukti transfer: kompres, upload, & coba baca nominal otomatis ──
@@ -763,7 +771,7 @@ export default function PosTab({
           paymentMethod,
           ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
           ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
-          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas', ...(dueDate ? { dueDate } : {}) } : { walletId }),
+          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas', ...(dueDate ? { dueDate } : {}), ...(dpNum > 0 ? { downPayment: { amount: dpNum, walletId: dpWalletId } } : {}) } : { walletId }),
           ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
           ...(currentShift ? { shiftId: currentShift.id } : {}),
@@ -784,6 +792,7 @@ export default function PosTab({
         ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
         customerName: finalCustName, customerPhone: custPhone, cashier: username, pdfUrl,
         ...(paymentMethod === 'kredit' && dueDate ? { dueDate } : {}),
+        ...(paymentMethod === 'kredit' && dpNum > 0 ? { downPayment: dpNum } : {}),
       });
       if (paymentMethod !== 'kredit' && walletId) setLastWallet(paymentMethod, walletId);
       if (cartHasOpenPO && sellAsPO) toast.success('Pesanan PO tersimpan sebagai "Baru" — tandai Selesai di menu Pesanan begitu barangnya siap, baru stoknya dipotong.');
@@ -1189,6 +1198,25 @@ export default function PosTab({
                       ))}
                       <input type="date" value={dueDate} min={addDaysWib(0)} onChange={e => setDueDate(e.target.value)} className="input text-sm" style={{ width: 'auto' }} />
                     </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="field-label">DP / Bayar di Muka (opsional)</label>
+                    <NumberInput value={dpRaw} onChange={setDpRaw} className="input" placeholder="0 = tanpa DP" />
+                    {dpNum > 0 && (
+                      <>
+                        <div className="mt-2">
+                          <SearchSelect value={dpWalletId} onChange={setDpWalletId}
+                            options={walletOptions} placeholder="– Dompet Tujuan DP –" searchPlaceholder="Cari dompet…" />
+                        </div>
+                        {dpNum >= cartTotal ? (
+                          <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger)' }}>DP harus lebih kecil dari total. Untuk bayar penuh pilih Tunai/Transfer/QRIS.</p>
+                        ) : (
+                          <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                            DP {formatCurrency(dpNum)} masuk dompet sekarang · sisa tagihan <strong>{formatCurrency(cartTotal - dpNum)}</strong>
+                          </p>
+                        )}
+                      </>
+                    )}
                   </div>
                 </>
               )}
@@ -1659,7 +1687,15 @@ export default function PosTab({
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Kembali</span><span>{formatCurrency(lastReceipt.changeAmount ?? 0)}</span></div>
           </>
         ) : lastReceipt.paymentMethod === 'kredit' ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Status</span><span>BELUM LUNAS (KREDIT)</span></div>
+          <>
+            {lastReceipt.downPayment ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>DP dibayar</span><span>{formatCurrency(lastReceipt.downPayment)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>SISA TAGIHAN</span><span>{formatCurrency(lastReceipt.total - lastReceipt.downPayment)}</span></div>
+              </>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>Status</span><span>BELUM LUNAS (KREDIT)</span></div>
+          </>
         ) : (
           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Transfer {lastReceipt.transferBank}</span><span>{formatCurrency(lastReceipt.transferAmount ?? 0)}</span></div>
         )}

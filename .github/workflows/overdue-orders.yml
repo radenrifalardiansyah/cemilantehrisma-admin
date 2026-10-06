@@ -1,0 +1,36 @@
+name: Pengingat piutang jatuh tempo
+
+# Memanggil endpoint harian yang mengirim SATU ringkasan notifikasi (lonceng + push HP) ke admin
+# bila ada pesanan kredit yang jatuh tempo hari ini atau terlambat — lihat
+# src/app/api/cron/overdue-orders/route.ts.
+#
+# Perlu 2 secret di GitHub (Settings → Secrets and variables → Actions):
+#   ADMIN_BASE_URL — alamat aplikasi admin tanpa garis miring akhir, mis. https://admin-anda.vercel.app
+#   CRON_SECRET    — isinya HARUS sama dengan environment variable CRON_SECRET di hosting admin
+# JADWAL OTOMATIS SENGAJA DIMATIKAN dulu — hanya bisa dijalankan manual (tab Actions → Run workflow).
+# Untuk mengaktifkan: hapus tanda # pada 2 baris `schedule` di bawah (08.00 WIB tiap hari).
+on:
+  # schedule:
+  #   - cron: '0 1 * * *' # 01.00 UTC = 08.00 WIB
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Panggil endpoint pengingat piutang
+        env:
+          ADMIN_BASE_URL: ${{ secrets.ADMIN_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$ADMIN_BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Secret ADMIN_BASE_URL dan CRON_SECRET belum diisi di GitHub."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --max-time 60 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${ADMIN_BASE_URL%/}/api/cron/overdue-orders"
+          echo

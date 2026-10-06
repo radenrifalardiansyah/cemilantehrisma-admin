@@ -13,6 +13,7 @@ import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
+import { paymentProblem } from '@/lib/installment';
 import { computeVoucherDiscount, normalizeVoucherCode, voucherDiscountLabel } from '@/lib/voucher';
 import { voucherProblem, voucherRule, type VoucherRow } from '@/lib/vouchers-pg';
 import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
@@ -60,7 +61,9 @@ interface OrderCreateBody {
   paymentMethod?: string; paymentStatus?: string; amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   warehouseId?: string; warehouseName?: string; walletId?: string | null; shiftId?: string;
-  invoiceNo?: string; dueDate?: string; voucherCode?: string; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
+  invoiceNo?: string; dueDate?: string; voucherCode?: string;
+  // DP kredit dari Kasir — dicatat sebagai pembayaran pertama (cicilan) di transaksi yang sama.
+  downPayment?: { amount: number; walletId: string }; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -171,6 +174,21 @@ export async function POST(req: NextRequest) {
           ${data.walletId ?? null}, ${data.shiftId ?? null}, ${createdAt}${dueDate ? pgTx`, ${dueDate}` : pgTx``}${voucherCode ? pgTx`, ${voucherCode}` : pgTx``}
         )
       `;
+      // DP (bayar di muka) pada transaksi kredit: baris pembayaran pertama, atomik dengan pesanannya.
+      if (data.downPayment) {
+        const dp = data.downPayment;
+        const isCredit = (data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')) === 'belum_lunas';
+        if (!isCredit) throw new Error('DP hanya untuk transaksi kredit.');
+        const problem = paymentProblem(finalTotal, 0, dp.amount);
+        if (problem) throw new Error(problem);
+        if (Number(dp.amount) >= finalTotal) throw new Error('DP harus lebih kecil dari total — untuk bayar penuh pilih metode Tunai/Transfer/QRIS.');
+        const [wallet] = await pgTx<{ id: string; is_active: boolean | null }[]>`select id, is_active from wallets where id = ${dp.walletId ?? ''}`;
+        if (!wallet || wallet.is_active === false) throw new Error('Dompet DP tidak valid.');
+        await pgTx`
+          insert into order_payments (id, order_id, wallet_id, amount, paid_at, note, created_by)
+          values (${randomUUID()}, ${id}, ${dp.walletId}, ${Number(dp.amount)}, now(), 'DP (Kasir)', ${guard.username})
+        `;
+      }
       return id;
     }));
   } catch (err) {

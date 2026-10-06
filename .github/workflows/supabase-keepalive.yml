@@ -14,7 +14,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # firebase-admin 14 butuh Node >= 22. Di Node 20 npm diam-diam melewatkan dependensi opsionalnya
+          # (@google-cloud/firestore) sehingga skrip gagal "Cannot find module" — penyebab workflow ini
+          # gagal berturut-turut sejak 21 Sep 2026.
+          node-version: 22
 
       - name: Install dependencies (postgres + firebase-admin only)
         run: npm install postgres firebase-admin --no-save
