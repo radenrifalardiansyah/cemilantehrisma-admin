@@ -25,6 +25,7 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
 import PurchaseFlowPanel from '@/components/tabs/PurchaseFlowPanel';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1280,11 +1281,7 @@ ${pdfUrl}`.trim();
             {materialsLoading && materials.length === 0 ? (
               <PageLoader compact />
             ) : materials.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <Boxes size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada bahan baku</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan bahan baku untuk mulai catat pembelian & produksi</p>
-              </div>
+              <EmptyAddCard label="Tambah Bahan Baku" onClick={openCreateM} />
             ) : (
               <>
                 {paginatedMaterials.length > 0 && (
@@ -1542,7 +1539,7 @@ ${pdfUrl}`.trim();
               {purchasesLoading && purchases.length === 0 ? (
                 <PageLoader compact />
               ) : purchases.length === 0 ? (
-                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat pembelian.</p>
+                <EmptyAddCard label="Catat Pembelian" onClick={openCreatePurchase} />
               ) : (
                 <>
                   {paginatedPurchases.length > 0 && (

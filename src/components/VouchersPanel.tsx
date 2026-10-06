@@ -7,6 +7,7 @@ import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 interface Voucher {
   code: string; description: string; type: 'percent' | 'nominal'; value: number;
@@ -99,7 +100,7 @@ export default function VouchersPanel({ creds }: { creds: string }) {
       </div>
 
       {vouchers.length === 0 ? (
-        <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada voucher.</p>
+        <EmptyAddCard label="Tambah Voucher" onClick={() => setForm(emptyForm())} />
       ) : (
         <div className="divide-y divide-[var(--border-2)] rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
           {vouchers.map(v => {

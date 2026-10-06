@@ -30,6 +30,7 @@ import QRCodeModal from '@/components/QRCodeModal';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
 
@@ -921,13 +922,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
       </div>
 
       {products.length === 0 ? (
-            <div className="card p-12 text-center">
-              <div className="text-5xl mb-4">📦</div>
-              <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada produk</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Klik "Migrasi Data" untuk import produk default, atau "Tambah Produk" untuk mulai dari awal.
-              </p>
-            </div>
+            <EmptyAddCard label="Tambah Produk" onClick={openNew} />
           ) : (
             <>
               {/* Select-all bar */}

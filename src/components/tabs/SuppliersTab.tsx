@@ -19,6 +19,7 @@ import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -537,13 +538,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
       </div>
 
       {suppliers.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🚚</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada supplier</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Tambah Supplier&quot; untuk menambahkan data supplier pertama, atau unduh template lalu upload Excel untuk impor massal.
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Supplier" onClick={openNew} />
       ) : (
         <>
           {/* Select-all bar */}

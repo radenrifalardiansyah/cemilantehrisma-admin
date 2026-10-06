@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   IdCard, Plus, Pencil, Trash2, X, Check, Loader2, Lock, Search,
   ChevronLeft, ChevronRight,
@@ -377,11 +378,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
       </div>
 
       {roles.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🪪</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada role</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik &quot;Tambah Role&quot; untuk membuat role baru.</p>
-        </div>
+        <EmptyAddCard label="Tambah Role" onClick={can('create') ? openNew : undefined} />
       ) : (
         <>
           {/* Select-all bar */}

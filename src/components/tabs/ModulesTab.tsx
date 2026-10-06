@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Blocks, Plus, Pencil, Trash2, X, Check, Loader2, ChevronUp, ChevronDown, EyeOff,
   Search, ChevronLeft, ChevronRight,
@@ -398,11 +399,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
       </p>
 
       {modules.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🧩</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada modul</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Klik &quot;Tambah Modul&quot; untuk membuat grup menu baru.</p>
-        </div>
+        <EmptyAddCard label="Tambah Modul" onClick={can('create') ? openNew : undefined} />
       ) : (
         <>
           {/* Select-all bar */}

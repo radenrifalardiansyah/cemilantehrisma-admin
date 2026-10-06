@@ -1,9 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, FileText } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, FileText, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
-import { PdfIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import { useViewMode } from '@/lib/useViewMode';
+import { exportSheet, downloadPoTemplate, parsePoExcel } from '@/components/tabs/purchase-flow-io';
 import PurchaseDocPDF from '@/lib/pdf/PurchaseDocPDF';
 import { poToDocData, grToDocData } from '@/lib/pdf/purchase-doc-data';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
@@ -12,6 +17,7 @@ import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
@@ -22,7 +28,6 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 // supplier/dompet/header toko dioper dari MaterialsTab supaya tidak ada fetch ganda.
 
 const HEADER_BTN_H = 34;
-const PAGE_STEP = 20;
 
 export interface FlowMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
 export interface FlowSupplier { id: string; name: string; phone?: string }
@@ -94,9 +99,8 @@ export default function PurchaseFlowPanel({
 
   const [pos, setPos] = useState<Po[]>([]);
   const [grs, setGrs] = useState<Gr[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState({ po: false, gr: false });
   const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(PAGE_STEP);
   const [historyId, setHistoryId] = useState<string | null>(null);
 
   const loadPos = useCallback(async () => {
@@ -111,9 +115,8 @@ export default function PurchaseFlowPanel({
   // Hanya daftar yang sedang tampil yang dimuat; daftar lain dimuat saat berpindah sub-tab.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    (view === 'po' ? loadPos() : loadGrs()).finally(() => { if (!cancelled) setLoading(false); });
-    setSearch(''); setLimit(PAGE_STEP); setHistoryId(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- memuat data saat sub-tab dibuka (pola sama dengan tab lain)
+    (view === 'po' ? loadPos() : loadGrs()).finally(() => { if (!cancelled) setLoaded(l => ({ ...l, [view]: true })); });
     return () => { cancelled = true; };
   }, [view, loadPos, loadGrs]);
 
@@ -332,188 +335,374 @@ ${pdfUrl}`.trim();
     } finally { setCancelling(false); }
   };
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
+  // ── Daftar: cari, halaman, tampilan Tabel/Kartu ────────────────────────────
   const q = search.trim().toLowerCase();
   const filteredPos = pos.filter(p => !q || p.poNumber.toLowerCase().includes(q) || p.supplierName.toLowerCase().includes(q));
   const filteredGrs = grs.filter(g => !q || g.grNumber.toLowerCase().includes(q) || g.doNumber.toLowerCase().includes(q)
     || (g.poNumber ?? '').toLowerCase().includes(q) || (g.supplierName ?? '').toLowerCase().includes(q) || g.supplierDoNumber.toLowerCase().includes(q));
+  const [poView, setPoView] = useViewMode('purchase-orders');
+  const [grView, setGrView] = useViewMode('goods-receipts');
+  const mode = view === 'po' ? poView : grView;
+  const setMode = view === 'po' ? setPoView : setGrView;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const total = view === 'po' ? filteredPos.length : filteredGrs.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const sliceFrom = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0);
+  const sliceTo = Number.isFinite(pageSize) ? safePage * pageSize : undefined;
+  const pagedPos = filteredPos.slice(sliceFrom, sliceTo);
+  const pagedGrs = filteredGrs.slice(sliceFrom, sliceTo);
+
+  // ── Excel / PDF ────────────────────────────────────────────────────────────
+  const [exportingXlsx, setExportingXlsx] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
+  const itemsText = (items: { materialName: string; qty: number; unit: string }[]) => items.map(it => `${it.materialName} (${formatQty(it.qty)} ${it.unit})`).join(', ');
+  const rowsForExport = (): (string | number)[][] => view === 'po'
+    ? filteredPos.map((p, i) => [i + 1, p.poNumber, formatDateDisplay(p.date), p.supplierName, itemsText(p.items), p.total, PO_BADGE[p.status].label, p.expectedDate ? formatDateDisplay(p.expectedDate) : '-', p.note || '-'])
+    : filteredGrs.map((g, i) => [i + 1, g.grNumber, g.doNumber, g.supplierDoNumber || '-', g.poNumber ?? '-', g.supplierName ?? '-', formatDateDisplay(g.receivedDate), itemsText(g.items), g.total, GR_BADGE[g.status].label]);
+
+  const exportExcel = async () => {
+    if (total === 0) { toast.error('Tidak ada data untuk diexport.'); return; }
+    setExportingXlsx(true);
+    try {
+      const day = new Date().toLocaleDateString('en-CA');
+      await exportSheet(view === 'po'
+        ? { sheet: 'Purchase Order', title: 'PURCHASE ORDER BAHAN BAKU — CEMILAN TEH RISMA', filename: `purchase-order-cemilantehrisma-${day}.xlsx`,
+            columns: [{ header: 'No', width: 6 }, { header: 'No. PO', width: 18 }, { header: 'Tanggal', width: 14 }, { header: 'Supplier', width: 24 }, { header: 'Bahan Baku', width: 44 }, { header: 'Total', width: 16 }, { header: 'Status', width: 18 }, { header: 'Estimasi Tiba', width: 14 }, { header: 'Catatan', width: 28 }],
+            rows: rowsForExport() }
+        : { sheet: 'Penerimaan Barang', title: 'PENERIMAAN BARANG (GR) BAHAN BAKU — CEMILAN TEH RISMA', filename: `penerimaan-barang-cemilantehrisma-${day}.xlsx`,
+            columns: [{ header: 'No', width: 6 }, { header: 'No. GR', width: 18 }, { header: 'No. DO', width: 18 }, { header: 'No. DO Supplier', width: 18 }, { header: 'No. PO', width: 18 }, { header: 'Supplier', width: 24 }, { header: 'Tgl Terima', width: 14 }, { header: 'Bahan Baku', width: 44 }, { header: 'Total', width: 16 }, { header: 'Status', width: 22 }],
+            rows: rowsForExport() });
+      toast.success(`Berhasil export ${total} data ke Excel.`);
+    } catch { toast.error('Gagal membuat file Excel.'); }
+    finally { setExportingXlsx(false); }
+  };
+
+  const exportPdf = async () => {
+    if (total === 0) { toast.error('Tidak ada data untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const generatedAt = new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const rows = rowsForExport().map(r => r.map((c, i) => (typeof c === 'number' && ((view === 'po' && i === 5) || (view === 'gr' && i === 8)) ? formatRp(c) : c)));
+      const data = view === 'po'
+        ? { title: 'PURCHASE ORDER BAHAN BAKU', label: 'sesuai filter', generatedAt, rows,
+            columns: [{ header: 'No', width: '4%', align: 'center' as const }, { header: 'No. PO', width: '12%' }, { header: 'Tanggal', width: '9%' }, { header: 'Supplier', width: '13%' }, { header: 'Bahan Baku', width: '25%' }, { header: 'Total', width: '10%', align: 'right' as const, bold: true }, { header: 'Status', width: '10%', align: 'center' as const }, { header: 'Est. Tiba', width: '9%' }, { header: 'Catatan', width: '8%' }] }
+        : { title: 'PENERIMAAN BARANG (GR) BAHAN BAKU', label: 'sesuai filter', generatedAt, rows,
+            columns: [{ header: 'No', width: '4%', align: 'center' as const }, { header: 'No. GR', width: '11%' }, { header: 'No. DO', width: '11%' }, { header: 'DO Supplier', width: '9%' }, { header: 'No. PO', width: '11%' }, { header: 'Supplier', width: '10%' }, { header: 'Tgl Terima', width: '8%' }, { header: 'Bahan Baku', width: '15%' }, { header: 'Total', width: '10%', align: 'right' as const, bold: true }, { header: 'Status', width: '11%', align: 'center' as const }] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blob = await pdf(<GenericTablePDF store={storeHeader} data={data} /> as any).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${view === 'po' ? 'purchase-order' : 'penerimaan-barang'}-cemilantehrisma-${new Date().toLocaleDateString('en-CA')}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Berhasil export ${total} data ke PDF.`);
+    } catch { toast.error('Gagal membuat file PDF.'); }
+    finally { setExportingPdf(false); }
+  };
+
+  const templateDownload = async () => {
+    try { await downloadPoTemplate(materials.map(m => m.name), suppliers[0]?.name, todayISO()); }
+    catch { toast.error('Gagal membuat template.'); }
+  };
+
+  const importPos = async (file: File) => {
+    setImporting(true);
+    try {
+      const parsed = await parsePoExcel(file, materials, todayISO());
+      if ('error' in parsed) { toast.error(parsed.error); return; }
+      if (parsed.pos.length === 0) { toast.error('Tidak ada data PO valid. Pastikan Supplier & Bahan Baku sesuai daftar, dan Qty terisi.'); return; }
+      const r = await fetch('/api/purchase-orders/bulk-import', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ purchaseOrders: parsed.pos }) });
+      const d = await r.json().catch(() => ({})) as { error?: string; created?: number; skippedInvalid?: number };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal mengimpor PO.'); return; }
+      const skipped = (d.skippedInvalid ?? 0) + parsed.skipped;
+      toast.success(`${d.created} PO draft berhasil diimpor.${skipped > 0 ? ` (${skipped} baris/PO tidak valid dilewati)` : ''}`);
+      await loadPos();
+    } catch { toast.error('Gagal membaca file Excel. Pastikan format sesuai template.'); }
+    finally { setImporting(false); }
+  };
 
   const iconBtn = 'w-7 h-7 rounded-lg flex items-center justify-center';
+  const toolBtn = { height: HEADER_BTN_H, width: HEADER_BTN_H };
   const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
   const supplierOptions = [{ value: '', label: '– Supplier lain / tidak tercatat –' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))];
-
   const Spin = () => <Loader2 size={12} className="animate-spin" />;
 
-  if (loading && (view === 'po' ? pos.length === 0 : grs.length === 0)) return <PageLoader />;
+  // Tombol aksi per baris — dipakai bersama oleh tampilan Tabel dan Kartu.
+  const poActions = (p: Po) => {
+    const canGr = p.status === 'draft' || p.status === 'terkirim' || p.status === 'diterima_sebagian';
+    return (
+      <>
+        {canGr && (
+          <button onClick={() => createGr(p)} disabled={busyId === `gr-${p.id}`} className="btn-ghost px-2.5 py-1 text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+            {busyId === `gr-${p.id}` ? <Spin /> : <PackageCheck size={12} />} Buat GR
+          </button>
+        )}
+        {p.status !== 'batal' && (
+          <Tooltip label="Download PDF PO">
+            <button onClick={() => poPdf(p)} disabled={busyId === `po-${p.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+              {busyId === `po-${p.id}` ? <Spin /> : <PdfIcon size={12} />}
+            </button>
+          </Tooltip>
+        )}
+        {p.status !== 'batal' && (
+          <Tooltip label="Kirim PO ke supplier via WhatsApp">
+            <button onClick={() => sendPoWhatsApp(p)} disabled={busyId === `wa-${p.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--success)' }}>
+              {busyId === `wa-${p.id}` ? <Spin /> : <MessageCircle size={12} />}
+            </button>
+          </Tooltip>
+        )}
+        {p.status === 'draft' && (
+          <Tooltip label="Edit PO">
+            <button onClick={() => openEditPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Pencil size={12} /></button>
+          </Tooltip>
+        )}
+        {p.status === 'draft' && (
+          <Tooltip label="Hapus PO">
+            <button onClick={() => deletePo(p)} disabled={busyId === `del-${p.id}`} className={iconBtn} style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+              {busyId === `del-${p.id}` ? <Spin /> : <Trash2 size={12} />}
+            </button>
+          </Tooltip>
+        )}
+        {p.status !== 'batal' && (
+          <Tooltip label="Batalkan PO">
+            <button onClick={() => askCancelPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
+          </Tooltip>
+        )}
+        <RecordHistoryButton open={historyId === p.id} onToggle={() => setHistoryId(c => c === p.id ? null : p.id)} />
+      </>
+    );
+  };
+  const grActions = (g: Gr) => (
+    <>
+      {g.status === 'draft' && (
+        <button onClick={() => openEditGr(g)} className="btn-ghost px-2.5 py-1 text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+          <Pencil size={12} /> {canApprove ? 'Periksa & Approve' : 'Edit'}
+        </button>
+      )}
+      <Tooltip label="Download PDF GR">
+        <button onClick={() => grPdf(g, 'gr')} disabled={busyId === `gr-${g.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+          {busyId === `gr-${g.id}` ? <Spin /> : <PdfIcon size={12} />}
+        </button>
+      </Tooltip>
+      <Tooltip label="Download PDF DO (surat penerimaan)">
+        <button onClick={() => grPdf(g, 'do')} disabled={busyId === `do-${g.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+          {busyId === `do-${g.id}` ? <Spin /> : <FileText size={12} />}
+        </button>
+      </Tooltip>
+      {g.status === 'draft' && (
+        <Tooltip label="Hapus GR draft">
+          <button onClick={() => deleteGr(g)} disabled={busyId === `del-${g.id}`} className={iconBtn} style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+            {busyId === `del-${g.id}` ? <Spin /> : <Trash2 size={12} />}
+          </button>
+        </Tooltip>
+      )}
+      {(g.status === 'draft' || (g.status === 'approved' && canApprove)) && (
+        <Tooltip label={g.status === 'approved' ? 'Batalkan GR yang sudah di-approve' : 'Batalkan GR'}>
+          <button onClick={() => askCancelGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
+        </Tooltip>
+      )}
+      <RecordHistoryButton open={historyId === g.id} onToggle={() => setHistoryId(c => c === g.id ? null : g.id)} />
+    </>
+  );
+  const poItemsText = (p: Po) => p.items.map(it => {
+    const got = p.received[it.materialId] ?? 0;
+    return `${it.materialName} (${got > 0 ? `${formatQty(got)}/` : ''}${formatQty(it.qty)} ${it.unit})`;
+  }).join(', ');
+  const grItemsText = (g: Gr) => g.items.map(it => `${it.materialName} (${formatQty(it.qty)}/${formatQty(it.orderedQty)} ${it.unit})`).join(', ');
+
+  if (!loaded[view]) return <PageLoader />;
+
+  const isEmpty = view === 'po' ? pos.length === 0 : grs.length === 0;
 
   return (
     <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+      {isEmpty ? (
+        view === 'po'
+          ? <EmptyAddCard label="Buat Purchase Order" onClick={openCreatePo} />
+          : <EmptyAddCard label="Buat GR dari Purchase Order" hint="GR dibuat dari tombol “Buat GR” di PO" onClick={() => onSwitchView('po')} />
+      ) : (
+      <>
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
           {view === 'po' ? <><ClipboardList size={11} /> Purchase Order ({pos.length})</> : <><PackageCheck size={11} /> Penerimaan Barang ({grs.length})</>}
         </p>
-        <div className="flex items-center gap-2 sm:flex-1">
+        <div className="flex flex-row items-center gap-2 sm:gap-3 sm:flex-1">
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input value={search} onChange={e => { setSearch(e.target.value); setLimit(PAGE_STEP); }} className="input text-sm w-full"
-              style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder={view === 'po' ? 'Cari no. PO / supplier…' : 'Cari no. GR / DO / PO / supplier…'} />
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="input text-sm w-full"
+              style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder={view === 'po' ? 'Cari no. PO atau supplier…' : 'Cari no. GR, DO, PO, atau supplier…'} />
           </div>
-          {view === 'po' && (
-            <button onClick={openCreatePo} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-              <Plus size={13} /> <span className="hidden sm:inline">Buat PO</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
+            {view === 'po' && (
+              <>
+                <Tooltip label="Unduh Template">
+                  <button onClick={templateDownload} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={toolBtn}><ExcelIcon size={14} /></button>
+                </Tooltip>
+                <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+                  <button onClick={() => importRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={toolBtn}>
+                    {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  </button>
+                </Tooltip>
+                <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importPos(f); e.target.value = ''; }} />
+              </>
+            )}
+            <Tooltip label="Export Excel">
+              <button onClick={exportExcel} disabled={exportingXlsx} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={toolBtn}>
+                {exportingXlsx ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+              </button>
+            </Tooltip>
+            <Tooltip label="Export PDF">
+              <button onClick={exportPdf} disabled={exportingPdf} aria-label="Export PDF" className="btn-ghost p-0 flex items-center justify-center" style={toolBtn}>
+                {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+              </button>
+            </Tooltip>
+            <ViewToggle mode={mode} onChange={setMode} height={HEADER_BTN_H} />
+            {view === 'po'
+              ? (
+                <button onClick={openCreatePo} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Buat PO</span>
+                </button>
+              ) : (
+                <button onClick={() => onSwitchView('po')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                  <Plus size={13} /> <span className="hidden sm:inline">Buat GR dari PO</span>
+                </button>
+              )}
+          </div>
         </div>
       </div>
 
-      {/* ════ DAFTAR PO ════ */}
-      {view === 'po' && (filteredPos.length === 0 ? (
-        <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>{pos.length === 0 ? 'Belum ada Purchase Order.' : 'Tidak ada PO yang cocok.'}</p>
-      ) : (
+      {total === 0 ? (
+        <div className="card py-10 text-center">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{view === 'po' ? 'Tidak ada PO yang cocok.' : 'Tidak ada GR yang cocok.'}</p>
+        </div>
+      ) : mode === 'table' ? (
         <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-          {filteredPos.slice(0, limit).map(p => {
-            const badge = PO_BADGE[p.status];
-            const canGr = p.status === 'draft' || p.status === 'terkirim' || p.status === 'diterima_sebagian';
-            return (
-              <div key={p.id}>
-                <div className="px-4 py-3" style={{ opacity: p.status === 'batal' ? 0.55 : 1 }}>
-                  <div className="flex items-start justify-between gap-2 flex-wrap">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{p.poNumber}</p>
-                        <span className={`badge ${badge.cls}`}>{badge.label}</span>
+          {view === 'po' ? pagedPos.map((p, idx) => (
+            <div key={p.id}>
+              <div className="px-4 py-3" style={{ opacity: p.status === 'batal' ? 0.55 : 1 }}>
+                <div className="flex items-start gap-3">
+                  <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>{sliceFrom + idx + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{p.poNumber}</p>
+                          <span className={`badge ${PO_BADGE[p.status].cls}`}>{PO_BADGE[p.status].label}</span>
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {p.supplierName} · {formatDateDisplay(p.date)}{p.expectedDate ? ` · tiba ${formatDateDisplay(p.expectedDate)}` : ''}
+                        </p>
                       </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {p.supplierName} · {formatDateDisplay(p.date)}{p.expectedDate ? ` · tiba ${formatDateDisplay(p.expectedDate)}` : ''}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        <span className="text-sm font-bold tabular mr-1" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
+                        {poActions(p)}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      <span className="text-sm font-bold tabular mr-1" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
-                      {canGr && (
-                        <button onClick={() => createGr(p)} disabled={busyId === `gr-${p.id}`} className="btn-ghost px-2.5 py-1 text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                          {busyId === `gr-${p.id}` ? <Spin /> : <PackageCheck size={12} />} Buat GR
-                        </button>
-                      )}
-                      {p.status !== 'batal' && (
-                        <Tooltip label="Download PDF PO">
-                          <button onClick={() => poPdf(p)} disabled={busyId === `po-${p.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                            {busyId === `po-${p.id}` ? <Spin /> : <PdfIcon size={12} />}
-                          </button>
-                        </Tooltip>
-                      )}
-                      {p.status !== 'batal' && (
-                        <Tooltip label="Kirim PO ke supplier via WhatsApp">
-                          <button onClick={() => sendPoWhatsApp(p)} disabled={busyId === `wa-${p.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--success)' }}>
-                            {busyId === `wa-${p.id}` ? <Spin /> : <MessageCircle size={12} />}
-                          </button>
-                        </Tooltip>
-                      )}
-                      {p.status === 'draft' && (
-                        <Tooltip label="Edit PO">
-                          <button onClick={() => openEditPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Pencil size={12} /></button>
-                        </Tooltip>
-                      )}
-                      {p.status === 'draft' && (
-                        <Tooltip label="Hapus PO">
-                          <button onClick={() => deletePo(p)} disabled={busyId === `del-${p.id}`} className={iconBtn} style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                            {busyId === `del-${p.id}` ? <Spin /> : <Trash2 size={12} />}
-                          </button>
-                        </Tooltip>
-                      )}
-                      {p.status !== 'batal' && (
-                        <Tooltip label="Batalkan PO">
-                          <button onClick={() => askCancelPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
-                        </Tooltip>
-                      )}
-                      <RecordHistoryButton open={historyId === p.id} onToggle={() => setHistoryId(c => c === p.id ? null : p.id)} />
-                    </div>
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{poItemsText(p)}</p>
+                    {p.status === 'batal' && p.cancelNote && <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.cancelNote}</p>}
                   </div>
-                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                    {p.items.map(it => {
-                      const got = p.received[it.materialId] ?? 0;
-                      return `${it.materialName} (${got > 0 ? `${formatQty(got)}/` : ''}${formatQty(it.qty)} ${it.unit})`;
-                    }).join(', ')}
-                  </p>
-                  {p.status === 'batal' && p.cancelNote && <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.cancelNote}</p>}
                 </div>
-                {historyId === p.id && <RecordHistoryPanel creds={creds} entity="purchase-orders" entityId={p.id} />}
               </div>
-            );
-          })}
+              {historyId === p.id && <RecordHistoryPanel creds={creds} entity="purchase-orders" entityId={p.id} />}
+            </div>
+          )) : pagedGrs.map((g, idx) => (
+            <div key={g.id}>
+              <div className="px-4 py-3" style={{ opacity: g.status === 'dibatalkan' ? 0.55 : 1 }}>
+                <div className="flex items-start gap-3">
+                  <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>{sliceFrom + idx + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber}</p>
+                          <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span>
+                          <span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span>
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {g.supplierName} · dari {g.poNumber} · {formatDateDisplay(g.receivedDate)}{g.supplierDoNumber ? ` · DO supplier ${g.supplierDoNumber}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        <span className="text-sm font-bold tabular mr-1" style={{ color: 'var(--success)' }}>{formatRp(g.total)}</span>
+                        {grActions(g)}
+                      </div>
+                    </div>
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{grItemsText(g)}</p>
+                    {g.status === 'dibatalkan' && g.cancelNote && <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {g.cancelNote}</p>}
+                  </div>
+                </div>
+              </div>
+              {historyId === g.id && <RecordHistoryPanel creds={creds} entity="goods-receipts" entityId={g.id} />}
+            </div>
+          ))}
         </div>
-      ))}
-
-      {/* ════ DAFTAR GR ════ */}
-      {view === 'gr' && (filteredGrs.length === 0 ? (
-        <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>
-          {grs.length === 0 ? 'Belum ada Penerimaan Barang. Buat dari tombol "Buat GR" di daftar Purchase Order.' : 'Tidak ada GR yang cocok.'}
-        </p>
       ) : (
-        <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-          {filteredGrs.slice(0, limit).map(g => {
-            const badge = GR_BADGE[g.status];
-            return (
-              <div key={g.id}>
-                <div className="px-4 py-3" style={{ opacity: g.status === 'dibatalkan' ? 0.55 : 1 }}>
-                  <div className="flex items-start justify-between gap-2 flex-wrap">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber}</p>
-                        <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span>
-                        <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {g.supplierName} · dari {g.poNumber} · {formatDateDisplay(g.receivedDate)}{g.supplierDoNumber ? ` · DO supplier ${g.supplierDoNumber}` : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      <span className="text-sm font-bold tabular mr-1" style={{ color: 'var(--success)' }}>{formatRp(g.total)}</span>
-                      {g.status === 'draft' && (
-                        <button onClick={() => openEditGr(g)} className="btn-ghost px-2.5 py-1 text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                          <Pencil size={12} /> {canApprove ? 'Periksa & Approve' : 'Edit'}
-                        </button>
-                      )}
-                      <Tooltip label="Download PDF GR">
-                        <button onClick={() => grPdf(g, 'gr')} disabled={busyId === `gr-${g.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                          {busyId === `gr-${g.id}` ? <Spin /> : <PdfIcon size={12} />}
-                        </button>
-                      </Tooltip>
-                      <Tooltip label="Download PDF DO (surat penerimaan)">
-                        <button onClick={() => grPdf(g, 'do')} disabled={busyId === `do-${g.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                          {busyId === `do-${g.id}` ? <Spin /> : <FileText size={12} />}
-                        </button>
-                      </Tooltip>
-                      {g.status === 'draft' && (
-                        <Tooltip label="Hapus GR draft">
-                          <button onClick={() => deleteGr(g)} disabled={busyId === `del-${g.id}`} className={iconBtn} style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                            {busyId === `del-${g.id}` ? <Spin /> : <Trash2 size={12} />}
-                          </button>
-                        </Tooltip>
-                      )}
-                      {(g.status === 'draft' || (g.status === 'approved' && canApprove)) && (
-                        <Tooltip label={g.status === 'approved' ? 'Batalkan GR yang sudah di-approve' : 'Batalkan GR'}>
-                          <button onClick={() => askCancelGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
-                        </Tooltip>
-                      )}
-                      <RecordHistoryButton open={historyId === g.id} onToggle={() => setHistoryId(c => c === g.id ? null : g.id)} />
-                    </div>
-                  </div>
-                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                    {g.items.map(it => `${it.materialName} (${formatQty(it.qty)}/${formatQty(it.orderedQty)} ${it.unit})`).join(', ')}
-                  </p>
-                  {g.status === 'dibatalkan' && g.cancelNote && <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {g.cancelNote}</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {view === 'po' ? pagedPos.map(p => (
+            <div key={p.id}>
+              <div className="card overflow-hidden" style={{ opacity: p.status === 'batal' ? 0.55 : 1 }}>
+                <div className="pt-5 pb-3 px-4 text-center">
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{p.poNumber}</p>
+                  <div className="mt-1"><span className={`badge ${PO_BADGE[p.status].cls}`}>{PO_BADGE[p.status].label}</span></div>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{p.supplierName}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(p.date)}{p.expectedDate ? ` · tiba ${formatDateDisplay(p.expectedDate)}` : ''}</p>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{poItemsText(p)}</p>
+                  <p className="text-base font-extrabold tabular mt-2" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</p>
                 </div>
-                {historyId === g.id && <RecordHistoryPanel creds={creds} entity="goods-receipts" entityId={g.id} />}
+                <div className="flex items-center justify-center gap-1 flex-wrap px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>{poActions(p)}</div>
+                {p.status === 'batal' && p.cancelNote && <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.cancelNote}</p>}
               </div>
-            );
-          })}
+              {historyId === p.id && <RecordHistoryPanel creds={creds} entity="purchase-orders" entityId={p.id} />}
+            </div>
+          )) : pagedGrs.map(g => (
+            <div key={g.id}>
+              <div className="card overflow-hidden" style={{ opacity: g.status === 'dibatalkan' ? 0.55 : 1 }}>
+                <div className="pt-5 pb-3 px-4 text-center">
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber} <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span></p>
+                  <div className="mt-1"><span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span></div>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{g.supplierName} · dari {g.poNumber}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(g.receivedDate)}{g.supplierDoNumber ? ` · DO supplier ${g.supplierDoNumber}` : ''}</p>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{grItemsText(g)}</p>
+                  <p className="text-base font-extrabold tabular mt-2" style={{ color: 'var(--success)' }}>{formatRp(g.total)}</p>
+                </div>
+                <div className="flex items-center justify-center gap-1 flex-wrap px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>{grActions(g)}</div>
+                {g.status === 'dibatalkan' && g.cancelNote && <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {g.cancelNote}</p>}
+              </div>
+              {historyId === g.id && <RecordHistoryPanel creds={creds} entity="goods-receipts" entityId={g.id} />}
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
-      {(view === 'po' ? filteredPos.length : filteredGrs.length) > limit && (
-        <div className="text-center">
-          <button onClick={() => setLimit(l => l + PAGE_STEP)} className="btn-ghost text-xs">Tampilkan lebih banyak</button>
+      {total > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{total} {view === 'po' ? 'PO' : 'GR'} · halaman {safePage} dari {totalPages}</p>
+            <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); setPage(1); }} />
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                .map((n, i, arr) => (
+                  <span key={n} className="flex items-center gap-1">
+                    {i > 0 && arr[i - 1] !== n - 1 && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>…</span>}
+                    <button onClick={() => setPage(n)} className="w-8 h-8 rounded-lg text-xs font-bold"
+                      style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>{n}</button>
+                  </span>
+                ))}
+              <button onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+            </div>
+          )}
         </div>
+      )}
+      </>
       )}
 
       {/* ════ MODAL: FORM PO ════ */}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power, ArrowRightLeft,
   Search, ChevronLeft, ChevronRight, RefreshCw,
@@ -693,13 +694,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       </div>
 
       {wallets.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">👛</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada dompet</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Tambah Dompet&quot; untuk membuat dompet pertama (mis. Kas Tunai, BCA, atau e-wallet).
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Dompet" onClick={openNew} />
       ) : (
         <>
           {paginated.length > 0 && (
@@ -943,9 +938,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
         )}
 
         {transfers.length === 0 ? (
-          <div className="card p-8 text-center">
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transfer antar dompet.</p>
-          </div>
+          <EmptyAddCard label="Tambah Transfer" onClick={wallets.filter(w => w.isActive).length >= 2 ? openNewTransfer : undefined} minHeight={140} />
         ) : (
           <>
             {transferPaginated.length > 0 && (

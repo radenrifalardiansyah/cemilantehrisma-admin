@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Banknote, Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronLeft, ChevronRight, TrendingDown, CalendarDays, Wallet,
@@ -496,13 +497,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       </div>
 
       {expenses.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">💸</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pengeluaran tercatat</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Catat Pengeluaran&quot; untuk mencatat biaya operasional pertama (sewa, gaji, listrik, dll).
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Pengeluaran" onClick={openNew} />
       ) : (
         <>
           {paginated.length > 0 && (

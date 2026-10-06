@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Coins, Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronLeft, ChevronRight, TrendingUp, CalendarDays, Wallet,
@@ -559,14 +560,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       </div>
 
       {income.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">💰</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pemasukan tercatat</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Penjualan kasir/online & rekap konsinyasi akan otomatis muncul di sini. Klik &quot;Catat Pemasukan&quot;
-            untuk menambah pemasukan di luar penjualan (komisi, refund, bunga bank, dll).
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Pemasukan" onClick={openNew} />
       ) : (
         <>
           {paginated.length > 0 && (() => {

@@ -23,6 +23,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import type { PosProduct } from '@/lib/pos-types';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -657,11 +658,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       {batchesLoading && batches.length === 0 ? (
         <PageLoader compact />
       ) : batches.length === 0 ? (
-        <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-          <Factory size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-          <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat produksi</p>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat produksi untuk mengurangi stok bahan baku & menambah stok produk</p>
-        </div>
+        <EmptyAddCard label="Catat Produksi" onClick={openCreate} />
       ) : (
         <>
           {paginatedBatches.length > 0 && (() => {

@@ -20,6 +20,7 @@ import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const HEADER_BTN_H = 34;
 
@@ -636,13 +637,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
       </div>
 
       {customers.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">👤</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada pelanggan</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Tambah Pelanggan&quot; untuk menambahkan data pelanggan pertama, atau unduh template lalu upload Excel untuk impor massal.
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Pelanggan" onClick={openNew} />
       ) : (
         <>
 

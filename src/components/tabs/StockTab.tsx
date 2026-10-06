@@ -22,6 +22,7 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import StockOpnamePanel from '@/components/StockOpnamePanel';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -960,16 +961,7 @@ export default function StockTab({
             </div>
 
             {warehouses.length === 0 ? (
-              <div className="rounded-2xl p-16 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'var(--accent-bg)' }}>
-                  <Warehouse size={28} style={{ color: 'var(--accent)' }} />
-                </div>
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada gudang</p>
-                <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>Tambahkan gudang untuk mulai mengelola stok per lokasi</p>
-                <button onClick={openCreate} className="btn-primary mx-auto px-5 py-2.5 text-sm">
-                  <Plus size={14} /> Tambah Gudang Pertama
-                </button>
-              </div>
+              <EmptyAddCard label="Tambah Gudang" onClick={openCreate} />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {warehouses.map(w => (
@@ -1303,11 +1295,7 @@ export default function StockTab({
             {txLoading && inTx.length === 0 ? (
               <PageLoader compact />
             ) : inTx.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <TrendingUp size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi stok masuk</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat penerimaan barang dari supplier atau penambahan stok</p>
-              </div>
+              <EmptyAddCard label="Catat Stok Masuk" onClick={() => openTxModal('in')} />
             ) : paginatedMasuk.length === 0 ? (
               <div className="card py-12 text-center">
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi yang cocok.</p>
@@ -1357,11 +1345,7 @@ export default function StockTab({
             {txLoading && outTx.length === 0 ? (
               <PageLoader compact />
             ) : outTx.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <TrendingDown size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi stok keluar</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat pengurangan stok — rusak, terpakai, retur, dll.</p>
-              </div>
+              <EmptyAddCard label="Catat Stok Keluar" onClick={() => openTxModal('out')} />
             ) : paginatedKeluar.length === 0 ? (
               <div className="card py-12 text-center">
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi yang cocok.</p>
@@ -1411,11 +1395,7 @@ export default function StockTab({
             {txLoading && transferTx.length === 0 ? (
               <PageLoader compact />
             ) : transferTx.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <ArrowLeftRight size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada transaksi transfer</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Pindahkan stok dari satu gudang ke gudang lain</p>
-              </div>
+              <EmptyAddCard label="Catat Transfer" onClick={openTransferModal} />
             ) : paginatedTransfer.length === 0 ? (
               <div className="card py-12 text-center">
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi yang cocok.</p>

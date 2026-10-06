@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Landmark, Plus, Pencil, Trash2, X, Check, Loader2, Search,
   ChevronLeft, ChevronRight, ArrowDownCircle, ArrowUpCircle, Scale,
@@ -437,13 +438,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
       </div>
 
       {entries.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🏦</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada catatan Modal/Prive</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Catat Modal/Prive&quot; kalau ada suntikan modal atau pengambilan uang pribadi dari usaha.
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Modal/Prive" onClick={openNew} />
       ) : (
         <>
           {paginated.length > 0 && (

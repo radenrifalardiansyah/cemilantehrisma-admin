@@ -21,6 +21,7 @@ import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API       = '';
 const HEADER_BTN_H = 34;
@@ -791,13 +792,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
       </div>
 
       {resellers.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">🤝</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada reseller</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Klik &quot;Tambah Reseller&quot; untuk menjadikan pelanggan sebagai reseller.
-          </p>
-        </div>
+        <EmptyAddCard label="Tambah Reseller" onClick={openNew} />
       ) : (
         <>
           {/* Select-all bar */}

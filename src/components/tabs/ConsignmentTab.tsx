@@ -43,6 +43,7 @@ import {
 import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -2475,11 +2476,7 @@ _${storeHeader.name}_`.trim();
             {locationsLoading && locations.length === 0 ? (
               <PageLoader compact />
             ) : locations.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <Store size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada lokasi konsinyasi</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan lapak/UMKM mitra untuk mulai kirim stok titip</p>
-              </div>
+              <EmptyAddCard label="Tambah Lokasi" onClick={openCreateL} />
             ) : (
               <>
                 {paginatedLocations.length > 0 && (
@@ -2737,11 +2734,7 @@ _${storeHeader.name}_`.trim();
             {shipmentsLoading && shipments.length === 0 ? (
               <PageLoader compact />
             ) : shipments.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <Send size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat pengiriman</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Kirim stok titip ke lokasi mitra untuk mulai konsinyasi</p>
-              </div>
+              <EmptyAddCard label="Kirim Stok Titip" onClick={openCreateSend} />
             ) : (
               <>
                 {paginatedShipments.length > 0 && (
@@ -2990,11 +2983,7 @@ _${storeHeader.name}_`.trim();
             {recapsLoading && recaps.length === 0 ? (
               <PageLoader compact />
             ) : recaps.length === 0 ? (
-              <div className="rounded-2xl p-14 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-                <ClipboardList size={26} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Belum ada riwayat rekap</p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catat qty terjual & retur harian dari lokasi mitra</p>
-              </div>
+              <EmptyAddCard label="Catat Rekap Harian" onClick={openCreateRecap} />
             ) : (
               <>
                 {paginatedRecaps.length > 0 && (
