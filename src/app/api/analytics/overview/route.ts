@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
+import { stockAdjustmentForPeriod } from '@/lib/stock-adjustment-pg';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 
 interface OrderDoc {
@@ -153,7 +154,9 @@ export async function GET(req: NextRequest) {
 
   const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e));
   const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + (e.amount ?? 0), 0);
-  const labaBersih = labaKotor - totalBebanOperasional;
+  // Selisih stok opname periode ini (rugi kalau fisik < sistem) — sama dengan FinanceReportTab.
+  const stockAdj = await stockAdjustmentForPeriod(getSql(), from, to);
+  const labaBersih = labaKotor - totalBebanOperasional + stockAdj.net;
 
   const expenseByCategoryMap = new Map<string, number>();
   expenses.forEach(e => {
@@ -214,7 +217,7 @@ export async function GET(req: NextRequest) {
   return Response.json({
     period: { from, to },
     channels: { online: onlineRevenue, pos: posRevenue, consignment: consignmentRevenue, incomeLain, total: totalPendapatan },
-    finance: { pendapatan: totalPendapatan, hpp, labaKotor, bebanOperasional: totalBebanOperasional, labaBersih },
+    finance: { pendapatan: totalPendapatan, hpp, labaKotor, bebanOperasional: totalBebanOperasional, selisihStok: stockAdj.net, labaBersih },
     cash: { allTimeTx: allTimeTxSaldo },
     expenseByCategory: [...expenseByCategoryMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     incomeByCategory: [...incomeByCategoryMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),

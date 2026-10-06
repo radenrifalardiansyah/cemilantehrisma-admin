@@ -19,6 +19,7 @@ export interface FinanceReportPDFData {
   expenseRows: FinanceReportExpenseRow[];
   totalBeban: number;
   totalBebanOperasional: number;
+  selisihStok?: number; // selisih stok opname (negatif = rugi), sudah termasuk di labaBersih
   labaBersih: number;
   totalModalMasuk: number;
   totalPrive: number;
@@ -162,6 +163,12 @@ export default function FinanceReportPDF({ data, store }: { data: FinanceReportP
             <Text style={s.summaryLabel}>Beban Operasional</Text>
             <Text style={[s.summaryValue, { color: C.red }]}>{rp(data.totalBebanOperasional)}</Text>
           </View>
+          {data.selisihStok ? (
+            <View style={s.summaryBox}>
+              <Text style={s.summaryLabel}>{data.selisihStok < 0 ? 'Rugi Stok (Opname)' : 'Untung Stok (Opname)'}</Text>
+              <Text style={[s.summaryValue, { color: data.selisihStok < 0 ? C.red : C.green }]}>{rp(data.selisihStok)}</Text>
+            </View>
+          ) : null}
           <View style={[s.summaryBox, { backgroundColor: C.accentBg, borderColor: C.accent }]}>
             <Text style={s.summaryLabel}>{data.labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih'}</Text>
             <Text style={[s.summaryValue, { color: data.labaBersih >= 0 ? C.accent : C.red }]}>{rp(data.labaBersih)}</Text>

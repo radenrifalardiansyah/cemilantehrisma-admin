@@ -170,12 +170,15 @@ export async function writeStockLedgerEntryPg(
     type: 'in' | 'out' | 'adjustment' | 'transfer' | 'reject';
     qty: number;
     note: string;
+    // Hanya untuk selisih stok opname: nilai per unit saat itu + penanda jenis (dibaca Laporan Keuangan).
+    unitCost?: number;
+    kind?: 'opname';
   },
 ): Promise<void> {
   const id = randomUUID();
   await pgTx`
-    insert into stock_ledger (id, product_id, product_name, warehouse_id, warehouse_name, type, qty, note, created_at)
-    values (${id}, ${opts.productId}, ${opts.productName ?? null}, ${opts.warehouseId ?? null}, ${opts.warehouseName ?? null}, ${opts.type}, ${Math.abs(opts.qty)}, ${opts.note}, now())
+    insert into stock_ledger (id, product_id, product_name, warehouse_id, warehouse_name, type, qty, note, unit_cost, kind, created_at)
+    values (${id}, ${opts.productId}, ${opts.productName ?? null}, ${opts.warehouseId ?? null}, ${opts.warehouseName ?? null}, ${opts.type}, ${Math.abs(opts.qty)}, ${opts.note}, ${opts.unitCost ?? null}, ${opts.kind ?? null}, now())
   `;
 }
 

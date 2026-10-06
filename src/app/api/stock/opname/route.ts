@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/rbac';
 import { withDeadlockRetry } from '@/lib/db-retry';
 import { readProductsForDeltasPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { revalidateProductStock } from '@/lib/revalidate';
+import { revalidateTag } from 'next/cache';
 import { logHistory } from '@/lib/history';
 import { notifyProductLowStock } from '@/lib/low-stock';
 
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
           productId: id, productName: product.name, warehouseId, warehouseName: data.warehouseName,
           type: delta > 0 ? 'in' : 'out', qty: delta,
           note: `Stok opname: sistem ${systemQty} → fisik ${countedQty}${note ? ` — ${note}` : ''}`,
+          unitCost: product.costPrice, kind: 'opname',
         });
         result.push({ productId: id, name: product.name, systemQty, countedQty, delta });
       }
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
       console.error('Failed to write history for stock opname', err);
     }
     revalidateProductStock();
+    revalidateTag('admin-analytics', { expire: 0 }); // selisih opname ikut Laba Rugi di dashboard
     await notifyProductLowStock(getDb(), new Map(diffs.map(d => [d.productId, d.delta])), guard, 'stok opname');
   }
   return Response.json({ ok: true, adjusted: diffs.length, items: diffs });

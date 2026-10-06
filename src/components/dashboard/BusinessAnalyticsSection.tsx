@@ -17,7 +17,7 @@ import PageLoader from '@/components/PageLoader';
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };
   channels: { online: number; pos: number; consignment: number; incomeLain: number; total: number };
-  finance: { pendapatan: number; hpp: number; labaKotor: number; bebanOperasional: number; labaBersih: number };
+  finance: { pendapatan: number; hpp: number; labaKotor: number; bebanOperasional: number; selisihStok?: number; labaBersih: number };
   cash: { allTimeTx: number };
   expenseByCategory: { category: string; amount: number }[];
   incomeByCategory: { category: string; amount: number }[];
@@ -266,6 +266,7 @@ export default function BusinessAnalyticsSection({
                 { icon: <Package size={14} />, label: 'HPP', val: data.finance.hpp, color: '#B45309' },
                 { icon: <PieIcon size={14} />, label: 'Laba Kotor', val: data.finance.labaKotor, color: 'var(--accent)' },
                 { icon: <ArrowDownCircle size={14} />, label: 'Beban Operasional', val: data.finance.bebanOperasional, color: 'var(--danger)' },
+                ...(data.finance.selisihStok ? [{ icon: <Package size={14} />, label: data.finance.selisihStok < 0 ? 'Rugi Stok (Opname)' : 'Untung Stok (Opname)', val: data.finance.selisihStok, color: data.finance.selisihStok < 0 ? 'var(--danger)' : 'var(--success)' }] : []),
                 { icon: <Wallet size={14} />, label: data.finance.labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih', val: data.finance.labaBersih, color: data.finance.labaBersih >= 0 ? 'var(--accent)' : 'var(--danger)' },
               ].map((c, i) => (
                 <div key={i} className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>

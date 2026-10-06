@@ -357,6 +357,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // transaksi SEBELUM tanggal `from`. Tanpa ini, periode selain "sejak awal" selalu mulai dari Saldo
   // Awal sehingga semua baris saldo meleset sebesar transaksi periode-periode sebelumnya.
   const [txBeforePeriod, setTxBeforePeriod] = useState(0);
+  // Selisih stok hasil opname periode ini, dinilai pada Harga Modal (net = lebih − kurang).
+  const [stockAdj, setStockAdj] = useState({ loss: 0, gain: 0, net: 0 });
   const saldoAwalPeriode = saldoAwal + txBeforePeriod;
 
   // Generasi request — cegah respons periode LAMA yang datang belakangan menimpa (atau, lebih
@@ -367,13 +369,14 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     setLoading(true);
     try {
       const qs = `from=${from}&to=${to}`;
-      const [oRes, rRes, iRes, eRes, cRes, bRes] = await Promise.all([
+      const [oRes, rRes, iRes, eRes, cRes, bRes, sRes] = await Promise.all([
         fetch(`${API}/api/orders?${qs}`, { headers }),
         fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
         fetch(`${API}/api/income?${qs}`, { headers }),
         fetch(`${API}/api/expenses?${qs}`, { headers }),
         fetch(`${API}/api/capital?${qs}`, { headers }),
         fetch(`${API}/api/wallets/balances?before=${from}`, { headers }),
+        fetch(`${API}/api/stock/opname/summary?${qs}`, { headers }),
       ]);
       const orders   = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
       const recaps   = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
@@ -381,6 +384,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const expenses = eRes.ok ? (await eRes.json() as { expenses: ExpenseRecord[] }).expenses : [];
       const capital  = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
       const txBefore = bRes.ok ? (await bRes.json() as { totalTx: number }).totalTx : 0;
+      const adj = sRes.ok ? (await sRes.json() as { loss: number; gain: number; net: number }) : { loss: 0, gain: 0, net: 0 };
       if (myLoadId !== loadIdRef.current) return;
       setOrders(orders);
       setRecaps(recaps);
@@ -388,6 +392,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       setExpenses(expenses);
       setCapital(capital);
       setTxBeforePeriod(txBefore);
+      setStockAdj(adj);
     } finally { if (myLoadId === loadIdRef.current) setLoading(false); }
   };
   useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -443,7 +448,9 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
 
   const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e));
   const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + e.amount, 0);
-  const labaBersih = labaKotor - totalBebanOperasional;
+  // Selisih stok opname (rugi kalau fisik < sistem) ikut mengurangi/menambah Laba Bersih — bukan kas.
+  const selisihStok = stockAdj.net;
+  const labaBersih = labaKotor - totalBebanOperasional + selisihStok;
   const marginBersihPct = pct(labaBersih, totalPendapatan);
   const gradeUsaha = gradeMarginBersih(marginBersihPct);
 
@@ -523,7 +530,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // jadi selalu identik dengan hasil penjumlahan Jurnal Kas periode yang sama — bukan angka baru.
   const totalBebanCogsSourced = totalBeban - totalBebanOperasional;
   const selisihWaktuPersediaan = hpp - totalBebanCogsSourced;
-  const perubahanSaldoKasPeriode = labaBersih + totalModalMasuk - totalPrive + selisihWaktuPersediaan;
+  // Selisih stok opname tidak menggerakkan kas (barangnya hilang/lebih, bukan uang) — dikembalikan di sini.
+  const perubahanSaldoKasPeriode = labaBersih - selisihStok + totalModalMasuk - totalPrive + selisihWaktuPersediaan;
 
   // ── Jurnal Kas ───────────────────────────────────────────────
   const journal: JournalEntry[] = [
@@ -641,6 +649,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}${expenses.some(e => e.category === c && isCogsSourcedExpense(e)) ? ' (masuk HPP)' : ''}`, v] as [string, number]),
         ['Total Beban (Kas)', totalBeban],
         ['Beban Operasional (di luar HPP)', totalBebanOperasional],
+        ...(selisihStok !== 0 ? [[selisihStok < 0 ? 'Kerugian Stok (Opname)' : 'Keuntungan Stok (Opname)', selisihStok] as [string, number]] : []),
         [labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih', labaBersih],
         ['Modal Masuk (di luar Laba Rugi)', totalModalMasuk], ['Prive (di luar Laba Rugi)', totalPrive],
       ];
@@ -708,7 +717,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           data={{
             periodLabel, from, to,
             incomeRows, totalPendapatan, hpp, labaKotor,
-            expenseRows, totalBeban, totalBebanOperasional, labaBersih,
+            expenseRows, totalBeban, totalBebanOperasional, selisihStok, labaBersih,
             totalModalMasuk, totalPrive,
             saldoAwal: saldoAwalPeriode, journal: journalRows,
           }}
@@ -962,6 +971,15 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             </div>
           </div>
 
+          {selisihStok !== 0 && (
+            <div className="card px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-xs" style={{ background: selisihStok < 0 ? 'var(--danger-bg)' : 'var(--accent-bg)' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {selisihStok < 0 ? 'Kerugian stok (opname)' : 'Keuntungan stok (opname)'} — selisih hitung fisik vs stok sistem, dinilai pada Harga Modal. Sudah termasuk di Laba Bersih, bukan uang kas.
+              </span>
+              <span className="font-extrabold tabular text-sm" style={{ color: selisihStok < 0 ? 'var(--danger)' : 'var(--success)' }}>{formatRp(selisihStok)}</span>
+            </div>
+          )}
+
           {/* Rasio & Margin — persentase tiap komponen terhadap Omzet, biar kesehatan margin kelihatan
               langsung tanpa hitung manual dari nominal Rupiah di atas. */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1069,6 +1087,12 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                     <span style={{ color: 'var(--text-secondary)' }}>Laba Bersih (Akrual)</span>
                     <span className="font-bold tabular">{formatRp(labaBersih)}</span>
                   </div>
+                  {selisihStok !== 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--text-secondary)' }}>{selisihStok < 0 ? '(+) Kerugian Stok Opname (non-kas)' : '(−) Keuntungan Stok Opname (non-kas)'}</span>
+                      <span className="font-bold tabular">{formatRp(-selisihStok)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span style={{ color: 'var(--text-secondary)' }}>(+) Modal Masuk</span>
                     <span className="font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(totalModalMasuk)}</span>
