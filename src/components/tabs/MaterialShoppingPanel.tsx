@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Eye, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Eye, Undo2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -26,7 +26,7 @@ interface ShoppingItem {
   qty: number; price: number | null; note: string;
   shoppingDate: string; supplierId?: string; supplierName: string;
   checked: boolean; status: 'pending' | 'done'; purchaseId?: string; doneAt?: string;
-  walletId?: string; paymentStatus?: 'lunas' | 'belum_lunas';
+  walletId?: string; paymentStatus?: 'lunas' | 'belum_lunas'; createdBy?: string;
 }
 interface Opt { value: string; label: string; sublabel?: string }
 
@@ -46,7 +46,7 @@ interface Props {
 interface ShoppingGroup {
   key: string; date: string; supplierId?: string; supplierName: string;
   items: ShoppingItem[]; pending: ShoppingItem[]; checked: ShoppingItem[];
-  total: number; notes: string[]; walletIds: string[]; unpaid: boolean; status: 'menunggu' | 'belanja' | 'sebagian' | 'selesai';
+  total: number; notes: string[]; walletIds: string[]; unpaid: boolean; imported: boolean; status: 'menunggu' | 'belanja' | 'sebagian' | 'selesai';
 }
 
 const formatRp = (n: number) =>
@@ -112,6 +112,7 @@ function buildGroups(items: ShoppingItem[]): ShoppingGroup[] {
       notes: [...new Set(list.map(i => i.note.trim()).filter(Boolean))],
       walletIds: [...new Set(done.map(i => i.walletId).filter((w): w is string => !!w))],
       unpaid: done.some(i => i.paymentStatus === 'belum_lunas'),
+      imported: list.some(i => i.createdBy === 'import-pembelian'),
       status,
     };
   });
@@ -297,6 +298,26 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     const r = await fetch(`${API}/api/material-shopping/group`, { method: 'DELETE', headers, body: JSON.stringify({ ids: g.pending.map(i => i.id) }) });
     if (r.ok) { toast.success('Daftar belanja dihapus.'); if (detailKey === g.key) setDetailKey(null); await load(); }
     else toast.error('Gagal menghapus daftar belanja.');
+  };
+
+  // Kembalikan daftar yang sudah diproses ke Menunggu: pembelian terkait dibatalkan (void) di server.
+  const [reopening, setReopening] = useState(false);
+  const reopenGroup = async (g: ShoppingGroup) => {
+    const doneItems = g.items.filter(i => i.status === 'done');
+    if (!await confirm({
+      message: `Kembalikan ${doneItems.length} item ${supplierLabel(g)} ke Menunggu? Pembelian bahan baku yang terbentuk dari proses sebelumnya akan DIBATALKAN: stok, harga rata-rata, dan pengeluarannya dikembalikan. Setelah itu daftar bisa diedit dan diproses ulang.`,
+      confirmLabel: 'Kembalikan', danger: true,
+    })) return;
+    setReopening(true);
+    try {
+      const r = await fetch(`${API}/api/material-shopping/reopen`, { method: 'POST', headers, body: JSON.stringify({ ids: doneItems.map(i => i.id) }) });
+      const d = await r.json() as { error?: string; purchases?: number };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal mengembalikan ke Menunggu.'); return; }
+      toast.success('Daftar dikembalikan ke Menunggu. Pembelian terkait sudah dibatalkan.');
+      setProcessResult(null);
+      await load();
+      onProcessed();
+    } finally { setReopening(false); }
   };
 
   // ── Proses ──
@@ -846,7 +867,14 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
                 {/* Checklist item */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <label style={{ ...fieldLabel, marginBottom: 0 }}>{detail.pending.length > 0 ? 'Item Belanja — centang yang sudah dibeli, sesuaikan qty & harga dengan nota' : 'Item Belanja — semua sudah dibeli'}</label>
+                  <div className="flex items-center justify-between gap-3">
+                    <label style={{ ...fieldLabel, marginBottom: 0 }}>{detail.pending.length > 0 ? 'Item Belanja — centang yang sudah dibeli, sesuaikan qty & harga dengan nota' : 'Item Belanja — semua sudah dibeli'}</label>
+                    {detail.items.some(i => i.status === 'done') && !detail.imported && (
+                      <button onClick={() => reopenGroup(detail)} disabled={reopening} className="flex items-center gap-1 text-xs font-bold flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--danger)' }}>
+                        {reopening ? <Loader2 size={12} className="animate-spin" /> : <Undo2 size={12} />} Kembalikan ke Menunggu
+                      </button>
+                    )}
+                  </div>
                   {detail.items.map(i => i.status === 'done' ? (
                     <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                       <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
