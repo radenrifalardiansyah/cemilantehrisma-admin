@@ -238,7 +238,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
       {showAdd && (
         <div className="modal-overlay" onClick={() => !adding && setShowAdd(false)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
             <div className="modal-accent" />
             <span className="modal-handle" />
             <div className="modal-header">
