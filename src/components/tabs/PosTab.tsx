@@ -73,6 +73,7 @@ interface ReceiptData {
   items: { name: string; weight: string; qty: number; price: number; subtotal: number }[];
   subtotal: number; discount?: { amount: number; label: string }; total: number;
   paymentMethod: PaymentMethod;
+  isFree?: boolean; freeReason?: string;
   amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   customerName: string; customerPhone: string; cashier: string; pdfUrl?: string; dueDate?: string; downPayment?: number;
@@ -139,7 +140,9 @@ function formatWAMessage(receipt: ReceiptData, store: { name: string; address: s
   const dpLines = receipt.paymentMethod === 'kredit' && receipt.downPayment
     ? `\nDP dibayar  : ${formatCurrency(receipt.downPayment)}\n*Sisa tagihan : ${formatCurrency(receipt.total - receipt.downPayment)}*`
     : '';
-  const paymentLines = receipt.paymentMethod === 'cash'
+  const paymentLines = receipt.isFree
+    ? `Status  : *GRATIS* (${receipt.freeReason ?? ''})`
+    : receipt.paymentMethod === 'cash'
     ? `Tunai   : ${formatCurrency(receipt.amountPaid ?? 0)}\nKembali : ${formatCurrency(receipt.changeAmount ?? 0)}`
     : receipt.paymentMethod === 'kredit'
     ? `Status  : *BELUM LUNAS (KREDIT)*${dpLines}${dueLine}`
@@ -302,6 +305,10 @@ export default function PosTab({
   const [voucherChecking, setVoucherChecking] = useState(false);
   const [voucherError, setVoucherError] = useState('');
   const [sellAsPO,     setSellAsPO]     = useState(false);
+  // Transaksi gratis (sample/kompensasi/dll) — penanda eksplisit, terpisah dari diskon. Total jadi Rp0,
+  // tanpa metode bayar/dompet; alasan wajib diisi.
+  const [isFreeTx,      setIsFreeTx]      = useState(false);
+  const [freeReason,    setFreeReason]    = useState('');
   const [paymentMethod,     setPaymentMethod]     = useState<PaymentMethod>('cash');
   const [walletId,          setWalletId]          = useState('');
   const [amountPaidRaw,     setAmountPaidRaw]     = useState('');
@@ -395,15 +402,15 @@ export default function PosTab({
   const discountNum    = Math.max(0, parseFloat(discountRaw) || 0);
   // Voucher hanya berlaku selama subtotal memenuhi minimum belanjanya (keranjang bisa berubah
   // setelah voucher dipasang).
-  const voucherActive  = !!voucher && cartSubtotal >= voucher.rule.minPurchase;
-  const discountAmount = voucherActive
+  const voucherActive  = !isFreeTx && !!voucher && cartSubtotal >= voucher.rule.minPurchase;
+  const discountAmount = isFreeTx ? 0 : voucherActive
     ? computeVoucherDiscount(voucher!.rule, cartSubtotal)
     : discountType === 'percent'
     ? Math.min(Math.round(cartSubtotal * discountNum / 100), cartSubtotal)
     : Math.min(discountNum, cartSubtotal);
   const discountLabel = voucherActive ? voucherDiscountLabel(voucher!.code) : discountType === 'percent' ? `${discountNum}%` : formatCurrency(discountAmount);
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
-  const cartTotal = cartSubtotal - discountAmount;
+  const cartTotal = isFreeTx ? 0 : cartSubtotal - discountAmount;
   const applyVoucher = async () => {
     const code = voucherInput.trim();
     if (!code) return;
@@ -441,10 +448,11 @@ export default function PosTab({
   // tetap tercatat di menu Pesanan dan bisa ditandai Lunas begitu pelanggan bayar.
   const availablePaymentMethods = [...PAYMENT_METHODS, KREDIT_METHOD];
   const canProcess = hasCart
+    && (isFreeTx ? freeReason.trim().length > 0 : (true
     && (paymentMethod !== 'cash'     || amountPaidNum >= cartTotal)
     && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= cartTotal))
     && (paymentMethod !== 'kredit'   || !dpRaw || (dpNum > 0 && dpNum < cartTotal && !!dpWalletId))
-    && (paymentMethod === 'kredit'   || !!walletId);
+    && (paymentMethod === 'kredit'   || !!walletId)));
 
   const filteredProducts = (activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat))
     .filter(p => p.published !== false)
@@ -510,7 +518,7 @@ export default function PosTab({
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); setQuery(''); clearCart();
     setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw('');
-    setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw(''); setSellAsPO(false);
+    setCustName(''); setCustPhone(''); setDiscountType('percent'); setDiscountRaw(''); setSellAsPO(false); setIsFreeTx(false); setFreeReason('');
     setVoucher(null); setVoucherInput(''); setVoucherError('');
     setPaymentMethod('cash'); setWalletId(getLastWallet('cash')); setAmountPaidRaw(''); setTransferBank(''); setTransferAmountRaw('');
     setTransferProofUrl(''); setTransferProofUploading(false); setOcrStatus('idle');
@@ -754,7 +762,7 @@ export default function PosTab({
         headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
         body: JSON.stringify({
           invoiceNo: invNoDraft, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
-          paymentStatus: paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas',
+          paymentStatus: paymentMethod === 'kredit' && !isFreeTx ? 'belum_lunas' : 'lunas',
         }),
       });
       if (!res.ok) throw new Error('Gagal generate PDF');
@@ -773,11 +781,13 @@ export default function PosTab({
         body: JSON.stringify({
           invoiceNo: invNo, date: dateStr, transactionAt: now.toISOString(), customerName: finalCustName, customerPhone: custPhone, items,
           subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, pdfUrl,
+          ...(isFreeTx ? { isFree: true, freeReason: freeReason.trim(), paymentMethod: 'gratis', paymentStatus: 'lunas' } : {
           ...(voucherActive ? { voucherCode: voucher!.code } : {}),
           paymentMethod,
           ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
           ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
           ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas', ...(dueDate ? { dueDate } : {}), ...(dpNum > 0 ? { downPayment: { amount: dpNum, walletId: dpWalletId } } : {}) } : { walletId }),
+          }),
           ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
           ...(currentShift ? { shiftId: currentShift.id } : {}),
@@ -794,15 +804,16 @@ export default function PosTab({
       setLastReceipt({
         invoiceNo: invNo, dateStr, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
         paymentMethod,
+        ...(isFreeTx ? { isFree: true, freeReason: freeReason.trim() } : {}),
         ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
         ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
         customerName: finalCustName, customerPhone: custPhone, cashier: username, pdfUrl,
         ...(paymentMethod === 'kredit' && dueDate ? { dueDate } : {}),
         ...(paymentMethod === 'kredit' && dpNum > 0 ? { downPayment: dpNum } : {}),
       });
-      if (paymentMethod !== 'kredit' && walletId) setLastWallet(paymentMethod, walletId);
+      if (!isFreeTx && paymentMethod !== 'kredit' && walletId) setLastWallet(paymentMethod, walletId);
       if (cartHasOpenPO && sellAsPO) toast.success('Pesanan PO tersimpan sebagai "Baru" — tandai Selesai di menu Pesanan begitu barangnya siap, baru stoknya dipotong.');
-      else if (paymentMethod === 'kredit') toast.success(`Transaksi kredit tersimpan — tandai Lunas di menu Pesanan kalau ${finalCustName} sudah bayar.`);
+      else if (paymentMethod === 'kredit' && !isFreeTx) toast.success(`Transaksi kredit tersimpan — tandai Lunas di menu Pesanan kalau ${finalCustName} sudah bayar.`);
       setInvoiceNo(invNo);
       setWaPhoneDraft(custPhone);
       setPosView('done');
@@ -1107,6 +1118,24 @@ export default function PosTab({
               </p>
             </div>
 
+            {/* Transaksi Gratis */}
+            <div className="card p-4">
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={isFreeTx} onChange={e => setIsFreeTx(e.target.checked)} className="mt-1" />
+                <span>
+                  <strong>Transaksi Gratis</strong>
+                  <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Barang diberikan tanpa bayar (sample, kompensasi, dll). Total Rp0, stok tetap berkurang, dan dicatat terpisah dari diskon.
+                  </span>
+                </span>
+              </label>
+              {isFreeTx && (
+                <input type="text" value={freeReason} onChange={e => setFreeReason(e.target.value)} maxLength={200}
+                  className="input mt-3" placeholder="Alasan gratis (wajib), mis. sample, kompensasi, tester" />
+              )}
+            </div>
+
+            {!isFreeTx && (<>
             {/* Discount */}
             <div className="card p-4">
               <p className="section-label mb-3 flex items-center gap-1.5"><Tag size={11} /> Diskon (opsional)</p>
@@ -1308,6 +1337,8 @@ export default function PosTab({
                 </div>
               )}
             </div>
+
+            </>)}
 
             {proofLightboxOpen && transferProofUrl && (
               <ImageLightbox images={[transferProofUrl]} index={0} title="Bukti Transfer"
@@ -1685,7 +1716,9 @@ export default function PosTab({
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 12 }}><span>TOTAL</span><span>{formatCurrency(lastReceipt.total)}</span></div>
         <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }} />
-        {lastReceipt.paymentMethod === 'cash' ? (
+        {lastReceipt.isFree ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}><span>TRANSAKSI GRATIS</span><span>{lastReceipt.freeReason}</span></div>
+        ) : lastReceipt.paymentMethod === 'cash' ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Tunai</span><span>{formatCurrency(lastReceipt.amountPaid ?? 0)}</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Kembali</span><span>{formatCurrency(lastReceipt.changeAmount ?? 0)}</span></div>

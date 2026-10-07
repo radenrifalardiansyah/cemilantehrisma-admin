@@ -4,18 +4,19 @@ import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 
-interface OrderItemDoc { productId?: string; name?: string; qty: number; price?: number; subtotal?: number }
+interface OrderItemDoc { productId?: string; name?: string; qty: number; price?: number; subtotal?: number; costPrice?: number }
 interface OrderDoc {
-  source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas'; items?: OrderItemDoc[];
+  isFree?: boolean; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas'; items?: OrderItemDoc[];
   subtotal?: number; total?: number; createdAtSeconds: number | null;
 }
-interface RecapItemDoc { productId?: string; productName?: string; qtySold: number; revenue?: number; hargaTitip?: number }
+interface RecapItemDoc { productId?: string; productName?: string; qtySold: number; revenue?: number; hargaTitip?: number; costPrice?: number }
 interface RecapDoc { paymentStatus?: 'lunas' | 'belum_lunas'; items?: RecapItemDoc[]; createdAtSeconds: number | null }
 
 interface ProductRow {
   key: string; productId: string; name: string;
   qtyPos: number; qtyOnline: number; qtyConsignment: number;
-  revenue: number;
+  revenue: number; cogs: number;
+  qtyFree: number; cogsFree: number;
 }
 
 // Semua tanggal kalender dari `from` s/d `to` (inklusif) — dipakai supaya sumbu tanggal grafik tren
@@ -38,10 +39,10 @@ function eachDay(from: string, to: string): string[] {
 const getRawProductReport = unstable_cache(
   async (from: string, to: string) => {
     const sql = getSql();
-    const [orderRows, recapRows] = await Promise.all([
+    const [orderRows, recapRows, productRows] = await Promise.all([
       // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
-      sql<{ source: string; status: string; payment_status: string; items: unknown; subtotal: string; total: string; created_at: Date }[]>`
-        select source, status, payment_status, items, subtotal, total, created_at from orders
+      sql<{ source: string; status: string; payment_status: string; items: unknown; subtotal: string; total: string; is_free: boolean | null; created_at: Date }[]>`
+        select source, status, payment_status, items, subtotal, total, is_free, created_at from orders
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
@@ -49,12 +50,14 @@ const getRawProductReport = unstable_cache(
         select payment_status, items, created_at from consignment_recaps
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
+      sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
     ]);
     return {
+      productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
       orders: orderRows.map((r): OrderDoc => ({
         source: r.source as 'kasir' | 'portal', status: r.status, paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
         items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
-        subtotal: Number(r.subtotal), total: Number(r.total),
+        subtotal: Number(r.subtotal), total: Number(r.total), isFree: r.is_free === true,
         createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
       })),
       recaps: recapRows.map((r): RecapDoc => ({
@@ -79,7 +82,12 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Parameter from & to (yyyy-mm-dd) wajib diisi.' }, { status: 400 });
   }
 
-  const { orders, recaps } = await getRawProductReport(from, to);
+  const { orders, recaps, productCosts } = await getRawProductReport(from, to);
+  const productCostMap = new Map(productCosts);
+  // HPP — pakai costPrice snapshot saat transaksi; fallback ke Harga Modal produk terkini kalau
+  // snapshot 0/kosong (transaksi lama). Sama seperti analytics/overview.
+  const effectiveCost = (stored: number | undefined, productId: string | undefined) =>
+    stored ? stored : (productId ? (productCostMap.get(productId) ?? 0) : 0);
 
   // Sama seperti Laporan Keuangan: order/rekap "Belum Lunas" atau yang belum dikonfirmasi
   // (pesanan "baru"/dibatalkan) tidak dihitung sebagai penjualan.
@@ -92,7 +100,7 @@ export async function GET(req: NextRequest) {
     const key = keyOf(productId, name);
     let r = rows.get(key);
     if (!r) {
-      r = { key, productId: productId ?? '', name: name || '(tanpa nama)', qtyPos: 0, qtyOnline: 0, qtyConsignment: 0, revenue: 0 };
+      r = { key, productId: productId ?? '', name: name || '(tanpa nama)', qtyPos: 0, qtyOnline: 0, qtyConsignment: 0, revenue: 0, cogs: 0, qtyFree: 0, cogsFree: 0 };
       rows.set(key, r);
     }
     return r;
@@ -115,6 +123,8 @@ export async function GET(req: NextRequest) {
     // "Penjualan Kasir/Online" di Laporan Keuangan (yang pakai order.total, sudah net diskon).
     const itemsSubtotal = (o.items ?? []).reduce((s, it) => s + (it.subtotal ?? (it.price ?? 0) * it.qty), 0);
     const scale = (o.total != null && itemsSubtotal > 0) ? o.total / itemsSubtotal : 1;
+    // Transaksi yang ditandai Gratis di Kasir (bukan diskon): qty & HPP-nya dilacak terpisah.
+    const isFree = o.isFree === true;
     (o.items ?? []).forEach(it => {
       // Item bebas input di POS (mis. "Ongkir JNE", "Bungkus kado") tidak punya productId —
       // sama seperti /api/orders yang skip pemotongan stok & HPP untuk item ini, laporan produk
@@ -123,6 +133,9 @@ export async function GET(req: NextRequest) {
       const r = rowFor(it.productId, it.name);
       if (o.source === 'portal') r.qtyOnline += it.qty; else r.qtyPos += it.qty;
       r.revenue += (it.subtotal ?? (it.price ?? 0) * it.qty) * scale;
+      const itemCogs = it.qty * effectiveCost(it.costPrice, it.productId);
+      r.cogs += itemCogs;
+      if (isFree) { r.qtyFree += it.qty; r.cogsFree += itemCogs; }
       addDaily(o.createdAtSeconds, r.key, it.qty);
     });
   });
@@ -131,18 +144,22 @@ export async function GET(req: NextRequest) {
       const r = rowFor(it.productId, it.productName);
       r.qtyConsignment += it.qtySold;
       r.revenue += it.revenue ?? (it.hargaTitip ?? 0) * it.qtySold;
+      r.cogs += it.qtySold * effectiveCost(it.costPrice, it.productId);
       addDaily(rec.createdAtSeconds, r.key, it.qtySold);
     });
   });
 
   const products = [...rows.values()]
     // Math.round karena prorata diskon di atas menghasilkan pecahan rupiah.
-    .map(r => ({ ...r, revenue: Math.round(r.revenue), qtyTotal: r.qtyPos + r.qtyOnline + r.qtyConsignment }))
+    .map(r => ({ ...r, revenue: Math.round(r.revenue), cogs: Math.round(r.cogs), cogsFree: Math.round(r.cogsFree), qtyTotal: r.qtyPos + r.qtyOnline + r.qtyConsignment }))
     .filter(r => r.qtyTotal > 0)
     .sort((a, b) => b.qtyTotal - a.qtyTotal);
 
   const totalQty = products.reduce((s, p) => s + p.qtyTotal, 0);
   const totalRevenue = products.reduce((s, p) => s + p.revenue, 0);
+  const totalCogs = products.reduce((s, p) => s + p.cogs, 0);
+  const totalQtyFree = products.reduce((s, p) => s + p.qtyFree, 0);
+  const totalCogsFree = products.reduce((s, p) => s + p.cogsFree, 0);
 
   // Grafik tren — dibatasi ke 4 produk terlaris supaya tetap terbaca (bukan spaghetti chart) dan
   // warnanya bisa dipetakan tetap 1:1 per produk di client (lihat ProductReportTab).
@@ -154,5 +171,5 @@ export async function GET(req: NextRequest) {
     return row;
   });
 
-  return Response.json({ period: { from, to }, products, totalQty, totalRevenue, trendProducts, dailyTrend });
+  return Response.json({ period: { from, to }, products, totalQty, totalRevenue, totalCogs, totalQtyFree, totalCogsFree, trendProducts, dailyTrend });
 }

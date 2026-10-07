@@ -66,7 +66,7 @@ function TrendTooltip({ active, payload, label }: {
 interface ProductRow {
   productId: string; name: string;
   qtyPos: number; qtyOnline: number; qtyConsignment: number; qtyTotal: number;
-  revenue: number;
+  revenue: number; cogs: number; qtyFree: number; cogsFree: number;
 }
 interface TrendProduct { key: string; name: string }
 interface ProductMeta { emoji: string; imageUrls?: string[]; bgColor: string; category?: string }
@@ -179,8 +179,9 @@ export default function ProductReportTab({ creds }: { creds: string }) {
   const footerTotals = displayRows.reduce((acc, p) => ({
     qtyPos: acc.qtyPos + p.qtyPos, qtyOnline: acc.qtyOnline + p.qtyOnline,
     qtyConsignment: acc.qtyConsignment + p.qtyConsignment, qtyTotal: acc.qtyTotal + p.qtyTotal,
-    revenue: acc.revenue + p.revenue,
-  }), { qtyPos: 0, qtyOnline: 0, qtyConsignment: 0, qtyTotal: 0, revenue: 0 });
+    revenue: acc.revenue + p.revenue, cogs: acc.cogs + p.cogs,
+    qtyFree: acc.qtyFree + p.qtyFree, cogsFree: acc.cogsFree + p.cogsFree,
+  }), { qtyPos: 0, qtyOnline: 0, qtyConsignment: 0, qtyTotal: 0, revenue: 0, cogs: 0, qtyFree: 0, cogsFree: 0 });
 
   const periodLabel = PERIOD_OPTIONS.find(p => p.id === period)?.label ?? '';
 
@@ -227,9 +228,11 @@ export default function ProductReportTab({ creds }: { creds: string }) {
       ws.columns = [
         { key: 'produk', width: 32 }, { key: 'kategori', width: 16 }, { key: 'kasir', width: 12 }, { key: 'online', width: 12 },
         { key: 'konsinyasi', width: 14 }, { key: 'total', width: 14 }, { key: 'omzet', width: 18 },
+        { key: 'hpp', width: 18 }, { key: 'laba', width: 18 },
+        { key: 'gratis', width: 12 }, { key: 'hppGratis', width: 18 },
       ];
-      styleTitle(ws, 'LAPORAN PRODUK TERJUAL — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to})`, 7);
-      styleHeader(ws, 3, ['Produk', 'Kategori', 'Kasir', 'Online', 'Konsinyasi', 'Total Qty', 'Omzet']);
+      styleTitle(ws, 'LAPORAN PRODUK TERJUAL — CEMILAN TEH RISMA', `Periode: ${periodLabel} (${from} s/d ${to})`, 11);
+      styleHeader(ws, 3, ['Produk', 'Kategori', 'Kasir', 'Online', 'Konsinyasi', 'Total Qty', 'Omzet', 'Total HPP', 'Laba Kotor', 'Qty Gratis', 'HPP Gratis']);
       displayRows.forEach((p, i) => {
         const rowNum = 4 + i;
         const row = ws.getRow(rowNum);
@@ -241,6 +244,13 @@ export default function ProductReportTab({ creds }: { creds: string }) {
         row.getCell(6).value = p.qtyTotal;
         row.getCell(7).value = p.revenue;
         row.getCell(7).numFmt = '"Rp"#,##0';
+        row.getCell(8).value = p.cogs;
+        row.getCell(8).numFmt = '"Rp"#,##0';
+        row.getCell(9).value = p.revenue - p.cogs;
+        row.getCell(9).numFmt = '"Rp"#,##0';
+        row.getCell(10).value = p.qtyFree;
+        row.getCell(11).value = p.cogsFree;
+        row.getCell(11).numFmt = '"Rp"#,##0';
         zebra(ws, rowNum, i);
       });
 
@@ -253,6 +263,13 @@ export default function ProductReportTab({ creds }: { creds: string }) {
       totalRow.getCell(6).value = footerTotals.qtyTotal;
       totalRow.getCell(7).value = footerTotals.revenue;
       totalRow.getCell(7).numFmt = '"Rp"#,##0';
+      totalRow.getCell(8).value = footerTotals.cogs;
+      totalRow.getCell(8).numFmt = '"Rp"#,##0';
+      totalRow.getCell(9).value = footerTotals.revenue - footerTotals.cogs;
+      totalRow.getCell(9).numFmt = '"Rp"#,##0';
+      totalRow.getCell(10).value = footerTotals.qtyFree;
+      totalRow.getCell(11).value = footerTotals.cogsFree;
+      totalRow.getCell(11).numFmt = '"Rp"#,##0';
       totalRow.eachCell(cell => {
         cell.font = { bold: true };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE8CF' } };
@@ -399,14 +416,14 @@ export default function ProductReportTab({ creds }: { creds: string }) {
         productName: p.name,
         category: catName(productMeta.get(p.productId)?.category),
         qtyPos: p.qtyPos, qtyOnline: p.qtyOnline, qtyConsignment: p.qtyConsignment,
-        qtyTotal: p.qtyTotal, revenue: p.revenue,
+        qtyTotal: p.qtyTotal, revenue: p.revenue, cogs: p.cogs, qtyFree: p.qtyFree,
       }));
       const blob = await pdf(
         <ProductReportPDF
           store={storeHeader}
           data={{
             periodLabel, from, to,
-            totalQty: footerTotals.qtyTotal, totalRevenue: footerTotals.revenue, jenisProduk: displayRows.length,
+            totalQty: footerTotals.qtyTotal, totalRevenue: footerTotals.revenue, totalCogs: footerTotals.cogs, totalQtyFree: footerTotals.qtyFree, totalCogsFree: footerTotals.cogsFree, jenisProduk: displayRows.length,
             rows,
           }}
         />
@@ -493,6 +510,13 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                 <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Jenis Produk Terjual</p>
               </div>
             </div>
+            {footerTotals.qtyFree > 0 && (
+              <div className="card p-4 sm:col-span-3" style={{ background: 'var(--surface-2)' }}>
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  Barang digratiskan (diskon 100%): {footerTotals.qtyFree.toLocaleString('id-ID')} unit · HPP {formatRp(footerTotals.cogsFree)}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Tren harian — top 4 produk terlaris di periode ini */}
@@ -607,7 +631,10 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                         <span className="inline-flex items-center gap-1"><Store size={10} /> Konsinyasi</span>
                       </th>
                       <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Total Qty</th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Gratis</th>
                       <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Omzet</th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Total HPP</th>
+                      <th className="px-3 py-2.5 text-right font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' }}>Laba Kotor</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -632,7 +659,10 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                           <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyOnline || '–'}</td>
                           <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyConsignment || '–'}</td>
                           <td className="px-3 py-2.5 text-right font-extrabold tabular" style={{ color: 'var(--accent)' }}>{p.qtyTotal}</td>
+                          <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-secondary)' }}>{p.qtyFree || '–'}</td>
                           <td className="px-3 py-2.5 text-right font-semibold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatRp(p.revenue)}</td>
+                          <td className="px-3 py-2.5 text-right tabular whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{formatRp(p.cogs)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold tabular whitespace-nowrap" style={{ color: 'var(--success)' }}>{formatRp(p.revenue - p.cogs)}</td>
                         </tr>
                       );
                     })}
@@ -646,7 +676,10 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                       <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{footerTotals.qtyOnline || '–'}</td>
                       <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{footerTotals.qtyConsignment || '–'}</td>
                       <td className="px-3 py-2.5 text-right font-extrabold tabular" style={{ color: 'var(--accent)' }}>{footerTotals.qtyTotal}</td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{footerTotals.qtyFree || '–'}</td>
                       <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatRp(footerTotals.revenue)}</td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{formatRp(footerTotals.cogs)}</td>
+                      <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--success)' }}>{formatRp(footerTotals.revenue - footerTotals.cogs)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -673,6 +706,7 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                         </span>
                       )}
                       <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(p.revenue)}</p>
+                      <p className="text-[10.5px] tabular" style={{ color: 'var(--text-muted)' }}>HPP {formatRp(p.cogs)} · Laba {formatRp(p.revenue - p.cogs)}{p.qtyFree > 0 && ` · Gratis ${p.qtyFree}`}</p>
                       <div className="grid grid-cols-3 gap-2 mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                         <div className="text-center">
                           <p className="text-[9px] font-bold uppercase tracking-wide flex items-center justify-center gap-0.5" style={{ color: 'var(--text-muted)' }}><ShoppingCart size={9} /> Kasir</p>

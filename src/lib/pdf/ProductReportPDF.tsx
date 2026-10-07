@@ -11,6 +11,8 @@ export interface ProductReportPDFRow {
   qtyConsignment: number;
   qtyTotal: number;
   revenue: number;
+  cogs: number;
+  qtyFree: number;
 }
 
 export interface ProductReportPDFData {
@@ -19,6 +21,9 @@ export interface ProductReportPDFData {
   to: string;
   totalQty: number;
   totalRevenue: number;
+  totalCogs: number;
+  totalQtyFree: number;
+  totalCogsFree: number;
   jenisProduk: number;
   rows: ProductReportPDFRow[];
 }
@@ -68,14 +73,17 @@ const s = StyleSheet.create({
   tRowAlt: { backgroundColor: C.accentBg },
   tCell: { fontSize: 8, paddingVertical: 4.5, paddingHorizontal: 4, color: C.dark },
 
-  colNo:      { width: '5%' },
-  colProduk:  { width: '27%' },
-  colKat:     { width: '15%' },
-  colKasir:   { width: '11%', textAlign: 'right' },
-  colOnline:  { width: '11%', textAlign: 'right' },
-  colKons:    { width: '11%', textAlign: 'right' },
-  colTotal:   { width: '10%', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
-  colOmzet:   { width: '15%', textAlign: 'right' },
+  colNo:      { width: '4%' },
+  colProduk:  { width: '19%' },
+  colKat:     { width: '11%' },
+  colKasir:   { width: '6%', textAlign: 'right' },
+  colOnline:  { width: '6%', textAlign: 'right' },
+  colKons:    { width: '8%', textAlign: 'right' },
+  colFree:    { width: '6%', textAlign: 'right' },
+  colTotal:   { width: '8%', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
+  colOmzet:   { width: '11%', textAlign: 'right' },
+  colHpp:     { width: '11%', textAlign: 'right' },
+  colLaba:    { width: '11%', textAlign: 'right' },
 
   totalsRow: { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border },
   totalsCell: { fontSize: 8, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 4, color: C.dark },
@@ -125,6 +133,18 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
             <Text style={[s.summaryValue, { color: C.accent }]}>{rp(data.totalRevenue)}</Text>
           </View>
           <View style={s.summaryBox}>
+            <Text style={s.summaryLabel}>Total HPP (Qty × HPP)</Text>
+            <Text style={[s.summaryValue, { color: C.dark }]}>{rp(data.totalCogs)}</Text>
+          </View>
+          <View style={s.summaryBox}>
+            <Text style={s.summaryLabel}>Laba Kotor</Text>
+            <Text style={[s.summaryValue, { color: C.green }]}>{rp(data.totalRevenue - data.totalCogs)}</Text>
+          </View>
+          <View style={s.summaryBox}>
+            <Text style={s.summaryLabel}>Barang Gratis (Diskon 100%)</Text>
+            <Text style={[s.summaryValue, { color: C.dark }]}>{data.totalQtyFree} unit · HPP {rp(data.totalCogsFree)}</Text>
+          </View>
+          <View style={s.summaryBox}>
             <Text style={s.summaryLabel}>Jenis Produk Terjual</Text>
             <Text style={[s.summaryValue, { color: C.dark }]}>{data.jenisProduk}</Text>
           </View>
@@ -139,7 +159,10 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
             <Text style={[s.tHeadCell, s.colOnline]}>Online</Text>
             <Text style={[s.tHeadCell, s.colKons]}>Konsinyasi</Text>
             <Text style={[s.tHeadCell, s.colTotal]}>Total Qty</Text>
+            <Text style={[s.tHeadCell, s.colFree]}>Gratis</Text>
             <Text style={[s.tHeadCell, s.colOmzet]}>Omzet</Text>
+            <Text style={[s.tHeadCell, s.colHpp]}>Total HPP</Text>
+            <Text style={[s.tHeadCell, s.colLaba]}>Laba Kotor</Text>
           </View>
           {data.rows.map((r, i) => (
             <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]} wrap={false}>
@@ -150,7 +173,10 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
               <Text style={[s.tCell, s.colOnline]}>{r.qtyOnline || '–'}</Text>
               <Text style={[s.tCell, s.colKons]}>{r.qtyConsignment || '–'}</Text>
               <Text style={[s.tCell, s.colTotal]}>{r.qtyTotal}</Text>
+              <Text style={[s.tCell, s.colFree]}>{r.qtyFree || '–'}</Text>
               <Text style={[s.tCell, s.colOmzet, { fontFamily: 'Helvetica-Bold', color: C.accent }]}>{rp(r.revenue)}</Text>
+              <Text style={[s.tCell, s.colHpp]}>{rp(r.cogs)}</Text>
+              <Text style={[s.tCell, s.colLaba, { fontFamily: 'Helvetica-Bold', color: C.green }]}>{rp(r.revenue - r.cogs)}</Text>
             </View>
           ))}
           <View style={s.totalsRow}>
@@ -161,7 +187,10 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
             <Text style={[s.totalsCell, s.colOnline]}>{totalOnline}</Text>
             <Text style={[s.totalsCell, s.colKons]}>{totalKons}</Text>
             <Text style={[s.totalsCell, s.colTotal]}>{data.totalQty}</Text>
+            <Text style={[s.totalsCell, s.colFree]}>{data.totalQtyFree || '–'}</Text>
             <Text style={[s.totalsCell, s.colOmzet, { color: C.accent }]}>{rp(data.totalRevenue)}</Text>
+            <Text style={[s.totalsCell, s.colHpp]}>{rp(data.totalCogs)}</Text>
+            <Text style={[s.totalsCell, s.colLaba, { color: C.green }]}>{rp(data.totalRevenue - data.totalCogs)}</Text>
           </View>
         </View>
 

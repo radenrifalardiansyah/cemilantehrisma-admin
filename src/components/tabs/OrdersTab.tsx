@@ -44,6 +44,7 @@ interface Order {
   total: number; pdfUrl?: string; status: string; createdAt?: { seconds: number };
   paymentMethod?: 'cash' | 'transfer' | 'qris' | 'kredit';
   paymentStatus?: 'lunas' | 'belum_lunas';
+  isFree?: boolean; freeReason?: string;
   amountPaid?: number; changeAmount?: number;
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   source?: 'kasir' | 'portal';
@@ -707,6 +708,8 @@ _${storeName}_`.trim();
   const [pickerLoading, setPickerLoading] = useState(false);
 
   const openEdit = async (o: Order) => {
+    // Form edit menghitung ulang total dari item/diskon — akan merusak transaksi gratis (total harus Rp0).
+    if (o.isFree) { toast.error('Transaksi gratis tidak bisa diedit. Batalkan lalu buat ulang kalau ada yang salah.'); return; }
     let products = pickerProducts;
     if (products.length === 0) {
       setPickerLoading(true);
@@ -1383,6 +1386,7 @@ _${storeName}_`.trim();
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
+                      {o.isFree && <span className="badge badge-amber" title={o.freeReason}>Gratis{o.freeReason ? ` · ${o.freeReason}` : ''}</span>}
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>
@@ -1439,6 +1443,7 @@ _${storeName}_`.trim();
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
+                      {o.isFree && <span className="badge badge-amber" title={o.freeReason}>Gratis{o.freeReason ? ` · ${o.freeReason}` : ''}</span>}
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
                     <p className="text-xs tabular truncate" style={{ color: 'var(--text-muted)' }}>

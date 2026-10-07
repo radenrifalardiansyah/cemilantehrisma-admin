@@ -62,6 +62,8 @@ interface OrderCreateBody {
   transferBank?: string; transferAmount?: number; transferProofUrl?: string;
   warehouseId?: string; warehouseName?: string; walletId?: string | null; shiftId?: string;
   invoiceNo?: string; dueDate?: string; voucherCode?: string;
+  // Transaksi gratis (sample/kompensasi/dll) — penanda eksplisit, BUKAN diskon 100%.
+  isFree?: boolean; freeReason?: string;
   // DP kredit dari Kasir — dicatat sebagai pembayaran pertama (cicilan) di transaksi yang sama.
   downPayment?: { amount: number; walletId: string }; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
 }
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   // Jatuh tempo hanya bermakna untuk pesanan belum lunas (kredit) — kolomnya baru ada setelah
   // scripts/add-order-due-date.mjs dijalankan, jadi tidak disertakan di INSERT bila kosong.
-  const dueDate = isValidDueDate(data.dueDate) && (data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')) === 'belum_lunas' ? data.dueDate : undefined;
+  const dueDate = data.isFree !== true && isValidDueDate(data.dueDate) && (data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')) === 'belum_lunas' ? data.dueDate : undefined;
 
   const deltas = new Map<string, number>();
   for (const item of data.items ?? []) {
@@ -95,10 +97,20 @@ export async function POST(req: NextRequest) {
   let orderId = '';
   // Voucher dihitung ulang di server dari item pesanan (bukan percaya angka klien), dan kuotanya
   // diambil atomik di transaksi yang sama dengan pembuatan pesanan.
-  const voucherCode = normalizeVoucherCode(data.voucherCode);
+  const isFree = data.isFree === true;
+  const freeReason = (data.freeReason ?? '').trim().slice(0, 200);
+  if (isFree && !freeReason) return Response.json({ error: 'Alasan transaksi gratis wajib diisi.' }, { status: 400 });
+  if (isFree && data.downPayment) return Response.json({ error: 'Transaksi gratis tidak bisa memakai DP.' }, { status: 400 });
+  // Transaksi gratis tidak memakai voucher/diskon — total dipaksa Rp0 di bawah.
+  const voucherCode = isFree ? undefined : normalizeVoucherCode(data.voucherCode);
   let finalSubtotal = Number(data.subtotal) || 0;
   let finalDiscount: { amount: number; label: string } | null = data.discount ?? null;
   let finalTotal = Number(data.total) || 0;
+  if (isFree) {
+    finalSubtotal = (data.items ?? []).reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
+    finalDiscount = null;
+    finalTotal = 0;
+  }
 
   // Stok DAN dokumen order sekarang sama-sama di Postgres (Tahap 9-12 Fase 2 — lihat plan
   // gleaming-wondering-quokka.md), jadi bisa digabung jadi SATU transaksi atomic — tidak ada lagi
@@ -161,18 +173,18 @@ export async function POST(req: NextRequest) {
           id, invoice_no, date, customer_name, customer_phone, customer_id, items, subtotal, discount, total,
           status, source, delivery_method, address, note, payment_method, payment_status,
           amount_paid, change_amount, transfer_bank, transfer_amount, transfer_proof_url,
-          stock_cut, warehouse_id, warehouse_name, wallet_id, shift_id, created_at${dueDate ? pgTx`, due_date` : pgTx``}${voucherCode ? pgTx`, voucher_code` : pgTx``}
+          stock_cut, warehouse_id, warehouse_name, wallet_id, shift_id, created_at${isFree ? pgTx`, is_free, free_reason` : pgTx``}${dueDate ? pgTx`, due_date` : pgTx``}${voucherCode ? pgTx`, voucher_code` : pgTx``}
         ) values (
           ${id}, ${finalInvoiceNo ?? null}, ${data.date ?? null},
           ${data.customerName ?? ''}, ${data.customerPhone ?? null}, ${data.customerId ?? null},
           ${JSON.stringify(itemsWithCost)}, ${finalSubtotal}, ${finalDiscount ? JSON.stringify(finalDiscount) : null}, ${finalTotal},
           ${isPreOrder ? 'baru' : 'selesai'}, 'kasir',
           ${data.deliveryMethod ?? null}, ${data.address ?? null}, ${data.note ?? null},
-          ${data.paymentMethod ?? null}, ${data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas')},
+          ${isFree ? 'gratis' : (data.paymentMethod ?? null)}, ${isFree ? 'lunas' : (data.paymentStatus ?? (data.paymentMethod === 'kredit' ? 'belum_lunas' : 'lunas'))},
           ${data.amountPaid ?? null}, ${data.changeAmount ?? null},
           ${data.transferBank ?? null}, ${data.transferAmount ?? null}, ${data.transferProofUrl ?? null},
           ${!isPreOrder}, ${data.warehouseId ?? null}, ${data.warehouseName ?? null},
-          ${data.walletId ?? null}, ${data.shiftId ?? null}, ${createdAt}${dueDate ? pgTx`, ${dueDate}` : pgTx``}${voucherCode ? pgTx`, ${voucherCode}` : pgTx``}
+          ${isFree ? null : (data.walletId ?? null)}, ${data.shiftId ?? null}, ${createdAt}${isFree ? pgTx`, true, ${freeReason}` : pgTx``}${dueDate ? pgTx`, ${dueDate}` : pgTx``}${voucherCode ? pgTx`, ${voucherCode}` : pgTx``}
         )
       `;
       // DP (bayar di muka) pada transaksi kredit: baris pembayaran pertama, atomik dengan pesanannya.
