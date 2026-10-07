@@ -1,7 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Search, FolderOpen } from 'lucide-react';
+import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { pdf } from '@react-pdf/renderer';
+import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import ViewToggle from '@/components/ViewToggle';
+import PageSizeSelect from '@/components/PageSizeSelect';
+import { useViewMode } from '@/lib/useViewMode';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
@@ -47,6 +55,7 @@ const todayISO = () => {
 const formatDateLong = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const NO_SUPPLIER = 'Tanpa supplier';
+const HEADER_BTN_H = 34;
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' };
 const thCls = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
@@ -88,6 +97,12 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
+  const storeHeader = useStoreHeader(creds);
+  const [view, setView] = useViewMode('material-shopping');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [exportingXlsx, setExportingXlsx] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,6 +150,12 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       total: gs.reduce((s, g) => s + g.total, 0),
       itemCount: gs.reduce((s, g) => s + g.items.length, 0),
     }));
+
+  // Halaman = kumpulan tanggal (satu tanggal tidak dipecah antar halaman supaya totalnya utuh).
+  const totalPages = Math.max(1, Math.ceil(dateBlocks.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedBlocks = dateBlocks.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const goPage = (n: number) => setPage(Math.max(1, Math.min(n, totalPages)));
 
   const detail = detailKey ? allGroups.find(g => g.key === detailKey) ?? null : null;
   const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
@@ -221,20 +242,158 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     } finally { setProcessing(false); }
   };
 
+  // ── Export (semua daftar sesuai filter pencarian, bukan hanya halaman ini) ──
+  const exportRows = () => dateBlocks.flatMap(b => [
+    ...b.groups.map(g => ({
+      kind: 'row' as const, date: formatDateLong(b.date), supplier: supplierLabel(g),
+      items: g.items.map(i => `${i.materialName} (${formatQty(i.qty)} ${i.unit})`).join(', '),
+      count: g.items.length, bought: g.items.length - g.pending.length, total: g.total,
+      status: STATUS_BADGE[g.status].label, note: g.notes.join(' · ') || '-',
+    })),
+    { kind: 'subtotal' as const, date: formatDateLong(b.date), supplier: 'TOTAL TANGGAL INI', items: '', count: b.itemCount, bought: 0, total: b.total, status: '', note: '' },
+  ]);
+  const grandTotal = dateBlocks.reduce((t, b) => t + b.total, 0);
+  const grandItems = dateBlocks.reduce((t, b) => t + b.itemCount, 0);
+  const downloadBlob = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = async () => {
+    if (dateBlocks.length === 0) { toast.error('Tidak ada daftar belanja untuk diexport.'); return; }
+    setExportingXlsx(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Daftar Belanja');
+      const COLS = [
+        { header: 'Tanggal', key: 'date', width: 28 }, { header: 'Supplier', key: 'supplier', width: 24 },
+        { header: 'Bahan Baku', key: 'items', width: 46 }, { header: 'Jml Item', key: 'count', width: 10 },
+        { header: 'Sudah Dibeli', key: 'bought', width: 13 }, { header: 'Perkiraan Total', key: 'total', width: 18 },
+        { header: 'Status', key: 'status', width: 16 }, { header: 'Catatan', key: 'note', width: 28 },
+      ];
+      ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+      ws.mergeCells(1, 1, 1, COLS.length);
+      const t = ws.getCell(1, 1);
+      t.value = 'DAFTAR BELANJA BAHAN BAKU — CEMILAN TEH RISMA';
+      t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+      t.alignment = { horizontal: 'center', vertical: 'middle' };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
+      ws.getRow(1).height = 28;
+      ws.mergeCells(2, 1, 2, COLS.length);
+      const sub = ws.getCell(2, 1);
+      sub.value = `${dateBlocks.length} tanggal · Diexport ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+      sub.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+      sub.alignment = { horizontal: 'center', vertical: 'middle' };
+      sub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDF2E9' } };
+      const head = ws.getRow(3);
+      COLS.forEach((c, i) => { head.getCell(i + 1).value = c.header; });
+      head.height = 24;
+      head.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      ws.views = [{ state: 'frozen', ySplit: 3 }];
+      let zebra = 0;
+      exportRows().forEach(r => {
+        const row = ws.addRow({ date: r.date, supplier: r.supplier, items: r.items, count: r.count, bought: r.kind === 'row' ? r.bought : '', total: r.total, status: r.status, note: r.note });
+        row.getCell('total').numFmt = '"Rp"#,##0';
+        row.getCell('total').alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell('items').alignment = { vertical: 'top', wrapText: true };
+        row.getCell('note').alignment = { vertical: 'top', wrapText: true };
+        const sub = r.kind === 'subtotal';
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sub ? 'FFFDE8CF' : zebra % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
+          cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+          if (sub) cell.font = { bold: true };
+        });
+        if (!sub) zebra++;
+      });
+      const total = ws.addRow({ date: 'TOTAL SEMUA', count: grandItems, total: grandTotal });
+      total.getCell('total').numFmt = '"Rp"#,##0';
+      total.eachCell(cell => {
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE8CF' } };
+        cell.border = { top: { style: 'medium', color: { argb: 'FFC96018' } } };
+      });
+      const buffer = await wb.xlsx.writeBuffer();
+      downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `daftar-belanja-cemilantehrisma-${new Date().toLocaleDateString('en-CA')}.xlsx`);
+      toast.success('Berhasil export daftar belanja ke Excel.');
+    } catch { toast.error('Gagal membuat file Excel.'); }
+    finally { setExportingXlsx(false); }
+  };
+
+  const exportPdf = async () => {
+    if (dateBlocks.length === 0) { toast.error('Tidak ada daftar belanja untuk diexport.'); return; }
+    setExportingPdf(true);
+    try {
+      const rows = exportRows().map(r => [r.date, r.supplier, r.items, r.kind === 'row' ? `${r.bought}/${r.count}` : `${r.count}`, formatRp(r.total), r.status, r.note]);
+      rows.push(['TOTAL SEMUA', '', '', `${grandItems}`, formatRp(grandTotal), '', '']);
+      const blob = await pdf(
+        <GenericTablePDF
+          store={storeHeader}
+          data={{
+            title: 'DAFTAR BELANJA BAHAN BAKU',
+            label: `${dateBlocks.length} tanggal${q ? ' (sesuai pencarian)' : ''}`,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            columns: [
+              { header: 'Tanggal', width: '15%' },
+              { header: 'Supplier', width: '15%' },
+              { header: 'Bahan Baku', width: '30%' },
+              { header: 'Dibeli', width: '8%', align: 'center' },
+              { header: 'Perkiraan Total', width: '13%', align: 'right', bold: true },
+              { header: 'Status', width: '9%', align: 'center' },
+              { header: 'Catatan', width: '10%' },
+            ],
+            rows,
+          }}
+        />
+      ).toBlob();
+      downloadBlob(blob, `daftar-belanja-cemilantehrisma-${new Date().toLocaleDateString('en-CA')}.pdf`);
+      toast.success('Berhasil export daftar belanja ke PDF.');
+    } catch { toast.error('Gagal membuat file PDF.'); }
+    finally { setExportingPdf(false); }
+  };
+
   if (loading) return <PageLoader />;
 
   return (
     <>
       <div className="p-4 lg:p-6 animate-fade-up space-y-4">
-        <div className="flex flex-row items-center gap-2 sm:gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+          <ShoppingCart size={11} /> Daftar Belanja ({allGroups.length})
+        </p>
+        <div className="flex flex-row items-center gap-2 sm:gap-3 sm:flex-1">
           <div className="relative flex-1 min-w-0">
             <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }}
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }}
               placeholder="Cari supplier atau bahan baku…" />
           </div>
-          <button onClick={() => openForm('create')} className="btn-primary text-xs flex-shrink-0" style={{ height: 34 }}>
+          {allGroups.length > 0 && (
+            <>
+              <Tooltip label="Export Excel">
+                <button onClick={exportExcel} disabled={exportingXlsx} aria-label="Export Excel"
+                  className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exportingXlsx ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="Export PDF">
+                <button onClick={exportPdf} disabled={exportingPdf} aria-label="Export PDF"
+                  className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                  {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                </button>
+              </Tooltip>
+              <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />
+            </>
+          )}
+          <button onClick={() => openForm('create')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Buat Daftar Belanja</span>
           </button>
+        </div>
         </div>
 
         {allGroups.length === 0 ? (
@@ -242,15 +401,18 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             hint="Susun daftar bahan baku yang mau dibeli, lalu centang saat sudah dibeli" />
         ) : dateBlocks.length === 0 ? (
           <p className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>Tidak ada daftar belanja yang cocok.</p>
-        ) : dateBlocks.map(block => (
-          <div key={block.date} className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-            <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--surface-2)' }}>
-              <div>
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatDateLong(block.date)}</p>
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{block.groups.length} supplier · {block.itemCount} item</p>
-              </div>
-              <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
-            </div>
+        ) : (
+          <>
+            {pagedBlocks.map(block => (
+              <div key={block.date} className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--surface-2)' }}>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{formatDateLong(block.date)}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{block.groups.length} supplier · {block.itemCount} item</p>
+                  </div>
+                  <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
+                </div>
+                {view === 'table' ? (
             <div className="overflow-x-auto">
               <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                 <thead>
@@ -276,18 +438,13 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                         <td className="px-3 py-2.5"><span className={`badge ${STATUS_BADGE[g.status].cls}`}>{STATUS_BADGE[g.status].label}</span></td>
                         <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                           <div className="inline-flex items-center gap-1">
-                            <Tooltip label="Buka & centang">
-                              <button onClick={() => setDetailKey(g.key)} className="btn-ghost p-2"><FolderOpen size={14} /></button>
+                            <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Buka'}>
+                              <button onClick={() => setDetailKey(g.key)} className="btn-ghost p-2"><Pencil size={14} /></button>
                             </Tooltip>
                             {g.pending.length > 0 && (
-                              <>
-                                <Tooltip label="Ubah tanggal / supplier / catatan">
-                                  <button onClick={() => openForm('edit', g)} className="btn-ghost p-2"><Pencil size={14} /></button>
-                                </Tooltip>
-                                <Tooltip label="Hapus daftar">
+                              <Tooltip label="Hapus daftar">
                                   <button onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
                                 </Tooltip>
-                              </>
                             )}
                           </div>
                         </td>
@@ -305,8 +462,80 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </tfoot>
               </table>
             </div>
-          </div>
-        ))}
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
+                    {block.groups.map(g => {
+                      const doneCount = g.items.length - g.pending.length;
+                      return (
+                        <div key={g.key} onClick={() => setDetailKey(g.key)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{supplierLabel(g)}</p>
+                              {g.notes.length > 0 && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
+                            </div>
+                            <span className={`badge ${STATUS_BADGE[g.status].cls} flex-shrink-0`}>{STATUS_BADGE[g.status].label}</span>
+                          </div>
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{doneCount}/{g.items.length} item dibeli</p>
+                          <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(g.total)}</p>
+                          <div className="flex items-center justify-end gap-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }} onClick={e => e.stopPropagation()}>
+                            <div className="inline-flex items-center gap-1">
+                            <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Buka'}>
+                              <button onClick={() => setDetailKey(g.key)} className="btn-ghost p-2"><Pencil size={14} /></button>
+                            </Tooltip>
+                            {g.pending.length > 0 && (
+                              <Tooltip label="Hapus daftar">
+                                  <button onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                                </Tooltip>
+                            )}
+                          </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="card px-4 py-3 flex items-center justify-between" style={{ background: 'var(--accent-bg)' }}>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total semua ({dateBlocks.length} tanggal · {grandItems} item)</span>
+              <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(grandTotal)}</span>
+            </div>
+
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {dateBlocks.length} tanggal · {groups.length} daftar · halaman {safePage} dari {totalPages}
+                </p>
+                <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); setPage(1); }} />
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <Tooltip label="Halaman sebelumnya">
+                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+                  </Tooltip>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce<(number | '…')[]>((acc, n, i, arr) => {
+                      if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(n); return acc;
+                    }, [])
+                    .map((n, i) =>
+                      n === '…'
+                        ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
+                        : <button key={n} onClick={() => goPage(n as number)} className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
+                            style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
+                            {n}
+                          </button>
+                    )}
+                  <Tooltip label="Halaman berikutnya">
+                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Modal & bilah di luar wadah beranimasi (transform) supaya `fixed` relatif ke viewport */}
@@ -329,7 +558,14 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Centang item yang sudah dibeli. Ubah qty &amp; harga sesuai nota, lalu tekan Proses.</p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Centang item yang sudah dibeli. Ubah qty &amp; harga sesuai nota, lalu tekan Proses.</p>
+                  {detail.pending.length > 0 && (
+                    <button onClick={() => openForm('edit', detail)} className="flex items-center gap-1 text-xs font-bold flex-shrink-0" style={{ color: 'var(--accent)' }}>
+                      <Pencil size={12} /> Ubah info
+                    </button>
+                  )}
+                </div>
                 {detail.items.map(i => i.status === 'done' ? (
                   <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                     <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
