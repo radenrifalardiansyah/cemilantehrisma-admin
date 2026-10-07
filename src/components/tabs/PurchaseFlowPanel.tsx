@@ -38,7 +38,7 @@ interface Po {
   status: PoStatus; cancelNote: string | null; received: Record<string, number>; createdBy?: string | null;
 }
 interface Gr {
-  id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null;
+  id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null; supplierPhone?: string; supplierAddress?: string;
   poNumber: string | null; supplierName: string | null; items: GrItem[]; total: number;
   receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null;
   purchaseId: string | null; cancelNote: string | null;
@@ -153,9 +153,11 @@ export default function PurchaseFlowPanel({
     finally { setBusyId(null); }
   };
   const supplierOf = (id?: string | null) => (id ? suppliers.find(s => s.id === id) : undefined);
+  // Telepon/alamat supplier untuk dokumen GR/DO: dari API (snapshot PO + master supplier), cadangan dari daftar supplier.
+  const supplierInfoOf = (g: Gr) => ({ phone: g.supplierPhone || supplierOf(g.supplierId)?.phone, address: g.supplierAddress || supplierOf(g.supplierId)?.address });
   const poPdf = (p: Po) => downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={poToDocData(p, supplierOf(p.supplierId)?.address)} store={storeHeader} />, p.poNumber);
   const grPdf = (g: Gr, kind: 'gr' | 'do') =>
-    downloadPdf(`${kind}-${g.id}`, <PurchaseDocPDF data={grToDocData(g, kind, supplierOf(g.supplierId))} store={storeHeader} />, kind === 'do' ? g.doNumber : g.grNumber);
+    downloadPdf(`${kind}-${g.id}`, <PurchaseDocPDF data={grToDocData(g, kind, supplierInfoOf(g))} store={storeHeader} />, kind === 'do' ? g.doNumber : g.grNumber);
 
   // ── Kirim WA ke supplier (tombol manual — pengguna yang menekan Kirim di WhatsApp) ──
   const sendPoWhatsApp = async (p: Po) => {
@@ -439,7 +441,7 @@ ${pdfUrl}`.trim();
   const printSelected = async (kind: 'po' | 'gr' | 'do') => {
     const docs = kind === 'po'
       ? filteredPos.filter(p => selPo.has(p.id)).map(p => poToDocData(p, supplierOf(p.supplierId)?.address))
-      : filteredGrs.filter(g => selGr.has(g.id)).map(g => grToDocData(g, kind, supplierOf(g.supplierId)));
+      : filteredGrs.filter(g => selGr.has(g.id)).map(g => grToDocData(g, kind, supplierInfoOf(g)));
     if (docs.length === 0) { toast.error('Centang dokumen yang mau dicetak dulu.'); return; }
     if (docs.length > MAX_PRINT) { toast.error(`Maksimal ${MAX_PRINT} dokumen sekali cetak. Kurangi centangnya.`); return; }
     const label = kind === 'po' ? 'purchase-order' : kind === 'gr' ? 'goods-receipt' : 'delivery-order';
