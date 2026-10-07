@@ -108,8 +108,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  // Form daftar (buat baru / tambah item ke daftar / ubah header)
-  const [form, setForm] = useState<{ mode: 'create' | 'add' | 'edit'; group?: ShoppingGroup } | null>(null);
+  // Form buat daftar baru
+  const [showCreate, setShowCreate] = useState(false);
   const [fDate, setFDate] = useState(todayISO());
   const [fSupplierId, setFSupplierId] = useState('');
   const [fSupplierName, setFSupplierName] = useState('');
@@ -119,6 +119,12 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
   // Detail daftar (centang) & proses
   const [detailKey, setDetailKey] = useState<string | null>(null);
+  // Info daftar yang sedang dibuka (diedit di modal yang sama dengan centang item)
+  const [dDate, setDDate] = useState('');
+  const [dSupplierId, setDSupplierId] = useState('');
+  const [dSupplierName, setDSupplierName] = useState('');
+  const [dNote, setDNote] = useState('');
+  const [savingInfo, setSavingInfo] = useState(false);
   const [showProcess, setShowProcess] = useState(false);
   const [pDate, setPDate] = useState(todayISO());
   const [walletId, setWalletId] = useState('');
@@ -165,40 +171,78 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const supplierOptions = [{ value: '', label: '– Toko/warung lain, isi nama di bawah –' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))];
   const supplierLabel = (g: { supplierName: string }) => g.supplierName.trim() || NO_SUPPLIER;
 
-  // ── Form ──
-  const openForm = (mode: 'create' | 'add' | 'edit', group?: ShoppingGroup) => {
-    setForm({ mode, group });
-    setFDate(group?.date ?? todayISO());
-    setFSupplierId(group?.supplierId ?? '');
-    setFSupplierName(group?.supplierName ?? '');
-    setFNote(group?.notes.join(' · ') ?? '');
+  // ── Form buat daftar baru ──
+  const openCreate = () => {
+    setFDate(todayISO()); setFSupplierId(''); setFSupplierName(''); setFNote('');
     setRows([{ ...EMPTY_ROW }]);
+    setShowCreate(true);
+  };
+  const openDetail = (g: ShoppingGroup) => {
+    setDDate(g.date); setDSupplierId(g.supplierId ?? ''); setDSupplierName(g.supplierName); setDNote(g.notes.join(' · '));
+    setRows([{ ...EMPTY_ROW }]);
+    openDetail(g);
   };
   const updateRow = (i: number, p: Partial<AddRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
   const validRows = rows.filter(r => r.materialId && parseFloat(r.qty) > 0);
   const formTotal = validRows.reduce((t, r) => t + parseFloat(r.qty) * (parseFloat(r.price) || 0), 0);
-  const canSave = !!fDate && (form?.mode === 'edit' || validRows.length > 0);
+  const canSave = !!fDate && validRows.length > 0;
+
+  // Nama toko yang sama dengan supplier terdaftar otomatis dianggap supplier itu (supaya tergabung).
+  const resolveSupplier = (pickedId: string, typedName: string) => {
+    const typed = typedName.trim();
+    const matched = pickedId ? undefined : suppliers.find(s => s.name.toLowerCase() === typed.toLowerCase());
+    const supplierId = pickedId || matched?.id || '';
+    return { supplierId, supplierName: suppliers.find(s => s.id === supplierId)?.name ?? typed };
+  };
+  const rowsPayload = () => validRows.map(x => ({ materialId: x.materialId, qty: parseFloat(x.qty), price: x.price ? parseFloat(x.price) : null }));
 
   const saveForm = async () => {
-    if (!form || !canSave) return;
+    if (!canSave) return;
     setSaving(true);
     try {
-      // Nama toko yang sama dengan supplier terdaftar otomatis dianggap supplier itu (supaya tergabung).
-      const typed = fSupplierName.trim();
-      const matched = fSupplierId ? undefined : suppliers.find(s => s.name.toLowerCase() === typed.toLowerCase());
-      const supplierId = fSupplierId || matched?.id || '';
-      const supplierName = suppliers.find(s => s.id === supplierId)?.name ?? typed;
-      const base = { date: fDate, supplierId, supplierName, note: fNote };
-      const r = form.mode === 'edit'
-        ? await fetch(`${API}/api/material-shopping/group`, { method: 'PUT', headers, body: JSON.stringify({ ...base, ids: form.group!.pending.map(i => i.id) }) })
-        : await fetch(`${API}/api/material-shopping`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ ...base, items: validRows.map(x => ({ materialId: x.materialId, qty: parseFloat(x.qty), price: x.price ? parseFloat(x.price) : null })) }),
-          });
+      const r = await fetch(`${API}/api/material-shopping`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ date: fDate, ...resolveSupplier(fSupplierId, fSupplierName), note: fNote, items: rowsPayload() }),
+      });
       const d = await r.json() as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal menyimpan daftar belanja.'); return; }
-      toast.success(form.mode === 'edit' ? 'Daftar belanja diperbarui.' : `${validRows.length} item ditambahkan ke daftar belanja.`);
-      setForm(null);
+      toast.success(`${validRows.length} item ditambahkan ke daftar belanja.`);
+      setShowCreate(false);
+      await load();
+    } finally { setSaving(false); }
+  };
+
+  // Simpan perubahan info daftar (tanggal/supplier/catatan) — kunci daftar ikut berubah, jadi
+  // modal dipindahkan ke kunci baru supaya tetap terbuka.
+  const saveInfo = async () => {
+    if (!detail || !dDate) return;
+    setSavingInfo(true);
+    try {
+      const sup = resolveSupplier(dSupplierId, dSupplierName);
+      const r = await fetch(`${API}/api/material-shopping/group`, {
+        method: 'PUT', headers, body: JSON.stringify({ date: dDate, ...sup, note: dNote, ids: detail.pending.map(i => i.id) }),
+      });
+      const d = await r.json() as { error?: string };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal menyimpan info daftar.'); return; }
+      toast.success('Info daftar belanja diperbarui.');
+      setDetailKey(`${dDate}|${sup.supplierId ? `id:${sup.supplierId}` : `n:${sup.supplierName.trim().toLowerCase()}`}`);
+      await load();
+    } finally { setSavingInfo(false); }
+  };
+
+  // Tambah item baru ke daftar yang sedang dibuka (memakai info daftar yang sudah tersimpan).
+  const addToDetail = async () => {
+    if (!detail || validRows.length === 0) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`${API}/api/material-shopping`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ date: detail.date, supplierId: detail.supplierId ?? '', supplierName: detail.supplierName, note: detail.notes.join(' · '), items: rowsPayload() }),
+      });
+      const d = await r.json() as { error?: string };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal menambah item.'); return; }
+      toast.success(`${validRows.length} item ditambahkan.`);
+      setRows([{ ...EMPTY_ROW }]);
       await load();
     } finally { setSaving(false); }
   };
@@ -364,6 +408,49 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
   if (loading) return <PageLoader />;
 
+  const rowsEditor = (
+    <div>
+      <label style={fieldLabel}>Bahan Baku yang Dibeli</label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rows.map((row, i) => {
+          const mat = materials.find(m => m.id === row.materialId);
+          return (
+            <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
+                    options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                </div>
+                <Tooltip label="Hapus baris">
+                  <button onClick={() => setRows(prev => prev.filter((_, idx) => idx !== i))} disabled={rows.length === 1}
+                    className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                    <X size={14} />
+                  </button>
+                </Tooltip>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label style={fieldLabel}>{`Qty${mat ? ` (${mat.unit})` : ''}`}</label>
+                  <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Perkiraan harga/satuan</label>
+                  <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })} placeholder="0" />
+                </div>
+              </div>
+              {parseFloat(row.qty) > 0 && parseFloat(row.price) > 0 && (
+                <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(parseFloat(row.qty) * parseFloat(row.price))}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={() => setRows(prev => [...prev, { ...EMPTY_ROW }])} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+        <Plus size={12} /> Tambah Baris Bahan Baku
+      </button>
+    </div>
+  );
+
   return (
     <>
       <div className="p-4 lg:p-6 animate-fade-up space-y-4">
@@ -394,14 +481,14 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />
             </>
           )}
-          <button onClick={() => openForm('create')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+          <button onClick={openCreate} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
             <Plus size={13} /> <span className="hidden sm:inline">Buat Daftar Belanja</span>
           </button>
         </div>
         </div>
 
         {allGroups.length === 0 ? (
-          <EmptyAddCard label="Buat Daftar Belanja" onClick={() => openForm('create')}
+          <EmptyAddCard label="Buat Daftar Belanja" onClick={openCreate}
             hint="Susun daftar bahan baku yang mau dibeli, lalu centang saat sudah dibeli" />
         ) : dateBlocks.length === 0 ? (
           <p className="text-sm text-center py-10" style={{ color: 'var(--text-muted)' }}>Tidak ada daftar belanja yang cocok.</p>
@@ -418,7 +505,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </div>
                 {view === 'table' ? (
             <div className="overflow-x-auto">
-              <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+              <table className="w-full min-w-[680px] text-xs" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th className={`${thCls} text-center`} style={{ ...thStyle, width: 44 }}>No</th>
@@ -433,9 +520,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                   {block.groups.map(g => {
                     const doneCount = g.items.length - g.pending.length;
                     return (
-                      <tr key={g.key} onClick={() => setDetailKey(g.key)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                      <tr key={g.key} onClick={() => openDetail(g)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)' }}>
                         <td className="px-3 py-2.5 text-center tabular" style={{ color: 'var(--text-muted)' }}>{numberOf.get(g.key)}</td>
-                        <td className="px-3 py-2.5" style={{ color: 'var(--text-primary)' }}>
+                        <td className="px-3 py-2.5 min-w-[170px]" style={{ color: 'var(--text-primary)' }}>
                           <p className="font-semibold">{supplierLabel(g)}</p>
                           {g.notes.length > 0 && <p className="text-[10.5px] truncate max-w-[260px]" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
                         </td>
@@ -445,7 +532,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                         <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                           <div className="inline-flex items-center gap-1">
                             <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Buka'}>
-                              <button onClick={() => setDetailKey(g.key)} className="btn-ghost p-2"><Pencil size={14} /></button>
+                              <button onClick={() => openDetail(g)} className="btn-ghost p-2"><Pencil size={14} /></button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -461,7 +548,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 <tfoot>
                   <tr style={{ background: 'var(--surface-2)' }}>
                     <td />
-                    <td className="px-3 py-2.5 font-bold" style={{ color: 'var(--text-primary)' }}>Total semua supplier</td>
+                    <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>Total semua supplier</td>
                     <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{block.itemCount} item</td>
                     <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--accent)' }}>{formatRp(block.total)}</td>
                     <td colSpan={2} />
@@ -474,7 +561,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     {block.groups.map(g => {
                       const doneCount = g.items.length - g.pending.length;
                       return (
-                        <div key={g.key} onClick={() => setDetailKey(g.key)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
+                        <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}><span style={{ color: 'var(--text-muted)' }}>#{numberOf.get(g.key)}</span> {supplierLabel(g)}</p>
@@ -487,7 +574,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                           <div className="flex items-center justify-end gap-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }} onClick={e => e.stopPropagation()}>
                             <div className="inline-flex items-center gap-1">
                             <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Buka'}>
-                              <button onClick={() => setDetailKey(g.key)} className="btn-ghost p-2"><Pencil size={14} /></button>
+                              <button onClick={() => openDetail(g)} className="btn-ghost p-2"><Pencil size={14} /></button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -547,7 +634,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
       {/* Modal & bilah di luar wadah beranimasi (transform) supaya `fixed` relatif ke viewport */}
 
-      {/* Detail daftar: centang item */}
+      {/* Detail daftar: info + centang item + tambah item, dalam satu modal */}
       {detail && (
         <div className="modal-overlay" onClick={() => !processing && setDetailKey(null)}>
           <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
@@ -558,52 +645,93 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 <div className="modal-icon"><ShoppingCart size={17} /></div>
                 <div>
                   <p className="modal-title">{supplierLabel(detail)}</p>
-                  <p className="modal-subtitle">{formatDateLong(detail.date)}{detail.notes.length > 0 ? ` · ${detail.notes.join(' · ')}` : ''}</p>
+                  <p className="modal-subtitle">{formatDateLong(detail.date)} · {detail.items.length - detail.pending.length}/{detail.items.length} item dibeli</p>
                 </div>
               </div>
               <Tooltip label="Tutup"><button onClick={() => setDetailKey(null)} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
             <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Centang item yang sudah dibeli. Ubah qty &amp; harga sesuai nota, lalu tekan Proses.</p>
-                  {detail.pending.length > 0 && (
-                    <button onClick={() => openForm('edit', detail)} className="flex items-center gap-1 text-xs font-bold flex-shrink-0" style={{ color: 'var(--accent)' }}>
-                      <Pencil size={12} /> Ubah info
-                    </button>
-                  )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Info daftar */}
+                {detail.pending.length > 0 ? (
+                  <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--border-2)' }}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label style={fieldLabel}>Tanggal</label>
+                        <input type="date" value={dDate} onChange={e => setDDate(e.target.value)} className="input" />
+                      </div>
+                      <div>
+                        <label style={fieldLabel}>Supplier</label>
+                        <SearchSelect value={dSupplierId}
+                          onChange={id => { setDSupplierId(id); const sp = suppliers.find(x => x.id === id); if (sp) setDSupplierName(sp.name); }}
+                          options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={fieldLabel}>Nama Toko / Supplier</label>
+                      <input type="text" value={dSupplierName} maxLength={120}
+                        onChange={e => { setDSupplierName(e.target.value); if (suppliers.find(x => x.id === dSupplierId)?.name !== e.target.value) setDSupplierId(''); }}
+                        placeholder="Ketik manual untuk toko/warung lain" className="input" />
+                    </div>
+                    <div>
+                      <label style={fieldLabel}>Catatan</label>
+                      <input type="text" value={dNote} onChange={e => setDNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" />
+                    </div>
+                    {(dDate !== detail.date || dSupplierId !== (detail.supplierId ?? '') || dSupplierName !== detail.supplierName || dNote !== detail.notes.join(' · ')) && (
+                      <button onClick={saveInfo} disabled={savingInfo || !dDate} className="btn-primary text-xs" style={{ height: 34 }}>
+                        {savingInfo ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Simpan Info
+                      </button>
+                    )}
+                  </div>
+                ) : detail.notes.length > 0 && (
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Catatan: {detail.notes.join(' · ')}</p>
+                )}
+
+                {/* Checklist item */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <label style={{ ...fieldLabel, marginBottom: 0 }}>Item Belanja — centang yang sudah dibeli, sesuaikan qty &amp; harga dengan nota</label>
+                  {detail.items.map(i => i.status === 'done' ? (
+                    <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                      <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
+                      <span className="tabular">{formatRp(i.qty * (i.price ?? 0))}</span>
+                    </div>
+                  ) : (
+                    <div key={i.id} className="p-3 rounded-xl flex flex-wrap items-center gap-x-3 gap-y-2" style={{ border: '1px solid var(--border-2)' }}>
+                      <button onClick={() => toggle(i)} aria-label={i.checked ? 'Batal centang' : 'Centang sudah dibeli'}
+                        className="flex-shrink-0 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center transition-colors"
+                        style={{ background: i.checked ? 'var(--accent)' : 'transparent', borderColor: i.checked ? 'var(--accent)' : 'var(--border)' }}>
+                        {i.checked && <Check size={13} color="#fff" strokeWidth={3} />}
+                      </button>
+                      <div className="flex-1 min-w-[130px]">
+                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)', textDecoration: i.checked ? 'line-through' : 'none' }}>{i.materialName}</p>
+                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Satuan: {i.unit}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input type="number" min="0" value={i.qty} onChange={e => setLocal(i.id, { qty: parseFloat(e.target.value) || 0 })}
+                          onBlur={() => { if (i.qty > 0) patch(i.id, { qty: i.qty }); else load(); }}
+                          className="input text-right" style={{ width: 80 }} />
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{i.unit}</span>
+                      </div>
+                      <div style={{ width: 130 }} onBlur={() => patch(i.id, { price: i.price })}>
+                        <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
+                          onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
+                      </div>
+                      <Tooltip label="Hapus dari daftar">
+                        <button onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                      </Tooltip>
+                    </div>
+                  ))}
                 </div>
-                {detail.items.map(i => i.status === 'done' ? (
-                  <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                    <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
-                    <span className="tabular">{formatRp(i.qty * (i.price ?? 0))}</span>
-                  </div>
-                ) : (
-                  <div key={i.id} className="p-3 rounded-xl flex flex-wrap items-center gap-x-3 gap-y-2" style={{ border: '1px solid var(--border-2)' }}>
-                    <button onClick={() => toggle(i)} aria-label={i.checked ? 'Batal centang' : 'Centang sudah dibeli'}
-                      className="flex-shrink-0 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center transition-colors"
-                      style={{ background: i.checked ? 'var(--accent)' : 'transparent', borderColor: i.checked ? 'var(--accent)' : 'var(--border)' }}>
-                      {i.checked && <Check size={13} color="#fff" strokeWidth={3} />}
-                    </button>
-                    <div className="flex-1 min-w-[130px]">
-                      <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)', textDecoration: i.checked ? 'line-through' : 'none' }}>{i.materialName}</p>
-                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Satuan: {i.unit}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <input type="number" min="0" value={i.qty} onChange={e => setLocal(i.id, { qty: parseFloat(e.target.value) || 0 })}
-                        onBlur={() => { if (i.qty > 0) patch(i.id, { qty: i.qty }); else load(); }}
-                        className="input text-right" style={{ width: 80 }} />
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{i.unit}</span>
-                    </div>
-                    <div style={{ width: 130 }} onBlur={() => patch(i.id, { price: i.price })}>
-                      <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
-                        onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
-                    </div>
-                    <Tooltip label="Hapus dari daftar">
-                      <button onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
-                    </Tooltip>
-                  </div>
-                ))}
+
+                {/* Tambah item ke daftar ini */}
+                <div className="p-3 rounded-xl space-y-3" style={{ border: '1px dashed var(--border)' }}>
+                  {rowsEditor}
+                  <button onClick={addToDetail} disabled={saving || validRows.length === 0} className="btn-ghost text-xs w-full justify-center py-2.5">
+                    {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    {validRows.length > 1 ? `Tambah ${validRows.length} Item ke Daftar` : 'Tambah ke Daftar'}
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
                   <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Daftar</span>
                   <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(detail.total)}</span>
@@ -617,9 +745,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               </div>
             </div>
             <div className="modal-footer">
-              <button onClick={() => openForm('add', detail)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                <Plus size={14} /> Tambah Item
-              </button>
+              <button onClick={() => setDetailKey(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
               <button onClick={() => openProcess(detail)} disabled={detail.checked.length === 0} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
                 <Check size={14} /> Proses yang Dicentang{detail.checked.length > 0 ? ` (${detail.checked.length})` : ''}
               </button>
@@ -628,9 +754,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
         </div>
       )}
 
-      {/* Form daftar belanja */}
-      {form && (
-        <div className="modal-overlay" onClick={() => !saving && setForm(null)}>
+      {/* Buat daftar belanja baru */}
+      {showCreate && (
+        <div className="modal-overlay" onClick={() => !saving && setShowCreate(false)}>
           <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-accent" />
             <span className="modal-handle" />
@@ -638,11 +764,11 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               <div className="modal-header-left">
                 <div className="modal-icon"><ShoppingCart size={17} /></div>
                 <div>
-                  <p className="modal-title">{form.mode === 'edit' ? 'Ubah Daftar Belanja' : form.mode === 'add' ? 'Tambah Item Daftar Belanja' : 'Buat Daftar Belanja'}</p>
+                  <p className="modal-title">Buat Daftar Belanja</p>
                   <p className="modal-subtitle">Belum mengubah stok — baru jadi pembelian setelah dicentang &amp; diproses</p>
                 </div>
               </div>
-              <Tooltip label="Tutup"><button onClick={() => setForm(null)} className="modal-close"><X size={14} /></button></Tooltip>
+              <Tooltip label="Tutup"><button onClick={() => setShowCreate(false)} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -654,7 +780,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                   <div>
                     <label style={fieldLabel}>Supplier</label>
                     <SearchSelect value={fSupplierId}
-                      onChange={id => { setFSupplierId(id); const s = suppliers.find(x => x.id === id); if (s) setFSupplierName(s.name); }}
+                      onChange={id => { setFSupplierId(id); const sp = suppliers.find(x => x.id === id); if (sp) setFSupplierName(sp.name); }}
                       options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
                   </div>
                 </div>
@@ -665,73 +791,28 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     placeholder="Terisi dari supplier yang dipilih; ketik manual untuk toko/warung lain" className="input" />
                 </div>
 
-                {form.mode !== 'edit' && (
-                  <div>
-                    <label style={fieldLabel}>Bahan Baku yang Dibeli</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {rows.map((row, i) => {
-                        const mat = materials.find(m => m.id === row.materialId);
-                        return (
-                          <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
-                                  options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-                              </div>
-                              <Tooltip label="Hapus baris">
-                                <button onClick={() => setRows(prev => prev.filter((_, idx) => idx !== i))} disabled={rows.length === 1}
-                                  className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}>
-                                  <X size={14} />
-                                </button>
-                              </Tooltip>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label style={fieldLabel}>{`Qty${mat ? ` (${mat.unit})` : ''}`}</label>
-                                <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
-                              </div>
-                              <div>
-                                <label style={fieldLabel}>Perkiraan harga/satuan</label>
-                                <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })} placeholder="0" />
-                              </div>
-                            </div>
-                            {parseFloat(row.qty) > 0 && parseFloat(row.price) > 0 && (
-                              <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(parseFloat(row.qty) * parseFloat(row.price))}</p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <button onClick={() => setRows(prev => [...prev, { ...EMPTY_ROW }])} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
-                      <Plus size={12} /> Tambah Baris Bahan Baku
-                    </button>
-                  </div>
-                )}
+                {rowsEditor}
 
                 <div>
                   <label style={fieldLabel}>Catatan</label>
                   <input type="text" value={fNote} onChange={e => setFNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" />
                 </div>
 
-                {form.mode !== 'edit' && (
-                  <>
-                    <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                      <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
-                      <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{validRows.length} item</span>
-                    </div>
-                    <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                      <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perkiraan Total</span>
-                      <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(formTotal)}</span>
-                    </div>
-                  </>
-                )}
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{validRows.length} item</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perkiraan Total</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(formTotal)}</span>
+                </div>
               </div>
             </div>
             <div className="modal-footer">
-              <button onClick={() => setForm(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+              <button onClick={() => setShowCreate(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
               <button onClick={saveForm} disabled={saving || !canSave} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : form.mode === 'edit' ? 'Simpan Perubahan' : validRows.length > 1 ? `Simpan (${validRows.length} item)` : 'Simpan'}
+                {saving ? 'Menyimpan…' : validRows.length > 1 ? `Simpan (${validRows.length} item)` : 'Simpan'}
               </button>
             </div>
           </div>
