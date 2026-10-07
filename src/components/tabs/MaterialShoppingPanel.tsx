@@ -135,7 +135,6 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [dSupplierName, setDSupplierName] = useState('');
   const [dNote, setDNote] = useState('');
   const [savingInfo, setSavingInfo] = useState(false);
-  const [showProcess, setShowProcess] = useState(false);
   const [pDate, setPDate] = useState(todayISO());
   const [walletId, setWalletId] = useState('');
   // Dompet per item (menimpa dompet default); kosong = ikut dompet default.
@@ -194,6 +193,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const openDetail = (g: ShoppingGroup) => {
     setDDate(g.date); setDSupplierId(g.supplierId ?? ''); setDSupplierName(g.supplierName); setDNote(g.notes.join(' · '));
     setRows([{ ...EMPTY_ROW }]);
+    setItemWallets({}); setPDate(todayISO()); setPNote(g.notes.join(' · '));
     setDetailKey(g.key);
   };
   const updateRow = (i: number, p: Partial<AddRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
@@ -281,7 +281,6 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   };
 
   // ── Proses ──
-  const openProcess = (g: ShoppingGroup) => { setItemWallets({}); setPDate(todayISO()); setPNote(g.notes.join(' · ')); setShowProcess(true); };
   const checkedTotal = detail ? detail.checked.reduce((s, i) => s + i.qty * (i.price ?? 0), 0) : 0;
   const missingPrice = detail ? detail.checked.filter(i => !(i.price && i.price > 0)) : [];
   const walletOf = (id: string) => itemWallets[id] || walletId;
@@ -301,7 +300,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       const d = await r.json() as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal memproses daftar belanja.'); return; }
       toast.success(walletTotals.size > 1 ? `${detail.checked.length} item diproses jadi ${walletTotals.size} pembelian (per dompet).` : `${detail.checked.length} item diproses jadi pembelian bahan baku.`);
-      setShowProcess(false);
+      setItemWallets({});
       await load();
       onProcessed();
     } finally { setProcessing(false); }
@@ -746,6 +745,13 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                         <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
                           onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
                       </div>
+                      {i.checked && (
+                        <div style={{ width: 230, maxWidth: '100%' }}>
+                          <SearchSelect value={itemWallets[i.id] ?? ''} onChange={w => setItemWallets(prev => ({ ...prev, [i.id]: w }))}
+                            options={[{ value: '', label: walletId ? 'Ikut dompet utama' : '– Pilih dompet –' }, ...walletOptions]}
+                            placeholder="Dompet" searchPlaceholder="Cari dompet…" />
+                        </div>
+                      )}
                       <Tooltip label="Hapus dari daftar">
                         <button onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
                       </Tooltip>
@@ -764,24 +770,69 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </div>
                 )}
 
+                {/* Pembayaran — muncul setelah ada item yang dicentang, jadi tidak perlu modal kedua */}
+                {detail.checked.length > 0 && (
+                  <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--accent)', background: 'var(--surface)' }}>
+                    <p className="text-xs font-bold" style={{ color: 'var(--accent)' }}>Pembayaran — {detail.checked.length} item dicentang · {formatRp(checkedTotal)}</p>
+                    {missingPrice.length > 0 && (
+                      <p className="text-xs" style={{ color: 'var(--danger)' }}>Isi harga sebenarnya untuk: {missingPrice.map(i => i.materialName).join(', ')}.</p>
+                    )}
+                    {!detail.supplierName.trim() && (
+                      <p className="text-xs" style={{ color: 'var(--danger)' }}>Daftar ini belum punya nama toko/supplier. Isi dulu di bagian info di atas, lalu Simpan Info.</p>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label style={fieldLabel}>Tanggal Pembelian</label>
+                        <input type="date" value={pDate} onChange={e => setPDate(e.target.value)} className="input" />
+                      </div>
+                      <div>
+                        <label style={fieldLabel}>Dompet Utama <span style={{ color: 'var(--danger)' }}>*</span></label>
+                        <SearchSelect value={walletId} onChange={setWalletId} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                        {walletId && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Saldo: {formatRp(walletBalances[walletId] ?? 0)} · dipakai item yang tidak dipilih dompetnya</p>}
+                      </div>
+                    </div>
+                    {walletTotals.size > 0 && (
+                      <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: 'var(--accent-bg)' }}>
+                        <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan per dompet — {walletTotals.size} pembelian akan dibuat</p>
+                        {[...walletTotals.entries()].map(([w, total]) => (
+                          <div key={w} className="flex justify-between gap-3">
+                            <span style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
+                            <span className="font-bold tabular" style={{ color: paymentStatus === 'lunas' && total > (walletBalances[w] ?? 0) ? 'var(--danger)' : 'var(--text-primary)' }}>{formatRp(total)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div>
+                      <label style={fieldLabel}>Status Pembayaran</label>
+                      <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                        {(['lunas', 'belum_lunas'] as const).map(st => (
+                          <button key={st} type="button" onClick={() => setPaymentStatus(st)} className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
+                            style={paymentStatus === st ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                            {st === 'lunas' ? 'Lunas' : 'Belum Lunas'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={fieldLabel}>Catatan Pembelian</label>
+                      <input type="text" value={pNote} onChange={e => setPNote(e.target.value)} className="input" placeholder="Opsional (default: Dari Daftar Belanja)" />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
                   <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Daftar</span>
                   <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(detail.total)}</span>
                 </div>
-                {detail.checked.length > 0 && (
-                  <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{detail.checked.length} item dicentang</span>
-                    <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(checkedTotal)}</span>
-                  </div>
-                )}
               </div>
             </div>
             <div className="modal-footer">
               <button onClick={() => setDetailKey(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
               {detail.pending.length > 0 && (
-                <button onClick={() => openProcess(detail)} disabled={detail.checked.length === 0} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                <Check size={14} /> Proses yang Dicentang{detail.checked.length > 0 ? ` (${detail.checked.length})` : ''}
-              </button>
+                <button onClick={submitProcess} disabled={processing || !canProcess} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                  {processing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  {processing ? 'Memproses…' : detail.checked.length > 0 ? `Simpan Pembelian (${detail.checked.length})` : 'Centang item untuk diproses'}
+                </button>
               )}
             </div>
           </div>
@@ -847,92 +898,6 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               <button onClick={saveForm} disabled={saving || !canSave} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {saving ? 'Menyimpan…' : validRows.length > 1 ? `Simpan (${validRows.length} item)` : 'Simpan'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Proses jadi pembelian */}
-      {showProcess && detail && (
-        <div className="modal-overlay" onClick={() => !processing && setShowProcess(false)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ShoppingCart size={17} /></div>
-                <div>
-                  <p className="modal-title">Proses jadi Pembelian</p>
-                  <p className="modal-subtitle">{supplierLabel(detail)} · {detail.checked.length} item · {formatRp(checkedTotal)} — stok &amp; harga rata-rata ter-update otomatis</p>
-                </div>
-              </div>
-              <Tooltip label="Tutup"><button onClick={() => setShowProcess(false)} className="modal-close"><X size={14} /></button></Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="space-y-2">
-                  {detail.checked.map(i => (
-                    <div key={i.id} className="p-3 rounded-xl flex flex-wrap items-center gap-x-3 gap-y-2" style={{ background: 'var(--surface-2)' }}>
-                      <div className="flex-1 min-w-[150px] text-xs">
-                        <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>{i.materialName}</p>
-                        <p style={{ color: 'var(--text-muted)' }}>{formatQty(i.qty)} {i.unit} · <span className="tabular" style={{ color: i.price ? 'var(--text-secondary)' : 'var(--danger)' }}>{i.price ? formatRp(i.qty * i.price) : 'harga belum diisi'}</span></p>
-                      </div>
-                      <div style={{ width: 230, maxWidth: '100%' }}>
-                        <SearchSelect value={itemWallets[i.id] ?? ''} onChange={w => setItemWallets(prev => ({ ...prev, [i.id]: w }))}
-                          options={[{ value: '', label: walletId ? 'Ikut dompet utama' : '– Pilih dompet –' }, ...walletOptions]}
-                          placeholder="Dompet" searchPlaceholder="Cari dompet…" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {missingPrice.length > 0 && (
-                  <p className="text-xs" style={{ color: 'var(--danger)' }}>Isi harga sebenarnya di daftar dulu untuk: {missingPrice.map(i => i.materialName).join(', ')}.</p>
-                )}
-                {!detail.supplierName.trim() && (
-                  <p className="text-xs" style={{ color: 'var(--danger)' }}>Daftar ini belum punya nama toko/supplier. Tutup, lalu ubah daftar (ikon pensil) dan isi dulu.</p>
-                )}
-                <div>
-                  <label style={fieldLabel}>Tanggal Pembelian</label>
-                  <input type="date" value={pDate} onChange={e => setPDate(e.target.value)} className="input" style={{ maxWidth: 220 }} />
-                </div>
-                <div>
-                  <label style={fieldLabel}>Dompet Utama (dipakai item yang tidak dipilih dompetnya) <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={walletId} onChange={setWalletId} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-                  {walletId && <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Saldo saat ini: {formatRp(walletBalances[walletId] ?? 0)}</p>}
-                </div>
-                {walletTotals.size > 0 && (
-                  <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: 'var(--accent-bg)' }}>
-                    <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan per dompet — {walletTotals.size} pembelian akan dibuat</p>
-                    {[...walletTotals.entries()].map(([w, total]) => (
-                      <div key={w} className="flex justify-between gap-3">
-                        <span style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
-                        <span className="font-bold tabular" style={{ color: paymentStatus === 'lunas' && total > (walletBalances[w] ?? 0) ? 'var(--danger)' : 'var(--text-primary)' }}>{formatRp(total)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div>
-                  <label style={fieldLabel}>Status Pembayaran</label>
-                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                    {(['lunas', 'belum_lunas'] as const).map(s => (
-                      <button key={s} type="button" onClick={() => setPaymentStatus(s)} className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
-                        style={paymentStatus === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-                        {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={pNote} onChange={e => setPNote(e.target.value)} className="input" placeholder="Opsional (default: Dari Daftar Belanja)" />
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowProcess(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={submitProcess} disabled={processing || !canProcess} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {processing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {processing ? 'Memproses…' : 'Simpan Pembelian'}
               </button>
             </div>
           </div>
