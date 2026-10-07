@@ -655,28 +655,6 @@ ${pdfUrl}`.trim();
           <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
             {selected.size > 0 ? `${selected.size} dipilih` : `${pageIds.length} ${view === 'po' ? 'PO' : 'GR'} di halaman ini`}
           </span>
-          {selected.size > 0 && (
-            <div className="flex items-center gap-2 flex-wrap ml-auto">
-              {view === 'po' ? (
-                <button onClick={() => printSelected('po')} disabled={busyId === 'bulk-po'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
-                  {busyId === 'bulk-po' ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Cetak PDF PO ({selected.size})
-                </button>
-              ) : (
-                <>
-                  <button onClick={() => printSelected('gr')} disabled={busyId === 'bulk-gr'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
-                    {busyId === 'bulk-gr' ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Cetak GR ({selected.size})
-                  </button>
-                  <button onClick={() => printSelected('do')} disabled={busyId === 'bulk-do'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
-                    {busyId === 'bulk-do' ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Cetak DO ({selected.size})
-                  </button>
-                </>
-              )}
-              <button onClick={bulkDelete} disabled={busyId === 'bulk-del'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--danger)' }}>
-                {busyId === 'bulk-del' ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Hapus ({selected.size})
-              </button>
-              <button onClick={() => setSelected(new Set())} className="btn-ghost px-2.5 py-1.5 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Batal pilih</button>
-            </div>
-          )}
         </div>
       )}
 
@@ -814,6 +792,50 @@ ${pdfUrl}`.trim();
       )}
 
     </div>
+
+      {/* Bilah aksi massal melayang — sama seperti menu Mitra. Di luar pembungkus animate-fade-up
+          supaya posisi `fixed` mengacu ke layar, bukan ke panel. */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            {view === 'po' ? (
+              <button onClick={() => printSelected('po')} disabled={busyId === 'bulk-po'}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+                {busyId === 'bulk-po' ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Cetak PO
+              </button>
+            ) : (
+              <>
+                <button onClick={() => printSelected('gr')} disabled={busyId === 'bulk-gr'}
+                  className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+                  {busyId === 'bulk-gr' ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Cetak GR
+                </button>
+                <button onClick={() => printSelected('do')} disabled={busyId === 'bulk-do'}
+                  className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+                  {busyId === 'bulk-do' ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Cetak DO
+                </button>
+              </>
+            )}
+            <button onClick={exportExcel} disabled={exportingXlsx}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingXlsx ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />} Excel
+            </button>
+            <button onClick={exportPdf} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />} PDF
+            </button>
+            <button onClick={bulkDelete} disabled={busyId === 'bulk-del'}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap" style={{ background: 'var(--danger)', color: '#fff' }}>
+              {busyId === 'bulk-del' ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Hapus
+            </button>
+            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ════ MODAL: FORM PO ════ */}
       {showPoForm && (
