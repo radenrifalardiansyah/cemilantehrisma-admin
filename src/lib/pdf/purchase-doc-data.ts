@@ -7,36 +7,43 @@ import type { PoStatus, GrStatus, PoItem, GrItem } from '@/lib/purchase-orders-p
 export interface PoLike {
   poNumber: string; supplierName: string; supplierPhone: string; items: PoItem[]; total: number;
   date: string; expectedDate: string | null; note: string; status: PoStatus; cancelNote: string | null;
+  createdBy?: string | null;
 }
 export interface GrLike {
   grNumber: string; doNumber: string; poNumber: string | null; supplierName: string | null;
   items: GrItem[]; total: number; receivedDate: string; note: string; status: GrStatus; cancelNote: string | null;
+  createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null; paymentStatus?: string | null;
 }
 
 export function printedNow() {
   return new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export function poToDocData(po: PoLike): PurchaseDocData {
+export function poToDocData(po: PoLike, supplierAddress?: string): PurchaseDocData {
   return {
     kind: 'po', number: po.poNumber, date: formatDocDate(po.date), printedAt: printedNow(),
-    supplierName: po.supplierName, supplierPhone: po.supplierPhone || undefined,
-    expectedDate: po.expectedDate ? formatDocDate(po.expectedDate) : undefined,
+    supplierName: po.supplierName, supplierPhone: po.supplierPhone || undefined, supplierAddress: supplierAddress || undefined,
+    expectedDate: po.expectedDate ? formatDocDate(po.expectedDate) : undefined, createdBy: po.createdBy || undefined,
     items: po.items, total: po.total, note: po.note || undefined,
-    ...(po.status === 'batal' ? { statusLabel: 'DIBATALKAN', statusTone: 'void' as const, cancelNote: po.cancelNote || undefined } : {}),
+    ...(po.status === 'batal'
+      ? { statusLabel: 'DIBATALKAN', statusTone: 'void' as const, cancelNote: po.cancelNote || undefined }
+      : po.status === 'draft' ? { statusLabel: 'DRAFT', statusTone: 'warn' as const } : {}),
   };
 }
 
-export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, supplierPhone?: string): PurchaseDocData {
+export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, supplier?: { phone?: string; address?: string }): PurchaseDocData {
   const status = gr.status === 'approved'
     ? { statusLabel: 'APPROVED', statusTone: 'ok' as const }
     : gr.status === 'dibatalkan'
       ? { statusLabel: 'DIBATALKAN', statusTone: 'void' as const, cancelNote: gr.cancelNote || undefined }
-      : { statusLabel: 'DRAFT — BELUM DI-APPROVE', statusTone: 'warn' as const };
+      : { statusLabel: 'DRAFT - BELUM DI-APPROVE', statusTone: 'warn' as const };
   return {
     kind, number: kind === 'do' ? gr.doNumber : gr.grNumber, date: formatDocDate(gr.receivedDate), printedAt: printedNow(),
-    supplierName: gr.supplierName ?? '', supplierPhone,
+    supplierName: gr.supplierName ?? '', supplierPhone: supplier?.phone || undefined, supplierAddress: supplier?.address || undefined,
     refPoNumber: gr.poNumber ?? undefined, refGrNumber: gr.grNumber, refDoNumber: gr.doNumber,
+    createdBy: gr.createdBy || undefined, approvedBy: gr.approvedBy || undefined,
+    approvedAt: gr.approvedAt ? new Date(gr.approvedAt.seconds * 1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' }) : undefined,
+    paymentLabel: gr.status === 'approved' && gr.paymentStatus ? (gr.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas') : undefined,
     items: gr.items, total: gr.total, note: gr.note || undefined, ...status,
   };
 }

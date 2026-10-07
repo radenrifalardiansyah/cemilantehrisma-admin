@@ -95,7 +95,7 @@ interface RawMaterial { id: string; name: string; unit: string; stockQty: number
 // Menipis = stok masih ada tapi sudah di batas minimum yang diset admin.
 export const isLowStock = (m: Pick<RawMaterial, 'stockQty' | 'minStock'>) =>
   (m.minStock ?? 0) > 0 && m.stockQty > 0 && m.stockQty <= (m.minStock ?? 0);
-interface Supplier { id: string; name: string; phone?: string }
+interface Supplier { id: string; name: string; phone?: string; address?: string }
 interface PurchaseItem { materialId: string; materialName: string; unit: string; qty: number; price: number; subtotal: number }
 interface Purchase {
   id: string; supplierId?: string | null; supplierName: string; items: PurchaseItem[]; total: number; note?: string;

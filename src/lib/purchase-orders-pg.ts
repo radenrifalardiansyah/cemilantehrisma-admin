@@ -36,12 +36,12 @@ export interface GrRow {
   created_by: string | null; approved_by: string | null; approved_at: Date | null;
   cancelled_at: Date | null; cancel_note: string | null;
   created_at: Date; updated_at: Date | null;
-  po_number?: string | null; supplier_name?: string | null;
+  po_number?: string | null; supplier_name?: string | null; supplier_id?: string | null;
 }
 export function rowToGr(r: GrRow, opts?: { includeToken?: boolean }) {
   return {
     id: r.id, grNumber: r.gr_number, doNumber: r.do_number, poId: r.po_id,
-    poNumber: r.po_number ?? null, supplierName: r.supplier_name ?? null,
+    poNumber: r.po_number ?? null, supplierName: r.supplier_name ?? null, supplierId: r.supplier_id ?? null,
     items: (parseJsonb(r.items as string | GrItem[] | null) as GrItem[] | null) ?? [],
     total: Number(r.total), receivedDate: r.received_date, note: r.note, status: r.status as GrStatus,
     walletId: r.wallet_id, paymentStatus: r.payment_status, purchaseId: r.purchase_id,

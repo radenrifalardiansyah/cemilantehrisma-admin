@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [row] = await sql<GrRow[]>`
-    select g.*, po.po_number, po.supplier_name from goods_receipts g join purchase_orders po on po.id = g.po_id where g.id = ${id}
+    select g.*, po.po_number, po.supplier_name, po.supplier_id from goods_receipts g join purchase_orders po on po.id = g.po_id where g.id = ${id}
   `;
   if (!row) return Response.json({ error: 'GR tidak ditemukan.' }, { status: 404 });
   return Response.json({ goodsReceipt: rowToGr(row) });

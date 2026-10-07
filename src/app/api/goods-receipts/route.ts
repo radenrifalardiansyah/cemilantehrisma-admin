@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const sql = getSql();
   const rows = await sql<GrRow[]>`
-    select g.*, po.po_number, po.supplier_name
+    select g.*, po.po_number, po.supplier_name, po.supplier_id
     from goods_receipts g join purchase_orders po on po.id = g.po_id
     order by g.created_at desc
   `;

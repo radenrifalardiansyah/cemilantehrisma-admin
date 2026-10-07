@@ -24,10 +24,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!row) return new NextResponse('PO tidak ditemukan.', { status: 404 });
     const po = rowToPo(row);
 
+    const [sup] = row.supplier_id ? await sql<{ address: string }[]>`select address from suppliers where id = ${row.supplier_id}` : [];
     const store = await getServerStoreHeader();
     const buffer = await renderToBuffer(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement(PurchaseDocPDF, { data: poToDocData(po), store }) as any,
+      React.createElement(PurchaseDocPDF, { data: poToDocData(po, sup?.address), store }) as any,
     );
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

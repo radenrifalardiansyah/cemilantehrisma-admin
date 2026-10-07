@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, FileText, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, FileText, Upload, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -9,7 +9,7 @@ import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { useViewMode } from '@/lib/useViewMode';
 import { exportSheet, downloadPoTemplate, parsePoExcel } from '@/components/tabs/purchase-flow-io';
-import PurchaseDocPDF from '@/lib/pdf/PurchaseDocPDF';
+import PurchaseDocPDF, { PurchaseDocBundle } from '@/lib/pdf/PurchaseDocPDF';
 import { poToDocData, grToDocData } from '@/lib/pdf/purchase-doc-data';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 import type { PoStatus, GrStatus, PoItem, GrItem } from '@/lib/purchase-orders-pg';
@@ -30,18 +30,19 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 const HEADER_BTN_H = 34;
 
 export interface FlowMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
-export interface FlowSupplier { id: string; name: string; phone?: string }
+export interface FlowSupplier { id: string; name: string; phone?: string; address?: string }
 
 interface Po {
   id: string; poNumber: string; supplierId: string | null; supplierName: string; supplierPhone: string;
   items: PoItem[]; total: number; date: string; expectedDate: string | null; note: string;
-  status: PoStatus; cancelNote: string | null; received: Record<string, number>;
+  status: PoStatus; cancelNote: string | null; received: Record<string, number>; createdBy?: string | null;
 }
 interface Gr {
-  id: string; grNumber: string; doNumber: string; poId: string;
+  id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null;
   poNumber: string | null; supplierName: string | null; items: GrItem[]; total: number;
   receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null;
   purchaseId: string | null; cancelNote: string | null;
+  createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
 }
 
 const formatRp = (n: number) =>
@@ -57,6 +58,22 @@ const normalizePhone = (raw: string) => {
   const d = raw.replace(/\D/g, '');
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 };
+const MAX_PRINT = 50; // batas dokumen per cetak gabungan — PDF dirender di browser
+
+function Checkbox({ checked, indeterminate, onChange }: { checked: boolean; indeterminate?: boolean; onChange: () => void }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{ background: checked || indeterminate ? 'var(--accent)' : 'transparent', borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)' }}
+    >
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked ? <Check size={11} color="#fff" strokeWidth={3} /> : null}
+    </button>
+  );
+}
+
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
 const PO_BADGE: Record<PoStatus, { label: string; cls: string }> = {
@@ -135,9 +152,10 @@ export default function PurchaseFlowPanel({
     } catch { toast.error('Gagal membuat PDF.'); }
     finally { setBusyId(null); }
   };
-  const poPdf = (p: Po) => downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={poToDocData(p)} store={storeHeader} />, p.poNumber);
+  const supplierOf = (id?: string | null) => (id ? suppliers.find(s => s.id === id) : undefined);
+  const poPdf = (p: Po) => downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={poToDocData(p, supplierOf(p.supplierId)?.address)} store={storeHeader} />, p.poNumber);
   const grPdf = (g: Gr, kind: 'gr' | 'do') =>
-    downloadPdf(`${kind}-${g.id}`, <PurchaseDocPDF data={grToDocData(g, kind)} store={storeHeader} />, kind === 'do' ? g.doNumber : g.grNumber);
+    downloadPdf(`${kind}-${g.id}`, <PurchaseDocPDF data={grToDocData(g, kind, supplierOf(g.supplierId))} store={storeHeader} />, kind === 'do' ? g.doNumber : g.grNumber);
 
   // ── Kirim WA ke supplier (tombol manual — pengguna yang menekan Kirim di WhatsApp) ──
   const sendPoWhatsApp = async (p: Po) => {
@@ -345,6 +363,11 @@ ${pdfUrl}`.trim();
   const setMode = view === 'po' ? setPoView : setGrView;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [selPo, setSelPo] = useState<Set<string>>(new Set());
+  const [selGr, setSelGr] = useState<Set<string>>(new Set());
+  const selected = view === 'po' ? selPo : selGr;
+  const setSelected = view === 'po' ? setSelPo : setSelGr;
+  const toggleSel = (id: string) => setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const total = view === 'po' ? filteredPos.length : filteredGrs.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -352,6 +375,12 @@ ${pdfUrl}`.trim();
   const sliceTo = Number.isFinite(pageSize) ? safePage * pageSize : undefined;
   const pagedPos = filteredPos.slice(sliceFrom, sliceTo);
   const pagedGrs = filteredGrs.slice(sliceFrom, sliceTo);
+  const pageIds = view === 'po' ? pagedPos.map(p => p.id) : pagedGrs.map(g => g.id);
+  const togglePageAll = () => setSelected(s => {
+    const n = new Set(s);
+    if (pageIds.every(id => n.has(id))) pageIds.forEach(id => n.delete(id)); else pageIds.forEach(id => n.add(id));
+    return n;
+  });
 
   // ── Excel / PDF ────────────────────────────────────────────────────────────
   const [exportingXlsx, setExportingXlsx] = useState(false);
@@ -359,9 +388,12 @@ ${pdfUrl}`.trim();
   const [importing, setImporting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const itemsText = (items: { materialName: string; qty: number; unit: string }[]) => items.map(it => `${it.materialName} (${formatQty(it.qty)} ${it.unit})`).join(', ');
+  // Kalau ada yang dicentang, export hanya yang terpilih; kalau tidak, semua hasil filter.
+  const exportPos = selPo.size > 0 ? filteredPos.filter(p => selPo.has(p.id)) : filteredPos;
+  const exportGrs = selGr.size > 0 ? filteredGrs.filter(g => selGr.has(g.id)) : filteredGrs;
   const rowsForExport = (): (string | number)[][] => view === 'po'
-    ? filteredPos.map((p, i) => [i + 1, p.poNumber, formatDateDisplay(p.date), p.supplierName, itemsText(p.items), p.total, PO_BADGE[p.status].label, p.expectedDate ? formatDateDisplay(p.expectedDate) : '-', p.note || '-'])
-    : filteredGrs.map((g, i) => [i + 1, g.grNumber, g.doNumber, g.poNumber ?? '-', g.supplierName ?? '-', formatDateDisplay(g.receivedDate), itemsText(g.items), g.total, GR_BADGE[g.status].label]);
+    ? exportPos.map((p, i) => [i + 1, p.poNumber, formatDateDisplay(p.date), p.supplierName, itemsText(p.items), p.total, PO_BADGE[p.status].label, p.expectedDate ? formatDateDisplay(p.expectedDate) : '-', p.note || '-'])
+    : exportGrs.map((g, i) => [i + 1, g.grNumber, g.doNumber, g.poNumber ?? '-', g.supplierName ?? '-', formatDateDisplay(g.receivedDate), itemsText(g.items), g.total, GR_BADGE[g.status].label]);
 
   const exportExcel = async () => {
     if (total === 0) { toast.error('Tidak ada data untuk diexport.'); return; }
@@ -375,7 +407,7 @@ ${pdfUrl}`.trim();
         : { sheet: 'Penerimaan Barang', title: 'PENERIMAAN BARANG (GR) BAHAN BAKU — CEMILAN TEH RISMA', filename: `penerimaan-barang-cemilantehrisma-${day}.xlsx`,
             columns: [{ header: 'No', width: 6 }, { header: 'No. GR', width: 18 }, { header: 'No. DO', width: 24 }, { header: 'No. PO', width: 18 }, { header: 'Supplier', width: 24 }, { header: 'Tgl Terima', width: 14 }, { header: 'Bahan Baku', width: 44 }, { header: 'Total', width: 16 }, { header: 'Status', width: 22 }],
             rows: rowsForExport() });
-      toast.success(`Berhasil export ${total} data ke Excel.`);
+      toast.success(`Berhasil export ${rowsForExport().length} data ke Excel${selected.size > 0 ? ' (terpilih)' : ''}.`);
     } catch { toast.error('Gagal membuat file Excel.'); }
     finally { setExportingXlsx(false); }
   };
@@ -398,9 +430,44 @@ ${pdfUrl}`.trim();
       a.href = url; a.download = `${view === 'po' ? 'purchase-order' : 'penerimaan-barang'}-cemilantehrisma-${new Date().toLocaleDateString('en-CA')}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Berhasil export ${total} data ke PDF.`);
+      toast.success(`Berhasil export ${rowsForExport().length} data ke PDF${selected.size > 0 ? ' (terpilih)' : ''}.`);
     } catch { toast.error('Gagal membuat file PDF.'); }
     finally { setExportingPdf(false); }
+  };
+
+  // Cetak PDF gabungan untuk dokumen yang dicentang: satu dokumen per halaman, urut seperti di daftar.
+  const printSelected = async (kind: 'po' | 'gr' | 'do') => {
+    const docs = kind === 'po'
+      ? filteredPos.filter(p => selPo.has(p.id)).map(p => poToDocData(p, supplierOf(p.supplierId)?.address))
+      : filteredGrs.filter(g => selGr.has(g.id)).map(g => grToDocData(g, kind, supplierOf(g.supplierId)));
+    if (docs.length === 0) { toast.error('Centang dokumen yang mau dicetak dulu.'); return; }
+    if (docs.length > MAX_PRINT) { toast.error(`Maksimal ${MAX_PRINT} dokumen sekali cetak. Kurangi centangnya.`); return; }
+    const label = kind === 'po' ? 'purchase-order' : kind === 'gr' ? 'goods-receipt' : 'delivery-order';
+    await downloadPdf(`bulk-${kind}`, <PurchaseDocBundle docs={docs} store={storeHeader} title={`${label} terpilih`} />, `${label}-terpilih-${docs.length}-dokumen-${new Date().toLocaleDateString('en-CA')}`);
+  };
+
+  // Hapus massal dari centang — hanya draft yang terhapus; yang lain dilewati & dilaporkan.
+  const bulkDelete = async () => {
+    const label = view === 'po' ? 'PO' : 'GR';
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!await confirm({
+      message: view === 'po'
+        ? `Hapus ${ids.length} PO yang dicentang? Hanya PO berstatus Draft yang belum punya GR yang dihapus permanen. PO yang sudah dikirim/diterima dilewati — batalkan satu per satu kalau perlu.`
+        : `Hapus ${ids.length} GR yang dicentang? Hanya GR berstatus Draft yang dihapus permanen. GR yang sudah di-approve atau dibatalkan dilewati (tetap jadi jejak audit).`,
+      confirmLabel: 'Hapus', danger: true,
+    })) return;
+    setBusyId('bulk-del');
+    try {
+      const r = await fetch(view === 'po' ? '/api/purchase-orders/bulk-delete' : '/api/goods-receipts/bulk-delete', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ ids }) });
+      const d = await r.json().catch(() => ({})) as { error?: string; deleted?: number; skipped?: { label: string; reason: string }[] };
+      if (!r.ok) { toast.error(d.error ?? `Gagal menghapus ${label}.`); return; }
+      const skipped = d.skipped ?? [];
+      if ((d.deleted ?? 0) > 0) toast.success(`${d.deleted} ${label} dihapus.${skipped.length > 0 ? ` ${skipped.length} dilewati: ${skipped.slice(0, 3).map(x => `${x.label} (${x.reason})`).join(', ')}${skipped.length > 3 ? ', …' : ''}.` : ''}`);
+      else toast.error(`Tidak ada ${label} yang bisa dihapus: ${skipped.slice(0, 3).map(x => `${x.label} (${x.reason})`).join(', ')}${skipped.length > 3 ? ', …' : ''}.`);
+      setSelected(new Set());
+      await (view === 'po' ? loadPos() : loadGrs());
+    } finally { setBusyId(null); }
   };
 
   const templateDownload = async () => {
@@ -578,6 +645,41 @@ ${pdfUrl}`.trim();
         </div>
       </div>
 
+      {total > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 card flex-wrap" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+          <Checkbox
+            checked={pageIds.length > 0 && pageIds.every(id => selected.has(id))}
+            indeterminate={pageIds.some(id => selected.has(id)) && !pageIds.every(id => selected.has(id))}
+            onChange={togglePageAll}
+          />
+          <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+            {selected.size > 0 ? `${selected.size} dipilih` : `${pageIds.length} ${view === 'po' ? 'PO' : 'GR'} di halaman ini`}
+          </span>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 flex-wrap ml-auto">
+              {view === 'po' ? (
+                <button onClick={() => printSelected('po')} disabled={busyId === 'bulk-po'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
+                  {busyId === 'bulk-po' ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Cetak PDF PO ({selected.size})
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => printSelected('gr')} disabled={busyId === 'bulk-gr'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
+                    {busyId === 'bulk-gr' ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Cetak GR ({selected.size})
+                  </button>
+                  <button onClick={() => printSelected('do')} disabled={busyId === 'bulk-do'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
+                    {busyId === 'bulk-do' ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Cetak DO ({selected.size})
+                  </button>
+                </>
+              )}
+              <button onClick={bulkDelete} disabled={busyId === 'bulk-del'} className="btn-ghost px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--danger)' }}>
+                {busyId === 'bulk-del' ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Hapus ({selected.size})
+              </button>
+              <button onClick={() => setSelected(new Set())} className="btn-ghost px-2.5 py-1.5 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Batal pilih</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {total === 0 ? (
         <div className="card py-10 text-center">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{view === 'po' ? 'Tidak ada PO yang cocok.' : 'Tidak ada GR yang cocok.'}</p>
@@ -588,6 +690,7 @@ ${pdfUrl}`.trim();
             <div key={p.id}>
               <div className="px-4 py-3" style={{ opacity: p.status === 'batal' ? 0.55 : 1 }}>
                 <div className="flex items-start gap-3">
+                  <div className="pt-0.5"><Checkbox checked={selPo.has(p.id)} onChange={() => toggleSel(p.id)} /></div>
                   <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>{sliceFrom + idx + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -616,6 +719,7 @@ ${pdfUrl}`.trim();
             <div key={g.id}>
               <div className="px-4 py-3" style={{ opacity: g.status === 'dibatalkan' ? 0.55 : 1 }}>
                 <div className="flex items-start gap-3">
+                  <div className="pt-0.5"><Checkbox checked={selGr.has(g.id)} onChange={() => toggleSel(g.id)} /></div>
                   <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>{sliceFrom + idx + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -647,8 +751,9 @@ ${pdfUrl}`.trim();
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {view === 'po' ? pagedPos.map(p => (
             <div key={p.id}>
-              <div className="card overflow-hidden" style={{ opacity: p.status === 'batal' ? 0.55 : 1 }}>
-                <div className="pt-5 pb-3 px-4 text-center">
+              <div className="card overflow-hidden relative" style={{ opacity: p.status === 'batal' ? 0.55 : 1, outline: selPo.has(p.id) ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}><Checkbox checked={selPo.has(p.id)} onChange={() => toggleSel(p.id)} /></div>
+                <div className="pt-8 pb-3 px-4 text-center">
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{p.poNumber}</p>
                   <div className="mt-1"><span className={`badge ${PO_BADGE[p.status].cls}`}>{PO_BADGE[p.status].label}</span></div>
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{p.supplierName}</p>
@@ -663,8 +768,9 @@ ${pdfUrl}`.trim();
             </div>
           )) : pagedGrs.map(g => (
             <div key={g.id}>
-              <div className="card overflow-hidden" style={{ opacity: g.status === 'dibatalkan' ? 0.55 : 1 }}>
-                <div className="pt-5 pb-3 px-4 text-center">
+              <div className="card overflow-hidden relative" style={{ opacity: g.status === 'dibatalkan' ? 0.55 : 1, outline: selGr.has(g.id) ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}><Checkbox checked={selGr.has(g.id)} onChange={() => toggleSel(g.id)} /></div>
+                <div className="pt-8 pb-3 px-4 text-center">
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber} <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span></p>
                   <div className="mt-1"><span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span></div>
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{g.supplierName} · dari {g.poNumber}</p>
