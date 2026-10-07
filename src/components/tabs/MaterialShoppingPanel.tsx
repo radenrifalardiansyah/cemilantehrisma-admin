@@ -64,6 +64,19 @@ const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 
 const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' };
 const thCls = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
 
+// Kotak centang kecil untuk memilih daftar (dipakai cetak PDF banyak tanggal sekaligus).
+function SelectBox({ checked, indeterminate, onChange, label }: { checked: boolean; indeterminate?: boolean; onChange: () => void; label: string }) {
+  return (
+    <button type="button" aria-label={label} onClick={e => { e.stopPropagation(); onChange(); }}
+      className="flex-shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-colors"
+      style={{ background: checked || indeterminate ? 'var(--accent)' : 'transparent', borderColor: checked || indeterminate ? 'var(--accent)' : 'var(--border)' }}>
+      {indeterminate && !checked
+        ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1, display: 'block' }} />
+        : checked ? <Check size={11} color="#fff" strokeWidth={3} /> : null}
+    </button>
+  );
+}
+
 interface AddRow { materialId: string; qty: string; price: string }
 const EMPTY_ROW: AddRow = { materialId: '', qty: '', price: '' };
 
@@ -115,6 +128,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [printingDate, setPrintingDate] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [printingSelected, setPrintingSelected] = useState(false);
 
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -399,35 +414,54 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     finally { setExportingXlsx(false); }
   };
 
-  // PDF satu tanggal: per supplier ada tabel item + subtotal, ditutup total tanggal.
-  const printDatePdf = async (block: { date: string; groups: ShoppingGroup[]; total: number; itemCount: number }) => {
+  // Data PDF satu tanggal: per supplier ada tabel item + subtotal, ditutup total tanggal.
+  const pdfDataFor = (date: string, gs: ShoppingGroup[]) => ({
+    no: numberOf.get(date) ?? 0,
+    dateLabel: formatDateLong(date),
+    generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    itemCount: gs.reduce((t, g) => t + g.items.length, 0), grandTotal: gs.reduce((t, g) => t + g.total, 0),
+    suppliers: gs.slice().sort((a, b) => (a.supplierName || '￿').localeCompare(b.supplierName || '￿')).map(g => ({
+      name: supplierLabel(g), notes: g.notes.join(' · '), wallet: walletLabel(g),
+      status: STATUS_BADGE[g.status].label + (g.unpaid ? ' (belum lunas)' : ''),
+      total: g.total,
+      items: g.items.map((i, idx) => ({
+        no: idx + 1, name: i.materialName, qty: formatQty(i.qty), unit: i.unit,
+        price: i.price, subtotal: i.qty * (i.price ?? 0), bought: i.status === 'done',
+      })),
+    })),
+  });
+
+  const printDatePdf = async (block: { date: string; groups: ShoppingGroup[] }) => {
     setPrintingDate(block.date);
     try {
-      const blob = await pdf(
-        <ShoppingListPDF
-          store={storeHeader}
-          data={{
-            no: numberOf.get(block.date) ?? 0,
-            dateLabel: formatDateLong(block.date),
-            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            itemCount: block.itemCount, grandTotal: block.total,
-            suppliers: block.groups.map(g => ({
-              name: supplierLabel(g), notes: g.notes.join(' · '), wallet: walletLabel(g),
-              status: STATUS_BADGE[g.status].label + (g.unpaid ? ' (belum lunas)' : ''),
-              total: g.total,
-              items: g.items.map((i, idx) => ({
-                no: idx + 1, name: i.materialName, qty: formatQty(i.qty), unit: i.unit,
-                price: i.price, subtotal: i.qty * (i.price ?? 0), bought: i.status === 'done',
-              })),
-            })),
-          }}
-        />
-      ).toBlob();
+      const blob = await pdf(<ShoppingListPDF store={storeHeader} data={pdfDataFor(block.date, block.groups)} />).toBlob();
       downloadBlob(blob, `daftar-belanja-${block.date}.pdf`);
       toast.success(`PDF daftar belanja ${formatDateLong(block.date)} berhasil dibuat.`);
     } catch { toast.error('Gagal membuat file PDF.'); }
     finally { setPrintingDate(null); }
   };
+
+  // PDF dari daftar yang dicentang — satu file, tiap tanggal mulai di halaman baru (terlama di depan).
+  const picked = allGroups.filter(g => selected.has(g.key));
+  const printSelectedPdf = async () => {
+    if (picked.length === 0) return;
+    setPrintingSelected(true);
+    try {
+      const byDay = new Map<string, ShoppingGroup[]>();
+      picked.forEach(g => byDay.set(g.date, [...(byDay.get(g.date) ?? []), g]));
+      const days = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, gs]) => pdfDataFor(d, gs));
+      const blob = await pdf(<ShoppingListPDF store={storeHeader} data={days} />).toBlob();
+      downloadBlob(blob, `daftar-belanja-terpilih-${new Date().toLocaleDateString('en-CA')}.pdf`);
+      toast.success(`PDF ${picked.length} daftar (${days.length} tanggal) berhasil dibuat.`);
+    } catch { toast.error('Gagal membuat file PDF.'); }
+    finally { setPrintingSelected(false); }
+  };
+  const toggleKey = (key: string) => setSelected(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const toggleDate = (gs: ShoppingGroup[]) => setSelected(prev => {
+    const n = new Set(prev);
+    if (gs.every(g => n.has(g.key))) gs.forEach(g => n.delete(g.key)); else gs.forEach(g => n.add(g.key));
+    return n;
+  });
 
   const exportPdf = async () => {
     if (dateBlocks.length === 0) { toast.error('Tidak ada daftar belanja untuk diexport.'); return; }
@@ -554,11 +588,17 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             {pagedBlocks.map(block => (
               <div key={block.date} className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
                 <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--surface-2)' }}>
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>{numberOf.get(block.date)}.</span> {formatDateLong(block.date)}
-                    </p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{block.groups.length} supplier · {block.itemCount} item</p>
+                  <div className="flex items-center gap-3">
+                    <SelectBox label="Pilih semua supplier di tanggal ini"
+                      checked={block.groups.every(g => selected.has(g.key))}
+                      indeterminate={block.groups.some(g => selected.has(g.key)) && !block.groups.every(g => selected.has(g.key))}
+                      onChange={() => toggleDate(block.groups)} />
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>{numberOf.get(block.date)}.</span> {formatDateLong(block.date)}
+                      </p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{block.groups.length} supplier · {block.itemCount} item</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
@@ -574,6 +614,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] text-xs table-fixed" style={{ borderCollapse: 'collapse' }}>
                 <colgroup>
+                  <col style={{ width: 40 }} />
                   <col />
                   <col style={{ width: 130 }} />
                   <col style={{ width: 150 }} />
@@ -583,6 +624,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </colgroup>
                 <thead>
                   <tr>
+                    <th className={thCls} style={thStyle} />
                     <th className={`${thCls} text-left`} style={thStyle}>Supplier</th>
                     <th className={`${thCls} text-right`} style={thStyle}>Item</th>
                     <th className={`${thCls} text-right`} style={thStyle}>Perkiraan Total</th>
@@ -595,7 +637,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                   {block.groups.map(g => {
                     const doneCount = g.items.length - g.pending.length;
                     return (
-                      <tr key={g.key} onClick={() => openDetail(g)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                      <tr key={g.key} onClick={() => openDetail(g)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)', background: selected.has(g.key) ? 'var(--accent-bg)' : undefined }}>
+                        <td className="pl-3 py-2.5"><SelectBox label="Pilih daftar ini" checked={selected.has(g.key)} onChange={() => toggleKey(g.key)} /></td>
                         <td className="px-3 py-2.5" style={{ color: 'var(--text-primary)' }}>
                           <p className="font-semibold flex items-start gap-1.5"><span style={{ color: STATUS_DOT[g.status] }}>•</span> <span className="min-w-0">{supplierLabel(g)}</span></p>
                           {g.notes.length > 0 && <p className="text-[10.5px] truncate pl-3.5" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
@@ -624,6 +667,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </tbody>
                 <tfoot>
                   <tr style={{ background: 'var(--surface-2)' }}>
+                    <td />
                     <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>Total semua supplier</td>
                     <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{block.itemCount} item</td>
                     <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--accent)' }}>{formatRp(block.total)}</td>
@@ -637,9 +681,10 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     {block.groups.map(g => {
                       const doneCount = g.items.length - g.pending.length;
                       return (
-                        <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
+                        <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: selected.has(g.key) ? 'var(--accent)' : 'var(--border-2)', background: selected.has(g.key) ? 'var(--accent-bg)' : undefined }}>
                           <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
+                            <SelectBox label="Pilih daftar ini" checked={selected.has(g.key)} onChange={() => toggleKey(g.key)} />
+                            <div className="min-w-0 flex-1">
                               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}><span style={{ color: STATUS_DOT[g.status] }}>•</span> {supplierLabel(g)}</p>
                               {g.notes.length > 0 && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
                             </div>
@@ -709,6 +754,26 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       </div>
 
       {/* Modal & bilah di luar wadah beranimasi (transform) supaya `fixed` relatif ke viewport */}
+
+      {/* Bilah aksi untuk daftar yang dicentang */}
+      {picked.length > 0 && (
+        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
+            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
+            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{picked.length} dipilih</span>
+            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={printSelectedPdf} disabled={printingSelected}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'var(--accent)', color: '#fff' }}>
+              {printingSelected ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+              Cetak PDF
+            </button>
+            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Detail daftar: info + centang item + tambah item, dalam satu modal */}
       {detail && (

@@ -80,10 +80,13 @@ const s = StyleSheet.create({
   pageNo: { position: 'absolute', bottom: 18, right: 32, fontSize: 7, color: C.muted },
 });
 
-export default function ShoppingListPDF({ data, store }: { data: ShoppingListPDFData; store: StoreHeader }) {
+export default function ShoppingListPDF({ data, store }: { data: ShoppingListPDFData | ShoppingListPDFData[]; store: StoreHeader }) {
+  // Satu halaman-set per tanggal; beberapa tanggal digabung dalam satu file (tiap tanggal mulai di halaman baru).
+  const days = Array.isArray(data) ? data : [data];
   return (
     <Document>
-      <Page size="A4" style={s.page}>
+      {days.map((data, di) => (
+      <Page key={di} size="A4" style={s.page}>
         <View style={s.topBar} />
 
         <View style={s.headerRow}>
@@ -177,6 +180,7 @@ export default function ShoppingListPDF({ data, store }: { data: ShoppingListPDF
         <Text style={s.footer} fixed>Dokumen ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
         <Text style={s.pageNo} fixed render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </Page>
+      ))}
     </Document>
   );
 }
