@@ -134,8 +134,9 @@ export async function GET(req: NextRequest) {
       if (o.source === 'portal') r.qtyOnline += it.qty; else r.qtyPos += it.qty;
       r.revenue += (it.subtotal ?? (it.price ?? 0) * it.qty) * scale;
       const itemCogs = it.qty * effectiveCost(it.costPrice, it.productId);
-      r.cogs += itemCogs;
-      if (isFree) { r.qtyFree += it.qty; r.cogsFree += itemCogs; }
+      // Barang gratis: omzetnya Rp0, jadi HPP-nya TIDAK dihitung ke Total HPP produk (laba kotor tidak
+      // jadi negatif). Nilai HPP-nya tetap dicatat terpisah di cogsFree sebagai informasi.
+      if (isFree) { r.qtyFree += it.qty; r.cogsFree += itemCogs; } else { r.cogs += itemCogs; }
       addDaily(o.createdAtSeconds, r.key, it.qty);
     });
   });
