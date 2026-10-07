@@ -139,6 +139,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [walletId, setWalletId] = useState('');
   // Dompet per item (menimpa dompet default); kosong = ikut dompet default.
   const [itemWallets, setItemWallets] = useState<Record<string, string>>({});
+  // Hasil proses terakhir (ditampilkan di modal daftar yang sama): satu baris per pembelian yang dibuat.
+  const [processResult, setProcessResult] = useState<{ walletId: string; total: number; count: number; status: 'lunas' | 'belum_lunas' }[] | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [pNote, setPNote] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -193,7 +195,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const openDetail = (g: ShoppingGroup) => {
     setDDate(g.date); setDSupplierId(g.supplierId ?? ''); setDSupplierName(g.supplierName); setDNote(g.notes.join(' · '));
     setRows([{ ...EMPTY_ROW }]);
-    setItemWallets({}); setPDate(todayISO()); setPNote(g.notes.join(' · '));
+    setItemWallets({}); setPDate(todayISO()); setPNote(g.notes.join(' · ')); setProcessResult(null);
     setDetailKey(g.key);
   };
   const updateRow = (i: number, p: Partial<AddRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
@@ -292,6 +294,10 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const submitProcess = async () => {
     if (!detail || !canProcess) return;
     setProcessing(true);
+    // Ringkasan dihitung sebelum item berubah status (per dompet = satu pembelian).
+    const summary = [...walletTotals.entries()].map(([w, total]) => ({
+      walletId: w, total, count: detail.checked.filter(i => walletOf(i.id) === w).length, status: paymentStatus,
+    }));
     try {
       const r = await fetch(`${API}/api/material-shopping/process`, {
         method: 'POST', headers,
@@ -301,6 +307,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       if (!r.ok) { toast.error(d.error ?? 'Gagal memproses daftar belanja.'); return; }
       toast.success(walletTotals.size > 1 ? `${detail.checked.length} item diproses jadi ${walletTotals.size} pembelian (per dompet).` : `${detail.checked.length} item diproses jadi pembelian bahan baku.`);
       setItemWallets({});
+      setProcessResult(summary);
       await load();
       onProcessed();
     } finally { setProcessing(false); }
@@ -681,6 +688,22 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Hasil proses terakhir */}
+                {processResult && (
+                  <div className="p-3 rounded-xl space-y-1.5" style={{ background: 'var(--success-bg)', border: '1px solid var(--success)' }}>
+                    <p className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
+                      <Check size={15} /> {processResult.length > 1 ? `${processResult.length} pembelian berhasil dibuat` : 'Pembelian berhasil dibuat'}
+                    </p>
+                    {processResult.map(r => (
+                      <div key={r.walletId} className="flex justify-between gap-3 text-xs">
+                        <span style={{ color: 'var(--text-secondary)' }}>{r.count} item · Dompet {walletNames[r.walletId] ?? '-'} · {r.status === 'lunas' ? 'Lunas' : 'Belum Lunas'}</span>
+                        <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(r.total)}</span>
+                      </div>
+                    ))}
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Stok dan harga rata-rata bahan baku sudah diperbarui. Lihat di tab Pembelian.</p>
+                  </div>
+                )}
+
                 {/* Info daftar */}
                 {detail.pending.length > 0 ? (
                   <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--border-2)' }}>
@@ -725,36 +748,42 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                       <span className="tabular">{formatRp(i.qty * (i.price ?? 0))}</span>
                     </div>
                   ) : (
-                    <div key={i.id} className="p-3 rounded-xl flex flex-wrap items-center gap-x-3 gap-y-2" style={{ border: '1px solid var(--border-2)' }}>
+                    // Desktop: satu baris (centang · nama · qty & harga · dompet · hapus). Mobile: baris 1 = centang, nama, hapus;
+                    // baris 2 = qty & harga berdampingan; baris 3 = dompet penuh.
+                    <div key={i.id} className="p-3 rounded-xl flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2.5" style={{ border: '1px solid var(--border-2)' }}>
                       <button onClick={() => toggle(i)} aria-label={i.checked ? 'Batal centang' : 'Centang sudah dibeli'}
-                        className="flex-shrink-0 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center transition-colors"
+                        className="flex-shrink-0 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center transition-colors order-1"
                         style={{ background: i.checked ? 'var(--accent)' : 'transparent', borderColor: i.checked ? 'var(--accent)' : 'var(--border)' }}>
                         {i.checked && <Check size={13} color="#fff" strokeWidth={3} />}
                       </button>
-                      <div className="flex-1 min-w-[130px]">
-                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)', textDecoration: i.checked ? 'line-through' : 'none' }}>{i.materialName}</p>
+                      <div className="flex-1 min-w-0 order-2">
+                        <p className="text-sm font-semibold break-words" style={{ color: 'var(--text-primary)', textDecoration: i.checked ? 'line-through' : 'none' }}>{i.materialName}</p>
                         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Satuan: {i.unit}</p>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" min="0" value={i.qty} onChange={e => setLocal(i.id, { qty: parseFloat(e.target.value) || 0 })}
-                          onBlur={() => { if (i.qty > 0) patch(i.id, { qty: i.qty }); else load(); }}
-                          className="input text-right" style={{ width: 80 }} />
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{i.unit}</span>
+                      <div className="order-3 md:order-5 flex-shrink-0">
+                        <Tooltip label="Hapus dari daftar">
+                          <button onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                        </Tooltip>
                       </div>
-                      <div style={{ width: 130 }} onBlur={() => patch(i.id, { price: i.price })}>
-                        <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
-                          onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
+                      <div className="order-4 md:order-3 w-full md:w-auto flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-1 md:flex-none">
+                          <input type="number" min="0" value={i.qty} onChange={e => setLocal(i.id, { qty: parseFloat(e.target.value) || 0 })}
+                            onBlur={() => { if (i.qty > 0) patch(i.id, { qty: i.qty }); else load(); }}
+                            className="input text-right w-full md:w-[72px]" />
+                          <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{i.unit}</span>
+                        </div>
+                        <div className="flex-1 md:flex-none md:w-[112px]" onBlur={() => patch(i.id, { price: i.price })}>
+                          <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
+                            onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
+                        </div>
                       </div>
                       {i.checked && (
-                        <div style={{ width: 230, maxWidth: '100%' }}>
+                        <div className="order-5 md:order-4 w-full md:w-[190px] md:flex-shrink-0">
                           <SearchSelect value={itemWallets[i.id] ?? ''} onChange={w => setItemWallets(prev => ({ ...prev, [i.id]: w }))}
                             options={[{ value: '', label: walletId ? 'Ikut dompet utama' : '– Pilih dompet –' }, ...walletOptions]}
                             placeholder="Dompet" searchPlaceholder="Cari dompet…" />
                         </div>
                       )}
-                      <Tooltip label="Hapus dari daftar">
-                        <button onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
-                      </Tooltip>
                     </div>
                   ))}
                 </div>
