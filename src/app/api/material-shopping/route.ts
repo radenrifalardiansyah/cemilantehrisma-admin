@@ -14,8 +14,10 @@ export async function GET(req: NextRequest) {
   // Yang sudah diproses ikut dikirim (50 terakhir) supaya riwayatnya tetap terlihat.
   // Seluruh daftar: yang masih menunggu + riwayat yang sudah diproses (termasuk hasil impor pembelian lama).
   const rows = await sql<ShoppingItemRow[]>`
-    select s.*, m.name as material_name, m.unit as material_unit
+    select s.*, m.name as material_name, m.unit as material_unit,
+           p.wallet_id as purchase_wallet_id, p.payment_status as purchase_payment_status
     from material_shopping_items s join raw_materials m on m.id = s.material_id
+    left join material_purchases p on p.id = s.purchase_id
     order by s.shopping_date desc, s.created_at asc
   `;
   return Response.json({ items: rows.map(rowToShoppingItem) });

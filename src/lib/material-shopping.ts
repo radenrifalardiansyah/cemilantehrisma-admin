@@ -17,6 +17,8 @@ export interface ShoppingItemRow {
   created_by: string | null;
   created_at: Date;
   done_at: Date | null;
+  purchase_wallet_id?: string | null;
+  purchase_payment_status?: string | null;
 }
 
 export function rowToShoppingItem(r: ShoppingItemRow) {
@@ -37,5 +39,7 @@ export function rowToShoppingItem(r: ShoppingItemRow) {
     createdBy: r.created_by ?? undefined,
     createdAt: r.created_at.toISOString(),
     doneAt: r.done_at ? r.done_at.toISOString() : undefined,
+    walletId: r.purchase_wallet_id ?? undefined,
+    paymentStatus: (r.purchase_payment_status as 'lunas' | 'belum_lunas' | null) ?? undefined,
   };
 }

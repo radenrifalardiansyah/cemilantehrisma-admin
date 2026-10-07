@@ -1470,6 +1470,7 @@ ${pdfUrl}`.trim();
             suppliers={suppliers}
             walletOptions={walletOptions}
             walletBalances={walletBalances}
+            walletNames={Object.fromEntries(wallets.map(w => [w.id, w.name]))}
             onProcessed={() => { loadMaterials(); loadPurchases(); refetchBalances(); }}
           />
         )}
