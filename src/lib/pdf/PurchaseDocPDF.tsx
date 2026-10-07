@@ -304,7 +304,7 @@ function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader
     : [
       { role: 'Pengirim (Supplier)', name: data.supplierName },
       { role: 'Penerima', name: data.createdBy, image: data.createdBySignature },
-      { role: k === 'gr' ? 'Disetujui' : 'Mengetahui', name: data.approvedBy, image: data.approvedBySignature, meta: data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined },
+      { role: k === 'gr' ? 'Disetujui' : 'Mengetahui', name: store.ownerName, image: store.ownerSignature, meta: data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined },
     ];
   return (
     <View style={s.sigRow} wrap={false}>
