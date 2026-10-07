@@ -36,6 +36,8 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+interface AddRow { materialId: string; qty: string; price: string }
+const EMPTY_ROW: AddRow = { materialId: '', qty: '', price: '' };
 const NO_STORE = 'Belum ditentukan tokonya';
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
@@ -48,9 +50,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [loading, setLoading] = useState(true);
 
   // Form tambah item
-  const [materialId, setMaterialId] = useState('');
-  const [qty, setQty] = useState('');
-  const [price, setPrice] = useState('');
+  const [rows, setRows] = useState<AddRow[]>([{ ...EMPTY_ROW }]);
   const [note, setNote] = useState('');
   const [pickSupplierId, setPickSupplierId] = useState('');
   const [adding, setAdding] = useState(false);
@@ -89,21 +89,27 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
   const storeSuggestions = [...new Set([...suppliers.map(s => s.name), ...pending.map(i => i.note.trim()).filter(Boolean)])];
   const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
-  const selectedMaterial = materials.find(m => m.id === materialId);
 
-  const addItem = async (keepOpen: boolean) => {
-    if (!materialId || !(parseFloat(qty) > 0)) return;
+  const updateRow = (i: number, p: Partial<AddRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
+  const validRows = rows.filter(r => r.materialId && parseFloat(r.qty) > 0);
+
+  const openAdd = () => { setRows([{ ...EMPTY_ROW }]); openAdd(); };   // keterangan toko dipertahankan antar pembukaan
+
+  const addItems = async () => {
+    if (validRows.length === 0) return;
     setAdding(true);
     try {
       const r = await fetch(`${API}/api/material-shopping`, {
         method: 'POST', headers,
-        body: JSON.stringify({ materialId, qty: parseFloat(qty), price: price ? parseFloat(price) : null, note }),
+        body: JSON.stringify({
+          items: validRows.map(x => ({ materialId: x.materialId, qty: parseFloat(x.qty), price: x.price ? parseFloat(x.price) : null })),
+          note,
+        }),
       });
       const d = await r.json() as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal menambah item.'); return; }
-      setMaterialId(''); setQty(''); setPrice('');   // keterangan toko dipertahankan: biasanya input beruntun untuk toko yang sama
-      if (!keepOpen) setShowAdd(false);
-      toast.success('Item ditambahkan ke daftar belanja.');
+      setShowAdd(false);
+      toast.success(`${validRows.length} item ditambahkan ke daftar belanja.`);
       await load();
     } finally { setAdding(false); }
   };
@@ -160,7 +166,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Susun daftar sebelum belanja, centang yang sudah dibeli, lalu proses jadi pembelian.</p>
         {pending.length > 0 && (
-          <button onClick={() => setShowAdd(true)} className="btn-primary text-xs flex-shrink-0" style={{ height: 34 }}>
+          <button onClick={() => openAdd()} className="btn-primary text-xs flex-shrink-0" style={{ height: 34 }}>
             <Plus size={13} /> <span className="hidden sm:inline">Tambah Item</span>
           </button>
         )}
@@ -168,7 +174,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
       {/* Daftar per toko */}
       {pending.length === 0 ? (
-        <EmptyAddCard label="Tambah ke Daftar Belanja" onClick={() => setShowAdd(true)} />
+        <EmptyAddCard label="Tambah ke Daftar Belanja" onClick={() => openAdd()} />
       ) : groups.map(([store, list]) => (
         <div key={store} className="card overflow-hidden">
           <div className="px-4 py-2.5 text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
@@ -238,7 +244,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
       {showAdd && (
         <div className="modal-overlay" onClick={() => !adding && setShowAdd(false)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-accent" />
             <span className="modal-handle" />
             <div className="modal-header">
@@ -254,20 +260,46 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
-                  <label style={fieldLabel}>Bahan Baku <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={materialId} onChange={setMaterialId} options={materialOptions}
-                    placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label style={fieldLabel}>{`Qty${selectedMaterial ? ` (${selectedMaterial.unit})` : ''}`} <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" className="input" />
+                  <label style={fieldLabel}>Bahan Baku yang Dibeli</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {rows.map((row, i) => {
+                      const mat = materials.find(m => m.id === row.materialId);
+                      return (
+                        <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
+                                options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                            </div>
+                            <Tooltip label="Hapus baris">
+                              <button onClick={() => setRows(prev => prev.filter((_, idx) => idx !== i))} disabled={rows.length === 1}
+                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                                <X size={14} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label style={fieldLabel}>{`Qty${mat ? ` (${mat.unit})` : ''}`}</label>
+                              <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
+                            </div>
+                            <div>
+                              <label style={fieldLabel}>Perkiraan harga/satuan</label>
+                              <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })} placeholder="0" />
+                            </div>
+                          </div>
+                          {parseFloat(row.qty) > 0 && parseFloat(row.price) > 0 && (
+                            <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(parseFloat(row.qty) * parseFloat(row.price))}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div>
-                    <label style={fieldLabel}>Perkiraan harga/satuan (opsional)</label>
-                    <NumberInput value={price} onChange={setPrice} placeholder="0" />
-                  </div>
+                  <button onClick={() => setRows(prev => [...prev, { ...EMPTY_ROW }])} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Baris Bahan Baku
+                  </button>
                 </div>
+
                 <div>
                   <label style={fieldLabel}>Supplier (opsional)</label>
                   <SearchSelect value={pickSupplierId}
@@ -283,15 +315,22 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                   <datalist id="shopping-store-suggestions">{storeSuggestions.map(s => <option key={s} value={s} />)}</datalist>
                   <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Terisi otomatis dari supplier yang dipilih; untuk toko yang belum terdaftar, ketik manual.</p>
                 </div>
+
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{validRows.length} item</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perkiraan Total</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(validRows.reduce((t, r) => t + parseFloat(r.qty) * (parseFloat(r.price) || 0), 0))}</span>
+                </div>
               </div>
             </div>
             <div className="modal-footer">
               <button onClick={() => setShowAdd(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={() => addItem(true)} disabled={adding || !materialId || !(parseFloat(qty) > 0)} className="btn-ghost"
-                style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Simpan &amp; Tambah Lagi</button>
-              <button onClick={() => addItem(false)} disabled={adding || !materialId || !(parseFloat(qty) > 0)} className="btn-primary"
-                style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Simpan
+              <button onClick={addItems} disabled={adding || validRows.length === 0} className="btn-primary"
+                style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} {adding ? 'Menyimpan…' : `Simpan${validRows.length > 1 ? ` (${validRows.length} item)` : ''}`}
               </button>
             </div>
           </div>
