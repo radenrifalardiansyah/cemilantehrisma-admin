@@ -154,6 +154,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   if (loading) return <PageLoader />;
 
   return (
+    <>
     <div className="p-4 lg:p-6 animate-fade-up space-y-5 pb-28">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
@@ -221,7 +222,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
         </div>
       )}
 
-      {/* Bilah proses */}
+    </div>
+
+      {/* Bilah proses & modal — di luar wadah beranimasi (transform) supaya `fixed` relatif ke viewport */}
       {checked.length > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-32px)] max-w-xl rounded-2xl px-4 py-3 flex items-center justify-between gap-3 shadow-xl"
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -371,6 +374,6 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
