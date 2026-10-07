@@ -318,7 +318,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     try {
       const r = await fetch(`${API}/api/material-shopping/process`, {
         method: 'POST', headers,
-        body: JSON.stringify({ ids: detail.checked.map(i => i.id), supplierId: detail.supplierId, supplierName: detail.supplierName.trim(), date: pDate, walletId, itemWallets: Object.fromEntries(detail.checked.filter(i => itemWallets[i.id]).map(i => [i.id, itemWallets[i.id]])), paymentStatus, note: pNote }),
+        body: JSON.stringify({ ids: detail.checked.map(i => i.id), items: detail.checked.map(i => ({ id: i.id, qty: i.qty, price: i.price })), supplierId: detail.supplierId, supplierName: detail.supplierName.trim(), date: pDate, walletId, itemWallets: Object.fromEntries(detail.checked.filter(i => itemWallets[i.id]).map(i => [i.id, itemWallets[i.id]])), paymentStatus, note: pNote }),
       });
       const d = await r.json() as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal memproses daftar belanja.'); return; }

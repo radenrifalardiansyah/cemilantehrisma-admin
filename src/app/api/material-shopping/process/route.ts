@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
   const data = await req.json() as {
     ids?: string[]; supplierId?: string; supplierName?: string; date?: string; note?: string;
     paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null; itemWallets?: Record<string, string>;
+    // Qty & harga seperti yang tampil di layar saat menekan simpan. Disimpan di transaksi yang sama
+    // sebelum diproses, supaya tidak balapan dengan simpan-saat-blur di klien (yang bisa belum selesai).
+    items?: { id: string; qty: number; price: number | null }[];
   };
   const ids = Array.isArray(data.ids) ? data.ids : [];
   if (ids.length === 0) return Response.json({ error: 'Centang minimal 1 item.' }, { status: 400 });
@@ -33,6 +36,14 @@ export async function POST(req: NextRequest) {
   const created: { purchaseId: string; data: Record<string, unknown> }[] = [];
   try {
     await sql.begin(async pgTx => {
+      for (const it of data.items ?? []) {
+        if (!ids.includes(it.id)) continue;
+        const qty = Number(it.qty);
+        const price = it.price == null ? null : Number(it.price);
+        if (!Number.isFinite(qty) || qty <= 0) throw new Error('Qty harus lebih dari 0.');
+        if (price != null && (!Number.isFinite(price) || price < 0)) throw new Error('Harga tidak valid.');
+        await pgTx`update material_shopping_items set qty = ${qty}, price = ${price} where id = ${it.id} and status = 'pending'`;
+      }
       // Kunci baris daftar supaya tidak diproses dua kali (mis. dobel klik / dua perangkat).
       const rows = await pgTx<{ id: string; material_id: string; qty: string; price: string | null; name: string; unit: string }[]>`
         select s.id, s.material_id, s.qty, s.price, m.name, m.unit
