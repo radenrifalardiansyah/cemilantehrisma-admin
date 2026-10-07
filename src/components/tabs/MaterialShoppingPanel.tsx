@@ -157,6 +157,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const pagedBlocks = dateBlocks.slice((safePage - 1) * pageSize, safePage * pageSize);
   const goPage = (n: number) => setPage(Math.max(1, Math.min(n, totalPages)));
 
+  // Nomor urut daftar, berlanjut antar tanggal & halaman (terbaru = 1).
+  const numberOf = new Map(dateBlocks.flatMap(b => b.groups).map((g, i) => [g.key, i + 1] as const));
+
   const detail = detailKey ? allGroups.find(g => g.key === detailKey) ?? null : null;
   const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
   const supplierOptions = [{ value: '', label: '– Toko/warung lain, isi nama di bawah –' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))];
@@ -245,12 +248,12 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   // ── Export (semua daftar sesuai filter pencarian, bukan hanya halaman ini) ──
   const exportRows = () => dateBlocks.flatMap(b => [
     ...b.groups.map(g => ({
-      kind: 'row' as const, date: formatDateLong(b.date), supplier: supplierLabel(g),
+      kind: 'row' as const, no: numberOf.get(g.key) ?? 0, date: formatDateLong(b.date), supplier: supplierLabel(g),
       items: g.items.map(i => `${i.materialName} (${formatQty(i.qty)} ${i.unit})`).join(', '),
       count: g.items.length, bought: g.items.length - g.pending.length, total: g.total,
       status: STATUS_BADGE[g.status].label, note: g.notes.join(' · ') || '-',
     })),
-    { kind: 'subtotal' as const, date: formatDateLong(b.date), supplier: 'TOTAL TANGGAL INI', items: '', count: b.itemCount, bought: 0, total: b.total, status: '', note: '' },
+    { kind: 'subtotal' as const, no: 0, date: formatDateLong(b.date), supplier: 'TOTAL TANGGAL INI', items: '', count: b.itemCount, bought: 0, total: b.total, status: '', note: '' },
   ]);
   const grandTotal = dateBlocks.reduce((t, b) => t + b.total, 0);
   const grandItems = dateBlocks.reduce((t, b) => t + b.itemCount, 0);
@@ -269,7 +272,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Daftar Belanja');
       const COLS = [
-        { header: 'Tanggal', key: 'date', width: 28 }, { header: 'Supplier', key: 'supplier', width: 24 },
+        { header: 'No', key: 'no', width: 6 }, { header: 'Tanggal', key: 'date', width: 28 }, { header: 'Supplier', key: 'supplier', width: 24 },
         { header: 'Bahan Baku', key: 'items', width: 46 }, { header: 'Jml Item', key: 'count', width: 10 },
         { header: 'Sudah Dibeli', key: 'bought', width: 13 }, { header: 'Perkiraan Total', key: 'total', width: 18 },
         { header: 'Status', key: 'status', width: 16 }, { header: 'Catatan', key: 'note', width: 28 },
@@ -299,7 +302,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       ws.views = [{ state: 'frozen', ySplit: 3 }];
       let zebra = 0;
       exportRows().forEach(r => {
-        const row = ws.addRow({ date: r.date, supplier: r.supplier, items: r.items, count: r.count, bought: r.kind === 'row' ? r.bought : '', total: r.total, status: r.status, note: r.note });
+        const row = ws.addRow({ no: r.kind === 'row' ? r.no : '', date: r.date, supplier: r.supplier, items: r.items, count: r.count, bought: r.kind === 'row' ? r.bought : '', total: r.total, status: r.status, note: r.note });
         row.getCell('total').numFmt = '"Rp"#,##0';
         row.getCell('total').alignment = { horizontal: 'right', vertical: 'middle' };
         row.getCell('items').alignment = { vertical: 'top', wrapText: true };
@@ -330,8 +333,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     if (dateBlocks.length === 0) { toast.error('Tidak ada daftar belanja untuk diexport.'); return; }
     setExportingPdf(true);
     try {
-      const rows = exportRows().map(r => [r.date, r.supplier, r.items, r.kind === 'row' ? `${r.bought}/${r.count}` : `${r.count}`, formatRp(r.total), r.status, r.note]);
-      rows.push(['TOTAL SEMUA', '', '', `${grandItems}`, formatRp(grandTotal), '', '']);
+      const rows = exportRows().map(r => [r.kind === 'row' ? r.no : '', r.date, r.supplier, r.items, r.kind === 'row' ? `${r.bought}/${r.count}` : `${r.count}`, formatRp(r.total), r.status, r.note]);
+      rows.push(['', 'TOTAL SEMUA', '', '', `${grandItems}`, formatRp(grandTotal), '', '']);
       const blob = await pdf(
         <GenericTablePDF
           store={storeHeader}
@@ -340,13 +343,14 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             label: `${dateBlocks.length} tanggal${q ? ' (sesuai pencarian)' : ''}`,
             generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             columns: [
-              { header: 'Tanggal', width: '15%' },
-              { header: 'Supplier', width: '15%' },
-              { header: 'Bahan Baku', width: '30%' },
+              { header: 'No', width: '5%', align: 'center' },
+              { header: 'Tanggal', width: '14%' },
+              { header: 'Supplier', width: '14%' },
+              { header: 'Bahan Baku', width: '26%' },
               { header: 'Dibeli', width: '8%', align: 'center' },
               { header: 'Perkiraan Total', width: '13%', align: 'right', bold: true },
               { header: 'Status', width: '9%', align: 'center' },
-              { header: 'Catatan', width: '10%' },
+              { header: 'Catatan', width: '11%' },
             ],
             rows,
           }}
@@ -417,6 +421,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
+                    <th className={`${thCls} text-center`} style={{ ...thStyle, width: 44 }}>No</th>
                     <th className={`${thCls} text-left`} style={thStyle}>Supplier</th>
                     <th className={`${thCls} text-right`} style={thStyle}>Item</th>
                     <th className={`${thCls} text-right`} style={thStyle}>Perkiraan Total</th>
@@ -429,6 +434,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     const doneCount = g.items.length - g.pending.length;
                     return (
                       <tr key={g.key} onClick={() => setDetailKey(g.key)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                        <td className="px-3 py-2.5 text-center tabular" style={{ color: 'var(--text-muted)' }}>{numberOf.get(g.key)}</td>
                         <td className="px-3 py-2.5" style={{ color: 'var(--text-primary)' }}>
                           <p className="font-semibold">{supplierLabel(g)}</p>
                           {g.notes.length > 0 && <p className="text-[10.5px] truncate max-w-[260px]" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
@@ -454,6 +460,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </tbody>
                 <tfoot>
                   <tr style={{ background: 'var(--surface-2)' }}>
+                    <td />
                     <td className="px-3 py-2.5 font-bold" style={{ color: 'var(--text-primary)' }}>Total semua supplier</td>
                     <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{block.itemCount} item</td>
                     <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--accent)' }}>{formatRp(block.total)}</td>
@@ -470,7 +477,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                         <div key={g.key} onClick={() => setDetailKey(g.key)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{supplierLabel(g)}</p>
+                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}><span style={{ color: 'var(--text-muted)' }}>#{numberOf.get(g.key)}</span> {supplierLabel(g)}</p>
                               {g.notes.length > 0 && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
                             </div>
                             <span className={`badge ${STATUS_BADGE[g.status].cls} flex-shrink-0`}>{STATUS_BADGE[g.status].label}</span>
