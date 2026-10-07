@@ -8,6 +8,9 @@ export interface ShoppingItemRow {
   qty: string;
   price: string | null;
   note: string | null;
+  shopping_date: string;
+  supplier_id: string | null;
+  supplier_name: string;
   checked: boolean;
   status: string;
   purchase_id: string | null;
@@ -25,6 +28,9 @@ export function rowToShoppingItem(r: ShoppingItemRow) {
     qty: Number(r.qty),
     price: r.price != null ? Number(r.price) : null,
     note: r.note ?? '',
+    shoppingDate: r.shopping_date,
+    supplierId: r.supplier_id ?? undefined,
+    supplierName: r.supplier_name ?? '',
     checked: r.checked,
     status: r.status as 'pending' | 'done',
     purchaseId: r.purchase_id ?? undefined,

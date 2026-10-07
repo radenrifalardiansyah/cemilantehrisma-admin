@@ -12,16 +12,12 @@ export async function GET(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const sql = getSql();
   // Yang sudah diproses ikut dikirim (50 terakhir) supaya riwayatnya tetap terlihat.
+  // Yang masih di daftar + yang sudah diproses dalam 90 hari terakhir (riwayat).
   const rows = await sql<ShoppingItemRow[]>`
-    select * from (
-      select s.*, m.name as material_name, m.unit as material_unit
-      from material_shopping_items s join raw_materials m on m.id = s.material_id
-      where s.status = 'pending'
-      union all
-      (select s.*, m.name as material_name, m.unit as material_unit
-       from material_shopping_items s join raw_materials m on m.id = s.material_id
-       where s.status = 'done' order by s.done_at desc limit 50)
-    ) t order by status asc, created_at asc
+    select s.*, m.name as material_name, m.unit as material_unit
+    from material_shopping_items s join raw_materials m on m.id = s.material_id
+    where s.status = 'pending' or s.done_at >= now() - interval '90 days'
+    order by s.shopping_date desc, s.created_at asc
   `;
   return Response.json({ items: rows.map(rowToShoppingItem) });
 }
@@ -29,14 +25,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'create');
   if (guard instanceof Response) return guard;
-  // Bisa satu item (materialId/qty/price) atau banyak sekaligus (items[]) dengan keterangan toko yang sama.
+  // Satu daftar belanja = tanggal + supplier + banyak item. Daftar dengan tanggal & supplier yang
+  // sama otomatis tergabung di tampilan (dikelompokkan di klien).
   const data = await req.json() as {
+    date?: string; supplierId?: string; supplierName?: string; note?: string;
     items?: { materialId?: string; qty?: number; price?: number | null }[];
-    materialId?: string; qty?: number; price?: number | null; note?: string;
   };
-  const input = Array.isArray(data.items) ? data.items : [{ materialId: data.materialId, qty: data.qty, price: data.price }];
+  const input = Array.isArray(data.items) ? data.items : [];
   if (input.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
   if (input.length > 100) return Response.json({ error: 'Maksimal 100 item sekali tambah.' }, { status: 400 });
+  if (!data.date || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) return Response.json({ error: 'Tanggal wajib diisi.' }, { status: 400 });
 
   const parsed: { materialId: string; qty: number; price: number | null }[] = [];
   for (const it of input) {
@@ -53,12 +51,14 @@ export async function POST(req: NextRequest) {
   const known = new Set(mats.map(m => m.id));
   if (parsed.some(p => !known.has(p.materialId))) return Response.json({ error: 'Bahan baku tidak ditemukan.' }, { status: 400 });
 
+  const supplierId = data.supplierId || null;
+  const supplierName = (data.supplierName ?? '').trim().slice(0, 120);
   const note = data.note?.trim().slice(0, 200) || null;
   await sql.begin(async tx => {
     for (const p of parsed) {
       await tx`
-        insert into material_shopping_items (id, material_id, qty, price, note, created_by)
-        values (${randomUUID()}, ${p.materialId}, ${p.qty}, ${p.price}, ${note}, ${guard.username})
+        insert into material_shopping_items (id, material_id, qty, price, note, shopping_date, supplier_id, supplier_name, created_by)
+        values (${randomUUID()}, ${p.materialId}, ${p.qty}, ${p.price}, ${note}, ${data.date!}, ${supplierId}, ${supplierName}, ${guard.username})
       `;
     }
   });
