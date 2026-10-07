@@ -93,7 +93,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const updateRow = (i: number, p: Partial<AddRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
   const validRows = rows.filter(r => r.materialId && parseFloat(r.qty) > 0);
 
-  const openAdd = () => { setRows([{ ...EMPTY_ROW }]); openAdd(); };   // keterangan toko dipertahankan antar pembukaan
+  const openAdd = () => { setRows([{ ...EMPTY_ROW }]); setShowAdd(true); };   // keterangan toko dipertahankan antar pembukaan
 
   const addItems = async () => {
     if (validRows.length === 0) return;
