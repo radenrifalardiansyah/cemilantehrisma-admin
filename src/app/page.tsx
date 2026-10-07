@@ -27,6 +27,7 @@ import ReviewsTab from '@/components/tabs/ReviewsTab';
 import StockTab     from '@/components/tabs/StockTab';
 import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
+import ProcurementReportTab from '@/components/tabs/ProcurementReportTab';
 import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
 import ConsignmentTab from '@/components/tabs/ConsignmentTab';
@@ -1616,6 +1617,9 @@ export default function AdminPage() {
       {activeTab === 'reviews'    && <ReviewsTab creds={creds} />}
       {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
       {activeTab === 'stock-report' && <StockReportTab creds={creds} products={posProducts} categories={posCategories} />}
+      {activeTab === 'po-report' && <ProcurementReportTab creds={creds} kind="po" />}
+      {activeTab === 'gr-report' && <ProcurementReportTab creds={creds} kind="gr" />}
+      {activeTab === 'opname-report' && <ProcurementReportTab creds={creds} kind="opname" />}
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
       {activeTab === 'materials'  && (
         <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
