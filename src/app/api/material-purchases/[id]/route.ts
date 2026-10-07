@@ -187,6 +187,19 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for material purchase update', err);
   }
+  // Pembelian yang berasal dari Daftar Belanja: samakan qty & harga item daftar dengan hasil edit,
+  // supaya tab Daftar Belanja tidak menampilkan angka lama. Best-effort — gagal di sini tidak
+  // boleh membatalkan edit pembelian yang sudah tersimpan.
+  try {
+    for (const it of newItems) {
+      await sql`
+        update material_shopping_items set qty = ${it.qty}, price = ${it.price}
+        where id = (select id from material_shopping_items where purchase_id = ${id} and material_id = ${it.materialId} order by created_at limit 1)
+      `;
+    }
+  } catch (err) {
+    console.error('Failed to sync shopping list items for purchase edit', err);
+  }
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });
