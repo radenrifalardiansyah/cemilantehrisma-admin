@@ -9,6 +9,8 @@ import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import PageSizeSelect from '@/components/PageSizeSelect';
+import ViewToggle from '@/components/ViewToggle';
+import { useViewMode } from '@/lib/useViewMode';
 import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import { useToast } from '@/components/Toast';
@@ -68,6 +70,7 @@ export default function ProcurementReportTab({ creds, kind }: { creds: string; k
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('semua');
+  const [view, setView] = useViewMode(`report-${kind}`);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [exportingXlsx, setExportingXlsx] = useState(false);
@@ -102,6 +105,7 @@ export default function ProcurementReportTab({ creds, kind }: { creds: string; k
   let tableRows: (string | number)[][] = [];
   let badgeFor: ((row: string) => { label: string; cls: string }) | null = null;
   let statusColIndex = -1;
+  const titleIndex = kind === 'opname' ? 3 : 1; // kolom judul kartu: No. PO / No. GR / Produk
 
   if (kind === 'po' && data) {
     const d = data as PoData;
@@ -294,12 +298,52 @@ export default function ProcurementReportTab({ creds, kind }: { creds: string; k
                       {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
                     </button>
                   </Tooltip>
+                  <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />
                 </div>
               </div>
             </div>
 
             {total === 0 ? (
               <div className="card py-10 text-center"><p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada data yang cocok.</p></div>
+            ) : view === 'card' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {paged.map((r, ri) => {
+                  const statusCell = statusColIndex >= 0 ? String(r[statusColIndex]).split('|') : null;
+                  const badge = statusCell && badgeFor ? badgeFor(statusCell[0]) : null;
+                  const boldIdx = columns.findIndex(c => c.bold);
+                  const text = (i: number) => String(r[i]);
+                  const deltaColor = (i: number) => (kind === 'opname' && (i === 4 || i === 6)) ? (text(i).startsWith('+') ? 'var(--success)' : text(i).startsWith('-') ? 'var(--danger)' : undefined) : undefined;
+                  return (
+                    <div key={ri} className="card overflow-hidden">
+                      <div className="px-4 pt-4 pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-bold break-words min-w-0" style={{ color: 'var(--text-primary)' }}>{text(titleIndex)}</p>
+                          {badge && (
+                            <span className="flex items-center gap-1 flex-shrink-0 flex-wrap justify-end">
+                              <span className={`badge ${badge.cls}`}>{badge.label}</span>
+                              {statusCell?.[1] === 'late' && <span className="badge badge-red">Terlambat</span>}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 space-y-1">
+                          {columns.map((c, ci) => (ci === 0 || ci === titleIndex || ci === statusColIndex || ci === boldIdx) ? null : (
+                            <div key={ci} className="flex items-start justify-between gap-3 text-xs">
+                              <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{c.header}</span>
+                              <span className="text-right font-medium break-words min-w-0" style={{ color: deltaColor(ci) ?? 'var(--text-secondary)' }}>{text(ci)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {boldIdx >= 0 && (
+                        <div className="flex items-center justify-between px-4 py-2.5" style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                          <span className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{columns[boldIdx].header}</span>
+                          <span className="text-sm font-extrabold tabular" style={{ color: deltaColor(boldIdx) ?? 'var(--success)' }}>{text(boldIdx)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <div className="card overflow-x-auto thin-scrollbar" style={{ borderColor: 'var(--border-2)' }}>
                 <table className="w-full text-xs" style={{ minWidth: 760 }}>
