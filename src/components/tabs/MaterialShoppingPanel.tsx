@@ -6,6 +6,7 @@ import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
+import EmptyAddCard from '@/components/EmptyAddCard';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 
@@ -51,7 +52,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [qty, setQty] = useState('');
   const [price, setPrice] = useState('');
   const [note, setNote] = useState('');
+  const [pickSupplierId, setPickSupplierId] = useState('');
   const [adding, setAdding] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
 
   // Proses
   const [showProcess, setShowProcess] = useState(false);
@@ -88,7 +91,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const materialOptions = materials.map(m => ({ value: m.id, label: m.name, sublabel: `Stok ${formatQty(m.stockQty)} ${m.unit}` }));
   const selectedMaterial = materials.find(m => m.id === materialId);
 
-  const addItem = async () => {
+  const addItem = async (keepOpen: boolean) => {
     if (!materialId || !(parseFloat(qty) > 0)) return;
     setAdding(true);
     try {
@@ -99,6 +102,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
       const d = await r.json() as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal menambah item.'); return; }
       setMaterialId(''); setQty(''); setPrice('');   // keterangan toko dipertahankan: biasanya input beruntun untuk toko yang sama
+      if (!keepOpen) setShowAdd(false);
+      toast.success('Item ditambahkan ke daftar belanja.');
       await load();
     } finally { setAdding(false); }
   };
@@ -150,38 +155,19 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
   return (
     <div className="p-4 lg:p-6 animate-fade-up space-y-5 pb-28">
-      {/* Tambah item */}
-      <div className="card p-4 space-y-3">
-        <p className="section-label flex items-center gap-1.5"><ShoppingCart size={11} /> Tambah ke Daftar Belanja</p>
-        <SearchSelect value={materialId} onChange={setMaterialId} options={materialOptions}
-          placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label style={fieldLabel}>{`Qty${selectedMaterial ? ` (${selectedMaterial.unit})` : ''}`}</label>
-            <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" className="input" />
-          </div>
-          <div>
-            <label style={fieldLabel}>Perkiraan harga/satuan (opsional)</label>
-            <NumberInput value={price} onChange={setPrice} placeholder="0" />
-          </div>
-        </div>
-        <div>
-          <label style={fieldLabel}>Beli di toko mana / keterangan (opsional)</label>
-          <input type="text" list="shopping-store-suggestions" value={note} onChange={e => setNote(e.target.value)} maxLength={200}
-            placeholder="cth: Toko Maju Jaya, Warung Bu Tini, Pasar pagi" className="input" />
-          <datalist id="shopping-store-suggestions">{storeSuggestions.map(s => <option key={s} value={s} />)}</datalist>
-        </div>
-        <button onClick={addItem} disabled={adding || !materialId || !(parseFloat(qty) > 0)} className="btn-primary w-full justify-center py-2.5">
-          {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Tambah ke Daftar
-        </button>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Susun daftar sebelum belanja, centang yang sudah dibeli, lalu proses jadi pembelian.</p>
+        {pending.length > 0 && (
+          <button onClick={() => setShowAdd(true)} className="btn-primary text-xs flex-shrink-0" style={{ height: 34 }}>
+            <Plus size={13} /> <span className="hidden sm:inline">Tambah Item</span>
+          </button>
+        )}
       </div>
 
       {/* Daftar per toko */}
       {pending.length === 0 ? (
-        <div className="rounded-2xl p-10 text-center" style={{ border: '2px dashed var(--border)', background: 'var(--surface)' }}>
-          <ShoppingCart size={24} style={{ color: 'var(--text-muted)', margin: '0 auto 10px', display: 'block' }} />
-          <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Daftar belanja kosong. Tambahkan bahan baku yang mau dibeli.</p>
-        </div>
+        <EmptyAddCard label="Tambah ke Daftar Belanja" onClick={() => setShowAdd(true)} />
       ) : groups.map(([store, list]) => (
         <div key={store} className="card overflow-hidden">
           <div className="px-4 py-2.5 text-xs font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
@@ -244,6 +230,68 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             <p className="tabular" style={{ color: 'var(--text-muted)' }}>Total {formatRp(checkedTotal)}</p>
           </div>
           <button onClick={openProcess} className="btn-primary px-4 py-2.5 text-xs">Proses jadi Pembelian</button>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => !adding && setShowAdd(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><ShoppingCart size={17} /></div>
+                <div>
+                  <p className="modal-title">Tambah ke Daftar Belanja</p>
+                  <p className="modal-subtitle">Belum mengubah stok — baru jadi pembelian setelah dicentang &amp; diproses</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setShowAdd(false)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={fieldLabel}>Bahan Baku <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={materialId} onChange={setMaterialId} options={materialOptions}
+                    placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label style={fieldLabel}>{`Qty${selectedMaterial ? ` (${selectedMaterial.unit})` : ''}`} <span style={{ color: 'var(--danger)' }}>*</span></label>
+                    <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" className="input" />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Perkiraan harga/satuan (opsional)</label>
+                    <NumberInput value={price} onChange={setPrice} placeholder="0" />
+                  </div>
+                </div>
+                <div>
+                  <label style={fieldLabel}>Supplier (opsional)</label>
+                  <SearchSelect value={pickSupplierId}
+                    onChange={id => { setPickSupplierId(id); const sup = suppliers.find(x => x.id === id); setNote(sup ? sup.name : ''); }}
+                    options={[{ value: '', label: '– Toko/warung lain, isi manual di bawah –' }, ...suppliers.map(x => ({ value: x.id, label: x.name }))]}
+                    placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Beli di toko mana / keterangan (opsional)</label>
+                  <input type="text" list="shopping-store-suggestions" value={note}
+                    onChange={e => { setNote(e.target.value); if (suppliers.find(x => x.id === pickSupplierId)?.name !== e.target.value) setPickSupplierId(''); }}
+                    maxLength={200} placeholder="cth: Warung Bu Tini, Pasar pagi" className="input" />
+                  <datalist id="shopping-store-suggestions">{storeSuggestions.map(s => <option key={s} value={s} />)}</datalist>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Terisi otomatis dari supplier yang dipilih; untuk toko yang belum terdaftar, ketik manual.</p>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowAdd(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+              <button onClick={() => addItem(true)} disabled={adding || !materialId || !(parseFloat(qty) > 0)} className="btn-ghost"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Simpan &amp; Tambah Lagi</button>
+              <button onClick={() => addItem(false)} disabled={adding || !materialId || !(parseFloat(qty) > 0)} className="btn-primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Simpan
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
