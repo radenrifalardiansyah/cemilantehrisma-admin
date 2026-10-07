@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import PurchaseDocPDF, { PurchaseDocBundle } from './PurchaseDocPDF';
 import { poToDocData, grToDocData } from './purchase-doc-data';
 
@@ -10,15 +10,18 @@ const items = [
   { materialId: 'a', materialName: 'Mie Superior Spider', unit: 'ikat', qty: 5, price: 45000, subtotal: 225000, orderedQty: 10 },
   { materialId: 'b', materialName: 'Tepung Terigu Segitiga Biru', unit: 'kg', qty: 25, price: 12000, subtotal: 300000, orderedQty: 25 },
 ];
-const gr = { grNumber: 'GR-202610-0001', doNumber: 'DO-SUP001-202610-0001', poNumber: 'PO-202610-0001', supplierName: 'PT. FKS Food Sejahtera Tbk', items, total: 525000, receivedDate: '2026-10-07', note: 'Kemasan baik', status: 'approved' as const, cancelNote: null, createdBy: 'rifal', approvedBy: 'admin', approvedAt: { seconds: 1791331200 }, paymentStatus: 'belum_lunas' };
+const gr = { grNumber: 'GR-202610-0001', doNumber: 'DO-SUP001-202610-0001', poNumber: 'PO-202610-0001', supplierName: 'PT. FKS Food Sejahtera Tbk', items, total: 525000, receivedDate: '2026-10-07', note: 'Kemasan baik', status: 'approved' as const, cancelNote: null, createdBy: 'rifal', createdByName: 'Rifal Ardiansyah', approvedBy: 'admin', approvedByName: 'Sindy Rismawati', approvedAt: { seconds: 1791331200 }, paymentStatus: 'belum_lunas' };
+
+// Tanda tangan contoh (opsional, hanya kalau SIG_FILE diset) agar bisa diperiksa secara visual.
+const SIG = process.env.SIG_FILE && existsSync(process.env.SIG_FILE) ? readFileSync(process.env.SIG_FILE, 'utf8') : undefined;
 
 describe('PurchaseDocPDF', () => {
   it('merender PO, GR, dan DO menjadi PDF valid', async () => {
-    const poBase = { poNumber: 'PO-202610-0001', supplierName: 'PT. FKS Food Sejahtera Tbk', supplierPhone: '081200000000', items, total: 525000, date: '2026-10-06', expectedDate: '2026-10-10', note: 'Kirim pagi hari', status: 'draft' as const, cancelNote: null, createdBy: 'rifal' };
+    const poBase = { poNumber: 'PO-202610-0001', supplierName: 'PT. FKS Food Sejahtera Tbk', supplierPhone: '081200000000', items, total: 525000, date: '2026-10-06', expectedDate: '2026-10-10', note: 'Kirim pagi hari', status: 'draft' as const, cancelNote: null, createdBy: 'rifal', createdByName: 'Rifal Ardiansyah' };
     const docs: Record<string, ReturnType<typeof poToDocData>> = {
-      po: poToDocData(poBase, 'Jl. Industri Raya Blok C-12, Cikarang, Bekasi'),
+      po: poToDocData(poBase, 'Jl. Industri Raya Blok C-12, Cikarang, Bekasi', { created: SIG }),
       po_batal: poToDocData({ ...poBase, status: 'batal', cancelNote: 'Salah supplier' }),
-      gr: grToDocData(gr, 'gr', { address: 'Jl. Industri Raya Blok C-12, Cikarang', phone: '081200000000' }),
+      gr: grToDocData(gr, 'gr', { address: 'Jl. Industri Raya Blok C-12, Cikarang', phone: '081200000000' }, { created: SIG, approved: SIG }),
       do: grToDocData(gr, 'do'),
       gr_draft: grToDocData({ ...gr, status: 'draft', approvedBy: null, approvedAt: null }, 'gr'),
     };

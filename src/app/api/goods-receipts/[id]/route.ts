@@ -15,9 +15,13 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const sql = getSql();
   const [row] = await sql<GrRow[]>`
     select g.*, po.po_number, po.supplier_name, po.supplier_id,
-      coalesce(nullif(po.supplier_phone, ''), s.phone, '') as supplier_phone, coalesce(s.address, '') as supplier_address
+      coalesce(nullif(po.supplier_phone, ''), s.phone, '') as supplier_phone, coalesce(s.address, '') as supplier_address,
+      cp.full_name as created_by_name, cp.signature as created_by_signature,
+      ap.full_name as approved_by_name, ap.signature as approved_by_signature
     from goods_receipts g join purchase_orders po on po.id = g.po_id
     left join suppliers s on s.id = po.supplier_id
+    left join profiles cp on cp.username = g.created_by
+    left join profiles ap on ap.username = g.approved_by
     where g.id = ${id}
   `;
   if (!row) return Response.json({ error: 'GR tidak ditemukan.' }, { status: 404 });

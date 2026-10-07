@@ -5,25 +5,27 @@ import type { PoStatus, GrStatus, PoItem, GrItem } from '@/lib/purchase-orders-p
 // supaya isi dokumen identik di mana pun dicetak.
 
 export interface PoLike {
-  poNumber: string; supplierName: string; supplierPhone: string; items: PoItem[]; total: number;
+  poNumber: string; supplierName: string; supplierPhone: string; supplierPic?: string; items: PoItem[]; total: number;
   date: string; expectedDate: string | null; note: string; status: PoStatus; cancelNote: string | null;
-  createdBy?: string | null;
+  createdBy?: string | null; createdByName?: string | null;
 }
 export interface GrLike {
   grNumber: string; doNumber: string; poNumber: string | null; supplierName: string | null;
   items: GrItem[]; total: number; receivedDate: string; note: string; status: GrStatus; cancelNote: string | null;
-  createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null; paymentStatus?: string | null;
+  createdBy?: string | null; createdByName?: string | null; approvedBy?: string | null; approvedByName?: string | null;
+  approvedAt?: { seconds: number } | null; paymentStatus?: string | null;
 }
 
 export function printedNow() {
   return new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export function poToDocData(po: PoLike, supplierAddress?: string): PurchaseDocData {
+// `sigs` = data-URI tanda tangan yang sudah di-resolve pemanggil (browser: toDataUri, server: serverSignatureDataUri).
+export function poToDocData(po: PoLike, supplierAddress?: string, sigs?: { created?: string }): PurchaseDocData {
   return {
     kind: 'po', number: po.poNumber, date: formatDocDate(po.date), printedAt: printedNow(),
-    supplierName: po.supplierName, supplierPhone: po.supplierPhone || undefined, supplierAddress: supplierAddress || undefined,
-    expectedDate: po.expectedDate ? formatDocDate(po.expectedDate) : undefined, createdBy: po.createdBy || undefined,
+    supplierName: po.supplierName, supplierPhone: po.supplierPhone || undefined, supplierPic: po.supplierPic || undefined, supplierAddress: supplierAddress || undefined,
+    expectedDate: po.expectedDate ? formatDocDate(po.expectedDate) : undefined, createdBy: po.createdByName || po.createdBy || undefined, createdBySignature: sigs?.created,
     items: po.items, total: po.total, note: po.note || undefined,
     ...(po.status === 'batal'
       ? { statusLabel: 'DIBATALKAN', statusTone: 'void' as const, cancelNote: po.cancelNote || undefined }
@@ -31,7 +33,7 @@ export function poToDocData(po: PoLike, supplierAddress?: string): PurchaseDocDa
   };
 }
 
-export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, supplier?: { phone?: string; address?: string }): PurchaseDocData {
+export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, supplier?: { phone?: string; address?: string; pic?: string }, sigs?: { created?: string; approved?: string }): PurchaseDocData {
   const status = gr.status === 'approved'
     ? { statusLabel: 'APPROVED', statusTone: 'ok' as const }
     : gr.status === 'dibatalkan'
@@ -39,9 +41,10 @@ export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, su
       : { statusLabel: 'DRAFT - BELUM DI-APPROVE', statusTone: 'warn' as const };
   return {
     kind, number: kind === 'do' ? gr.doNumber : gr.grNumber, date: formatDocDate(gr.receivedDate), printedAt: printedNow(),
-    supplierName: gr.supplierName ?? '', supplierPhone: supplier?.phone || undefined, supplierAddress: supplier?.address || undefined,
+    supplierName: gr.supplierName ?? '', supplierPhone: supplier?.phone || undefined, supplierPic: supplier?.pic || undefined, supplierAddress: supplier?.address || undefined,
     refPoNumber: gr.poNumber ?? undefined, refGrNumber: gr.grNumber, refDoNumber: gr.doNumber,
-    createdBy: gr.createdBy || undefined, approvedBy: gr.approvedBy || undefined,
+    createdBy: gr.createdByName || gr.createdBy || undefined, createdBySignature: sigs?.created,
+    approvedBy: gr.approvedByName || gr.approvedBy || undefined, approvedBySignature: sigs?.approved,
     approvedAt: gr.approvedAt ? new Date(gr.approvedAt.seconds * 1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' }) : undefined,
     paymentLabel: gr.status === 'approved' && gr.paymentStatus ? (gr.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas') : undefined,
     items: gr.items, total: gr.total, note: gr.note || undefined, ...status,

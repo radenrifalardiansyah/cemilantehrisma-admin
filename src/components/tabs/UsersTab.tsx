@@ -20,18 +20,31 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import SearchableSelect from '@/components/SearchableSelect';
 import type { Role, Action } from '@/types/rbac';
 import PageLoader from '@/components/PageLoader';
+import ImageUploadBox from '@/components/ImageUploadBox';
 
 const HEADER_BTN_H = 34;
 
 interface AppUser {
   username: string; email: string | null; role: string; createdAt?: { seconds: number }; twoFactor?: boolean;
+  fullName?: string; signature?: string;
 }
 
 interface EditState {
-  username: string; email: string; role: string; password: string;
+  username: string; email: string; role: string; password: string; fullName: string; signature: string;
 }
 
-const EMPTY: EditState = { username: '', email: '', role: '', password: '' };
+const EMPTY: EditState = { username: '', email: '', role: '', password: '', fullName: '', signature: '' };
+
+// PNG (transparansi dipertahankan supaya latar tanda tangan tidak putih saat ditumpuk di PDF), sisi terpanjang 800px.
+async function compressSignature(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 800 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise(resolve => canvas.toBlob(blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, '.png'), { type: 'image/png' })), 'image/png'));
+}
 
 function formatDate(u: AppUser) {
   if (u.createdAt?.seconds) return new Date(u.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -86,6 +99,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,      setError]      = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [signatureUploading, setSignatureUploading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -103,8 +117,25 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
   const isSelf = (username: string) => username.toLowerCase() === currentUsername.toLowerCase();
 
   const openNew   = () => { setEditing({ ...EMPTY, role: roles.find(r => r.id !== 'super-admin')?.id ?? '' }); setIsNew(true); setError(''); setShowPassword(false); };
-  const openEdit  = (u: AppUser) => { setEditing({ username: u.username, email: u.email ?? '', role: u.role, password: '' }); setIsNew(false); setError(''); setShowPassword(false); };
+  const openEdit  = (u: AppUser) => { setEditing({ username: u.username, email: u.email ?? '', role: u.role, password: '', fullName: u.fullName ?? '', signature: u.signature ?? '' }); setIsNew(false); setError(''); setShowPassword(false); };
   const closeEdit = () => { setEditing(null); setIsNew(false); setError(''); };
+
+  const uploadSignature = async (file?: File) => {
+    if (!file || !editing) return;
+    setSignatureUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', await compressSignature(file));
+      const r = await fetch('/api/upload', { method: 'POST', headers, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      setEditing(e => e ? { ...e, signature: url } : e);
+    } catch {
+      toast.error('Gagal mengunggah tanda tangan.');
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
 
   const save = async () => {
     if (!editing) return;
@@ -116,6 +147,8 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
     const body: Record<string, unknown> = {
       email: editing.email || undefined,
       role: isSelf(editing.username) ? undefined : editing.role,
+      fullName: editing.fullName,
+      signature: editing.signature,
     };
     if (editing.password) body.password = editing.password;
 
@@ -332,6 +365,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
 
   const filtered = users.filter(u => !search
     || u.username.toLowerCase().includes(search.toLowerCase())
+    || (u.fullName ?? '').toLowerCase().includes(search.toLowerCase())
     || (u.email ?? '').toLowerCase().includes(search.toLowerCase())
     || roleName(u.role).toLowerCase().includes(search.toLowerCase()));
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -367,7 +401,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
               onChange={e => { setSearch(e.target.value); resetPage(); }}
               className="input text-sm w-full"
               style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-              placeholder="Cari username, email, atau role…"
+              placeholder="Cari nama, username, email, atau role…"
             />
           </div>
         )}
@@ -443,12 +477,13 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold truncate flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                          {u.username}
+                          {u.fullName || u.username}
                           {self && <span className="badge badge-gray">Anda</span>}
                           {u.twoFactor && <span className="badge badge-green">2FA</span>}
+                          {u.signature && <span className="badge badge-blue">TTD</span>}
                         </p>
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                          {[u.email, `Terdaftar ${formatDate(u)}`].filter(Boolean).join(' · ')}
+                          {[u.fullName ? `@${u.username}` : null, u.email, `Terdaftar ${formatDate(u)}`].filter(Boolean).join(' · ')}
                         </p>
                       </div>
                       <span className="badge badge-amber flex-shrink-0">{roleName(u.role)}</span>
@@ -498,10 +533,11 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                         {u.username.slice(0, 2).toUpperCase()}
                       </div>
                       <p className="text-sm font-bold truncate max-w-full flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                        {u.username}
+                        {u.fullName || u.username}
                         {self && <span className="badge badge-gray">Anda</span>}
                         {u.twoFactor && <span className="badge badge-green">2FA</span>}
                       </p>
+                      {u.fullName && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>@{u.username}</p>}
                       <span className="badge badge-amber">{roleName(u.role)}</span>
                       <p className="text-xs truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
                         {u.email || `Terdaftar ${formatDate(u)}`}
@@ -634,6 +670,30 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                   <input value={editing.username} disabled={!isNew}
                     onChange={e => setEditing({ ...editing, username: e.target.value })}
                     className="input" placeholder="cth: budi" autoFocus={isNew} />
+                </div>
+                <div>
+                  <label className="field-label">Nama Lengkap</label>
+                  <input value={editing.fullName} onChange={e => setEditing({ ...editing, fullName: e.target.value })}
+                    className="input" placeholder="cth: Budi Santoso" maxLength={100} />
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Nama ini yang tampil di dokumen PDF (PO, GR, DO) sebagai pembuat/penyetuju. Kosong = pakai username.</p>
+                </div>
+                <div>
+                  <label className="field-label">Tanda Tangan</label>
+                  <div className="flex items-start gap-3">
+                    <ImageUploadBox
+                      src={editing.signature || undefined}
+                      alt="Tanda tangan"
+                      uploading={signatureUploading}
+                      onSelect={f => uploadSignature(f)}
+                      onRemove={() => setEditing({ ...editing, signature: '' })}
+                      fit="contain"
+                      size={80}
+                      emptyText="Upload"
+                      crop
+                      cropTitle="Edit Tanda Tangan"
+                    />
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tampil di atas nama pada kolom tanda tangan dokumen. Pakai foto/scan tanda tangan berlatar putih polos atau PNG transparan.</p>
+                  </div>
                 </div>
                 <div>
                   <label className="field-label">Email (opsional)</label>

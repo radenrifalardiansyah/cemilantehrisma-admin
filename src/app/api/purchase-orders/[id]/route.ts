@@ -13,7 +13,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const sql = getSql();
-  const [row] = await sql<PoRow[]>`select * from purchase_orders where id = ${id}`;
+  const [row] = await sql<PoRow[]>`
+    select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature
+    from purchase_orders po left join profiles cp on cp.username = po.created_by
+    where po.id = ${id}
+  `;
   if (!row) return Response.json({ error: 'PO tidak ditemukan.' }, { status: 404 });
   const grRows = await sql<GrRow[]>`select * from goods_receipts where po_id = ${id} order by created_at desc`;
   const po = rowToPo(row);

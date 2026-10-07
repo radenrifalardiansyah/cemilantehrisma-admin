@@ -16,6 +16,7 @@ export interface PoRow {
   id: string; po_number: string; supplier_id: string | null; supplier_name: string; supplier_phone: string;
   items: unknown; total: string; date: string; expected_date: string | null; note: string;
   status: string; token: string; sent_at: Date | null; cancel_note: string | null; created_by: string | null;
+  created_by_name?: string | null; created_by_signature?: string | null;
   created_at: Date; updated_at: Date | null;
 }
 export function rowToPo(r: PoRow, opts?: { includeToken?: boolean }) {
@@ -24,6 +25,7 @@ export function rowToPo(r: PoRow, opts?: { includeToken?: boolean }) {
     items: (parseJsonb(r.items as string | PoItem[] | null) as PoItem[] | null) ?? [],
     total: Number(r.total), date: r.date, expectedDate: r.expected_date, note: r.note,
     status: r.status as PoStatus, sentAt: toTimestamp(r.sent_at), cancelNote: r.cancel_note, createdBy: r.created_by,
+    createdByName: r.created_by_name || null, createdBySignature: r.created_by_signature || null,
     ...(opts?.includeToken ? { token: r.token } : {}),
     createdAt: toTimestamp(r.created_at), updatedAt: toTimestamp(r.updated_at),
   };
@@ -38,6 +40,8 @@ export interface GrRow {
   created_at: Date; updated_at: Date | null;
   po_number?: string | null; supplier_name?: string | null; supplier_id?: string | null;
   supplier_phone?: string | null; supplier_address?: string | null;
+  created_by_name?: string | null; created_by_signature?: string | null;
+  approved_by_name?: string | null; approved_by_signature?: string | null;
 }
 export function rowToGr(r: GrRow, opts?: { includeToken?: boolean }) {
   return {
@@ -47,6 +51,8 @@ export function rowToGr(r: GrRow, opts?: { includeToken?: boolean }) {
     total: Number(r.total), receivedDate: r.received_date, note: r.note, status: r.status as GrStatus,
     walletId: r.wallet_id, paymentStatus: r.payment_status, purchaseId: r.purchase_id,
     createdBy: r.created_by, approvedBy: r.approved_by, approvedAt: toTimestamp(r.approved_at),
+    createdByName: r.created_by_name || null, createdBySignature: r.created_by_signature || null,
+    approvedByName: r.approved_by_name || null, approvedBySignature: r.approved_by_signature || null,
     cancelledAt: toTimestamp(r.cancelled_at), cancelNote: r.cancel_note,
     ...(opts?.includeToken ? { token: r.token } : {}),
     createdAt: toTimestamp(r.created_at), updatedAt: toTimestamp(r.updated_at),

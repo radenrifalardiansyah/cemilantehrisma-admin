@@ -2,19 +2,24 @@ import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requirePermission, assertCanEditUser, assertCanDeleteUser, SESSION_TAG } from '@/lib/rbac';
+import { isValidSignatureUrl } from '@/lib/profile-signature';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 type Ctx = { params: Promise<{ username: string }> };
 
-interface ProfileRow { id: string; email: string | null; role: string; must_change_password: boolean; sessions_invalidated_at: string | null }
+interface ProfileRow { id: string; email: string | null; role: string; must_change_password: boolean; sessions_invalidated_at: string | null; full_name: string | null; signature: string | null }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'users', 'edit');
   if (guard instanceof Response) return guard;
   const { username } = await ctx.params;
 
-  const { email, role, password } =
-    await req.json() as { email?: string; role?: string; password?: string };
+  const { email, role, password, fullName, signature } =
+    await req.json() as { email?: string; role?: string; password?: string; fullName?: string; signature?: string };
+
+  if (signature?.trim() && !isValidSignatureUrl(signature.trim())) {
+    return Response.json({ error: 'Tanda tangan harus berupa gambar hasil upload.' }, { status: 400 });
+  }
 
   const sql = getSql();
   if (role) {
@@ -22,7 +27,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (!roleRow) return Response.json({ error: `Role "${role}" tidak ditemukan.` }, { status: 400 });
   }
 
-  const [profile] = await sql<ProfileRow[]>`select id, email, role, must_change_password, sessions_invalidated_at from profiles where username = ${username}`;
+  const [profile] = await sql<ProfileRow[]>`select id, email, role, must_change_password, sessions_invalidated_at, full_name, signature from profiles where username = ${username}`;
   if (!profile) return Response.json({ error: 'Pengguna tidak ditemukan.' }, { status: 404 });
 
   const check = assertCanEditUser(guard, username, profile.role, { role });
@@ -38,6 +43,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   // berikutnya, bukan tetap jalan dengan role/akses lama sampai dia kebetulan login ulang sendiri.
   const revokesSessions = !!role || !!password;
   const nextEmail = email !== undefined ? (email ? email.trim().toLowerCase() : null) : profile.email;
+  // undefined = tidak diubah; string kosong = dikosongkan. Nama & tanda tangan tidak mencabut sesi.
+  const nextFullName = fullName !== undefined ? (fullName.trim().slice(0, 100) || null) : profile.full_name;
+  const nextSignature = signature !== undefined ? (signature.trim() || null) : profile.signature;
   const nextRole = role ?? profile.role;
   const nextMustChange = password ? true : profile.must_change_password;
   const nextInvalidatedAt = revokesSessions ? Math.floor(Date.now() / 1000) : (Number(profile.sessions_invalidated_at) || null);
@@ -45,6 +53,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   await sql`
     update profiles set
       email = ${nextEmail}, role = ${nextRole}, must_change_password = ${nextMustChange},
+      full_name = ${nextFullName}, signature = ${nextSignature},
       sessions_invalidated_at = ${nextInvalidatedAt}, updated_at = now()
     where username = ${username}
   `;

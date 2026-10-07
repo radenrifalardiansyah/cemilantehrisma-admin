@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { toDataUri } from '@/lib/pdf/logo';
 import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, FileText, Upload, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
@@ -30,12 +31,13 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 const HEADER_BTN_H = 34;
 
 export interface FlowMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
-export interface FlowSupplier { id: string; name: string; phone?: string; address?: string }
+export interface FlowSupplier { id: string; name: string; phone?: string; address?: string; pic?: string }
 
 interface Po {
   id: string; poNumber: string; supplierId: string | null; supplierName: string; supplierPhone: string;
   items: PoItem[]; total: number; date: string; expectedDate: string | null; note: string;
   status: PoStatus; cancelNote: string | null; received: Record<string, number>; createdBy?: string | null;
+  createdByName?: string | null; createdBySignature?: string | null;
 }
 interface Gr {
   id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null; supplierPhone?: string; supplierAddress?: string;
@@ -43,6 +45,7 @@ interface Gr {
   receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null;
   purchaseId: string | null; cancelNote: string | null;
   createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
+  createdByName?: string | null; createdBySignature?: string | null; approvedByName?: string | null; approvedBySignature?: string | null;
 }
 
 const formatRp = (n: number) =>
@@ -154,10 +157,25 @@ export default function PurchaseFlowPanel({
   };
   const supplierOf = (id?: string | null) => (id ? suppliers.find(s => s.id === id) : undefined);
   // Telepon/alamat supplier untuk dokumen GR/DO: dari API (snapshot PO + master supplier), cadangan dari daftar supplier.
-  const supplierInfoOf = (g: Gr) => ({ phone: g.supplierPhone || supplierOf(g.supplierId)?.phone, address: g.supplierAddress || supplierOf(g.supplierId)?.address });
-  const poPdf = (p: Po) => downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={poToDocData(p, supplierOf(p.supplierId)?.address)} store={storeHeader} />, p.poNumber);
-  const grPdf = (g: Gr, kind: 'gr' | 'do') =>
-    downloadPdf(`${kind}-${g.id}`, <PurchaseDocPDF data={grToDocData(g, kind, supplierInfoOf(g))} store={storeHeader} />, kind === 'do' ? g.doNumber : g.grNumber);
+  const supplierInfoOf = (g: Gr) => ({ phone: g.supplierPhone || supplierOf(g.supplierId)?.phone, address: g.supplierAddress || supplierOf(g.supplierId)?.address, pic: supplierOf(g.supplierId)?.pic });
+  // Gambar tanda tangan (URL Cloudinary) -> data-URI supaya bisa dimuat react-pdf; di-cache per URL.
+  const sigCache = useRef(new Map<string, string | undefined>());
+  const sigUri = async (url?: string | null) => {
+    if (!url) return undefined;
+    if (!sigCache.current.has(url)) sigCache.current.set(url, await toDataUri(url));
+    return sigCache.current.get(url);
+  };
+  const poDoc = async (p: Po) => poToDocData({ ...p, supplierPic: supplierOf(p.supplierId)?.pic }, supplierOf(p.supplierId)?.address, { created: await sigUri(p.createdBySignature) });
+  const grDoc = async (g: Gr, kind: 'gr' | 'do') =>
+    grToDocData(g, kind, supplierInfoOf(g), { created: await sigUri(g.createdBySignature), approved: await sigUri(g.approvedBySignature) });
+  const poPdf = async (p: Po) => {
+    setBusyId(`po-${p.id}`);
+    await downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={await poDoc(p)} store={storeHeader} />, p.poNumber);
+  };
+  const grPdf = async (g: Gr, kind: 'gr' | 'do') => {
+    setBusyId(`${kind}-${g.id}`);
+    await downloadPdf(`${kind}-${g.id}`, <PurchaseDocPDF data={await grDoc(g, kind)} store={storeHeader} />, kind === 'do' ? g.doNumber : g.grNumber);
+  };
 
   // ── Kirim WA ke supplier (tombol manual — pengguna yang menekan Kirim di WhatsApp) ──
   const sendPoWhatsApp = async (p: Po) => {
@@ -439,11 +457,13 @@ ${pdfUrl}`.trim();
 
   // Cetak PDF gabungan untuk dokumen yang dicentang: satu dokumen per halaman, urut seperti di daftar.
   const printSelected = async (kind: 'po' | 'gr' | 'do') => {
+    const count = kind === 'po' ? filteredPos.filter(p => selPo.has(p.id)).length : filteredGrs.filter(g => selGr.has(g.id)).length;
+    if (count === 0) { toast.error('Centang dokumen yang mau dicetak dulu.'); return; }
+    if (count > MAX_PRINT) { toast.error(`Maksimal ${MAX_PRINT} dokumen sekali cetak. Kurangi centangnya.`); return; }
+    setBusyId(`bulk-${kind}`);
     const docs = kind === 'po'
-      ? filteredPos.filter(p => selPo.has(p.id)).map(p => poToDocData(p, supplierOf(p.supplierId)?.address))
-      : filteredGrs.filter(g => selGr.has(g.id)).map(g => grToDocData(g, kind, supplierInfoOf(g)));
-    if (docs.length === 0) { toast.error('Centang dokumen yang mau dicetak dulu.'); return; }
-    if (docs.length > MAX_PRINT) { toast.error(`Maksimal ${MAX_PRINT} dokumen sekali cetak. Kurangi centangnya.`); return; }
+      ? await Promise.all(filteredPos.filter(p => selPo.has(p.id)).map(poDoc))
+      : await Promise.all(filteredGrs.filter(g => selGr.has(g.id)).map(g => grDoc(g, kind)));
     const label = kind === 'po' ? 'purchase-order' : kind === 'gr' ? 'goods-receipt' : 'delivery-order';
     await downloadPdf(`bulk-${kind}`, <PurchaseDocBundle docs={docs} store={storeHeader} title={`${label} terpilih`} />, `${label}-terpilih-${docs.length}-dokumen-${new Date().toLocaleDateString('en-CA')}`);
   };

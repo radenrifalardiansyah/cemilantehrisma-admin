@@ -21,13 +21,16 @@ export interface PurchaseDocData {
   printedAt?: string;
   supplierName: string;
   supplierPhone?: string;
+  supplierPic?: string;
   supplierAddress?: string;
   refPoNumber?: string;        // GR/DO: PO asal
   refGrNumber?: string;        // DO: GR asal
   refDoNumber?: string;        // GR: nomor DO yang ikut terbuat
   expectedDate?: string;       // PO
-  createdBy?: string;
+  createdBy?: string;          // nama tampilan (nama lengkap, cadangan username)
+  createdBySignature?: string; // data-URI gambar tanda tangan
   approvedBy?: string;         // GR/DO
+  approvedBySignature?: string;
   approvedAt?: string;         // GR/DO (sudah terformat)
   paymentLabel?: string;       // GR approved: 'Lunas' / 'Belum Lunas'
   items: (PoItem | GrItem)[];
@@ -119,7 +122,8 @@ const s = StyleSheet.create({
   sigRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 22, gap: 14 },
   sigBox: { flex: 1, alignItems: 'center' },
   sigRole: { fontSize: 8.5, color: C.muted },
-  sigSpace: { height: 52 },
+  sigSpace: { height: 52, justifyContent: 'flex-end', alignItems: 'center' },
+  sigImg: { height: 48, maxWidth: 150, objectFit: 'contain' },
   sigLine: { width: '86%', borderBottomWidth: 1, borderBottomColor: C.dark },
   sigName: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', marginTop: 4, textAlign: 'center' },
   sigMeta: { fontSize: 7.5, color: C.muted, marginTop: 1.5, textAlign: 'center' },
@@ -196,6 +200,7 @@ function Parties({ data, store }: { data: PurchaseDocData; store: StoreHeader })
         <View style={s.boxBody}>
           <Text style={s.strong}>{data.supplierName || 'Tanpa nama'}</Text>
           {data.supplierAddress && <Text style={s.line}>{data.supplierAddress}</Text>}
+          {data.supplierPic && <Text style={s.dim}>PIC: {data.supplierPic}</Text>}
           {data.supplierPhone && <Text style={s.dim}>Telp/WA: {data.supplierPhone}</Text>}
         </View>
       </View>
@@ -294,19 +299,19 @@ function Totals({ data }: { data: PurchaseDocData }) {
 
 function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
   const k = data.kind;
-  const sigs: { role: string; name?: string; meta?: string }[] = k === 'po'
-    ? [{ role: 'Dibuat oleh', name: data.createdBy }, { role: 'Disetujui', name: store.ownerName }, { role: 'Supplier', name: data.supplierName }]
+  const sigs: { role: string; name?: string; meta?: string; image?: string }[] = k === 'po'
+    ? [{ role: 'Dibuat oleh', name: data.createdBy, image: data.createdBySignature }, { role: 'Disetujui', name: store.ownerName }, { role: 'Supplier', name: data.supplierName }]
     : [
       { role: 'Pengirim (Supplier)', name: data.supplierName },
-      { role: 'Penerima', name: data.createdBy },
-      { role: k === 'gr' ? 'Disetujui' : 'Mengetahui', name: data.approvedBy, meta: data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined },
+      { role: 'Penerima', name: data.createdBy, image: data.createdBySignature },
+      { role: k === 'gr' ? 'Disetujui' : 'Mengetahui', name: data.approvedBy, image: data.approvedBySignature, meta: data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined },
     ];
   return (
     <View style={s.sigRow} wrap={false}>
       {sigs.map(g => (
         <View key={g.role} style={s.sigBox}>
           <Text style={s.sigRole}>{g.role}</Text>
-          <View style={s.sigSpace} />
+          <View style={s.sigSpace}>{g.image && <Image src={g.image} style={s.sigImg} />}</View>
           <View style={s.sigLine} />
           <Text style={s.sigName}>{g.name ? `( ${g.name} )` : '(                                  )'}</Text>
           {g.meta && <Text style={s.sigMeta}>{g.meta}</Text>}

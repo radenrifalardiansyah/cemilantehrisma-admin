@@ -13,7 +13,11 @@ export async function GET(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const sql = getSql();
   const [rows, grRows] = await Promise.all([
-    sql<PoRow[]>`select * from purchase_orders order by created_at desc`,
+    sql<PoRow[]>`
+      select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature
+      from purchase_orders po left join profiles cp on cp.username = po.created_by
+      order by po.created_at desc
+    `,
     sql<{ po_id: string; items: unknown }[]>`select po_id, items from goods_receipts where status = 'approved'`,
   ]);
   // Qty yang sudah diterima (GR approved) per PO per bahan — untuk progres di daftar PO.
