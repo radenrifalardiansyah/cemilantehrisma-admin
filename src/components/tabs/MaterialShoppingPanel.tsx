@@ -180,7 +180,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const openDetail = (g: ShoppingGroup) => {
     setDDate(g.date); setDSupplierId(g.supplierId ?? ''); setDSupplierName(g.supplierName); setDNote(g.notes.join(' · '));
     setRows([{ ...EMPTY_ROW }]);
-    openDetail(g);
+    setDetailKey(g.key);
   };
   const updateRow = (i: number, p: Partial<AddRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
   const validRows = rows.filter(r => r.materialId && parseFloat(r.qty) > 0);
