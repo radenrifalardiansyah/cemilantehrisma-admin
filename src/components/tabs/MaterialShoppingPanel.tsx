@@ -5,6 +5,7 @@ import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Eye, Search, Che
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
+import ShoppingListPDF from '@/lib/pdf/ShoppingListPDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ViewToggle from '@/components/ViewToggle';
@@ -113,6 +114,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [pageSize, setPageSize] = useState(10);
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [printingDate, setPrintingDate] = useState<string | null>(null);
 
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -397,6 +399,36 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     finally { setExportingXlsx(false); }
   };
 
+  // PDF satu tanggal: per supplier ada tabel item + subtotal, ditutup total tanggal.
+  const printDatePdf = async (block: { date: string; groups: ShoppingGroup[]; total: number; itemCount: number }) => {
+    setPrintingDate(block.date);
+    try {
+      const blob = await pdf(
+        <ShoppingListPDF
+          store={storeHeader}
+          data={{
+            no: numberOf.get(block.date) ?? 0,
+            dateLabel: formatDateLong(block.date),
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            itemCount: block.itemCount, grandTotal: block.total,
+            suppliers: block.groups.map(g => ({
+              name: supplierLabel(g), notes: g.notes.join(' · '), wallet: walletLabel(g),
+              status: STATUS_BADGE[g.status].label + (g.unpaid ? ' (belum lunas)' : ''),
+              total: g.total,
+              items: g.items.map((i, idx) => ({
+                no: idx + 1, name: i.materialName, qty: formatQty(i.qty), unit: i.unit,
+                price: i.price, subtotal: i.qty * (i.price ?? 0), bought: i.status === 'done',
+              })),
+            })),
+          }}
+        />
+      ).toBlob();
+      downloadBlob(blob, `daftar-belanja-${block.date}.pdf`);
+      toast.success(`PDF daftar belanja ${formatDateLong(block.date)} berhasil dibuat.`);
+    } catch { toast.error('Gagal membuat file PDF.'); }
+    finally { setPrintingDate(null); }
+  };
+
   const exportPdf = async () => {
     if (dateBlocks.length === 0) { toast.error('Tidak ada daftar belanja untuk diexport.'); return; }
     setExportingPdf(true);
@@ -528,7 +560,15 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     </p>
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{block.groups.length} supplier · {block.itemCount} item</p>
                   </div>
-                  <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
+                    <Tooltip label="Cetak PDF tanggal ini">
+                      <button onClick={() => printDatePdf(block)} disabled={printingDate === block.date} aria-label="Cetak PDF tanggal ini"
+                        className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: 30, width: 30 }}>
+                        {printingDate === block.date ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
+                      </button>
+                    </Tooltip>
+                  </div>
                 </div>
                 {view === 'table' ? (
             <div className="overflow-x-auto">
