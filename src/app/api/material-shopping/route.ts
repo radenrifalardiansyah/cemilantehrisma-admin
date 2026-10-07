@@ -12,11 +12,10 @@ export async function GET(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const sql = getSql();
   // Yang sudah diproses ikut dikirim (50 terakhir) supaya riwayatnya tetap terlihat.
-  // Yang masih di daftar + yang sudah diproses dalam 90 hari terakhir (riwayat).
+  // Seluruh daftar: yang masih menunggu + riwayat yang sudah diproses (termasuk hasil impor pembelian lama).
   const rows = await sql<ShoppingItemRow[]>`
     select s.*, m.name as material_name, m.unit as material_unit
     from material_shopping_items s join raw_materials m on m.id = s.material_id
-    where s.status = 'pending' or s.done_at >= now() - interval '90 days'
     order by s.shopping_date desc, s.created_at asc
   `;
   return Response.json({ items: rows.map(rowToShoppingItem) });
