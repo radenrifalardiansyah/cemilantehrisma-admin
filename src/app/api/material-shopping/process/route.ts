@@ -9,26 +9,28 @@ import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
 import { wibDateKey } from '@/lib/date';
 
-// Proses item Daftar Belanja yang dicentang jadi SATU pembelian bahan baku — lewat
-// createPurchaseTx yang sama dengan Pembelian manual (stok, harga rata-rata, pengeluaran).
+// Proses item Daftar Belanja yang dicentang jadi pembelian bahan baku — lewat createPurchaseTx
+// yang sama dengan Pembelian manual (stok, harga rata-rata, pengeluaran). Dompet bisa dipilih
+// per item (`itemWallets`); item dengan dompet yang sama digabung jadi satu pembelian, jadi satu
+// proses bisa menghasilkan beberapa pembelian (semuanya dalam satu transaksi database).
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     ids?: string[]; supplierId?: string; supplierName?: string; date?: string; note?: string;
-    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
+    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null; itemWallets?: Record<string, string>;
   };
   const ids = Array.isArray(data.ids) ? data.ids : [];
   if (ids.length === 0) return Response.json({ error: 'Centang minimal 1 item.' }, { status: 400 });
   if (!data.supplierName?.trim()) return Response.json({ error: 'Nama toko/supplier wajib diisi.' }, { status: 400 });
-  if (!data.walletId) return Response.json({ error: 'Pilih dompet sumber.' }, { status: 400 });
   const paymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
   const date = data.date || wibDateKey(new Date());
+  const itemWallets = data.itemWallets ?? {};
+  const walletFor = (id: string) => itemWallets[id] || data.walletId || '';
+  if (ids.some(id => !walletFor(id))) return Response.json({ error: 'Pilih dompet untuk semua item.' }, { status: 400 });
 
   const sql = getSql();
-  const purchaseId = randomUUID();
-  const expenseId = randomUUID();
-  let purchaseData: Record<string, unknown> = {};
+  const created: { purchaseId: string; data: Record<string, unknown> }[] = [];
   try {
     await sql.begin(async pgTx => {
       // Kunci baris daftar supaya tidak diproses dua kali (mis. dobel klik / dua perangkat).
@@ -38,42 +40,52 @@ export async function POST(req: NextRequest) {
         where s.id in ${pgTx(ids)} and s.status = 'pending' order by s.created_at for update of s
       `;
       if (rows.length !== ids.length) throw new Error('Sebagian item sudah diproses atau dihapus. Muat ulang daftar.');
-      const items: PurchaseItemInput[] = rows.map(r => ({
-        materialId: r.material_id, materialName: r.name, unit: r.unit, qty: Number(r.qty), price: Number(r.price ?? 0),
-      }));
-      const itemError = invalidPurchaseItemMessage(items);
-      if (itemError) throw new Error(itemError);
-      const noPrice = items.find(it => !(it.price > 0));
-      if (noPrice) throw new Error(`Harga "${noPrice.materialName}" belum diisi.`);
 
-      purchaseData = await createPurchaseTx(pgTx, {
-        purchaseId, expenseId,
-        supplierId: data.supplierId || null,
-        supplierName: data.supplierName!.trim(),
-        items, date, paymentStatus,
-        note: data.note?.trim() || 'Dari Daftar Belanja',
-        walletId: data.walletId ?? null,
-      });
-      await pgTx`
-        update material_shopping_items set status = 'done', purchase_id = ${purchaseId}, done_at = now(), checked = true
-        where id in ${pgTx(ids)}
-      `;
+      // Kelompokkan per dompet → satu pembelian per dompet.
+      const byWallet = new Map<string, { id: string; item: PurchaseItemInput }[]>();
+      for (const r of rows) {
+        const item: PurchaseItemInput = { materialId: r.material_id, materialName: r.name, unit: r.unit, qty: Number(r.qty), price: Number(r.price ?? 0) };
+        const itemError = invalidPurchaseItemMessage([item]);
+        if (itemError) throw new Error(itemError);
+        if (!(item.price > 0)) throw new Error(`Harga "${item.materialName}" belum diisi.`);
+        const w = walletFor(r.id);
+        byWallet.set(w, [...(byWallet.get(w) ?? []), { id: r.id, item }]);
+      }
+
+      for (const [walletId, group] of byWallet) {
+        const purchaseId = randomUUID();
+        const purchaseData = await createPurchaseTx(pgTx, {
+          purchaseId, expenseId: randomUUID(),
+          supplierId: data.supplierId || null,
+          supplierName: data.supplierName!.trim(),
+          items: group.map(g => g.item), date, paymentStatus,
+          note: data.note?.trim() || 'Dari Daftar Belanja',
+          walletId,
+        });
+        await pgTx`
+          update material_shopping_items set status = 'done', purchase_id = ${purchaseId}, done_at = now(), checked = true
+          where id in ${pgTx(group.map(g => g.id))}
+        `;
+        created.push({ purchaseId, data: purchaseData });
+      }
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal memproses daftar belanja.' }, { status: 400 });
   }
 
-  try {
-    await logHistory(getDb(), {
-      entity: 'material-purchases', entityId: purchaseId,
-      entityLabel: `${data.supplierName!.trim()} - Rp${purchaseData.total} (Daftar Belanja)`,
-      action: 'create', actor: guard, after: purchaseData,
-    });
-  } catch (err) {
-    console.error('Failed to write history for shopping-list purchase', err);
+  for (const c of created) {
+    try {
+      await logHistory(getDb(), {
+        entity: 'material-purchases', entityId: c.purchaseId,
+        entityLabel: `${data.supplierName!.trim()} - Rp${c.data.total} (Daftar Belanja)`,
+        action: 'create', actor: guard, after: c.data,
+      });
+    } catch (err) {
+      console.error('Failed to write history for shopping-list purchase', err);
+    }
   }
   revalidateTag('admin-materials', { expire: 0 });
-  if (purchaseData.expenseId) revalidateTag('admin-expenses', { expire: 0 });
+  if (created.some(c => c.data.expenseId)) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });
-  return Response.json({ id: purchaseId });
+  return Response.json({ id: created[0]?.purchaseId, ids: created.map(c => c.purchaseId), purchases: created.length });
 }

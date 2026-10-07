@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Eye, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -68,6 +68,11 @@ const EMPTY_ROW: AddRow = { materialId: '', qty: '', price: '' };
 
 const supplierKeyOf = (i: ShoppingItem) => i.supplierId ? `id:${i.supplierId}` : `n:${i.supplierName.trim().toLowerCase()}`;
 
+// Warna bullet supplier mengikuti status daftar.
+const STATUS_DOT: Record<ShoppingGroup['status'], string> = {
+  menunggu: 'var(--text-muted)', belanja: '#0369A1', sebagian: 'var(--accent)', selesai: 'var(--success)',
+};
+
 const STATUS_BADGE: Record<ShoppingGroup['status'], { label: string; cls: string }> = {
   menunggu: { label: 'Menunggu', cls: 'badge-gray' },
   belanja:  { label: 'Sedang belanja', cls: 'badge-blue' },
@@ -133,6 +138,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const [showProcess, setShowProcess] = useState(false);
   const [pDate, setPDate] = useState(todayISO());
   const [walletId, setWalletId] = useState('');
+  // Dompet per item (menimpa dompet default); kosong = ikut dompet default.
+  const [itemWallets, setItemWallets] = useState<Record<string, string>>({});
   const [paymentStatus, setPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [pNote, setPNote] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -274,10 +281,14 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   };
 
   // ── Proses ──
-  const openProcess = (g: ShoppingGroup) => { setPDate(todayISO()); setPNote(g.notes.join(' · ')); setShowProcess(true); };
+  const openProcess = (g: ShoppingGroup) => { setItemWallets({}); setPDate(todayISO()); setPNote(g.notes.join(' · ')); setShowProcess(true); };
   const checkedTotal = detail ? detail.checked.reduce((s, i) => s + i.qty * (i.price ?? 0), 0) : 0;
   const missingPrice = detail ? detail.checked.filter(i => !(i.price && i.price > 0)) : [];
-  const canProcess = !!detail && detail.checked.length > 0 && missingPrice.length === 0 && !!walletId && !!pDate && !!detail.supplierName.trim();
+  const walletOf = (id: string) => itemWallets[id] || walletId;
+  // Total per dompet (satu dompet = satu pembelian) untuk ringkasan & cek saldo.
+  const walletTotals = new Map<string, number>();
+  detail?.checked.forEach(i => { const w = walletOf(i.id); if (w) walletTotals.set(w, (walletTotals.get(w) ?? 0) + i.qty * (i.price ?? 0)); });
+  const canProcess = !!detail && detail.checked.length > 0 && missingPrice.length === 0 && detail.checked.every(i => !!walletOf(i.id)) && !!pDate && !!detail.supplierName.trim();
 
   const submitProcess = async () => {
     if (!detail || !canProcess) return;
@@ -285,11 +296,11 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     try {
       const r = await fetch(`${API}/api/material-shopping/process`, {
         method: 'POST', headers,
-        body: JSON.stringify({ ids: detail.checked.map(i => i.id), supplierId: detail.supplierId, supplierName: detail.supplierName.trim(), date: pDate, walletId, paymentStatus, note: pNote }),
+        body: JSON.stringify({ ids: detail.checked.map(i => i.id), supplierId: detail.supplierId, supplierName: detail.supplierName.trim(), date: pDate, walletId, itemWallets: Object.fromEntries(detail.checked.filter(i => itemWallets[i.id]).map(i => [i.id, itemWallets[i.id]])), paymentStatus, note: pNote }),
       });
       const d = await r.json() as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal memproses daftar belanja.'); return; }
-      toast.success(`${detail.checked.length} item diproses jadi pembelian bahan baku.`);
+      toast.success(walletTotals.size > 1 ? `${detail.checked.length} item diproses jadi ${walletTotals.size} pembelian (per dompet).` : `${detail.checked.length} item diproses jadi pembelian bahan baku.`);
       setShowProcess(false);
       await load();
       onProcessed();
@@ -540,19 +551,19 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     return (
                       <tr key={g.key} onClick={() => openDetail(g)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)' }}>
                         <td className="px-3 py-2.5" style={{ color: 'var(--text-primary)' }}>
-                          <p className="font-semibold flex items-start gap-1.5"><span style={{ color: 'var(--accent)' }}>•</span> <span className="min-w-0">{supplierLabel(g)}</span></p>
+                          <p className="font-semibold flex items-start gap-1.5"><span style={{ color: STATUS_DOT[g.status] }}>•</span> <span className="min-w-0">{supplierLabel(g)}</span></p>
                           {g.notes.length > 0 && <p className="text-[10.5px] truncate pl-3.5" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{doneCount}/{g.items.length} dibeli</td>
                         <td className="px-3 py-2.5 text-right font-semibold tabular whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatRp(g.total)}</td>
                         <td className="px-3 py-2.5"><span className={`badge ${STATUS_BADGE[g.status].cls}`}>{STATUS_BADGE[g.status].label}</span></td>
-                        <td className="px-3 py-2.5 truncate" style={{ color: 'var(--text-secondary)' }} title={walletLabel(g)}>
+                        <td className="px-3 py-2.5 break-words" style={{ color: 'var(--text-secondary)' }}>
                           {walletLabel(g)}{g.unpaid && <span className="block text-[10.5px]" style={{ color: 'var(--danger)' }}>Belum lunas</span>}
                         </td>
                         <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                           <div className="inline-flex items-center gap-1">
-                            <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Buka'}>
-                              <button onClick={() => openDetail(g)} className="btn-ghost p-2"><Pencil size={14} /></button>
+                            <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Lihat'}>
+                              <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -583,7 +594,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                         <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}><span style={{ color: 'var(--accent)' }}>•</span> {supplierLabel(g)}</p>
+                              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}><span style={{ color: STATUS_DOT[g.status] }}>•</span> {supplierLabel(g)}</p>
                               {g.notes.length > 0 && <p className="text-[10.5px] truncate" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
                             </div>
                             <span className={`badge ${STATUS_BADGE[g.status].cls} flex-shrink-0`}>{STATUS_BADGE[g.status].label}</span>
@@ -592,8 +603,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                           <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(g.total)}</p>
                           <div className="flex items-center justify-end gap-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }} onClick={e => e.stopPropagation()}>
                             <div className="inline-flex items-center gap-1">
-                            <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Buka'}>
-                              <button onClick={() => openDetail(g)} className="btn-ghost p-2"><Pencil size={14} /></button>
+                            <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Lihat'}>
+                              <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -860,11 +871,18 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: 'var(--surface-2)' }}>
+                <div className="space-y-2">
                   {detail.checked.map(i => (
-                    <div key={i.id} className="flex justify-between gap-3">
-                      <span>{i.materialName} · {formatQty(i.qty)} {i.unit}</span>
-                      <span className="tabular" style={{ color: i.price ? 'var(--text-secondary)' : 'var(--danger)' }}>{i.price ? formatRp(i.qty * i.price) : 'harga belum diisi'}</span>
+                    <div key={i.id} className="p-3 rounded-xl flex flex-wrap items-center gap-x-3 gap-y-2" style={{ background: 'var(--surface-2)' }}>
+                      <div className="flex-1 min-w-[150px] text-xs">
+                        <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>{i.materialName}</p>
+                        <p style={{ color: 'var(--text-muted)' }}>{formatQty(i.qty)} {i.unit} · <span className="tabular" style={{ color: i.price ? 'var(--text-secondary)' : 'var(--danger)' }}>{i.price ? formatRp(i.qty * i.price) : 'harga belum diisi'}</span></p>
+                      </div>
+                      <div style={{ width: 230, maxWidth: '100%' }}>
+                        <SearchSelect value={itemWallets[i.id] ?? ''} onChange={w => setItemWallets(prev => ({ ...prev, [i.id]: w }))}
+                          options={[{ value: '', label: walletId ? 'Ikut dompet utama' : '– Pilih dompet –' }, ...walletOptions]}
+                          placeholder="Dompet" searchPlaceholder="Cari dompet…" />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -879,10 +897,21 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                   <input type="date" value={pDate} onChange={e => setPDate(e.target.value)} className="input" style={{ maxWidth: 220 }} />
                 </div>
                 <div>
-                  <label style={fieldLabel}>Dompet Sumber <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <label style={fieldLabel}>Dompet Utama (dipakai item yang tidak dipilih dompetnya) <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <SearchSelect value={walletId} onChange={setWalletId} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
                   {walletId && <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Saldo saat ini: {formatRp(walletBalances[walletId] ?? 0)}</p>}
                 </div>
+                {walletTotals.size > 0 && (
+                  <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: 'var(--accent-bg)' }}>
+                    <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan per dompet — {walletTotals.size} pembelian akan dibuat</p>
+                    {[...walletTotals.entries()].map(([w, total]) => (
+                      <div key={w} className="flex justify-between gap-3">
+                        <span style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
+                        <span className="font-bold tabular" style={{ color: paymentStatus === 'lunas' && total > (walletBalances[w] ?? 0) ? 'var(--danger)' : 'var(--text-primary)' }}>{formatRp(total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div>
                   <label style={fieldLabel}>Status Pembayaran</label>
                   <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
