@@ -12,7 +12,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const data = await req.json() as Record<string, unknown>;
   const sql = getSql();
   await sql`
-    update suppliers set name = ${data.name as string}, phone = ${(data.phone as string) ?? ''},
+    update suppliers set name = ${data.name as string}, pic = ${(data.pic as string) ?? ''}, phone = ${(data.phone as string) ?? ''},
       address = ${(data.address as string) ?? ''}, note = ${(data.note as string) ?? ''}, updated_at = now()
     where id = ${id}
   `;

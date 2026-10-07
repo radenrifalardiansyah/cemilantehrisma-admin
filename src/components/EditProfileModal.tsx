@@ -5,6 +5,7 @@ import { UserCog, X, Check, Loader2, Eye, EyeOff, Camera } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import TwoFactorSection from '@/components/TwoFactorSection';
+import ImageUploadBox from '@/components/ImageUploadBox';
 
 // Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
 type SerializedTimestamp = { seconds: number; nanoseconds: number };
@@ -45,6 +46,17 @@ interface Props {
   onSaved: (patch: { email: string | null; avatar: string | null }) => void;
 }
 
+// PNG (transparansi dipertahankan supaya latar tanda tangan tidak putih saat ditumpuk di PDF), sisi terpanjang 800px.
+async function compressSignature(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 800 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise(resolve => canvas.toBlob(blob => resolve(new File([blob!], file.name.replace(/\.\w+$/, '.png'), { type: 'image/png' })), 'image/png'));
+}
+
 const compressImage = async (file: File): Promise<File> => {
   const MAX_PX = 400;
   const bitmap = await createImageBitmap(file);
@@ -70,6 +82,10 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
   const [avatarUrl, setAvatarUrl] = useState(avatar);
   const [uploading, setUploading] = useState(false);
   const [emailVal,  setEmailVal]  = useState(email ?? '');
+  const [fullName,  setFullName]  = useState('');
+  const [signature, setSignature] = useState('');
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -88,6 +104,35 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
       .finally(() => setLoadingHistory(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creds]);
+
+  // Nama lengkap & tanda tangan tidak dibawa lewat props AppShell — diambil dari /api/me saat modal dibuka.
+  useEffect(() => {
+    fetch('/api/me', { headers })
+      .then(r => r.json())
+      .then((d: { user?: { fullName?: string; signature?: string } }) => {
+        setFullName(d.user?.fullName ?? '');
+        setSignature(d.user?.signature ?? '');
+        setProfileLoaded(true);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creds]);
+
+  const uploadSignature = async (file: File) => {
+    setSignatureUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', await compressSignature(file));
+      const r = await fetch('/api/upload', { method: 'POST', headers, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      setSignature(url);
+    } catch {
+      toast.error('Gagal mengunggah tanda tangan.');
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
 
   const uploadAvatar = async (file: File) => {
     setUploading(true);
@@ -120,6 +165,8 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
 
     setSaving(true);
     const body: Record<string, unknown> = { email: emailVal || undefined, avatar: avatarUrl };
+    // Hanya dikirim kalau data awal sudah termuat — kalau tidak, nama/TTD lama bisa terhapus tanpa sengaja.
+    if (profileLoaded) { body.fullName = fullName; body.signature = signature; }
     if (newPassword) { body.currentPassword = currentPassword; body.newPassword = newPassword; }
 
     const r = await fetch('/api/me', {
@@ -194,6 +241,32 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
             <div>
               <label className="field-label">Role</label>
               <input value={role} disabled className="input" style={{ opacity: 0.6 }} />
+            </div>
+
+            <div>
+              <label className="field-label">Nama Lengkap</label>
+              <input value={fullName} onChange={e => setFullName(e.target.value)} disabled={!profileLoaded}
+                className="input" placeholder="cth: Budi Santoso" maxLength={100} />
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Tampil di dokumen PDF (PO, GR, DO) sebagai pembuat/penyetuju. Kosong = pakai username.</p>
+            </div>
+
+            <div>
+              <label className="field-label">Tanda Tangan</label>
+              <div className="flex items-start gap-3">
+                <ImageUploadBox
+                  src={signature || undefined}
+                  alt="Tanda tangan"
+                  uploading={signatureUploading}
+                  onSelect={f => uploadSignature(f)}
+                  onRemove={() => setSignature('')}
+                  fit="contain"
+                  size={80}
+                  emptyText="Upload"
+                  crop
+                  cropTitle="Edit Tanda Tangan"
+                />
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tampil di atas nama pada kolom tanda tangan dokumen. Pakai foto/scan tanda tangan berlatar putih polos atau PNG transparan.</p>
+              </div>
             </div>
 
             <div>
@@ -273,7 +346,7 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
 
         <div className="modal-footer">
           <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-          <button onClick={save} disabled={saving || uploading}
+          <button onClick={save} disabled={saving || uploading || signatureUploading}
             className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
             {saving ? 'Menyimpan…' : 'Simpan Perubahan'}

@@ -5,7 +5,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { nextSupplierCode } from '@/lib/suppliers-pg';
 
-interface ImportRow { name: string; phone?: string; address?: string; note?: string }
+interface ImportRow { name: string; pic?: string; phone?: string; address?: string; note?: string }
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'suppliers', 'create');
@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
     codePool.push(code);
     try {
       await sql`
-        insert into suppliers (id, code, name, phone, address, note, created_at, updated_at)
-        values (${randomUUID()}, ${code}, ${name}, ${phone}, ${(row.address ?? '').toString().trim()}, ${(row.note ?? '').toString().trim()}, now(), now())
+        insert into suppliers (id, code, name, pic, phone, address, note, created_at, updated_at)
+        values (${randomUUID()}, ${code}, ${name}, ${(row.pic ?? '').toString().trim()}, ${phone}, ${(row.address ?? '').toString().trim()}, ${(row.note ?? '').toString().trim()}, now(), now())
       `;
       created++;
     } catch (err) {

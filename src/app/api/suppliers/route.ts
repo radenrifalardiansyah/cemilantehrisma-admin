@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
   const code = nextSupplierCode(existingRows.map(r => r.code ?? '').filter(Boolean));
   const id = randomUUID();
   await sql`
-    insert into suppliers (id, code, name, phone, address, note, created_at, updated_at)
-    values (${id}, ${code}, ${data.name as string}, ${(data.phone as string) ?? ''}, ${(data.address as string) ?? ''}, ${(data.note as string) ?? ''}, now(), now())
+    insert into suppliers (id, code, name, pic, phone, address, note, created_at, updated_at)
+    values (${id}, ${code}, ${data.name as string}, ${(data.pic as string) ?? ''}, ${(data.phone as string) ?? ''}, ${(data.address as string) ?? ''}, ${(data.note as string) ?? ''}, now(), now())
   `;
   revalidateTag('admin-suppliers', { expire: 0 });
   return Response.json({ id, code });

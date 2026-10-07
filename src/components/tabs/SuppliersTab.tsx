@@ -26,6 +26,7 @@ const HEADER_BTN_H = 34;
 
 const TEMPLATE_COLS = [
   { header: 'Nama*',     key: 'name',    width: 24 },
+  { header: 'PIC',       key: 'pic',     width: 22 },
   { header: 'Telepon',   key: 'phone',   width: 20 },
   { header: 'Alamat',    key: 'address', width: 32 },
   { header: 'Catatan',   key: 'note',    width: 28 },
@@ -36,6 +37,7 @@ type TemplateKey = typeof TEMPLATE_COLS[number]['key'];
 function detectColumn(header: string): TemplateKey | null {
   const h = header.toLowerCase();
   if (h.includes('nama')) return 'name';
+  if (h === 'pic' || h.includes('narahubung') || h.includes('penanggung')) return 'pic';
   if (h.includes('telp') || h.includes('hp') || h.includes('whatsapp') || h.includes('phone')) return 'phone';
   if (h.includes('alamat') || h.includes('address')) return 'address';
   if (h.includes('catatan') || h.includes('note')) return 'note';
@@ -70,11 +72,11 @@ function Checkbox({ checked, indeterminate, onChange }: {
 }
 
 interface Supplier {
-  id: string; code?: string; name: string; phone: string; address: string; note: string;
+  id: string; code?: string; name: string; pic: string; phone: string; address: string; note: string;
   createdAt?: { seconds: number };
 }
 
-const EMPTY_SUPPLIER: Omit<Supplier, 'id'> = { name: '', phone: '', address: '', note: '' };
+const EMPTY_SUPPLIER: Omit<Supplier, 'id'> = { name: '', pic: '', phone: '', address: '', note: '' };
 
 function formatDate(s: Supplier) {
   if (s.createdAt?.seconds)
@@ -162,7 +164,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
     ws.getColumn('phone').numFmt = '@';
 
     const exampleRow = ws.addRow({
-      name: 'UD Sumber Tani', phone: '081234567890',
+      name: 'UD Sumber Tani', pic: 'Pak Budi', phone: '081234567890',
       address: 'Jl. Pasar Induk No. 12', note: 'Contoh — timpa dengan data supplier Anda',
     });
     exampleRow.eachCell(cell => { cell.font = { italic: true, color: { argb: 'FF9CA3AF' } }; });
@@ -256,6 +258,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
         { header: 'No',        key: 'no',      width: 6  },
         { header: 'Kode',      key: 'code',    width: 12 },
         { header: 'Nama',      key: 'name',    width: 24 },
+        { header: 'PIC',       key: 'pic',     width: 18 },
         { header: 'Telepon',   key: 'phone',   width: 18 },
         { header: 'Alamat',    key: 'address', width: 32 },
         { header: 'Catatan',   key: 'note',    width: 28 },
@@ -300,7 +303,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
 
       rows.forEach((s, i) => {
         const row = ws.addRow({
-          no: i + 1, code: s.code || '-', name: s.name, phone: s.phone || '-', address: s.address || '-',
+          no: i + 1, code: s.code || '-', name: s.name, pic: s.pic || '-', phone: s.phone || '-', address: s.address || '-',
           note: s.note || '-', joined: formatDate(s),
         });
         const zebraFill = i % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF';
@@ -365,14 +368,15 @@ export default function SuppliersTab({ creds }: { creds: string }) {
             generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             columns: [
               { header: 'No', width: '5%', align: 'center' },
-              { header: 'Kode', width: '10%' },
-              { header: 'Nama', width: '18%', bold: true },
-              { header: 'Telepon', width: '14%' },
-              { header: 'Alamat', width: '25%' },
-              { header: 'Catatan', width: '18%' },
+              { header: 'Kode', width: '9%' },
+              { header: 'Nama', width: '16%', bold: true },
+              { header: 'PIC', width: '12%' },
+              { header: 'Telepon', width: '13%' },
+              { header: 'Alamat', width: '22%' },
+              { header: 'Catatan', width: '14%' },
               { header: 'Terdaftar', width: '10%' },
             ],
-            rows: rows.map((s, i) => [i + 1, s.code || '-', s.name, s.phone || '-', s.address || '-', s.note || '-', formatDate(s)]),
+            rows: rows.map((s, i) => [i + 1, s.code || '-', s.name, s.pic || '-', s.phone || '-', s.address || '-', s.note || '-', formatDate(s)]),
           }}
         />
       ).toBlob();
@@ -462,6 +466,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
     .filter(s => !search
       || s.name.toLowerCase().includes(search.toLowerCase())
       || (s.code ?? '').toLowerCase().includes(search.toLowerCase())
+      || (s.pic ?? '').toLowerCase().includes(search.toLowerCase())
       || s.phone.toLowerCase().includes(search.toLowerCase())
       || s.address.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
@@ -497,7 +502,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
               onChange={e => { setSearch(e.target.value); resetPage(); }}
               className="input text-sm w-full"
               style={{ paddingLeft: 38, height: HEADER_BTN_H }}
-              placeholder="Cari nama, kode, telepon, atau alamat…"
+              placeholder="Cari nama, kode, PIC, telepon, atau alamat…"
             />
           </div>
         )}
@@ -586,7 +591,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
                           )}
                         </div>
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                          {[s.phone, s.address].filter(Boolean).join(' · ') || '–'}
+                          {[s.pic && `PIC: ${s.pic}`, s.phone, s.address].filter(Boolean).join(' · ') || '–'}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -634,7 +639,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
                         </span>
                       )}
                       <p className="text-xs truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
-                        {[s.phone, s.address].filter(Boolean).join(' · ') || 'Tidak ada kontak'}
+                        {[s.pic && `PIC: ${s.pic}`, s.phone, s.address].filter(Boolean).join(' · ') || 'Tidak ada kontak'}
                       </p>
                     </div>
                     <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
@@ -761,6 +766,11 @@ export default function SuppliersTab({ creds }: { creds: string }) {
                     className="input" placeholder="cth: UD Sumber Tani" autoFocus />
                 </div>
                 <div>
+                  <label className="field-label">PIC (opsional)</label>
+                  <input value={editing.pic} onChange={e => setEditing({ ...editing, pic: e.target.value })}
+                    className="input" placeholder="Nama narahubung / penanggung jawab" />
+                </div>
+                <div>
                   <label className="field-label">Telepon (opsional)</label>
                   <input value={editing.phone} onChange={e => setEditing({ ...editing, phone: e.target.value })}
                     className="input" placeholder="Contoh: 081234567890" />
@@ -805,6 +815,7 @@ function SupplierDetail({ s }: { s: Supplier }) {
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {[
           { label: 'Kode Supplier', val: s.code },
+          { label: 'PIC', val: s.pic },
           { label: 'Telepon', val: s.phone },
           { label: 'Terdaftar', val: formatDate(s) },
         ].map((f, i) => (

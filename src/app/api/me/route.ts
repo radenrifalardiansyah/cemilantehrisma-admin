@@ -5,9 +5,10 @@ import { getSql } from '@/lib/db';
 import { getRolePermissionsMap, staleSessionReason, sessionExpired, SESSION_TAG } from '@/lib/rbac';
 import { fullAccessPermissions } from '@/lib/permissions';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
+import { isValidSignatureUrl } from '@/lib/profile-signature';
 import type { Action } from '@/types/rbac';
 
-interface ProfileRow { email: string | null; avatar: string | null }
+interface ProfileRow { email: string | null; avatar: string | null; full_name: string | null; signature: string | null }
 
 export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
     const sql = getSql();
     const [perms, [profileRow]] = await Promise.all([
       superAdmin ? null : getRolePermissionsMap(authUser.role),
-      sql<ProfileRow[]>`select email, avatar from profiles where username = ${authUser.username}`,
+      sql<ProfileRow[]>`select email, avatar, full_name, signature from profiles where username = ${authUser.username}`,
     ]);
     permsMap = perms;
     profile = profileRow;
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     ? fullAccessPermissions()
     : permsMap ?? {};
 
-  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null };
+  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '' };
 
   return Response.json({ ok: true, user, superAdmin, permissions });
 }
@@ -53,9 +54,13 @@ export async function PATCH(req: NextRequest) {
   const staleReason = await staleSessionReason(authUser);
   if (staleReason !== false) return sessionExpired(staleReason);
 
-  const { email, avatar, currentPassword, newPassword } = await req.json() as {
-    email?: string; avatar?: string | null; currentPassword?: string; newPassword?: string;
+  const { email, avatar, fullName, signature, currentPassword, newPassword } = await req.json() as {
+    email?: string; avatar?: string | null; fullName?: string; signature?: string; currentPassword?: string; newPassword?: string;
   };
+
+  if (signature?.trim() && !isValidSignatureUrl(signature.trim())) {
+    return Response.json({ error: 'Tanda tangan harus berupa gambar hasil upload.' }, { status: 400 });
+  }
 
   const sql = getSql();
   const patch: Record<string, unknown> = {};
@@ -68,6 +73,9 @@ export async function PATCH(req: NextRequest) {
     }
     patch.avatar = avatar || null;
   }
+
+  if (fullName !== undefined) patch.full_name = fullName.trim().slice(0, 100) || null;
+  if (signature !== undefined) patch.signature = signature.trim() || null;
 
   if (newPassword) {
     if (!currentPassword) {
@@ -88,9 +96,11 @@ export async function PATCH(req: NextRequest) {
   if (Object.keys(patch).length > 0) {
     const nextEmail = 'email' in patch ? patch.email as string | null : sql`email`;
     const nextAvatar = 'avatar' in patch ? patch.avatar as string | null : sql`avatar`;
+    const nextFullName = 'full_name' in patch ? patch.full_name as string | null : sql`full_name`;
+    const nextSignature = 'signature' in patch ? patch.signature as string | null : sql`signature`;
     const nextMustChange = 'must_change_password' in patch ? patch.must_change_password as boolean : sql`must_change_password`;
     await sql`
-      update profiles set email = ${nextEmail}, avatar = ${nextAvatar}, must_change_password = ${nextMustChange}, updated_at = now()
+      update profiles set email = ${nextEmail}, avatar = ${nextAvatar}, full_name = ${nextFullName}, signature = ${nextSignature}, must_change_password = ${nextMustChange}, updated_at = now()
       where username = ${authUser.username}
     `;
   }
