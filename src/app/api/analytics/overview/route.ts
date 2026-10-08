@@ -17,12 +17,14 @@ interface RecapDoc {
   items?: { productId?: string; qtySold: number; costPrice?: number }[];
 }
 interface IncomeDoc { category?: string; amount?: number; date?: string }
-interface ExpenseDoc { category?: string; amount?: number; date?: string; sourceType?: string }
+interface ExpenseDoc { category?: string; amount?: number; date?: string; sourceType?: string; excludeFromPnl?: boolean }
 interface MaterialDoc { id: string; name?: string; unit?: string; stockQty?: number; avgCost?: number; minStock?: number }
 
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi sudah masuk HPP saat barangnya
 // terjual — sama seperti FinanceReportTab, jangan dihitung lagi di Beban Operasional (dobel).
 const isCogsSourcedExpense = (e: ExpenseDoc) => e.sourceType === 'material-purchase' || e.sourceType === 'production';
+// Pengeluaran bertanda "bukan beban operasional" (mis. penyesuaian) — tetap kas keluar, tapi tidak ikut Laba Rugi.
+const isNonPnlExpense = (e: ExpenseDoc) => e.excludeFromPnl === true;
 
 // Raw Firestore reads untuk satu rentang tanggal — cached 3 menit karena endpoint ini dipanggil
 // tiap dashboard dibuka & tiap ganti periode, dan tidak butuh data second-fresh untuk sebuah
@@ -48,8 +50,8 @@ const getRawAnalytics = unstable_cache(
         select category, amount, date from income where date >= ${from} and date <= ${to}
       `,
       // expenses pindah ke Postgres (Tahap 5 migrasi)
-      sql<{ category: string | null; amount: string; date: string; source_type: string | null }[]>`
-        select category, amount, date, source_type from expenses where date >= ${from} and date <= ${to}
+      sql<{ category: string | null; amount: string; date: string; source_type: string | null; exclude_from_pnl: boolean | null }[]>`
+        select category, amount, date, source_type, exclude_from_pnl from expenses where date >= ${from} and date <= ${to}
       `,
       // `rawMaterials` pindah ke Postgres (Tahap 18b migrasi Fase 2).
       sql<{ id: string; name: string; unit: string; stock_qty: string; avg_cost: string; min_stock: string }[]>`
@@ -71,7 +73,7 @@ const getRawAnalytics = unstable_cache(
         items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
       })),
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
-      expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined }) as ExpenseDoc),
+      expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined, excludeFromPnl: r.exclude_from_pnl === true }) as ExpenseDoc),
       materials: materialRows.map((r): MaterialDoc => ({
         id: r.id, name: r.name, unit: r.unit,
         stockQty: Number(r.stock_qty), avgCost: Number(r.avg_cost), minStock: Number(r.min_stock),
@@ -152,7 +154,7 @@ export async function GET(req: NextRequest) {
   const hpp = hppPenjualan + hppKonsinyasi;
   const labaKotor = totalPendapatan - hpp;
 
-  const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e));
+  const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e) && !isNonPnlExpense(e));
   const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + (e.amount ?? 0), 0);
   // Selisih stok opname periode ini (rugi kalau fisik < sistem) — sama dengan FinanceReportTab.
   const stockAdj = await stockAdjustmentForPeriod(getSql(), from, to);

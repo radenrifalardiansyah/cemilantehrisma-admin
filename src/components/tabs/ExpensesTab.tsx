@@ -102,6 +102,7 @@ interface Expense {
   items?: ExpenseItem[];
   sourceType?: string; createdAt?: { seconds: number };
   walletId?: string | null;
+  excludeFromPnl?: boolean;
 }
 
 const SOURCE_LOCK_MESSAGE: Record<string, string> = {
@@ -111,8 +112,8 @@ const SOURCE_LOCK_MESSAGE: Record<string, string> = {
 type ExpenseItemForm = { description: string; amount: string };
 const emptyItem = (): ExpenseItemForm => ({ description: '', amount: '' });
 
-type ExpenseForm = { category: string; categoryCustom: string; items: ExpenseItemForm[]; date: string; note: string; walletId: string };
-const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '', walletId: '' });
+type ExpenseForm = { category: string; categoryCustom: string; items: ExpenseItemForm[]; date: string; note: string; walletId: string; excludeFromPnl: boolean };
+const emptyForm = (): ExpenseForm => ({ category: 'Sewa', categoryCustom: '', items: [emptyItem()], date: todayISO(), note: '', walletId: '', excludeFromPnl: false });
 
 export default function ExpensesTab({ creds }: { creds: string }) {
   const toast   = useToast();
@@ -174,7 +175,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       : [{ description: e.description, amount: String(e.amount) }];
     setEditing({
       id: e.id, category: known ? e.category : 'Lainnya', categoryCustom: known ? '' : e.category,
-      items, date: e.date, note: e.note, walletId: e.walletId ?? '',
+      items, date: e.date, note: e.note, walletId: e.walletId ?? '', excludeFromPnl: e.excludeFromPnl === true,
     });
     setIsNew(false); setError('');
   };
@@ -196,7 +197,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     setSaving(true); setError('');
     const amountNum   = items.reduce((s, it) => s + it.amount, 0);
     const description = items.map(it => it.description).join(', ');
-    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note, walletId: editing.walletId };
+    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note, walletId: editing.walletId, excludeFromPnl: editing.excludeFromPnl };
     const r = isNew
       ? await fetch(`${API}/api/expenses`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -534,6 +535,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                           <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{e.description}</p>
                           <span className="badge badge-gray text-[10px]">{e.category}</span>
                           {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
+                          {e.excludeFromPnl && <span className="badge badge-gray text-[10px]">Non-Operasional</span>}
                         </div>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date, e.createdAt)}</p>
                       </div>
@@ -592,6 +594,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                       <div className="flex items-center gap-1">
                         <span className="badge badge-gray text-[10px]">{e.category}</span>
                         {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
+                        {e.excludeFromPnl && <span className="badge badge-gray text-[10px]">Non-Operasional</span>}
                       </div>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(e.date, e.createdAt)}</p>
                       <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--danger)' }}>−{formatRp(e.amount)}</p>
@@ -793,6 +796,16 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   <textarea value={editing.note} onChange={e => setEditing({ ...editing, note: e.target.value })}
                     className="input" style={{ resize: 'vertical', minHeight: 70 }} placeholder="Catatan tambahan" />
                 </div>
+
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={editing.excludeFromPnl}
+                    onChange={e => setEditing({ ...editing, excludeFromPnl: e.target.checked })}
+                    className="mt-0.5" style={{ accentColor: 'var(--accent)' }} />
+                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Bukan beban operasional</span>
+                    <br />Tetap mengurangi saldo dompet & tampil di Jurnal Kas, tapi tidak dihitung di Beban Operasional / Laba Rugi (mis. penyesuaian).
+                  </span>
+                </label>
 
                 {error && (
                   <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>

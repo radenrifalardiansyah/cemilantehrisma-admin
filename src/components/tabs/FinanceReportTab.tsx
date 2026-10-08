@@ -68,12 +68,15 @@ interface RecapRecord {
   walletId?: string | null;
 }
 interface IncomeRecord { category: string; description: string; amount: number; date: string; createdAt?: { seconds: number }; walletId?: string | null }
-interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string; createdAt?: { seconds: number }; walletId?: string | null }
+interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string; excludeFromPnl?: boolean; createdAt?: { seconds: number }; walletId?: string | null }
 
 // Beban yang otomatis tercatat dari Pembelian Bahan Baku / Produksi (punya `sourceType`) tidak
 // dihitung lagi sebagai Beban Operasional di Laba Rugi — biayanya sudah masuk HPP saat barangnya
 // terjual. Kalau dihitung dua-duanya, laba jadi kelihatan lebih kecil dari yang sebenarnya.
 const isCogsSourcedExpense = (e: ExpenseRecord) => e.sourceType === 'material-purchase' || e.sourceType === 'production';
+// Pengeluaran bertanda "bukan beban operasional" (mis. penyesuaian): tetap kas keluar (saldo dompet &
+// Jurnal Kas), tapi tidak ikut Beban Operasional / Laba Rugi.
+const isNonPnlExpense = (e: ExpenseRecord) => e.excludeFromPnl === true;
 
 // Pemasukan/Pengeluaran/Modal hanya punya field `date` (tanggal transaksi, bisa diisi mundur),
 // tapi `createdAt` (waktu dokumen dibuat) sudah tersimpan sejak awal — pakai jam dari situ supaya
@@ -446,7 +449,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const hpp = hppPenjualan + hppKonsinyasi;
   const labaKotor = totalPendapatan - hpp;
 
-  const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e));
+  const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e) && !isNonPnlExpense(e));
+  const totalBebanNonPnl = expenses.filter(isNonPnlExpense).reduce((s, e) => s + e.amount, 0);
   const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + e.amount, 0);
   // Selisih stok opname (rugi kalau fisik < sistem) ikut mengurangi/menambah Laba Bersih — bukan kas.
   const selisihStok = stockAdj.net;
@@ -528,10 +532,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // (dan sebaliknya kalau jual dari stok lama). Rumus ini murni menyusun ulang variabel yang
   // sudah dihitung di atas (totalBeban = totalBebanOperasional + bagian Bahan Baku/Produksi),
   // jadi selalu identik dengan hasil penjumlahan Jurnal Kas periode yang sama — bukan angka baru.
-  const totalBebanCogsSourced = totalBeban - totalBebanOperasional;
+  const totalBebanCogsSourced = totalBeban - totalBebanOperasional - totalBebanNonPnl;
   const selisihWaktuPersediaan = hpp - totalBebanCogsSourced;
   // Selisih stok opname tidak menggerakkan kas (barangnya hilang/lebih, bukan uang) — dikembalikan di sini.
-  const perubahanSaldoKasPeriode = labaBersih - selisihStok + totalModalMasuk - totalPrive + selisihWaktuPersediaan;
+  const perubahanSaldoKasPeriode = labaBersih - selisihStok + totalModalMasuk - totalPrive + selisihWaktuPersediaan - totalBebanNonPnl;
 
   // ── Jurnal Kas ───────────────────────────────────────────────
   const journal: JournalEntry[] = [
@@ -646,7 +650,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         ['Total Pendapatan (Omzet)', totalPendapatan],
         ['HPP (Harga Pokok Penjualan)', hpp],
         ['Laba Kotor', labaKotor],
-        ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}${expenses.some(e => e.category === c && isCogsSourcedExpense(e)) ? ' (masuk HPP)' : ''}`, v] as [string, number]),
+        ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}${expenses.some(e => e.category === c && isCogsSourcedExpense(e)) ? ' (masuk HPP)' : ''}${expenses.some(e => e.category === c && isNonPnlExpense(e)) ? ' (sebagian/seluruhnya bukan beban operasional)' : ''}`, v] as [string, number]),
         ['Total Beban (Kas)', totalBeban],
         ['Beban Operasional (di luar HPP)', totalBebanOperasional],
         ...(selisihStok !== 0 ? [[selisihStok < 0 ? 'Kerugian Stok (Opname)' : 'Keuntungan Stok (Opname)', selisihStok] as [string, number]] : []),
@@ -1109,6 +1113,12 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                       {formatRp(selisihWaktuPersediaan)}
                     </span>
                   </div>
+                  {totalBebanNonPnl > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--text-secondary)' }}>(−) Pengeluaran Non-Operasional (tidak masuk Laba Rugi)</span>
+                      <span className="font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(totalBebanNonPnl)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                     <span className="font-bold" style={{ color: 'var(--text-primary)' }}>= Perubahan Saldo Kas (Periode Ini)</span>
                     <span className="font-extrabold tabular" style={{ color: perubahanSaldoKasPeriode >= 0 ? 'var(--success)' : 'var(--danger)' }}>
@@ -1234,6 +1244,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                           <span className="flex-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                             {cat}
                             {foldedIntoHpp && <span className="text-[10px] font-medium ml-1.5" style={{ color: 'var(--text-muted)' }}>(→ masuk HPP saat terjual)</span>}
+                            {expenses.some(e => e.category === cat && isNonPnlExpense(e)) && <span className="text-[10px] font-medium ml-1.5" style={{ color: 'var(--text-muted)' }}>(sebagian/seluruhnya bukan beban operasional)</span>}
                           </span>
                           <span className="text-sm font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(val)}</span>
                           <span className="text-xs tabular w-10 text-right" style={{ color: 'var(--text-muted)' }}>
@@ -1244,7 +1255,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                     })}
                   </div>
                   <p className="text-[11px] px-5 py-3" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border-2)' }}>
-                    Total kas keluar periode ini: <span className="font-bold">{formatRp(totalBeban)}</span>. Baris bertanda &quot;→ masuk HPP&quot; sudah dihitung sebagai HPP saat barangnya laku, jadi tidak dijumlah lagi di Beban Operasional supaya tidak dobel.
+                    Total kas keluar periode ini: <span className="font-bold">{formatRp(totalBeban)}</span>. Baris bertanda &quot;→ masuk HPP&quot; sudah dihitung sebagai HPP saat barangnya laku, jadi tidak dijumlah lagi di Beban Operasional supaya tidak dobel.{totalBebanNonPnl > 0 && <> Pengeluaran Non-Operasional ({formatRp(totalBebanNonPnl)}) tetap mengurangi kas tapi tidak dihitung di Beban Operasional.</>}
                   </p>
                 </>
               )}

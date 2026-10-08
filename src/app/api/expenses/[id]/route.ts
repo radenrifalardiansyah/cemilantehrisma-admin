@@ -14,7 +14,7 @@ class ExpenseValidationError extends Error {}
 interface ExpenseRow {
   id: string; category: string | null; description: string | null; amount: string;
   items: unknown; date: string; note: string | null; wallet_id: string | null;
-  source_type: string | null; source_id: string | null;
+  source_type: string | null; source_id: string | null; exclude_from_pnl: boolean | null;
 }
 
 // Entri yang otomatis dibuat dari sumber lain (mis. Pembelian Bahan Baku) tidak boleh diedit/dihapus
@@ -31,7 +31,7 @@ function sourceLockMessage(sourceType: unknown): string | null {
 }
 
 function toAudit(r: ExpenseRow) {
-  return { category: r.category, description: r.description, amount: Number(r.amount), items: parseJsonb(r.items as string | unknown[] | null), date: r.date, note: r.note, walletId: r.wallet_id, sourceType: r.source_type };
+  return { category: r.category, description: r.description, amount: Number(r.amount), items: parseJsonb(r.items as string | unknown[] | null), date: r.date, note: r.note, walletId: r.wallet_id, sourceType: r.source_type, excludeFromPnl: r.exclude_from_pnl === true };
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -57,6 +57,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     date,
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
+    excludeFromPnl: data.excludeFromPnl === true,
   };
   const db = getDb();
   try {
@@ -77,7 +78,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         update expenses
         set category = ${payload.category}, description = ${payload.description}, amount = ${payload.amount},
             items = ${JSON.stringify(payload.items)}, date = ${payload.date}, note = ${payload.note},
-            wallet_id = ${payload.walletId}, updated_at = now()
+            wallet_id = ${payload.walletId}, exclude_from_pnl = ${payload.excludeFromPnl}, updated_at = now()
         where id = ${id}
       `;
     });

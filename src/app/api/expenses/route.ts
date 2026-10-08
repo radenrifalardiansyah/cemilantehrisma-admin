@@ -16,7 +16,7 @@ class ExpenseValidationError extends Error {}
 interface ExpenseRow {
   id: string; category: string | null; description: string | null; amount: string;
   items: unknown; date: string; note: string | null; wallet_id: string | null;
-  source_type: string | null; source_id: string | null;
+  source_type: string | null; source_id: string | null; exclude_from_pnl: boolean | null;
   created_at: Date; updated_at: Date | null;
 }
 
@@ -37,6 +37,7 @@ function toExpense(r: ExpenseRow) {
     walletId: r.wallet_id,
     sourceType: r.source_type,
     sourceId: r.source_id,
+    excludeFromPnl: r.exclude_from_pnl === true,
     createdAt: toTimestamp(r.created_at),
     updatedAt: toTimestamp(r.updated_at),
   };
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
     date,
     note: (data.note as string | undefined) ?? '',
     walletId: (data.walletId as string | null | undefined) ?? null,
+    excludeFromPnl: data.excludeFromPnl === true,
   };
   const id = randomUUID();
   const sql = getSql();
@@ -109,8 +111,8 @@ export async function POST(req: NextRequest) {
         }
       }
       await pgTx`
-        insert into expenses (id, category, description, amount, items, date, note, wallet_id, created_at, updated_at)
-        values (${id}, ${payload.category}, ${payload.description}, ${payload.amount}, ${JSON.stringify(payload.items)}, ${payload.date}, ${payload.note}, ${payload.walletId}, now(), now())
+        insert into expenses (id, category, description, amount, items, date, note, wallet_id, exclude_from_pnl, created_at, updated_at)
+        values (${id}, ${payload.category}, ${payload.description}, ${payload.amount}, ${JSON.stringify(payload.items)}, ${payload.date}, ${payload.note}, ${payload.walletId}, ${payload.excludeFromPnl}, now(), now())
       `;
     });
   } catch (err) {
