@@ -88,7 +88,8 @@ export async function POST(req: NextRequest) {
     items: Array.isArray(data.items) ? data.items : [],
     date,
     note: (data.note as string | undefined) ?? '',
-    walletId: (data.walletId as string | null | undefined) ?? null,
+    // Non-operasional tidak boleh menyentuh dompet — dikosongkan di server juga, bukan cuma di form.
+    walletId: data.excludeFromPnl === true ? null : ((data.walletId as string | null | undefined) ?? null),
     excludeFromPnl: data.excludeFromPnl === true,
   };
   const id = randomUUID();

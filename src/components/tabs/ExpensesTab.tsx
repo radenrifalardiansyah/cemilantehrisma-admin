@@ -197,7 +197,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     setSaving(true); setError('');
     const amountNum   = items.reduce((s, it) => s + it.amount, 0);
     const description = items.map(it => it.description).join(', ');
-    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note, walletId: editing.walletId, excludeFromPnl: editing.excludeFromPnl };
+    const payload = { category: finalCategory, description, amount: amountNum, items, date: editing.date, note: editing.note, walletId: editing.excludeFromPnl && isNew ? null : (editing.walletId || null), excludeFromPnl: editing.excludeFromPnl };
     const r = isNew
       ? await fetch(`${API}/api/expenses`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -751,16 +751,24 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                   </div>
                 )}
 
-                <div>
-                  <label className="field-label">Dompet Sumber {!editing.excludeFromPnl && <span style={{ color: 'var(--danger)' }}>*</span>}{editing.excludeFromPnl && <span className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>(opsional — kosongkan kalau tidak mengubah saldo dompet)</span>}</label>
-                  <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
-                    options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-                  {editing.walletId && (
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                      Saldo saat ini: {formatRp(walletBalances[editing.walletId] ?? 0)}
-                    </p>
-                  )}
-                </div>
+                {editing.excludeFromPnl && !(!isNew && editing.walletId) ? (
+                  <p className="text-[11px] rounded-lg px-3 py-2" style={{ background: 'var(--surface-2, rgba(0,0,0,0.04))', color: 'var(--text-muted)' }}>
+                    Dompet dikosongkan otomatis — pengeluaran non-operasional ini tidak mengubah saldo dompet manapun.
+                  </p>
+                ) : (
+                  <div>
+                    <label className="field-label">Dompet Sumber {editing.excludeFromPnl
+                      ? <span className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>(dipertahankan supaya saldo dompet tidak berubah)</span>
+                      : <span style={{ color: 'var(--danger)' }}>*</span>}</label>
+                    <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
+                      options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                    {editing.walletId && (
+                      <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                        Saldo saat ini: {formatRp(walletBalances[editing.walletId] ?? 0)}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="field-label">Item / Keterangan <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -799,11 +807,11 @@ export default function ExpensesTab({ creds }: { creds: string }) {
 
                 <label className="flex items-start gap-2.5 cursor-pointer">
                   <input type="checkbox" checked={editing.excludeFromPnl}
-                    onChange={e => setEditing({ ...editing, excludeFromPnl: e.target.checked })}
+                    onChange={e => setEditing({ ...editing, excludeFromPnl: e.target.checked, walletId: e.target.checked && isNew ? '' : editing.walletId })}
                     className="mt-0.5" style={{ accentColor: 'var(--accent)' }} />
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                     <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Bukan beban operasional</span>
-                    <br />Tetap mengurangi saldo dompet & tampil di Jurnal Kas, tapi tidak dihitung di Beban Operasional / Laba Rugi (mis. penyesuaian).
+                    <br />Tidak dihitung di Beban Operasional / Laba Rugi. Entri baru otomatis tanpa dompet; entri lama yang sudah memotong dompet tetap memakai dompetnya supaya saldo tidak berubah.
                   </span>
                 </label>
 

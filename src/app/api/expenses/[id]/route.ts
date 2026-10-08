@@ -56,6 +56,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     items: Array.isArray(data.items) ? data.items : [],
     date,
     note: (data.note as string | undefined) ?? '',
+    // Edit entri lama: dompet dipertahankan sesuai kiriman form (supaya saldo dompet tidak berubah
+    // saat entri yang sudah memotong dompet ditandai non-operasional).
     walletId: (data.walletId as string | null | undefined) ?? null,
     excludeFromPnl: data.excludeFromPnl === true,
   };
