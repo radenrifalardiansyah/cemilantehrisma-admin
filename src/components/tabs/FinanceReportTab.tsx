@@ -8,6 +8,7 @@ import {
   Award,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import FinanceReportPDF from '@/lib/pdf/FinanceReportPDF';
@@ -213,74 +214,73 @@ function InfoTip({ label }: { label: string }) {
 }
 
 // ─── Chart tren (mandiri, tidak menyentuh RevenueChart di page.tsx) ───────────
-function TrendChart({ data }: { data: { date: string; income: number; expense: number }[] }) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const n = data.length;
-  if (n === 0) return null;
+const TREND_INCOME = '#15803D';
+const TREND_EXPENSE = '#DC2626';
 
-  const VW = 560, VH = 150;
-  const PAD = { l: 6, r: 6, t: 20, b: 26 };
-  const iW = VW - PAD.l - PAD.r;
-  const iH = VH - PAD.t - PAD.b;
-  const maxVal = Math.max(...data.map(d => Math.max(d.income, d.expense)), 1);
+const compactRupiah = (n: number) => {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${+(n / 1_000_000).toFixed(1)} jt`;
+  if (abs >= 1_000) return `${Math.round(n / 1_000)} rb`;
+  return String(n);
+};
+const trendDateLabel = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 
-  const xAt = (i: number) => PAD.l + (n === 1 ? iW / 2 : (i / (n - 1)) * iW);
-  const yAt = (v: number) => PAD.t + (1 - v / maxVal) * iH;
-
-  const linePath = (key: 'income' | 'expense') => n < 2 ? '' : data.reduce((acc, d, i) => {
-    const x = xAt(i), y = yAt(d[key]);
-    if (i === 0) return `M ${x},${y}`;
-    const px = xAt(i - 1), py = yAt(data[i - 1][key]);
-    return `${acc} C ${px + (x - px) * 0.45},${py} ${px + (x - px) * 0.55},${y} ${x},${y}`;
-  }, '');
-
-  const step = Math.max(1, Math.ceil(n / 8));
-  const hd = hoverIdx !== null ? data[hoverIdx] : null;
-
+function TrendTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey?: string; value?: number }[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const income = payload.find(p => p.dataKey === 'income')?.value ?? 0;
+  const expense = payload.find(p => p.dataKey === 'expense')?.value ?? 0;
+  const net = income - expense;
+  const row = (color: string, name: string, value: number) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between', minWidth: 190 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.85 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' }} />{name}
+      </span>
+      <span style={{ fontWeight: 700 }}>{formatRp(value)}</span>
+    </div>
+  );
   return (
-    <div style={{ position: 'relative', userSelect: 'none' }}>
-      <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
-        onMouseMove={e => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const relX = ((e.clientX - rect.left) / rect.width) * VW;
-          let ci = 0, md = Infinity;
-          data.forEach((_, i) => { const d = Math.abs(xAt(i) - relX); if (d < md) { md = d; ci = i; } });
-          setHoverIdx(ci);
-        }}
-        onMouseLeave={() => setHoverIdx(null)}
-      >
-        {n >= 2 && <path d={linePath('income')} fill="none" stroke="#15803D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
-        {n >= 2 && <path d={linePath('expense')} fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
-        {n === 1 && <circle cx={xAt(0)} cy={yAt(data[0].income)} r="4" fill="#15803D" />}
-        {n === 1 && <circle cx={xAt(0)} cy={yAt(data[0].expense)} r="4" fill="#DC2626" />}
+    <div style={{ background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12, fontSize: 11, boxShadow: '0 8px 24px rgba(0,0,0,0.28)', display: 'grid', gap: 5 }}>
+      <div style={{ opacity: 0.65, fontWeight: 700 }}>{label ? trendDateLabel(label) : ''}</div>
+      {row('#4ADE80', 'Pendapatan', income)}
+      {row('#F87171', 'Pengeluaran', expense)}
+      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 5, marginTop: 1, borderTop: '1px solid rgba(255,255,255,0.18)', fontWeight: 700 }}>
+        <span style={{ opacity: 0.85 }}>Selisih</span>
+        <span style={{ color: net >= 0 ? '#4ADE80' : '#F87171' }}>{net >= 0 ? '+' : '−'}{formatRp(Math.abs(net))}</span>
+      </div>
+    </div>
+  );
+}
 
-        {hd && (
-          <line x1={xAt(hoverIdx!)} y1={PAD.t} x2={xAt(hoverIdx!)} y2={PAD.t + iH} stroke="var(--border)" strokeWidth="1.5" strokeDasharray="4,3" />
-        )}
-        {hd && <circle cx={xAt(hoverIdx!)} cy={yAt(hd.income)} r="4.5" fill="#15803D" stroke="white" strokeWidth="2" />}
-        {hd && <circle cx={xAt(hoverIdx!)} cy={yAt(hd.expense)} r="4.5" fill="#DC2626" stroke="white" strokeWidth="2" />}
-
-        {data.map((d, i) => {
-          if (i % step !== 0 && i !== n - 1) return null;
-          return (
-            <text key={i} x={xAt(i)} y={VH - 4} textAnchor="middle" fontSize="9" fill="#A08468">
-              {new Date(`${d.date}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-            </text>
-          );
-        })}
-      </svg>
-
-      {hd && (
-        <div style={{
-          position: 'absolute', left: `${(xAt(hoverIdx!) / VW) * 100}%`, top: `${(Math.min(yAt(hd.income), yAt(hd.expense)) / VH) * 100}%`,
-          transform: 'translate(-50%, calc(-100% - 10px))', background: 'var(--text-primary)', color: 'white',
-          padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', pointerEvents: 'none',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.25)', zIndex: 10,
-        }}>
-          <div style={{ color: '#4ADE80' }}>Pendapatan: {formatRp(hd.income)}</div>
-          <div style={{ color: '#F87171' }}>Pengeluaran: {formatRp(hd.expense)}</div>
-        </div>
-      )}
+function TrendChart({ data }: { data: { date: string; income: number; expense: number }[] }) {
+  if (data.length === 0) return null;
+  return (
+    <div style={{ width: '100%', height: 260 }}>
+      <ResponsiveContainer>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="trendIncomeFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={TREND_INCOME} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={TREND_INCOME} stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="trendExpenseFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={TREND_EXPENSE} stopOpacity={0.22} />
+              <stop offset="100%" stopColor={TREND_EXPENSE} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+          <XAxis dataKey="date" tickFormatter={trendDateLabel} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+          <YAxis tickFormatter={compactRupiah} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            axisLine={false} tickLine={false} width={48} tickCount={5} />
+          <RechartsTooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+          <Area type="monotone" dataKey="income" name="Pendapatan" stroke={TREND_INCOME} strokeWidth={2.5}
+            fill="url(#trendIncomeFill)" dot={data.length === 1 ? { r: 4 } : false}
+            activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: TREND_INCOME }} />
+          <Area type="monotone" dataKey="expense" name="Pengeluaran" stroke={TREND_EXPENSE} strokeWidth={2.5}
+            fill="url(#trendExpenseFill)" dot={data.length === 1 ? { r: 4 } : false}
+            activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: TREND_EXPENSE }} />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }

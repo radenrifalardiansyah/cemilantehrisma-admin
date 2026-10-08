@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import { AreaChart, Area, ComposedChart, Bar, Line, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import {
   RefreshCw, TrendingUp, Receipt, Package, Users,
   Loader2,
@@ -119,119 +120,7 @@ function webStatsErrMsg(res: Response | null): string {
   return `Gagal memuat data pengunjung (status ${res.status}).`;
 }
 
-// ─── Revenue Chart — smooth bezier line + hover tooltip ──────────────────────
-function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const n = data.length;
-  if (n === 0) return null;
-
-  const VW = 560, VH = 128;
-  const PAD = { l: 6, r: 6, t: 22, b: 28 };
-  const iW = VW - PAD.l - PAD.r;
-  const iH = VH - PAD.t - PAD.b;
-  const maxVal = Math.max(...data.map(d => d.revenue), 1);
-
-  const pts = data.map((d, i) => ({
-    x: PAD.l + (n === 1 ? iW / 2 : (i / (n - 1)) * iW),
-    y: PAD.t + (1 - d.revenue / maxVal) * iH,
-    revenue: d.revenue, date: d.date, count: d.count,
-  }));
-
-  const linePath = n < 2 ? '' : pts.reduce((acc, pt, i) => {
-    if (i === 0) return `M ${pt.x},${pt.y}`;
-    const prev = pts[i - 1];
-    return `${acc} C ${prev.x + (pt.x - prev.x) * 0.45},${prev.y} ${prev.x + (pt.x - prev.x) * 0.55},${pt.y} ${pt.x},${pt.y}`;
-  }, '');
-
-  const fillPath = linePath
-    ? `${linePath} L ${pts[n-1].x},${PAD.t + iH} L ${pts[0].x},${PAD.t + iH} Z`
-    : '';
-
-  const lastPt = pts[n - 1];
-  const hPt = hoverIdx !== null ? pts[hoverIdx] : null;
-  const step = n > 14 ? 3 : n > 7 ? 2 : 1;
-
-  return (
-    <div style={{ position: 'relative', userSelect: 'none' }}>
-      <svg
-        viewBox={`0 0 ${VW} ${VH}`}
-        style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
-        onMouseMove={e => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const relX = ((e.clientX - rect.left) / rect.width) * VW;
-          let ci = 0, md = Infinity;
-          pts.forEach((pt, i) => { const d = Math.abs(pt.x - relX); if (d < md) { md = d; ci = i; } });
-          setHoverIdx(ci);
-        }}
-        onMouseLeave={() => setHoverIdx(null)}
-      >
-        <defs>
-          <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="var(--accent)" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.01" />
-          </linearGradient>
-        </defs>
-
-        {fillPath && <path d={fillPath} fill="url(#rev-fill)" />}
-        {linePath && <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
-
-        {/* Single point */}
-        {n === 1 && <circle cx={lastPt.x} cy={lastPt.y} r="5" fill="var(--accent)" stroke="white" strokeWidth="2" />}
-
-        {/* Hover dashed vertical */}
-        {hPt && (
-          <line x1={hPt.x} y1={PAD.t} x2={hPt.x} y2={PAD.t + iH}
-            stroke="var(--border)" strokeWidth="1.5" strokeDasharray="4,3" />
-        )}
-
-        {/* Hover dot */}
-        {hPt && <circle cx={hPt.x} cy={hPt.y} r="5" fill="var(--accent)" stroke="white" strokeWidth="2.5" />}
-
-        {/* Endpoint pulse (hari ini) */}
-        {n > 1 && hoverIdx !== n - 1 && (
-          <>
-            <circle cx={lastPt.x} cy={lastPt.y} r="10" fill="var(--accent)" opacity="0.10" />
-            <circle cx={lastPt.x} cy={lastPt.y} r="4.5" fill="var(--accent)" stroke="white" strokeWidth="2" />
-          </>
-        )}
-
-        {/* X-axis labels */}
-        {pts.map((pt, i) => {
-          if (i % step !== 0 && i !== n - 1) return null;
-          return (
-            <text key={i} x={pt.x} y={VH - 4} textAnchor="middle" fontSize="9" fill="#A08468">
-              {shortDate(pt.date)}
-            </text>
-          );
-        })}
-      </svg>
-
-      {/* Tooltip */}
-      {hPt && hPt.revenue > 0 && (
-        <div style={{
-          position: 'absolute',
-          left: `${(hPt.x / VW) * 100}%`,
-          top: `${(hPt.y / VH) * 100}%`,
-          transform: 'translate(-50%, calc(-100% - 10px))',
-          background: 'var(--text-primary)',
-          color: 'white',
-          padding: '5px 10px',
-          borderRadius: 8,
-          fontSize: 11, fontWeight: 700,
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
-          zIndex: 10,
-        }}>
-          {formatRp(hPt.revenue)}
-          {hPt.count > 0 && <span style={{ opacity: 0.6, marginLeft: 5, fontSize: 10 }}>{hPt.count}x</span>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Pageview Chart ───────────────────────────────────────────────────────────
+// ─── Chart dashboard (Recharts, gaya sama dengan Laporan Keuangan) ────────────
 function shortDate(raw: string) {
   try {
     const dt = new Date(raw);
@@ -242,111 +131,107 @@ function shortDate(raw: string) {
   return p.length >= 2 ? `${p[p.length - 1]} ${p[1]?.slice(0, 3) ?? ''}`.trim() : raw.slice(0, 5);
 }
 
+const compactNumber = (n: number) => {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${+(n / 1_000_000).toFixed(1)} jt`;
+  if (abs >= 1_000) return `${+(n / 1_000).toFixed(abs >= 10_000 ? 0 : 1)} rb`;
+  return String(n);
+};
+
+const chartTooltipBox: React.CSSProperties = {
+  background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+  fontSize: 11, boxShadow: '0 8px 24px rgba(0,0,0,0.28)', display: 'grid', gap: 5, minWidth: 170,
+};
+const chartTooltipRow = (color: string, name: string, value: string) => (
+  <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+    <span style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.85 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' }} />{name}
+    </span>
+    <span style={{ fontWeight: 700 }}>{value}</span>
+  </div>
+);
+
+function RevenueTooltip({ active, payload, label }: { active?: boolean; payload?: { payload?: { revenue: number; count: number } }[]; label?: string }) {
+  const d = payload?.[0]?.payload;
+  if (!active || !d) return null;
+  return (
+    <div style={chartTooltipBox}>
+      <div style={{ opacity: 0.65, fontWeight: 700 }}>{label ? shortDate(label) : ''}</div>
+      {chartTooltipRow('#FB923C', 'Pendapatan', formatRp(d.revenue))}
+      {d.count > 0 && chartTooltipRow('#FDBA74', 'Transaksi', `${d.count}x`)}
+    </div>
+  );
+}
+
+function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
+  if (data.length === 0) return null;
+  return (
+    <div style={{ width: '100%', height: 240 }}>
+      <ResponsiveContainer>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="dashRevenueFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#D4691E" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="#D4691E" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+          <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+          <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            axisLine={false} tickLine={false} width={48} tickCount={5} />
+          <RechartsTooltip content={<RevenueTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+          <Area type="monotone" dataKey="revenue" name="Pendapatan" stroke="#D4691E" strokeWidth={2.5}
+            fill="url(#dashRevenueFill)" dot={data.length === 1 ? { r: 4 } : false}
+            activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ─── Pageview Chart — batang pageview + garis pengunjung unik, SATU sumbu ────
+// (pengunjung unik selalu ≤ pageview, jadi aman berbagi skala; versi lama menormalkan
+// dua skala berbeda sehingga garisnya bisa menyesatkan.)
+function PageviewTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey?: string; value?: number }[]; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const views = payload.find(p => p.dataKey === 'views')?.value ?? 0;
+  const visitors = payload.find(p => p.dataKey === 'visitors')?.value ?? 0;
+  const dt = label ? new Date(label) : null;
+  const title = dt && !isNaN(dt.getTime())
+    ? dt.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })
+    : (label ?? '');
+  return (
+    <div style={chartTooltipBox}>
+      <div style={{ opacity: 0.65, fontWeight: 700 }}>{title}</div>
+      {chartTooltipRow('#38BDF8', 'Pageview', String(views))}
+      {chartTooltipRow('#A78BFA', 'Pengunjung unik', String(visitors))}
+    </div>
+  );
+}
+
 function PageviewChart({ data }: { data: { date: string; views: number; visitors: number }[] }) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const n = data.length;
   if (n === 0) return null;
-
-  const VW = 720, VH = 190;
-  const PAD = { l: 4, r: 4, t: 22, b: 24 };
-  const iW = VW - PAD.l - PAD.r;
-  const iH = VH - PAD.t - PAD.b;
-  const maxViews = Math.max(...data.map(d => d.views), 1);
-  const maxVisitors = Math.max(...data.map(d => d.visitors), 1);
   const avgViews = data.reduce((s, d) => s + d.views, 0) / n;
-
-  const gap = n > 20 ? 3 : n > 10 ? 6 : 10;
-  const barW = Math.max((iW - gap * (n - 1)) / n, 3);
-  const avgY = PAD.t + (1 - avgViews / maxViews) * iH;
-
-  // Evenly-spaced label indices (always includes first & last) instead of a modulo step —
-  // a step can leave the forced last label sitting right next to its neighbour and overlapping it.
-  const labelCount = Math.min(n, 8);
-  const labelIdxs = new Set(
-    Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / Math.max(labelCount - 1, 1)))
-  );
-
-  const linePts = data.map((d, i) => ({
-    x: PAD.l + i * (barW + gap) + barW / 2,
-    y: PAD.t + (1 - d.visitors / maxVisitors) * iH,
-  }));
-  const linePath = n < 2 ? '' : linePts.reduce((acc, pt, i) => {
-    if (i === 0) return `M ${pt.x},${pt.y}`;
-    const prev = linePts[i - 1];
-    return `${acc} C ${prev.x + (pt.x - prev.x) * 0.45},${prev.y} ${prev.x + (pt.x - prev.x) * 0.55},${pt.y} ${pt.x},${pt.y}`;
-  }, '');
-
-  const hover = hoverIdx !== null ? data[hoverIdx] : null;
-
   return (
-    <div style={{ position: 'relative', userSelect: 'none' }}>
-      <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
-        onMouseLeave={() => setHoverIdx(null)}>
-        {[0.25, 0.5, 0.75, 1].map(f => (
-          <line key={f} x1={PAD.l} x2={VW - PAD.r} y1={PAD.t + (1 - f) * iH} y2={PAD.t + (1 - f) * iH}
-            stroke="var(--border-2)" strokeWidth="1" />
-        ))}
-
-        {avgViews > 0 && (
-          <line x1={PAD.l} x2={VW - PAD.r} y1={avgY} y2={avgY}
-            stroke="#0284C7" strokeOpacity="0.45" strokeWidth="1.25" strokeDasharray="5,4" />
-        )}
-
-        {data.map((d, i) => {
-          const x = PAD.l + i * (barW + gap);
-          const barH = Math.max((d.views / maxViews) * iH, d.views > 0 ? 3 : 1.5);
-          const y = PAD.t + iH - barH;
-          const isToday = i === n - 1;
-          const isHover = hoverIdx === i;
-          const showLabel = labelIdxs.has(i);
-          return (
-            <g key={i} onMouseEnter={() => setHoverIdx(i)} style={{ cursor: 'pointer' }}>
-              <rect x={x - gap / 2} y={PAD.t} width={barW + gap} height={iH} fill="transparent" />
-              <rect x={x} y={y} width={barW} height={barH} rx={Math.min(4, barW / 2)}
-                fill={isHover || isToday ? '#0284C7' : '#0284C730'}
-                style={{ transition: 'fill 0.12s' }} />
-              {showLabel && (
-                <text x={x + barW / 2} y={VH - 6} textAnchor="middle" fontSize="9" fill="#9E8E72">
-                  {shortDate(d.date)}
-                </text>
-              )}
-            </g>
-          );
-        })}
-
-        {linePath && <path d={linePath} fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />}
-        {linePts.map((pt, i) => (hoverIdx === i || i === n - 1) && (
-          <circle key={i} cx={pt.x} cy={pt.y} r="3.5" fill="#7C3AED" stroke="white" strokeWidth="1.5" />
-        ))}
-      </svg>
-
-      {hover && (() => {
-        const x = PAD.l + hoverIdx! * (barW + gap) + barW / 2;
-        const barH = Math.max((hover.views / maxViews) * iH, hover.views > 0 ? 3 : 1.5);
-        const y = PAD.t + iH - barH;
-        const dt = new Date(hover.date);
-        const label = !isNaN(dt.getTime())
-          ? dt.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })
-          : hover.date;
-        return (
-          <div style={{
-            position: 'absolute',
-            left: `${(x / VW) * 100}%`,
-            top: `${(y / VH) * 100}%`,
-            transform: 'translate(-50%, calc(-100% - 8px))',
-            background: 'var(--text-primary)', color: 'white',
-            padding: '6px 10px', borderRadius: 8,
-            fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
-            pointerEvents: 'none', boxShadow: '0 4px 14px rgba(0,0,0,0.25)', zIndex: 10,
-          }}>
-            <div>{label}</div>
-            <div style={{ fontWeight: 500, fontSize: 10, marginTop: 2, display: 'flex', gap: 8 }}>
-              <span>🔵 {hover.views} pageview</span>
-              <span>🟣 {hover.visitors} pengunjung</span>
-            </div>
-          </div>
-        );
-      })()}
+    <div>
+      <div style={{ width: '100%', height: 240 }}>
+        <ResponsiveContainer>
+          <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+            <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+              axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+            <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+              axisLine={false} tickLine={false} width={40} allowDecimals={false} tickCount={5} />
+            <RechartsTooltip content={<PageviewTooltip />} cursor={{ fill: 'var(--border-2)', fillOpacity: 0.5 }} />
+            {avgViews > 0 && <ReferenceLine y={avgViews} stroke="#0284C7" strokeOpacity={0.5} strokeDasharray="5 4" />}
+            <Bar dataKey="views" name="Pageview" fill="#0284C7" fillOpacity={0.85} radius={[4, 4, 0, 0]} maxBarSize={28} />
+            <Line type="monotone" dataKey="visitors" name="Pengunjung unik" stroke="#7C3AED" strokeWidth={2.5}
+              dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#7C3AED' }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
 
       <div className="flex items-center gap-4 mt-2">
         <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>

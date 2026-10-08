@@ -74,8 +74,8 @@ function ChartTooltip({ active, payload, label }: {
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       {label && <div style={{ opacity: 0.65, marginBottom: 4, fontWeight: 700 }}>{shortDate(label)}</div>}
       {payload.map((p, i) => (
@@ -97,8 +97,8 @@ function CategoryTooltip({ active, payload }: {
   if (!d) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.category}</div>
       <div style={{ fontWeight: 800 }}>{formatRp(d.amount ?? 0)}</div>
@@ -233,14 +233,15 @@ export default function BusinessAnalyticsSection({
             ) : (
               <div style={{ width: '100%', height: 220 }}>
                 <ResponsiveContainer>
-                  <AreaChart data={data.dailyTrend} margin={{ top: 6, right: 4, left: -18, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="var(--border-2)" />
-                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-2)' }} tickLine={false} />
-                    <YAxis tickFormatter={compactRp} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 3' }} />
-                    <Area type="monotone" dataKey="online" name="Online" stackId="ch" stroke="#0284C7" fill="#0284C7" fillOpacity={0.16} strokeWidth={2} />
-                    <Area type="monotone" dataKey="pos" name="Kasir" stackId="ch" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.16} strokeWidth={2} />
-                    <Area type="monotone" dataKey="consignment" name="Konsinyasi" stackId="ch" stroke="#7C3AED" fill="#7C3AED" fillOpacity={0.16} strokeWidth={2} />
+                  <AreaChart data={data.dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <defs><linearGradient id="bizOnlineFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0284C7" stopOpacity={0.26} /><stop offset="100%" stopColor="#0284C7" stopOpacity={0} /></linearGradient><linearGradient id="bizPosFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4691E" stopOpacity={0.26} /><stop offset="100%" stopColor="#D4691E" stopOpacity={0} /></linearGradient><linearGradient id="bizConsFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C3AED" stopOpacity={0.26} /><stop offset="100%" stopColor="#7C3AED" stopOpacity={0} /></linearGradient></defs>
+                    <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+                    <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
+                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+                    <Area type="monotone" dataKey="online" name="Online" stackId="ch" stroke="#0284C7" fill="url(#bizOnlineFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="pos" name="Kasir" stackId="ch" stroke="#D4691E" fill="url(#bizPosFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="consignment" name="Konsinyasi" stackId="ch" stroke="#7C3AED" fill="url(#bizConsFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -286,13 +287,13 @@ export default function BusinessAnalyticsSection({
                 </div>
                 <div style={{ width: '100%', height: 200 }}>
                   <ResponsiveContainer>
-                    <LineChart data={data.dailyTrend} margin={{ top: 6, right: 4, left: -18, bottom: 0 }}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" />
-                      <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-2)' }} tickLine={false} />
-                      <YAxis tickFormatter={compactRp} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
-                      <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 3' }} />
-                      <Line type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#15803D" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                      <Line type="monotone" dataKey="expense" name="Pengeluaran" stroke="#DC2626" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <LineChart data={data.dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                      <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+                      <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+                      <Line type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#15803D" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                      <Line type="monotone" dataKey="expense" name="Pengeluaran" stroke="#DC2626" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -316,7 +317,7 @@ export default function BusinessAnalyticsSection({
                       <XAxis type="number" hide />
                       <YAxis type="category" dataKey="category" width={100} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
                       <Tooltip content={<CategoryTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                      <Bar dataKey="amount" radius={[0, 4, 4, 0]} barSize={18}>
+                      <Bar dataKey="amount" radius={[0, 8, 8, 0]} barSize={16}>
                         {data.expenseByCategory.slice(0, 7).map((entry, i) => (
                           <Cell key={i} fill={EXPENSE_CATEGORY_COLORS[entry.category] ?? '#9CA3AF'} />
                         ))}
@@ -341,7 +342,7 @@ export default function BusinessAnalyticsSection({
                       <XAxis type="number" hide />
                       <YAxis type="category" dataKey="category" width={100} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
                       <Tooltip content={<CategoryTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                      <Bar dataKey="amount" radius={[0, 4, 4, 0]} barSize={18}>
+                      <Bar dataKey="amount" radius={[0, 8, 8, 0]} barSize={16}>
                         {data.incomeByCategory.slice(0, 7).map((entry, i) => (
                           <Cell key={i} fill={INCOME_CATEGORY_COLORS[entry.category] ?? '#059669'} />
                         ))}

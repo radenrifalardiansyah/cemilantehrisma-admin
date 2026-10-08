@@ -74,8 +74,8 @@ function ChartTooltip({ active, payload, label }: {
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       {label && <div style={{ opacity: 0.65, marginBottom: 4, fontWeight: 700 }}>{shortDate(label)}</div>}
       {payload.map((p, i) => (
@@ -97,8 +97,8 @@ function ProductTooltip({ active, payload }: {
   if (!d) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.productName}</div>
       <div style={{ fontWeight: 800 }}>{formatRp(d.revenue ?? 0)}</div>
@@ -115,8 +115,8 @@ function SellThroughTooltip({ active, payload }: {
   if (!d) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.name}</div>
       <div style={{ fontWeight: 800 }}>{d.sellThroughPct}% terealisasi</div>
@@ -133,8 +133,8 @@ function PcsSummaryTooltip({ active, payload }: {
   if (!d) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.name}</div>
       <div style={{ fontWeight: 800 }}>{(d.value ?? 0).toLocaleString('id-ID')} pcs</div>
@@ -148,8 +148,8 @@ function PcsLocationTooltip({ active, payload, label }: {
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       {label && <div style={{ opacity: 0.65, marginBottom: 4, fontWeight: 700 }}>{label}</div>}
       {payload.map((p, i) => (
@@ -171,8 +171,8 @@ function PaymentStatusTooltip({ active, payload }: {
   if (!d) return null;
   return (
     <div style={{
-      background: 'var(--text-primary)', color: 'white', padding: '8px 12px', borderRadius: 8,
-      fontSize: 11, fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+      background: 'var(--text-primary)', color: 'white', padding: '10px 12px', borderRadius: 12,
+      fontSize: 11, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
     }}>
       <div style={{ opacity: 0.65, marginBottom: 2, fontWeight: 700 }}>{d.label}</div>
       <div style={{ fontWeight: 800 }}>{formatRp(d.amount ?? 0)}</div>
@@ -278,13 +278,14 @@ export default function ConsignmentAnalyticsSection({
             ) : (
               <div style={{ width: '100%', height: 220 }}>
                 <ResponsiveContainer>
-                  <AreaChart data={data.dailyTrend} margin={{ top: 6, right: 4, left: -18, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="var(--border-2)" />
-                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-2)' }} tickLine={false} />
-                    <YAxis tickFormatter={compactRp} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeDasharray: '4 3' }} />
-                    <Area type="monotone" dataKey="kirim" name="Dikirim" stroke="#0284C7" fill="#0284C7" fillOpacity={0.16} strokeWidth={2} />
-                    <Area type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#059669" fill="#059669" fillOpacity={0.16} strokeWidth={2} />
+                  <AreaChart data={data.dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <defs><linearGradient id="consSendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0284C7" stopOpacity={0.26} /><stop offset="100%" stopColor="#0284C7" stopOpacity={0} /></linearGradient><linearGradient id="consRevFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#059669" stopOpacity={0.26} /><stop offset="100%" stopColor="#059669" stopOpacity={0} /></linearGradient></defs>
+                    <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+                    <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
+                    <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+                    <Area type="monotone" dataKey="kirim" name="Dikirim" stroke="#0284C7" fill="url(#consSendFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#059669" fill="url(#consRevFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -327,7 +328,7 @@ export default function ConsignmentAnalyticsSection({
                       <XAxis type="number" domain={[0, 100]} hide />
                       <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
                       <Tooltip content={<SellThroughTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                      <Bar dataKey="sellThroughPct" radius={[0, 4, 4, 0]} barSize={18}>
+                      <Bar dataKey="sellThroughPct" radius={[0, 8, 8, 0]} barSize={16}>
                         {bySellThrough.map((entry, i) => (
                           <Cell key={i} fill={sellThroughColor(entry.sellThroughPct)} />
                         ))}
@@ -365,9 +366,9 @@ export default function ConsignmentAnalyticsSection({
                 <div style={{ width: '100%', height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={pcsSummary} margin={{ top: 20, right: 8, left: -18, bottom: 0 }} barCategoryGap={24}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" />
+                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
                       <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={44} />
+                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
                       <Tooltip content={<PcsSummaryTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
                       <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={48}>
                         {pcsSummary.map((entry, i) => (
@@ -487,7 +488,7 @@ export default function ConsignmentAnalyticsSection({
                     <XAxis type="number" hide />
                     <YAxis type="category" dataKey="productName" width={110} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
                     <Tooltip content={<ProductTooltip />} cursor={{ fill: 'var(--surface-2)' }} />
-                    <Bar dataKey="revenue" radius={[0, 4, 4, 0]} barSize={18}>
+                    <Bar dataKey="revenue" radius={[0, 8, 8, 0]} barSize={16}>
                       {data.topProducts.map((entry, i) => (
                         <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} />
                       ))}
