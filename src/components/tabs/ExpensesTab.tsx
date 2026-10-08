@@ -193,7 +193,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     if (items.some(it => !it.description)) { setError('Keterangan tiap item wajib diisi.'); return; }
     if (items.some(it => it.amount <= 0)) { setError('Jumlah tiap item harus lebih dari 0.'); return; }
     if (!editing.date) { setError('Tanggal wajib diisi.'); return; }
-    if (!editing.walletId) { setError('Dompet sumber wajib dipilih.'); return; }
+    if (!editing.walletId && !editing.excludeFromPnl) { setError('Dompet sumber wajib dipilih.'); return; }
     setSaving(true); setError('');
     const amountNum   = items.reduce((s, it) => s + it.amount, 0);
     const description = items.map(it => it.description).join(', ');
@@ -752,7 +752,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                 )}
 
                 <div>
-                  <label className="field-label">Dompet Sumber <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <label className="field-label">Dompet Sumber {!editing.excludeFromPnl && <span style={{ color: 'var(--danger)' }}>*</span>}{editing.excludeFromPnl && <span className="text-[11px] font-normal" style={{ color: 'var(--text-muted)' }}>(opsional — kosongkan kalau tidak mengubah saldo dompet)</span>}</label>
                   <SearchSelect value={editing.walletId} onChange={v => setEditing({ ...editing, walletId: v })}
                     options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
                   {editing.walletId && (
