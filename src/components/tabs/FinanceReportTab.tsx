@@ -78,6 +78,17 @@ const isCogsSourcedExpense = (e: ExpenseRecord) => e.sourceType === 'material-pu
 // Jurnal Kas), tapi tidak ikut Beban Operasional / Laba Rugi.
 const isNonPnlExpense = (e: ExpenseRecord) => e.excludeFromPnl === true;
 
+// Kategori pengeluaran bebas diketik (mis. "Lain - lain", "Lain-lain", "Lainnya"), jadi di laporan
+// digabung per kategori yang artinya sama. Kunci banding: huruf kecil tanpa spasi/tanda hubung.
+const CATEGORY_ALIASES: Record<string, string> = {
+  lainlain: 'Lainnya', lainnya: 'Lainnya',
+  penyesuaian: 'Penyesuaian', penyesuain: 'Penyesuaian', penyesuaan: 'Penyesuaian',
+};
+const canonCategory = (c: string) => {
+  const key = c.toLowerCase().replace(/[\s\-_.]+/g, '');
+  return CATEGORY_ALIASES[key] ?? c.trim();
+};
+
 // Pemasukan/Pengeluaran/Modal hanya punya field `date` (tanggal transaksi, bisa diisi mundur),
 // tapi `createdAt` (waktu dokumen dibuat) sudah tersimpan sejak awal — pakai jam dari situ supaya
 // Jurnal Kas menunjukkan jam sebenarnya, tanpa mengubah tanggal transaksi yang dipilih user.
@@ -435,7 +446,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const totalPendapatan = kasirRevenue + onlineRevenue + consignmentRevenue + totalPendapatanLain;
 
   const expenseByCategory = new Map<string, number>();
-  expenses.forEach(e => expenseByCategory.set(e.category, (expenseByCategory.get(e.category) ?? 0) + e.amount));
+  expenses.forEach(e => { const c = canonCategory(e.category); expenseByCategory.set(c, (expenseByCategory.get(c) ?? 0) + e.amount); });
   const totalBeban = expenses.reduce((s, e) => s + e.amount, 0);
 
   // HPP (Harga Pokok Penjualan) — dihitung dari qty × costPrice tiap item yang benar-benar terjual di
@@ -513,7 +524,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // Rincian Beban Operasional per kategori — hanya beban di luar HPP (Bahan Baku/Produksi sudah
   // dikeluarkan lewat isCogsSourcedExpense supaya tidak dobel hitung dengan HPP di atas).
   const bebanOperasionalByCategory = new Map<string, number>();
-  expensesOperasional.forEach(e => bebanOperasionalByCategory.set(e.category, (bebanOperasionalByCategory.get(e.category) ?? 0) + e.amount));
+  expensesOperasional.forEach(e => { const c = canonCategory(e.category); bebanOperasionalByCategory.set(c, (bebanOperasionalByCategory.get(c) ?? 0) + e.amount); });
   const bebanOperasionalDetailRows: DetailRow[] = [...bebanOperasionalByCategory.entries()]
     .sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ key: category, label: category, value: amount }));
 
@@ -650,7 +661,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         ['Total Pendapatan (Omzet)', totalPendapatan],
         ['HPP (Harga Pokok Penjualan)', hpp],
         ['Laba Kotor', labaKotor],
-        ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}${expenses.some(e => e.category === c && isCogsSourcedExpense(e)) ? ' (masuk HPP)' : ''}${expenses.some(e => e.category === c && isNonPnlExpense(e)) ? ' (sebagian/seluruhnya bukan beban operasional)' : ''}`, v] as [string, number]),
+        ...[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => [`Beban - ${c}${expenses.some(e => canonCategory(e.category) === c && isCogsSourcedExpense(e)) ? ' (masuk HPP)' : ''}${expenses.some(e => canonCategory(e.category) === c && isNonPnlExpense(e)) ? ' (sebagian/seluruhnya bukan beban operasional)' : ''}`, v] as [string, number]),
         ['Total Beban (Kas)', totalBeban],
         ['Beban Operasional (di luar HPP)', totalBebanOperasional],
         ...(selisihStok !== 0 ? [[selisihStok < 0 ? 'Kerugian Stok (Opname)' : 'Keuntungan Stok (Opname)', selisihStok] as [string, number]] : []),
@@ -706,7 +717,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         { label: 'Pendapatan Lain-lain', amount: totalPendapatanLain },
       ];
       const expenseRows = [...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({
-        category, amount, foldedIntoHpp: expenses.some(e => e.category === category && isCogsSourcedExpense(e)),
+        category, amount, foldedIntoHpp: expenses.some(e => canonCategory(e.category) === category && isCogsSourcedExpense(e)),
       }));
       const journalRows = journalWithSaldo.map(j => ({
         tanggal: j.seconds ? new Date(j.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-',
@@ -1237,14 +1248,14 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                 <>
                   <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
                     {[...expenseByCategory.entries()].sort((a, b) => b[1] - a[1]).map(([cat, val]) => {
-                      const foldedIntoHpp = expenses.some(e => e.category === cat && isCogsSourcedExpense(e));
+                      const foldedIntoHpp = expenses.some(e => canonCategory(e.category) === cat && isCogsSourcedExpense(e));
                       return (
                         <div key={cat} className="px-5 py-3 flex items-center gap-3">
                           <span style={{ width: 8, height: 8, borderRadius: 4, background: EXPENSE_CATEGORY_COLORS[cat] ?? '#9CA3AF', flexShrink: 0 }} />
                           <span className="flex-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                             {cat}
                             {foldedIntoHpp && <span className="text-[10px] font-medium ml-1.5" style={{ color: 'var(--text-muted)' }}>(→ masuk HPP saat terjual)</span>}
-                            {expenses.some(e => e.category === cat && isNonPnlExpense(e)) && <span className="text-[10px] font-medium ml-1.5" style={{ color: 'var(--text-muted)' }}>(sebagian/seluruhnya bukan beban operasional)</span>}
+                            {expenses.some(e => canonCategory(e.category) === cat && isNonPnlExpense(e)) && <span className="text-[10px] font-medium ml-1.5" style={{ color: 'var(--text-muted)' }}>(sebagian/seluruhnya bukan beban operasional)</span>}
                           </span>
                           <span className="text-sm font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(val)}</span>
                           <span className="text-xs tabular w-10 text-right" style={{ color: 'var(--text-muted)' }}>
