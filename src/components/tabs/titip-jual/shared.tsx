@@ -23,6 +23,7 @@ export interface Consignor {
 export interface CProduct {
   id: string; code: string; consignorId: string; name: string; unit: string; defaultPrice: number;
   scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: number; imageUrl: string;
+  category: string; weight: string; description: string;
 }
 export interface StallItem {
   id: string; productId: string; stallId: string; price: number | null;
@@ -34,10 +35,11 @@ export interface Receipt {
   stallId: string; stallName: string; docDate: string; items: ReceiptItem[]; totalQty: number; note: string; createdBy: string;
 }
 export interface Warehouse { id: string; name: string }
+export interface Category { id: string; name: string; emoji: string }
 export interface MasterBank { name: string; bankCode?: string; logoUrl?: string }
 
 export interface TitipJualData {
-  stalls: Stall[]; consignors: Consignor[]; products: CProduct[]; stallItems: StallItem[]; warehouses: Warehouse[]; banks: MasterBank[]; staff: StaffUser[];
+  stalls: Stall[]; consignors: Consignor[]; products: CProduct[]; stallItems: StallItem[]; warehouses: Warehouse[]; banks: MasterBank[]; staff: StaffUser[]; categories: Category[];
 }
 
 export interface SectionProps {

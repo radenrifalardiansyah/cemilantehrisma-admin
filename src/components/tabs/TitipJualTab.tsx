@@ -7,7 +7,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import type { Action } from '@/types/rbac';
 import {
-  API, type TitipJualData, type Stall, type Consignor, type CProduct, type StallItem, type Warehouse, type MasterBank, type StaffUser,
+  API, type TitipJualData, type Stall, type Consignor, type CProduct, type StallItem, type Warehouse, type MasterBank, type StaffUser, type Category,
 } from './titip-jual/shared';
 import ProductsSection from './titip-jual/ProductsSection';
 import ConsignorsSection from './titip-jual/ConsignorsSection';
@@ -36,15 +36,16 @@ async function fetchAll(creds: string): Promise<TitipJualData> {
     const r = await fetch(`${API}${url}`, { headers: h });
     return r.ok ? await r.json() as T : fallback;
   };
-  const [s, c, p, w, b, u] = await Promise.all([
+  const [s, c, p, w, b, u, cat] = await Promise.all([
     json<{ stalls: Stall[] }>('/api/stalls', { stalls: [] }),
     json<{ consignors: Consignor[] }>('/api/consignors', { consignors: [] }),
     json<{ products: CProduct[]; stallItems: StallItem[] }>('/api/consign/products', { products: [], stallItems: [] }),
     json<{ warehouses: Warehouse[] }>('/api/warehouses', { warehouses: [] }),
     json<{ banks: MasterBank[] }>('/api/master-banks', { banks: [] }),
     json<{ users: StaffUser[] }>('/api/stalls/assignable-users', { users: [] }),
+    json<{ categories: Category[] }>('/api/categories', { categories: [] }),
   ]);
-  return { stalls: s.stalls, consignors: c.consignors, products: p.products, stallItems: p.stallItems, warehouses: w.warehouses, banks: b.banks, staff: u.users };
+  return { stalls: s.stalls, consignors: c.consignors, products: p.products, stallItems: p.stallItems, warehouses: w.warehouses, banks: b.banks, staff: u.users, categories: cat.categories };
 }
 
 export default function TitipJualTab({ creds, can }: { creds: string; can: (a: Action) => boolean }) {

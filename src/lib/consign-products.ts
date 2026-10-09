@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import type { getSql } from '@/lib/db';
 import type { TransactionSql } from 'postgres';
 import { parseSchemeInput } from '@/lib/consign-pg';
 import { validateScheme } from '@/lib/consign';
@@ -7,6 +8,7 @@ export interface ProductInput {
   consignorId: string; name: string; unit: string; defaultPrice: number;
   scheme: 'nominal' | 'commission' | null; schemeValue: number | null;
   note: string; isActive: boolean; minStock: number; imageUrl: string | null;
+  category: string; weight: string; description: string;
   stallItems: { stallId: string; price: number | null; scheme: 'nominal' | 'commission' | null; schemeValue: number | null }[];
 }
 
@@ -29,6 +31,10 @@ export function parseProductBody(data: Record<string, unknown>): { value: Produc
   const minStock = data.minStock === undefined || data.minStock === '' || data.minStock === null ? 0 : Number(data.minStock);
   if (!Number.isFinite(minStock) || minStock < 0) return { error: 'Batas stok menipis tidak valid.' };
 
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const category = str(data.category, 100);
+  const weight = str(data.weight, 40);
+  const description = str(data.description, 2000);
   const imageUrl = typeof data.imageUrl === 'string' && data.imageUrl.trim() ? data.imageUrl.trim().slice(0, 1000) : null;
 
   const rawStalls = Array.isArray(data.stallItems) ? data.stallItems as Record<string, unknown>[] : [];
@@ -55,7 +61,7 @@ export function parseProductBody(data: Record<string, unknown>): { value: Produc
     value: {
       consignorId, name, unit: (typeof data.unit === 'string' && data.unit.trim()) || 'pcs', defaultPrice,
       scheme: scheme.scheme, schemeValue: scheme.value, note: (data.note as string) ?? '',
-      isActive: data.isActive !== false, minStock, imageUrl, stallItems,
+      isActive: data.isActive !== false, minStock, imageUrl, category, weight, description, stallItems,
     },
   };
 }
@@ -87,4 +93,11 @@ export function schemeCoverageError(consignorScheme: string | null, v: ProductIn
   if (v.scheme || consignorScheme) return null;
   if (v.stallItems.length > 0 && v.stallItems.every(i => i.scheme)) return null;
   return 'Penitip ini belum punya skema default — pilih skema bagi hasil untuk produk ini (atau isi skema di setiap lapak).';
+}
+
+// Kategori (kalau diisi) harus ada di master Kategori — sama dengan produk toko.
+export async function categoryProblem(sql: ReturnType<typeof getSql>, category: string): Promise<string | null> {
+  if (!category) return null;
+  const rows = await sql<{ id: string }[]>`select id from categories where id = ${category}`;
+  return rows.length > 0 ? null : 'Kategori tidak ditemukan.';
 }

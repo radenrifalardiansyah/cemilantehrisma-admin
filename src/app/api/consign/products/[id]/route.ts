@@ -3,7 +3,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import type { ConsignProductRow } from '@/lib/consign-pg';
 import { auditConsign } from '@/lib/consign-audit';
-import { parseProductBody, syncStallItems, schemeCoverageError } from '@/lib/consign-products';
+import { parseProductBody, syncStallItems, schemeCoverageError, categoryProblem } from '@/lib/consign-products';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -22,6 +22,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!c) return Response.json({ error: 'Penitip tidak ditemukan.' }, { status: 400 });
   const coverage = schemeCoverageError(c.scheme, v);
   if (coverage) return Response.json({ error: coverage }, { status: 400 });
+  const catErr = await categoryProblem(sql, v.category);
+  if (catErr) return Response.json({ error: catErr }, { status: 400 });
   // Pemilik produk tidak boleh berpindah penitip setelah ada stok/riwayat — stok & rekap hutang
   // ikut penitip, jadi pindah pemilik diam-diam akan mengacaukan hutang.
   if (before.consignor_id !== v.consignorId) {
@@ -34,7 +36,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const err = await sql.begin(async tx => {
     await tx`
       update consign_products set consignor_id = ${v.consignorId}, name = ${v.name}, unit = ${v.unit}, default_price = ${v.defaultPrice},
-        scheme = ${v.scheme}, scheme_value = ${v.schemeValue}, note = ${v.note}, is_active = ${v.isActive}, min_stock = ${v.minStock}, image_url = ${v.imageUrl}, updated_at = now()
+        scheme = ${v.scheme}, scheme_value = ${v.schemeValue}, note = ${v.note}, is_active = ${v.isActive}, min_stock = ${v.minStock}, image_url = ${v.imageUrl}, category = ${v.category}, weight = ${v.weight}, description = ${v.description}, updated_at = now()
       where id = ${id}
     `;
     const e = await syncStallItems(tx, id, v.stallItems);

@@ -6,7 +6,7 @@ import {
   rowToConsignProduct, rowToStallItem, nextCode,
   type ConsignProductRow, type StallItemRow,
 } from '@/lib/consign-pg';
-import { parseProductBody, syncStallItems, schemeCoverageError } from '@/lib/consign-products';
+import { parseProductBody, syncStallItems, schemeCoverageError, categoryProblem } from '@/lib/consign-products';
 import { auditConsign } from '@/lib/consign-audit';
 
 export async function GET(req: NextRequest) {
@@ -32,6 +32,8 @@ export async function POST(req: NextRequest) {
   if (!c) return Response.json({ error: 'Penitip tidak ditemukan.' }, { status: 400 });
   const coverage = schemeCoverageError(c.scheme, v);
   if (coverage) return Response.json({ error: coverage }, { status: 400 });
+  const catErr = await categoryProblem(sql, v.category);
+  if (catErr) return Response.json({ error: catErr }, { status: 400 });
 
   const id = randomUUID();
   let code = '';
@@ -39,8 +41,8 @@ export async function POST(req: NextRequest) {
     const existing = await tx<{ code: string | null }[]>`select code from consign_products`;
     code = nextCode('TJP', existing.map(r => r.code));
     await tx`
-      insert into consign_products (id, code, consignor_id, name, unit, default_price, scheme, scheme_value, note, is_active, min_stock, image_url, created_at, updated_at)
-      values (${id}, ${code}, ${v.consignorId}, ${v.name}, ${v.unit}, ${v.defaultPrice}, ${v.scheme}, ${v.schemeValue}, ${v.note}, ${v.isActive}, ${v.minStock}, ${v.imageUrl}, now(), now())
+      insert into consign_products (id, code, consignor_id, name, unit, default_price, scheme, scheme_value, note, is_active, min_stock, image_url, category, weight, description, created_at, updated_at)
+      values (${id}, ${code}, ${v.consignorId}, ${v.name}, ${v.unit}, ${v.defaultPrice}, ${v.scheme}, ${v.schemeValue}, ${v.note}, ${v.isActive}, ${v.minStock}, ${v.imageUrl}, ${v.category}, ${v.weight}, ${v.description}, now(), now())
     `;
     const e = await syncStallItems(tx, id, v.stallItems);
     if (e) throw new Error(e);

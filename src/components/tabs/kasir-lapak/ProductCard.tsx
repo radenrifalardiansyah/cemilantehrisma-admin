@@ -17,7 +17,7 @@ export default function StallProductCard({ item, qty, disabled, onAdd, onMinus }
   const off = disabled || out || !!item.blocked;
   return (
     <div className={`card overflow-hidden flex flex-col select-none transition-transform ${off ? '' : 'active:scale-[0.97] cursor-pointer'}`}
-      style={{ opacity: disabled && !out ? 0.6 : 1 }} onClick={off ? undefined : onAdd} title={item.blocked || undefined}>
+      style={{ opacity: disabled && !out ? 0.6 : 1 }} onClick={off ? undefined : onAdd} title={item.blocked || item.description || undefined}>
       <div className="relative w-full aspect-square overflow-hidden" style={{ background: 'var(--surface-2)' }}>
         <ImageCarousel imageUrls={item.imageUrl ? [item.imageUrl] : []} emoji={itemEmoji(item)} alt={item.name}
           sizes="(max-width: 640px) 50vw, 200px" emojiClassName="text-4xl"
@@ -42,7 +42,11 @@ export default function StallProductCard({ item, qty, disabled, onAdd, onMinus }
       </div>
       <div className="px-3 pt-2 pb-3 flex flex-col flex-1 gap-1.5">
         <p className="text-[11px] font-bold leading-snug line-clamp-2" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
-        {item.consignorName && <p className="text-[10px] truncate -mt-1" style={{ color: 'var(--text-muted)' }}>{item.consignorName}</p>}
+        {(item.weight || item.consignorName) && (
+          <p className="text-[10px] truncate -mt-1" style={{ color: 'var(--text-muted)' }}>
+            {[item.weight, item.consignorName].filter(Boolean).join(' · ')}
+          </p>
+        )}
         {item.blocked
           ? <span className="badge badge-red self-start" style={{ fontSize: 10 }}>{item.blocked}</span>
           : !out && <span className="badge badge-green self-start" style={{ fontSize: 10 }}>Stok · {qtyText(item.stock)} {item.unit}</span>}

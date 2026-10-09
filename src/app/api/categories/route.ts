@@ -16,7 +16,8 @@ const getCachedCategories = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  const guard = await requirePermission(req, 'categories', 'view');
+  // Daftar kategori juga dibaca form produk Titip Jual, jadi 'consign' ikut diizinkan melihat.
+  const guard = await requirePermission(req, ['categories', 'consign'], 'view');
   if (guard instanceof Response) return guard;
   const categories = await getCachedCategories();
   return Response.json({ categories });

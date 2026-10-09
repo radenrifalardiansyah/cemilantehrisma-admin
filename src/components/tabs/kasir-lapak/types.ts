@@ -10,6 +10,7 @@ export interface PosStall {
 export interface CatalogItem {
   kind: 'own' | 'consign'; productId: string; name: string; code: string; unit: string; price: number; stock: number;
   consignorName?: string; blocked?: string; emoji?: string; imageUrl?: string;
+  category?: string; weight?: string; description?: string;
 }
 export interface SaleItem {
   kind: 'own' | 'consign'; productId: string; name: string; unit: string; qty: number; price: number; subtotal: number;

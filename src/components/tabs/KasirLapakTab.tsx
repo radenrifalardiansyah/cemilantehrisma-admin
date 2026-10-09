@@ -6,6 +6,7 @@ import Image from 'next/image';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import PageLoader from '@/components/PageLoader';
+import ScrollChips from '@/components/ScrollChips';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import { useToast } from '@/components/Toast';
@@ -44,6 +45,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [search, setSearch] = useState('');
   const [kind, setKind] = useState<KindFilter>('all');
+  const [cat, setCat] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
   const [discount, setDiscount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('cash');
@@ -95,7 +97,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const items = catalog && catalog.stallId === stallId ? catalog.items : null;
 
   const changeStall = (id: string) => {
-    setStallId(id); setCart({}); setDiscount(''); setPaid(''); setNote(''); setSearch(''); setCatalog(null);
+    setStallId(id); setCart({}); setCat(''); setDiscount(''); setPaid(''); setNote(''); setSearch(''); setCatalog(null);
     try { window.localStorage.setItem(STALL_KEY, id); } catch { /* abaikan */ }
   };
 
@@ -165,7 +167,8 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   }
 
   const q = search.trim().toLowerCase();
-  const shown = (items ?? []).filter(i => (kind === 'all' || i.kind === kind) && (!q || `${i.name} ${i.code} ${i.consignorName ?? ''}`.toLowerCase().includes(q)));
+  const categories = [...new Set((items ?? []).map(i => i.category).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b, 'id'));
+  const shown = (items ?? []).filter(i => (kind === 'all' || i.kind === kind) && (!cat || i.category === cat) && (!q || `${i.name} ${i.code} ${i.consignorName ?? ''}`.toLowerCase().includes(q)));
 
   const checkout = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -293,6 +296,14 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
               ))}
             </div>
           </div>
+
+          {categories.length > 0 && (
+            <ScrollChips gap="gap-2">
+              {['', ...categories].map(c => (
+                <button key={c || 'all'} onClick={() => setCat(c)} className={`tab-chip ${cat === c ? 'active' : ''}`}>{c || 'Semua kategori'}</button>
+              ))}
+            </ScrollChips>
+          )}
 
           {!stall?.shift && (
             <p className="text-xs px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>

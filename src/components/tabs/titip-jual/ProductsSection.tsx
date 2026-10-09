@@ -19,11 +19,14 @@ import {
 const IMPORT_COLS: ImportCol[] = [
   { header: 'Penitip* (nama/kode)', key: 'consignor', width: 24, aliases: ['penitip', 'namapenitip', 'kodepenitip'], required: true },
   { header: 'Nama Produk*', key: 'name', width: 26, aliases: ['namaproduk', 'produk', 'nama'], required: true },
+  { header: 'Kategori', key: 'category', width: 18, aliases: ['kategori', 'category'] },
+  { header: 'Berat/Ukuran', key: 'weight', width: 14, aliases: ['berat', 'beratukuran', 'ukuran', 'weight'] },
   { header: 'Satuan', key: 'unit', width: 10, aliases: ['satuan', 'unit'] },
   { header: 'Harga Jual*', key: 'price', width: 14, aliases: ['hargajual', 'harga', 'hargajualdefault'], required: true },
   { header: 'Skema (Nominal/Komisi)', key: 'scheme', width: 22, aliases: ['skema', 'skemabagihasil'] },
   { header: 'Nilai (Rp setor atau % komisi)', key: 'value', width: 28, aliases: ['nilai', 'nilaibagihasil'] },
   { header: 'Lapak (pisahkan dengan koma)', key: 'stalls', width: 28, aliases: ['lapak', 'dijualdilapak'] },
+  { header: 'Deskripsi', key: 'description', width: 30, aliases: ['deskripsi', 'detail', 'detailproduk', 'description'] },
   { header: 'Catatan', key: 'note', width: 28, aliases: ['catatan', 'note'] },
 ];
 
@@ -31,6 +34,7 @@ interface StallCfg { enabled: boolean; price: string; scheme: ShareScheme | null
 interface Form {
   id?: string; consignorId: string; name: string; unit: string; defaultPrice: string;
   scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: string; imageUrl: string;
+  category: string; weight: string; description: string;
   stalls: Record<string, StallCfg>;
 }
 
@@ -40,6 +44,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
   const [consignorFilter, setConsignorFilter] = useState('');
   const [stallFilter, setStallFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [editing, setEditing] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -47,6 +52,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
   const [imageUploading, setImageUploading] = useState(false);
 
   const consignorById = new Map(data.consignors.map(c => [c.id, c]));
+  const categoryName = (id: string) => data.categories.find(c => c.id === id)?.name ?? '';
   const stallById = new Map(data.stalls.map(s => [s.id, s]));
   const itemsByProduct = new Map<string, typeof data.stallItems>();
   for (const i of data.stallItems) {
@@ -56,6 +62,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
 
   const items = data.products
     .filter(p => !consignorFilter || p.consignorId === consignorFilter)
+    .filter(p => !categoryFilter || p.category === categoryFilter)
     .filter(p => !stallFilter || (itemsByProduct.get(p.id) ?? []).some(i => i.stallId === stallFilter))
     .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
 
@@ -66,7 +73,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     setError('');
     setEditing({
       consignorId: consignorFilter || '', name: '', unit: 'pcs', defaultPrice: '', scheme: null, schemeValue: null,
-      note: '', isActive: true, minStock: '', imageUrl: '', stalls: blankStalls(),
+      note: '', isActive: true, minStock: '', imageUrl: '', category: '', weight: '', description: '', stalls: blankStalls(),
     });
   };
   const openEdit = (p: CProduct) => {
@@ -77,7 +84,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     }
     setEditing({
       id: p.id, consignorId: p.consignorId, name: p.name, unit: p.unit, defaultPrice: String(p.defaultPrice),
-      scheme: p.scheme, schemeValue: p.schemeValue, note: p.note, isActive: p.isActive, minStock: p.minStock > 0 ? String(p.minStock) : '', imageUrl: p.imageUrl, stalls,
+      scheme: p.scheme, schemeValue: p.schemeValue, note: p.note, isActive: p.isActive, minStock: p.minStock > 0 ? String(p.minStock) : '', imageUrl: p.imageUrl, category: p.category, weight: p.weight, description: p.description, stalls,
     });
   };
 
@@ -87,6 +94,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     const body = {
       consignorId: editing.consignorId, name: editing.name, unit: editing.unit, defaultPrice: Number(editing.defaultPrice || 0),
       scheme: editing.scheme, schemeValue: editing.schemeValue, note: editing.note, isActive: editing.isActive, minStock: Number(editing.minStock || 0), imageUrl: editing.imageUrl,
+      category: editing.category, weight: editing.weight, description: editing.description,
       stallItems: Object.entries(editing.stalls).filter(([, c]) => c.enabled).map(([stallId, c]) => ({
         stallId, price: c.price === '' ? null : Number(c.price), scheme: c.scheme, schemeValue: c.schemeValue,
       })),
@@ -144,9 +152,9 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
       sheet: 'Template Produk Titipan', title: 'TEMPLATE IMPORT PRODUK TITIP JUAL — CEMILAN TEH RISMA', file: 'template-produk-titip-jual.xlsx',
       note: 'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3; isi data mulai baris 4, satu produk per baris. '
         + 'Penitip dan Lapak harus sudah terdaftar (tulis nama atau kodenya). Skema kosong = ikut skema default penitip; atau isi "Nominal"/"Komisi" beserta nilainya. '
-        + 'Lapak boleh lebih dari satu, pisahkan dengan koma (cth: Lapak 1, Lapak 2). Stok awal dicatat lewat tab Terima & Retur. Produk yang sudah ada dilewati.',
+        + 'Kategori harus sama dengan nama di menu Kategori (boleh dikosongkan). Lapak boleh lebih dari satu, pisahkan dengan koma (cth: Lapak 1, Lapak 2). Stok awal dicatat lewat tab Terima & Retur. Produk yang sudah ada dilewati.',
       cols: IMPORT_COLS,
-      example: { consignor: 'Bu Sari Kue Kering', name: 'Nastar 250gr', unit: 'toples', price: '35000', scheme: 'Nominal', value: '28000', stalls: 'Lapak 1, Lapak 2', note: 'Contoh — timpa dengan data produk Anda' },
+      example: { consignor: 'Bu Sari Kue Kering', name: 'Nastar 250gr', category: 'Kue Kering', weight: '250g', description: 'Nastar nanas lembut', unit: 'toples', price: '35000', scheme: 'Nominal', value: '28000', stalls: 'Lapak 1, Lapak 2', note: 'Contoh — timpa dengan data produk Anda' },
     }),
     onFile: async (file: File) => {
       try {
@@ -171,10 +179,12 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     { header: 'Kode', width: '8%', value: p => p.code },
     { header: 'Produk', width: '16%', bold: true, value: p => p.name },
     { header: 'Penitip', width: '13%', value: p => consignorById.get(p.consignorId)?.name ?? '-' },
-    { header: 'Satuan', width: '6%', value: p => p.unit },
+    { header: 'Kategori', width: '8%', value: p => categoryName(p.category) || '-' },
+    { header: 'Berat/Ukuran', width: '8%', value: p => p.weight || '-' },
+    { header: 'Satuan', width: '5%', value: p => p.unit },
     { header: 'Harga Default', width: '11%', align: 'right', value: p => rupiah(p.defaultPrice) },
     { header: 'Bagi Hasil', width: '13%', value: p => schemeText(effectiveFor(p, consignorById.get(p.consignorId), undefined).spec) },
-    { header: 'Lapak (stok @ harga)', width: '25%', value: p => stallSummary(p) || '-' },
+    { header: 'Lapak (stok @ harga)', width: '17%', value: p => stallSummary(p) || '-' },
     { header: 'Status', width: '8%', value: p => p.isActive ? 'Aktif' : 'Nonaktif' },
   ];
 
@@ -183,7 +193,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
       <DataList<CProduct>
         creds={creds} items={items} totalCount={data.products.length} getId={p => p.id} noun="produk"
         searchText={p => `${p.name} ${p.code} ${consignorById.get(p.consignorId)?.name ?? ''}`}
-        searchPlaceholder="Cari produk, kode, atau penitip…" viewKey="consign-products" resetKey={`${consignorFilter}|${stallFilter}`}
+        searchPlaceholder="Cari produk, kode, atau penitip…" viewKey="consign-products" resetKey={`${consignorFilter}|${stallFilter}|${categoryFilter}`}
         addLabel={can('create') ? 'Tambah Produk' : undefined} onAdd={can('create') ? openNew : undefined}
         emptyHint="Produk titipan = barang milik penitip yang dijual di lapak. Tambahkan penitip & lapak dulu di tabnya."
         avatar={p => initials(p.name)} avatarImage={p => p.imageUrl || undefined}
@@ -191,6 +201,8 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
           <>
             <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
               options={[{ value: '', label: 'Semua penitip' }, ...data.consignors.map(c => ({ value: c.id, label: c.name }))]} />
+            <FilterSelect value={categoryFilter} onChange={setCategoryFilter} searchPlaceholder="Cari kategori…"
+              options={[{ value: '', label: 'Semua kategori' }, ...data.categories.map(c => ({ value: c.id, label: `${c.emoji ? `${c.emoji} ` : ''}${c.name}` }))]} />
             <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
               options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(s => ({ value: s.id, label: s.name }))]} />
           </>
@@ -204,6 +216,8 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
               <div className="flex items-center gap-1.5 flex-wrap">
                 <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
                 <Badge>{p.code}</Badge>
+                {categoryName(p.category) && <Badge tone="accent">{categoryName(p.category)}</Badge>}
+                {p.weight && <Badge>{p.weight}</Badge>}
                 {!p.isActive && <Badge tone="danger">Nonaktif</Badge>}
               </div>
               <p className="text-xs" style={{ color: base.spec ? 'var(--text-muted)' : 'var(--danger)' }}>{c?.name ?? '—'} · {rupiah(base.price)}/{p.unit} · {schemeText(base.spec)}</p>
@@ -227,9 +241,12 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
               { label: 'Kode Produk', value: p.code },
               { label: 'Status', value: p.isActive ? 'Aktif' : 'Nonaktif' },
               { label: 'Penitip', value: c?.name ?? '' },
+              { label: 'Kategori', value: categoryName(p.category) },
+              { label: 'Berat / Ukuran', value: p.weight },
               { label: 'Satuan', value: p.unit },
               { label: 'Harga Jual Default', value: rupiah(p.defaultPrice) },
               { label: 'Skema Bagi Hasil', value: schemeText(base.spec) },
+              ...(p.description ? [{ label: 'Detail Produk', value: p.description, wide: true }] : []),
               ...(p.note ? [{ label: 'Catatan', value: p.note, wide: true }] : []),
             ]}>
               {its.length === 0 ? (
@@ -281,6 +298,15 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
                   <input className="input" value={editing.name} autoFocus={!editing.id} onChange={e => setEditing({ ...editing, name: e.target.value })} />
                 </Field>
               </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Kategori">
+                <SearchSelect value={editing.category} onChange={v => setEditing({ ...editing, category: v })} placeholder="– Pilih kategori –" searchPlaceholder="Cari kategori…"
+                  options={[{ value: '', label: '— Tanpa kategori —' }, ...data.categories.map(c => ({ value: c.id, label: c.name, emoji: c.emoji || undefined }))]} />
+              </Field>
+              <Field label="Berat / Ukuran">
+                <input className="input" value={editing.weight} maxLength={40} placeholder="cth: 150g, 250 ml" onChange={e => setEditing({ ...editing, weight: e.target.value })} />
+              </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Harga jual default (Rp)" required>
@@ -337,6 +363,10 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
               </p>
             </div>
 
+            <Field label="Detail produk (opsional)">
+              <textarea className="input" style={{ resize: 'vertical', minHeight: 70 }} maxLength={2000} value={editing.description}
+                placeholder="Deskripsi, komposisi, rasa, dll." onChange={e => setEditing({ ...editing, description: e.target.value })} />
+            </Field>
             <Field label="Batas stok menipis per lapak (opsional)">
               <input className="input" type="number" min={0} step="any" inputMode="decimal" value={editing.minStock} placeholder="0 = tidak diingatkan"
                 onChange={e => setEditing({ ...editing, minStock: e.target.value })} />

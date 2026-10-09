@@ -10,6 +10,7 @@ import { auditConsign } from '@/lib/consign-audit';
 
 interface ImportRow {
   consignor?: string; name?: string; unit?: string; price?: string; scheme?: string; value?: string; stalls?: string; note?: string;
+  category?: string; weight?: string; description?: string;
 }
 
 const MAX_ROWS = 2000;
@@ -28,11 +29,15 @@ export async function POST(req: NextRequest) {
   }
 
   const sql = getSql();
-  const [consignors, stalls, existing] = await Promise.all([
+  const [consignors, stalls, existing, categories] = await Promise.all([
     sql<{ id: string; name: string; code: string | null; scheme: string | null }[]>`select id, name, code, scheme from consignors`,
     sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from stalls`,
     sql<{ code: string | null; consignor_id: string; name: string }[]>`select code, consignor_id, name from consign_products`,
+    sql<{ id: string; name: string }[]>`select id, name from categories`,
   ]);
+  // Kategori dicocokkan lewat nama ATAU id (tidak peka huruf besar/kecil).
+  const categoryBy = new Map<string, string>();
+  for (const c of categories) { categoryBy.set(key(c.name), c.id); categoryBy.set(key(c.id), c.id); }
   // Penitip & lapak dicocokkan lewat nama ATAU kode (tidak peka huruf besar/kecil).
   const consignorBy = new Map<string, string>();
   const consignorHasScheme = new Map<string, boolean>();
@@ -75,6 +80,10 @@ export async function POST(req: NextRequest) {
       errors.push(`${label}: penitip "${t(row.consignor)}" belum punya skema default — isi kolom Skema & Nilai`); continue;
     }
 
+    const categoryText = t(row.category);
+    const categoryId = categoryText ? categoryBy.get(key(categoryText)) : '';
+    if (categoryText && !categoryId) { errors.push(`${label}: kategori "${categoryText}" tidak ditemukan`); continue; }
+
     const stallIds: string[] = [];
     let stallErr = '';
     for (const part of t(row.stalls).split(/[,;]/).map(s => s.trim()).filter(Boolean)) {
@@ -89,8 +98,8 @@ export async function POST(req: NextRequest) {
     try {
       await sql.begin(async tx => {
         await tx`
-          insert into consign_products (id, code, consignor_id, name, unit, default_price, scheme, scheme_value, note, is_active, created_at, updated_at)
-          values (${id}, ${code}, ${consignorId}, ${name}, ${t(row.unit) || 'pcs'}, ${price}, ${scheme}, ${schemeValue}, ${t(row.note)}, true, now(), now())
+          insert into consign_products (id, code, consignor_id, name, unit, default_price, scheme, scheme_value, note, is_active, category, weight, description, created_at, updated_at)
+          values (${id}, ${code}, ${consignorId}, ${name}, ${t(row.unit) || 'pcs'}, ${price}, ${scheme}, ${schemeValue}, ${t(row.note)}, true, ${categoryId ?? ''}, ${t(row.weight).slice(0, 40)}, ${t(row.description).slice(0, 2000)}, now(), now())
         `;
         const e = await syncStallItems(tx, id, stallIds.map(stallId => ({ stallId, price: null, scheme: null, schemeValue: null })));
         if (e) throw new Error(e);
