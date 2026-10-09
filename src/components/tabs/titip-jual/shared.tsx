@@ -3,6 +3,7 @@
 import { createPortal } from 'react-dom';
 import { Loader2, Check, X } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
+import NumberInput from '@/components/NumberInput';
 import { resolveScheme, calcShare, schemeText, SCHEME_LABEL, type ShareScheme } from '@/lib/consign';
 
 export const API = '';
@@ -81,15 +82,20 @@ export function SchemeFields({ scheme, value, onChange, allowInherit, inheritLab
         <select className="input" style={{ flex: 2 }} value={scheme ?? ''}
           onChange={e => {
             const v = e.target.value as ShareScheme | '';
-            onChange(v === '' ? null : v, v === '' ? null : (value ?? 0));
+            // Nilai dikosongkan saat skema diganti: 15 (%) tidak sepadan dengan Rp15.
+            onChange(v === '' ? null : v, null);
           }}>
           {allowInherit && <option value="">{inheritLabel ?? 'Ikut default'}</option>}
           <option value="nominal">{SCHEME_LABEL.nominal}</option>
           <option value="commission">{SCHEME_LABEL.commission}</option>
         </select>
-        {scheme && (
-          <input className="input" style={{ flex: 1 }} type="number" min={0} step="any" inputMode="decimal"
-            value={value ?? ''} placeholder={scheme === 'commission' ? '% komisi' : 'Rp setor'}
+        {scheme === 'nominal' && (
+          <NumberInput className="input" style={{ flex: 1 }} value={value ?? ''} placeholder="Rp setor"
+            onChange={raw => onChange(scheme, raw === '' ? null : Number(raw))} />
+        )}
+        {scheme === 'commission' && (
+          <input className="input" style={{ flex: 1 }} type="number" min={0} max={100} step="any" inputMode="decimal"
+            value={value ?? ''} placeholder="% komisi"
             onChange={e => onChange(scheme, e.target.value === '' ? null : Number(e.target.value))} />
         )}
       </div>

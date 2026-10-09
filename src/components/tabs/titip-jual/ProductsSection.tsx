@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Package } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
+import NumberInput, { formatThousands } from '@/components/NumberInput';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText, type ShareScheme } from '@/lib/consign';
@@ -264,7 +265,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Harga jual default (Rp)" required>
-                <input className="input" type="number" min={0} inputMode="numeric" value={editing.defaultPrice} onChange={e => setEditing({ ...editing, defaultPrice: e.target.value })} />
+                <NumberInput value={editing.defaultPrice} placeholder="0" onChange={raw => setEditing({ ...editing, defaultPrice: raw })} />
               </Field>
               <Field label="Satuan">
                 <input className="input" value={editing.unit} onChange={e => setEditing({ ...editing, unit: e.target.value })} />
@@ -297,8 +298,8 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
                         {cfg.enabled && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
                             <Field label="Harga jual di lapak ini (kosong = default)">
-                              <input className="input" type="number" min={0} inputMode="numeric" value={cfg.price} placeholder={String(editPrice)}
-                                onChange={e => setStall(s.id, { price: e.target.value })} />
+                              <NumberInput value={cfg.price} placeholder={formatThousands(editPrice) || '0'}
+                                onChange={raw => setStall(s.id, { price: raw })} />
                             </Field>
                             <Field label="Skema bagi hasil di lapak ini">
                               <SchemeFields scheme={cfg.scheme} value={cfg.schemeValue} allowInherit price={stallPrice}
