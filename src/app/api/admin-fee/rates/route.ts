@@ -34,8 +34,11 @@ export async function POST(req: NextRequest) {
   if (!data.channel || !ADMIN_FEE_CHANNELS.includes(data.channel)) {
     return Response.json({ error: 'Channel tidak valid.' }, { status: 400 });
   }
-  if (data.type !== 'percent' && data.type !== 'fixed') {
-    return Response.json({ error: 'Tipe biaya harus persen atau nominal.' }, { status: 400 });
+  if (data.type !== 'percent' && data.type !== 'fixed' && data.type !== 'monthly') {
+    return Response.json({ error: 'Tipe biaya harus persen, nominal, atau bulanan.' }, { status: 400 });
+  }
+  if (data.type === 'monthly' && data.channel !== 'lapak') {
+    return Response.json({ error: 'Tarif bulanan hanya untuk channel Lapak.' }, { status: 400 });
   }
   if (typeof data.value !== 'number' || !Number.isFinite(data.value) || data.value < 0) {
     return Response.json({ error: 'Nilai biaya tidak valid.' }, { status: 400 });

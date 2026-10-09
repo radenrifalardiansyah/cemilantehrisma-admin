@@ -9,8 +9,8 @@ import { useConfirm } from '@/components/Confirm';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
 import PageLoader from '@/components/PageLoader';
 
-type Channel = 'online' | 'kasir' | 'consignment';
-type FeeType = 'percent' | 'fixed';
+type Channel = 'online' | 'kasir' | 'consignment' | 'lapak';
+type FeeType = 'percent' | 'fixed' | 'monthly';
 
 interface TxnDetail {
   id: string; label: string; createdAt: { seconds: number } | null;
@@ -35,6 +35,7 @@ const formatRp = (n: number) =>
 
 const rateLabel = (rate: { type: FeeType; value: number } | null) => {
   if (!rate) return '–';
+  if (rate.type === 'monthly') return `${formatRp(rate.value)} / bulan`;
   return rate.type === 'percent' ? `${rate.value}%` : formatRp(rate.value);
 };
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import EmptyAddCard from '../EmptyAddCard';
 import {
-  Loader2, RefreshCw, Percent, Coins, History, FileDown, Receipt, CheckCircle2, Landmark, X, ListChecks, Send, Building2, XCircle,
+  Loader2, RefreshCw, Percent, Coins, History, FileDown, Receipt, CheckCircle2, Landmark, X, ListChecks, Send, Building2, XCircle, CalendarDays,
 } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -16,11 +16,11 @@ import ViewToggle from '@/components/ViewToggle';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
 import PageLoader from '@/components/PageLoader';
 
-type Channel = 'online' | 'kasir' | 'consignment';
-type FeeType = 'percent' | 'fixed';
-const CHANNELS: Channel[] = ['online', 'kasir', 'consignment'];
+type Channel = 'online' | 'kasir' | 'consignment' | 'lapak';
+type FeeType = 'percent' | 'fixed' | 'monthly';
+const CHANNELS: Channel[] = ['online', 'kasir', 'consignment', 'lapak'];
 const CHANNEL_LABELS: Record<Channel, string> = {
-  online: 'Penjualan Online', kasir: 'POS / Kasir', consignment: 'Konsinyasi',
+  online: 'Penjualan Online', kasir: 'POS / Kasir', consignment: 'Konsinyasi', lapak: 'Lapak (Titip Jual)',
 };
 
 interface RateEntry {
@@ -56,6 +56,7 @@ const FORM_CTRL_H = 38;
 
 const rateLabel = (rate: { type: FeeType; value: number } | null) => {
   if (!rate) return '–';
+  if (rate.type === 'monthly') return `${formatRp(rate.value)} / bulan`;
   return rate.type === 'percent' ? `${rate.value}%` : formatRp(rate.value);
 };
 
@@ -95,13 +96,14 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
   const [subTab, setSubTab] = useState<SubTab>('laporan');
 
   // ── Rates ──────────────────────────────────────────────────
-  const [rates, setRates] = useState<Record<Channel, RateEntry[]>>({ online: [], kasir: [], consignment: [] });
+  const [rates, setRates] = useState<Record<Channel, RateEntry[]>>({ online: [], kasir: [], consignment: [], lapak: [] });
   const [loadingRates, setLoadingRates] = useState(true);
   const todayIso = toISO(new Date());
   const [forms, setForms] = useState<Record<Channel, { type: FeeType; value: string; effectiveFrom: string }>>({
     online: { type: 'percent', value: '', effectiveFrom: todayIso },
     kasir: { type: 'percent', value: '', effectiveFrom: todayIso },
     consignment: { type: 'percent', value: '', effectiveFrom: todayIso },
+    lapak: { type: 'percent', value: '', effectiveFrom: todayIso },
   });
   const [savingChannel, setSavingChannel] = useState<Channel | null>(null);
   const [expandedHistory, setExpandedHistory] = useState<Channel | null>(null);
@@ -426,7 +428,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
                   <div>
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Tipe</label>
                     <div className="flex items-center gap-1 p-1 rounded-lg" style={{ background: 'var(--surface-2)', height: FORM_CTRL_H }}>
-                      {([['percent', 'Persen', Percent], ['fixed', 'Nominal', Coins]] as const).map(([id, label, Icon]) => (
+                      {([['percent', 'Persen', Percent], ['fixed', 'Nominal', Coins], ...(channel === 'lapak' ? [['monthly', 'Bulanan', CalendarDays] as const] : [])] as const).map(([id, label, Icon]) => (
                         <button key={id} onClick={() => setForms(f => ({ ...f, [channel]: { ...f[channel], type: id } }))}
                           className="h-full px-3 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors"
                           style={{
@@ -443,7 +445,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
                     <NumberInput
                       value={forms[channel].value}
                       onChange={v => setForms(f => ({ ...f, [channel]: { ...f[channel], value: v } }))}
-                      placeholder={forms[channel].type === 'percent' ? 'cth. 3' : 'cth. 2000'}
+                      placeholder={forms[channel].type === 'percent' ? 'cth. 3' : forms[channel].type === 'monthly' ? 'cth. 150000' : 'cth. 2000'}
                       style={{ width: '100%', height: FORM_CTRL_H, boxSizing: 'border-box' }}
                     />
                   </div>
@@ -460,6 +462,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
                 </div>
                 <p className="px-5 pb-4 text-xs" style={{ color: 'var(--text-muted)', marginTop: -12 }}>
                   Rate berlaku untuk transaksi mulai tanggal ini — bisa dimundurkan untuk mencakup transaksi yang sudah terjadi di periode berjalan.
+                  {channel === 'lapak' && ' Untuk Lapak, tipe Bulanan = satu nominal tetap per bulan (selama bulan itu ada penjualan lapak), tanpa biaya per transaksi.'}
                 </p>
 
                 {expandedHistory === channel && (
@@ -481,7 +484,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
                                 {isCurrent && <span className="badge badge-green">Aktif</span>}
                                 {isCurrent ? 'Efektif' : 'Sebelumnya'} {fmtDate(r.effectiveFrom)} · {fmtTime(r.createdAt)}
                               </span>
-                              <span className="font-bold text-center" style={{ color: isCurrent ? 'var(--accent)' : 'var(--text-primary)' }}>{r.type === 'percent' ? `${r.value}%` : formatRp(r.value)}</span>
+                              <span className="font-bold text-center" style={{ color: isCurrent ? 'var(--accent)' : 'var(--text-primary)' }}>{rateLabel(r)}</span>
                               <span className="text-right" style={{ color: 'var(--text-muted)' }}>oleh {r.createdBy}</span>
                             </div>
                           );

@@ -23,15 +23,17 @@ function dayFloorMillis(d: Date): number {
 // terbaru. Ini mengikuti pola snapshot costPrice yang sudah dipakai di orders/route.ts dan
 // consignment/recap/route.ts untuk alasan yang sama: histori tidak boleh berubah retroaktif.
 
-export type AdminFeeChannel = 'online' | 'kasir' | 'consignment';
-export type AdminFeeType = 'percent' | 'fixed';
+export type AdminFeeChannel = 'online' | 'kasir' | 'consignment' | 'lapak';
+// monthly = nominal tetap per BULAN (bukan per transaksi) — hanya untuk channel 'lapak'.
+export type AdminFeeType = 'percent' | 'fixed' | 'monthly';
 
-export const ADMIN_FEE_CHANNELS: AdminFeeChannel[] = ['online', 'kasir', 'consignment'];
+export const ADMIN_FEE_CHANNELS: AdminFeeChannel[] = ['online', 'kasir', 'consignment', 'lapak'];
 
 export const ADMIN_FEE_CHANNEL_LABELS: Record<AdminFeeChannel, string> = {
   online: 'Penjualan Online',
   kasir: 'POS / Kasir',
   consignment: 'Konsinyasi',
+  lapak: 'Lapak (Titip Jual)',
 };
 
 export interface AdminFeeRate {
@@ -66,7 +68,7 @@ export async function getRateHistory(channel: AdminFeeChannel, pgTx?: PgClient):
 export async function getAllRateHistories(pgTx?: PgClient): Promise<Record<AdminFeeChannel, AdminFeeRate[]>> {
   const sql = pgTx ?? getSql();
   const rows = await sql<RateRow[]>`select * from admin_fee_rates order by channel, effective_from asc, created_at asc`;
-  const byChannel: Record<AdminFeeChannel, AdminFeeRate[]> = { online: [], kasir: [], consignment: [] };
+  const byChannel = Object.fromEntries(ADMIN_FEE_CHANNELS.map(c => [c, [] as AdminFeeRate[]])) as Record<AdminFeeChannel, AdminFeeRate[]>;
   for (const r of rows) byChannel[r.channel].push(rowToRate(r));
   return byChannel;
 }
@@ -88,6 +90,8 @@ export function rateAtTime(history: AdminFeeRate[], when: Date): AdminFeeRate | 
 // yang ikut tersimpan apa adanya ke invoice.
 export function computeFee(revenue: number, rate: AdminFeeRate | null): number {
   if (!rate) return 0;
+  // Tarif bulanan tidak dikenakan per transaksi — ditagih sekali per bulan (lihat buildLapakFeeSource).
+  if (rate.type === 'monthly') return 0;
   return rate.type === 'percent' ? Math.round(revenue * rate.value / 100) : rate.value;
 }
 
@@ -103,6 +107,36 @@ interface RecapDoc { totalRevenue?: number; paymentStatus?: string; createdAt?: 
 const isCountedOrder = (o: OrderDoc) =>
   (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan';
 const isCountedRecap = (r: RecapDoc) => r.paymentStatus !== 'belum_lunas';
+
+export interface LapakSaleInput { id: string; label: string; total: number; createdAt: Date }
+export interface FeeSourceItem { id: string; revenue: number; createdAt?: Date; label: string; fee?: number }
+
+const MONTH_NAMES = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+// Biaya admin channel Lapak: tiap penjualan lapak adalah satu transaksi (persen/nominal per
+// transaksi, memakai tarif yang berlaku saat itu). Kalau tarif yang berlaku 'monthly', penjualannya
+// tidak dikenai biaya per transaksi; sebagai gantinya ditambahkan SATU baris biaya bulanan per bulan
+// kalender WIB yang punya penjualan lapak. Id baris bulanan ('lapak-month:YYYY-MM') ikut tersimpan di
+// invoice sebagai "sudah ditagihkan", jadi laporan lain yang mencakup bulan yang sama tidak menagih
+// ulang. Revenue baris bulanan 0 supaya omzet tidak terhitung dobel dengan baris penjualannya.
+export function buildLapakFeeSource(sales: LapakSaleInput[], history: AdminFeeRate[]): FeeSourceItem[] {
+  const items: FeeSourceItem[] = [];
+  const months = new Map<string, { first: Date; rate: AdminFeeRate }>();
+  for (const s of sales) {
+    const rate = rateAtTime(history, s.createdAt);
+    if (rate?.type === 'monthly') {
+      const key = wibDateKey(s.createdAt).slice(0, 7);
+      const cur = months.get(key);
+      if (!cur || s.createdAt < cur.first) months.set(key, { first: s.createdAt, rate });
+    }
+    items.push({ id: s.id, revenue: s.total, createdAt: s.createdAt, label: s.label, fee: computeFee(s.total, rate) });
+  }
+  for (const [key, m] of [...months].sort(([a], [b]) => a.localeCompare(b))) {
+    const [y, mo] = key.split('-');
+    items.push({ id: `lapak-month:${key}`, revenue: 0, createdAt: m.first, label: `Biaya bulanan lapak — ${MONTH_NAMES[Number(mo) - 1]} ${y}`, fee: m.rate.value });
+  }
+  return items;
+}
 
 export interface AdminFeeTransaction {
   id: string; label: string;
@@ -159,10 +193,13 @@ async function getInvoicedTransactionMap(pgTx?: PgClient): Promise<Map<string, {
 export async function computeReport(from: string, to: string, pgTx?: PgClient): Promise<AdminFeeReport> {
   interface OrderRow { id: string; total: string; source: string; status: string; payment_status: string; created_at: Date; invoice_no: string | null; customer_name: string }
   interface RecapRow { id: string; total_revenue: string; payment_status: string; created_at: Date; location_name: string }
+  interface LapakRow { id: string; invoice_no: string; stall_name: string; total: string; created_at: Date }
   const sql = pgTx ?? getSql();
-  const [orderRows, recapRows, rateHistories, invoicedMap] = await Promise.all([
+  const [orderRows, recapRows, lapakRows, rateHistories, invoicedMap] = await Promise.all([
     sql<OrderRow[]>`select id, total, source, status, payment_status, created_at, invoice_no, customer_name from orders where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
     sql<RecapRow[]>`select id, total_revenue, payment_status, created_at, location_name from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
+    // Penjualan Kasir Lapak (tabel terpisah dari orders); yang dibatalkan tidak ditagih.
+    sql<LapakRow[]>`select id, invoice_no, stall_name, total, created_at from stall_sales where status = 'paid' and created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
     getAllRateHistories(pgTx),
     getInvoicedTransactionMap(pgTx),
   ]);
@@ -180,13 +217,18 @@ export async function computeReport(from: string, to: string, pgTx?: PgClient): 
   const breakdown: AdminFeeChannelBreakdown[] = ADMIN_FEE_CHANNELS.map(channel => {
     const history = rateHistories[channel];
     const currentRate = rateAtTime(history, now);
-    let source: { id: string; revenue: number; createdAt?: Date; label: string }[];
+    let source: FeeSourceItem[];
     if (channel === 'online') {
       source = orders.filter(o => o.source === 'portal')
         .map(o => ({ id: o.id, revenue: o.total ?? 0, createdAt: o.createdAt, label: o.invoiceNo ?? o.customerName ?? o.id }));
     } else if (channel === 'kasir') {
       source = orders.filter(o => o.source !== 'portal')
         .map(o => ({ id: o.id, revenue: o.total ?? 0, createdAt: o.createdAt, label: o.invoiceNo ?? o.customerName ?? o.id }));
+    } else if (channel === 'lapak') {
+      source = buildLapakFeeSource(
+        lapakRows.map(r => ({ id: r.id, label: `${r.invoice_no} · ${r.stall_name}`, total: Number(r.total), createdAt: r.created_at })),
+        history,
+      );
     } else {
       source = recaps.map(r => ({ id: r.id, revenue: r.totalRevenue ?? 0, createdAt: r.createdAt, label: r.locationName ?? r.id }));
     }
@@ -197,7 +239,7 @@ export async function computeReport(from: string, to: string, pgTx?: PgClient): 
       return {
         id: t.id, label: t.label,
         createdAt: t.createdAt ? { seconds: Math.floor(t.createdAt.getTime() / 1000) } : null,
-        revenue: t.revenue, feeAmount: computeFee(t.revenue, rate),
+        revenue: t.revenue, feeAmount: t.fee ?? computeFee(t.revenue, rate),
         invoiceId: invoiced?.invoiceId ?? null, invoiceNo: invoiced?.invoiceNo ?? null,
       };
     });
