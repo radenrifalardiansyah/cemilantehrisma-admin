@@ -28,6 +28,7 @@ import ReviewsTab from '@/components/tabs/ReviewsTab';
 import StockTab     from '@/components/tabs/StockTab';
 import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
+import TitipJualTab  from '@/components/tabs/TitipJualTab';
 import ProcurementReportTab from '@/components/tabs/ProcurementReportTab';
 import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
@@ -1516,6 +1517,7 @@ export default function AdminPage() {
           highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
           onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
       )}
+      {activeTab === 'consign'    && <TitipJualTab  creds={creds} can={(a: Action) => can('consign', a)} />}
       {activeTab === 'income'     && <IncomeTab     creds={creds} />}
       {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
       {activeTab === 'capital'    && <CapitalTab    creds={creds} />}
