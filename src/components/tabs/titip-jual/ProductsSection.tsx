@@ -1,15 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Package, Plus, Pencil, Trash2, Loader2, Search } from 'lucide-react';
-import Tooltip from '@/components/Tooltip';
-import EmptyAddCard from '@/components/EmptyAddCard';
+import { Package } from 'lucide-react';
+import FilterSelect from '@/components/FilterSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText, type ShareScheme } from '@/lib/consign';
-import Pager from './Pager';
+import DataList, { RowActions, initials, type ExportCol } from './DataList';
 import {
-  API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, usePaged, rupiah, qtyText, effectiveFor,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, rupiah, qtyText, effectiveFor,
   type SectionProps, type CProduct,
 } from './shared';
 
@@ -24,32 +23,25 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
-  const [search, setSearch] = useState('');
   const [consignorFilter, setConsignorFilter] = useState('');
   const [stallFilter, setStallFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [editing, setEditing] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const consignorById = new Map(data.consignors.map(c => [c.id, c]));
+  const stallById = new Map(data.stalls.map(s => [s.id, s]));
   const itemsByProduct = new Map<string, typeof data.stallItems>();
   for (const i of data.stallItems) {
     const arr = itemsByProduct.get(i.productId) ?? [];
     arr.push(i); itemsByProduct.set(i.productId, arr);
   }
-  const stallById = new Map(data.stalls.map(s => [s.id, s]));
 
-  const q = search.trim().toLowerCase();
-  const filtered = data.products
+  const items = data.products
     .filter(p => !consignorFilter || p.consignorId === consignorFilter)
     .filter(p => !stallFilter || (itemsByProduct.get(p.id) ?? []).some(i => i.stallId === stallFilter))
-    .filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
-      || (consignorById.get(p.consignorId)?.name ?? '').toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
-  const { rows, safePage, totalPages } = usePaged(filtered, page, pageSize);
 
   const blankStalls = (): Record<string, StallCfg> =>
     Object.fromEntries(data.stalls.map(s => [s.id, { enabled: false, price: '', scheme: null, schemeValue: null }]));
@@ -88,20 +80,28 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     });
     if (r.ok) {
       await reload(); setEditing(null);
-      toast.success(editing.id ? 'Produk diperbarui.' : 'Produk titipan ditambahkan.');
+      toast.success(editing.id ? 'Produk berhasil diperbarui.' : 'Produk titipan berhasil ditambahkan.');
     } else {
-      setError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan produk.');
+      const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan produk.';
+      setError(msg); toast.error(msg);
     }
     setSaving(false);
   };
 
   const del = async (p: CProduct) => {
-    if (!await confirm({ message: `Hapus produk titipan "${p.name}"?`, danger: true })) return;
+    if (!await confirm({ message: `Hapus produk titipan "${p.name}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setDeletingId(p.id);
     const r = await fetch(`${API}/api/consign/products/${p.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await reload(); toast.success('Produk dihapus.'); }
+    if (r.ok) { await reload(); toast.success(`Produk "${p.name}" berhasil dihapus.`); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menghapus produk.');
     setDeletingId(null);
+  };
+
+  const bulkDelete = async (ids: string[]) => {
+    const res = await deleteMany('/api/consign/products', ids, headers);
+    await reload();
+    if (res.deleted > 0) toast.success(`${res.deleted} produk berhasil dihapus.${res.failed ? ` ${res.failed} dilewati (sudah punya stok/riwayat).` : ''}`);
+    else toast.error(res.firstError || 'Gagal menghapus produk yang dipilih.');
   };
 
   const setStall = (stallId: string, patch: Partial<StallCfg>) =>
@@ -109,98 +109,65 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
 
   const editConsignor = editing ? consignorById.get(editing.consignorId) : undefined;
   const editPrice = Number(editing?.defaultPrice) || 0;
-  const needSetup = data.consignors.length === 0;
+
+  const stallSummary = (p: CProduct) => (itemsByProduct.get(p.id) ?? [])
+    .map(i => `${stallById.get(i.stallId)?.name ?? '?'}: ${qtyText(i.stockQty)} @ ${rupiah(effectiveFor(p, consignorById.get(p.consignorId), i).price)}`).join('; ');
+  const cols: ExportCol<CProduct>[] = [
+    { header: 'Kode', width: '8%', value: p => p.code },
+    { header: 'Produk', width: '16%', bold: true, value: p => p.name },
+    { header: 'Penitip', width: '13%', value: p => consignorById.get(p.consignorId)?.name ?? '-' },
+    { header: 'Satuan', width: '6%', value: p => p.unit },
+    { header: 'Harga Default', width: '11%', align: 'right', value: p => rupiah(p.defaultPrice) },
+    { header: 'Bagi Hasil', width: '13%', value: p => schemeText(effectiveFor(p, consignorById.get(p.consignorId), undefined).spec) },
+    { header: 'Lapak (stok @ harga)', width: '25%', value: p => stallSummary(p) || '-' },
+    { header: 'Status', width: '8%', value: p => p.isActive ? 'Aktif' : 'Nonaktif' },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        {data.products.length > 0 && (
-          <div className="relative flex-1 min-w-0">
-            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input className="input text-sm w-full" style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder="Cari produk, kode, atau penitip…"
-              value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-          </div>
+      <DataList<CProduct>
+        creds={creds} items={items} totalCount={data.products.length} getId={p => p.id} noun="produk"
+        searchText={p => `${p.name} ${p.code} ${consignorById.get(p.consignorId)?.name ?? ''}`}
+        searchPlaceholder="Cari produk, kode, atau penitip…" viewKey="consign-products" resetKey={`${consignorFilter}|${stallFilter}`}
+        addLabel={can('create') ? 'Tambah Produk' : undefined} onAdd={can('create') ? openNew : undefined}
+        emptyHint="Produk titipan = barang milik penitip yang dijual di lapak. Tambahkan penitip & lapak dulu di tabnya."
+        avatar={p => initials(p.name)}
+        filters={(
+          <>
+            <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
+              options={[{ value: '', label: 'Semua penitip' }, ...data.consignors.map(c => ({ value: c.id, label: c.name }))]} />
+            <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
+              options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(s => ({ value: s.id, label: s.name }))]} />
+          </>
         )}
-        <div className="flex items-center gap-2">
-          {data.products.length > 0 && (
+        renderBody={p => {
+          const c = consignorById.get(p.consignorId);
+          const its = itemsByProduct.get(p.id) ?? [];
+          const base = effectiveFor(p, c, undefined);
+          return (
             <>
-              <select className="input text-sm" style={{ height: HEADER_BTN_H, padding: '0 10px', width: 'auto' }} value={consignorFilter}
-                onChange={e => { setConsignorFilter(e.target.value); setPage(1); }}>
-                <option value="">Semua penitip</option>
-                {data.consignors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <select className="input text-sm" style={{ height: HEADER_BTN_H, padding: '0 10px', width: 'auto' }} value={stallFilter}
-                onChange={e => { setStallFilter(e.target.value); setPage(1); }}>
-                <option value="">Semua lapak</option>
-                {data.stalls.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </>
-          )}
-          {can('create') && data.products.length > 0 && (
-            <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-              <Plus size={13} /> <span className="hidden sm:inline">Tambah Produk</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {data.products.length === 0 ? (
-        needSetup
-          ? <div className="card py-12 text-center"><p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tambahkan Penitip terlebih dahulu di tab Penitip, lalu kembali ke sini.</p></div>
-          : <EmptyAddCard label="Tambah Produk Titipan" onClick={openNew} />
-      ) : rows.length === 0 ? (
-        <div className="card py-12 text-center"><p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada produk yang cocok.</p></div>
-      ) : (
-        <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-          {rows.map((p, idx) => {
-            const c = consignorById.get(p.consignorId);
-            const items = itemsByProduct.get(p.id) ?? [];
-            const base = effectiveFor(p, c, undefined);
-            return (
-              <div key={p.id} className="px-4 py-3.5" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
-                      <Badge>{p.code}</Badge>
-                      {!p.isActive && <Badge tone="danger">Nonaktif</Badge>}
-                    </div>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {c?.name ?? '—'} · {rupiah(base.price)}/{p.unit} · {schemeText(base.spec)}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      {items.length === 0 && <Badge>Belum ada lapak</Badge>}
-                      {items.map(i => {
-                        const e = effectiveFor(p, c, i);
-                        return (
-                          <Badge key={i.id} tone={i.stockQty > 0 ? 'ok' : 'muted'}>
-                            {stallById.get(i.stallId)?.name ?? '?'}: {qtyText(i.stockQty)} · {rupiah(e.price)}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {can('edit') && (
-                      <Tooltip label="Edit"><button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Pencil size={13} /></button></Tooltip>
-                    )}
-                    {can('delete') && (
-                      <Tooltip label="Hapus">
-                        <button onClick={() => del(p)} disabled={deletingId === p.id} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                          {deletingId === p.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
-                      </Tooltip>
-                    )}
-                  </div>
-                </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
+                <Badge>{p.code}</Badge>
+                {!p.isActive && <Badge tone="danger">Nonaktif</Badge>}
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      <Pager total={filtered.length} noun="produk" page={safePage} totalPages={totalPages} pageSize={pageSize}
-        onPage={p => setPage(Math.max(1, Math.min(p, totalPages)))} onPageSize={n => { setPageSize(n); setPage(1); }} />
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c?.name ?? '—'} · {rupiah(base.price)}/{p.unit} · {schemeText(base.spec)}</p>
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                {its.length === 0 && <Badge>Belum ada lapak</Badge>}
+                {its.map(i => (
+                  <Badge key={i.id} tone={i.stockQty > 0 ? 'ok' : 'muted'}>
+                    {stallById.get(i.stallId)?.name ?? '?'}: {qtyText(i.stockQty)} · {rupiah(effectiveFor(p, c, i).price)}
+                  </Badge>
+                ))}
+              </div>
+            </>
+          );
+        }}
+        actions={p => <RowActions onEdit={can('edit') ? () => openEdit(p) : undefined}
+          onDelete={can('delete') ? () => del(p) : undefined} deleting={deletingId === p.id} />}
+        onBulkDelete={can('delete') ? bulkDelete : undefined}
+        exportCols={cols} exportTitle="DAFTAR PRODUK TITIP JUAL" exportFile="produk-titip-jual"
+      />
 
       {editing && (
         <ModalShell title={editing.id ? 'Edit Produk Titipan' : 'Tambah Produk Titipan'} subtitle="Harga & bagi hasil per lapak"
@@ -210,7 +177,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Field label="Penitip" required>
               <select className="input" value={editing.consignorId} onChange={e => setEditing({ ...editing, consignorId: e.target.value })}>
-                <option value="">— Pilih penitip —</option>
+                <option value="">{data.consignors.length === 0 ? '— Belum ada penitip (tambah di tab Penitip) —' : '— Pilih penitip —'}</option>
                 {data.consignors.filter(c => c.isActive || c.id === editing.consignorId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </Field>

@@ -1,15 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, Plus, Pencil, Trash2, Loader2, Search } from 'lucide-react';
-import Tooltip from '@/components/Tooltip';
-import EmptyAddCard from '@/components/EmptyAddCard';
+import { Users } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText } from '@/lib/consign';
-import Pager from './Pager';
+import DataList, { RowActions, initials, type ExportCol } from './DataList';
 import {
-  API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, usePaged,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany,
   type SectionProps, type Consignor,
 } from './shared';
 
@@ -22,9 +20,6 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [editing, setEditing] = useState<(Omit<Consignor, 'id' | 'code'> & { id?: string }) | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -33,11 +28,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
   const productCount = new Map<string, number>();
   for (const p of data.products) productCount.set(p.consignorId, (productCount.get(p.consignorId) ?? 0) + 1);
 
-  const q = search.trim().toLowerCase();
-  const filtered = data.consignors
-    .filter(c => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q) || c.phone.includes(q))
-    .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
-  const { rows, safePage, totalPages } = usePaged(filtered, page, pageSize);
+  const items = [...data.consignors].sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
 
   const save = async () => {
     if (!editing) return;
@@ -47,84 +38,72 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
     });
     if (r.ok) {
       await reload(); setEditing(null);
-      toast.success(editing.id ? 'Penitip diperbarui.' : 'Penitip ditambahkan.');
+      toast.success(editing.id ? 'Penitip berhasil diperbarui.' : 'Penitip berhasil ditambahkan.');
     } else {
-      setError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan penitip.');
+      const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan penitip.';
+      setError(msg); toast.error(msg);
     }
     setSaving(false);
   };
 
   const del = async (c: Consignor) => {
-    if (!await confirm({ message: `Hapus penitip "${c.name}"?`, danger: true })) return;
+    if (!await confirm({ message: `Hapus penitip "${c.name}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setDeletingId(c.id);
     const r = await fetch(`${API}/api/consignors/${c.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await reload(); toast.success('Penitip dihapus.'); }
+    if (r.ok) { await reload(); toast.success(`Penitip "${c.name}" berhasil dihapus.`); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menghapus penitip.');
     setDeletingId(null);
   };
+
+  const bulkDelete = async (ids: string[]) => {
+    const res = await deleteMany('/api/consignors', ids, headers);
+    await reload();
+    if (res.deleted > 0) toast.success(`${res.deleted} penitip berhasil dihapus.${res.failed ? ` ${res.failed} dilewati (sudah punya produk/riwayat).` : ''}`);
+    else toast.error(res.firstError || 'Gagal menghapus penitip yang dipilih.');
+  };
+
+  const cols: ExportCol<Consignor>[] = [
+    { header: 'Kode', width: '8%', value: c => c.code },
+    { header: 'Nama', width: '16%', bold: true, value: c => c.name },
+    { header: 'Telepon', width: '12%', value: c => c.phone || '-' },
+    { header: 'Bagi Hasil', width: '14%', value: c => schemeText({ scheme: c.scheme, value: c.schemeValue }) },
+    { header: 'Produk', width: '7%', align: 'center', value: c => productCount.get(c.id) ?? 0 },
+    { header: 'Bank', width: '14%', value: c => [c.bankName, c.bankAccount].filter(Boolean).join(' ') || '-' },
+    { header: 'Atas Nama', width: '12%', value: c => c.bankHolder || '-' },
+    { header: 'Status', width: '8%', value: c => c.isActive ? 'Aktif' : 'Nonaktif' },
+  ];
 
   const openNew = () => { setError(''); setEditing({ ...EMPTY }); };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 sm:gap-3">
-        {data.consignors.length > 0 && (
-          <div className="relative flex-1 min-w-0">
-            <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input className="input text-sm w-full" style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder="Cari nama, kode, atau telepon…"
-              value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-          </div>
-        )}
-        {can('create') && data.consignors.length > 0 && (
-          <button onClick={openNew} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Tambah Penitip</span>
-          </button>
-        )}
-      </div>
-
-      {data.consignors.length === 0 ? (
-        <EmptyAddCard label="Tambah Penitip" onClick={openNew} hint="Penitip = pihak luar yang menitipkan barangnya untuk dijual di lapak kita." />
-      ) : rows.length === 0 ? (
-        <div className="card py-12 text-center"><p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada penitip yang cocok.</p></div>
-      ) : (
-        <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-          {rows.map((c, idx) => (
-            <div key={c.id} className="flex items-center gap-3 px-4 py-3.5" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
-                  <Badge>{c.code}</Badge>
-                  {!c.isActive && <Badge tone="danger">Nonaktif</Badge>}
-                </div>
-                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                  {[c.phone, c.bankName && `${c.bankName} ${c.bankAccount}`].filter(Boolean).join(' · ') || 'Tanpa kontak'}
-                </p>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <Badge tone="accent">{schemeText({ scheme: c.scheme, value: c.schemeValue })}</Badge>
-                  <Badge>{productCount.get(c.id) ?? 0} produk</Badge>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {can('edit') && (
-                  <Tooltip label="Edit">
-                    <button onClick={() => { setError(''); setEditing({ ...c }); }} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Pencil size={13} /></button>
-                  </Tooltip>
-                )}
-                {can('delete') && (
-                  <Tooltip label="Hapus">
-                    <button onClick={() => del(c)} disabled={deletingId === c.id} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                      {deletingId === c.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                    </button>
-                  </Tooltip>
-                )}
-              </div>
+      <DataList<Consignor>
+        creds={creds} items={items} totalCount={data.consignors.length} getId={c => c.id} noun="penitip"
+        searchText={c => `${c.name} ${c.code} ${c.phone}`} searchPlaceholder="Cari nama, kode, atau telepon…" viewKey="consign-consignors"
+        addLabel={can('create') ? 'Tambah Penitip' : undefined} onAdd={can('create') ? openNew : undefined}
+        emptyHint="Penitip = pihak luar yang menitipkan barangnya untuk dijual di lapak kita."
+        avatar={c => initials(c.name)}
+        renderBody={c => (
+          <>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
+              <Badge>{c.code}</Badge>
+              {!c.isActive && <Badge tone="danger">Nonaktif</Badge>}
             </div>
-          ))}
-        </div>
-      )}
-
-      <Pager total={filtered.length} noun="penitip" page={safePage} totalPages={totalPages} pageSize={pageSize}
-        onPage={p => setPage(Math.max(1, Math.min(p, totalPages)))} onPageSize={n => { setPageSize(n); setPage(1); }} />
+            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+              {[c.phone, c.bankName && `${c.bankName} ${c.bankAccount}`].filter(Boolean).join(' · ') || 'Tidak ada kontak'}
+            </p>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <Badge tone="accent">{schemeText({ scheme: c.scheme, value: c.schemeValue })}</Badge>
+              <Badge>{productCount.get(c.id) ?? 0} produk</Badge>
+            </div>
+          </>
+        )}
+        actions={c => <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...c }); } : undefined}
+          onDelete={can('delete') ? () => del(c) : undefined} deleting={deletingId === c.id} />}
+        onBulkDelete={can('delete') ? bulkDelete : undefined}
+        exportCols={cols} exportTitle="DAFTAR PENITIP" exportFile="penitip"
+      />
 
       {editing && (
         <ModalShell title={editing.id ? 'Edit Penitip' : 'Tambah Penitip'} subtitle="Pihak luar yang menitipkan barang"

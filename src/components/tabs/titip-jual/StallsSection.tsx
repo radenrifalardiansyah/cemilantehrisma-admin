@@ -1,12 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Store, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
-import Tooltip from '@/components/Tooltip';
-import EmptyAddCard from '@/components/EmptyAddCard';
+import { Store } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
-import { API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, type SectionProps, type Stall } from './shared';
+import DataList, { RowActions, initials, type ExportCol } from './DataList';
+import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, deleteMany, type SectionProps, type Stall } from './shared';
 
 const EMPTY: Omit<Stall, 'id' | 'code'> = { name: '', address: '', warehouseId: '', note: '', isActive: true };
 
@@ -30,75 +29,70 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
     });
     if (r.ok) {
       await reload(); setEditing(null);
-      toast.success(editing.id ? 'Lapak diperbarui.' : 'Lapak ditambahkan.');
+      toast.success(editing.id ? 'Lapak berhasil diperbarui.' : 'Lapak berhasil ditambahkan.');
     } else {
-      setError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan lapak.');
+      const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan lapak.';
+      setError(msg); toast.error(msg);
     }
     setSaving(false);
   };
 
   const del = async (s: Stall) => {
-    if (!await confirm({ message: `Hapus lapak "${s.name}"?`, danger: true })) return;
+    if (!await confirm({ message: `Hapus lapak "${s.name}"? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
     setDeletingId(s.id);
     const r = await fetch(`${API}/api/stalls/${s.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await reload(); toast.success('Lapak dihapus.'); }
+    if (r.ok) { await reload(); toast.success(`Lapak "${s.name}" berhasil dihapus.`); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menghapus lapak.');
     setDeletingId(null);
   };
+
+  const bulkDelete = async (ids: string[]) => {
+    const res = await deleteMany('/api/stalls', ids, headers);
+    await reload();
+    if (res.deleted > 0) toast.success(`${res.deleted} lapak berhasil dihapus.${res.failed ? ` ${res.failed} dilewati (sudah punya data titipan).` : ''}`);
+    else toast.error(res.firstError || 'Gagal menghapus lapak yang dipilih.');
+  };
+
+  const items = [...data.stalls].sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+  const whName = (id: string) => data.warehouses.find(w => w.id === id)?.name ?? '';
+  const cols: ExportCol<Stall>[] = [
+    { header: 'Kode', width: '9%', value: s => s.code },
+    { header: 'Nama', width: '20%', bold: true, value: s => s.name },
+    { header: 'Alamat', width: '28%', value: s => s.address || '-' },
+    { header: 'Gudang', width: '15%', value: s => whName(s.warehouseId) || '-' },
+    { header: 'Stok Titipan', width: '12%', align: 'right', value: s => stockByStall.get(s.id) ?? 0 },
+    { header: 'Status', width: '10%', value: s => s.isActive ? 'Aktif' : 'Nonaktif' },
+  ];
 
   const openNew = () => { setError(''); setEditing({ ...EMPTY }); };
 
   return (
     <div className="space-y-4">
-      {can('create') && data.stalls.length > 0 && (
-        <div className="flex justify-end">
-          <button onClick={openNew} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}>
-            <Plus size={13} /> <span className="hidden sm:inline">Tambah Lapak</span>
-          </button>
-        </div>
-      )}
-
-      {data.stalls.length === 0 ? (
-        <EmptyAddCard label="Tambah Lapak" onClick={openNew} hint="Lapak = tempat barang titipan dijual (lapak 1, 2, 3, dst)." />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {data.stalls.map(s => {
-            const wh = data.warehouses.find(w => w.id === s.warehouseId);
-            return (
-              <div key={s.id} className="card p-4 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
-                      <Badge>{s.code}</Badge>
-                      {!s.isActive && <Badge tone="danger">Nonaktif</Badge>}
-                    </div>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.address || 'Tanpa alamat'}</p>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {can('edit') && (
-                      <Tooltip label="Edit">
-                        <button onClick={() => { setError(''); setEditing({ ...s }); }} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}><Pencil size={13} /></button>
-                      </Tooltip>
-                    )}
-                    {can('delete') && (
-                      <Tooltip label="Hapus">
-                        <button onClick={() => del(s)} disabled={deletingId === s.id} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                          {deletingId === s.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
-                      </Tooltip>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <Badge tone="accent">Stok titipan: {(stockByStall.get(s.id) ?? 0).toLocaleString('id-ID')}</Badge>
-                  {wh && <Badge>Gudang: {wh.name}</Badge>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <DataList<Stall>
+        creds={creds} items={items} totalCount={data.stalls.length} getId={s => s.id} noun="lapak"
+        searchText={s => `${s.name} ${s.code} ${s.address}`} searchPlaceholder="Cari nama, kode, atau alamat…" viewKey="consign-stalls"
+        addLabel={can('create') ? 'Tambah Lapak' : undefined} onAdd={can('create') ? openNew : undefined}
+        emptyHint="Lapak = tempat barang titipan dijual (lapak 1, 2, 3, dst)."
+        avatar={s => initials(s.name)}
+        renderBody={s => (
+          <>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
+              <Badge>{s.code}</Badge>
+              {!s.isActive && <Badge tone="danger">Nonaktif</Badge>}
+            </div>
+            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{s.address || 'Tanpa alamat'}</p>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <Badge tone="accent">Stok titipan: {(stockByStall.get(s.id) ?? 0).toLocaleString('id-ID')}</Badge>
+              {whName(s.warehouseId) && <Badge>Gudang: {whName(s.warehouseId)}</Badge>}
+            </div>
+          </>
+        )}
+        actions={s => <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...s }); } : undefined}
+          onDelete={can('delete') ? () => del(s) : undefined} deleting={deletingId === s.id} />}
+        onBulkDelete={can('delete') ? bulkDelete : undefined}
+        exportCols={cols} exportTitle="DAFTAR LAPAK" exportFile="lapak"
+      />
 
       {editing && (
         <ModalShell title={editing.id ? 'Edit Lapak' : 'Tambah Lapak'} subtitle="Tempat barang titipan dijual"

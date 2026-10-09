@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
+import TopbarPortal from '@/components/TopbarPortal';
+import Tooltip from '@/components/Tooltip';
 import type { Action } from '@/types/rbac';
 import {
   API, type TitipJualData, type Stall, type Consignor, type CProduct, type StallItem, type Warehouse,
@@ -14,12 +17,12 @@ import ReceiptsSection from './titip-jual/ReceiptsSection';
 
 type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts';
 
-const SUB_TABS: { id: SubTab; label: string }[] = [
-  { id: 'products', label: 'Produk' },
-  { id: 'consignors', label: 'Penitip' },
-  { id: 'stalls', label: 'Lapak' },
-  { id: 'stock', label: 'Stok per Lapak' },
-  { id: 'receipts', label: 'Terima & Retur' },
+const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
+  { id: 'products', label: 'Produk', Icon: Package },
+  { id: 'consignors', label: 'Penitip', Icon: Users },
+  { id: 'stalls', label: 'Lapak', Icon: Store },
+  { id: 'stock', label: 'Stok per Lapak', Icon: Boxes },
+  { id: 'receipts', label: 'Terima & Retur', Icon: ArrowLeftRight },
 ];
 
 // Titip Jual: pihak luar menitipkan barang untuk dijual di lapak kita. Tahap 1 = data induk
@@ -56,20 +59,36 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
   const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a) };
 
   return (
-    <div className="p-4 lg:p-6 space-y-5">
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {SUB_TABS.map(t => (
-          <button key={t.id} onClick={() => setSub(t.id)}
-            className={`${sub === t.id ? 'btn-primary' : 'btn-ghost'} text-xs flex-shrink-0 whitespace-nowrap`} style={{ height: 34 }}>
-            {t.label}
+    <div className="flex flex-col h-full">
+      <TopbarPortal>
+        <Tooltip label="Refresh">
+          <button onClick={() => { load(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center" title="Refresh">
+            <RefreshCw size={14} />
           </button>
-        ))}
+        </Tooltip>
+      </TopbarPortal>
+
+      <div className="flex-shrink-0 px-4 lg:px-6 pt-4">
+        <div className="inline-flex max-w-full rounded-xl overflow-x-auto no-scrollbar border" style={{ borderColor: 'var(--border)' }}>
+          {SUB_TABS.map(t => (
+            <button key={t.id} onClick={() => setSub(t.id)}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0"
+              style={sub === t.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+              <t.Icon size={13} /> {t.label}
+            </button>
+          ))}
+        </div>
       </div>
-      {sub === 'products' && <ProductsSection {...props} />}
-      {sub === 'consignors' && <ConsignorsSection {...props} />}
-      {sub === 'stalls' && <StallsSection {...props} />}
-      {sub === 'stock' && <StockSection {...props} />}
-      {sub === 'receipts' && <ReceiptsSection {...props} />}
+
+      <div className="flex-1 overflow-y-auto thin-scrollbar">
+        <div className="p-4 lg:p-6 animate-fade-up">
+          {sub === 'products' && <ProductsSection {...props} />}
+          {sub === 'consignors' && <ConsignorsSection {...props} />}
+          {sub === 'stalls' && <StallsSection {...props} />}
+          {sub === 'stock' && <StockSection {...props} />}
+          {sub === 'receipts' && <ReceiptsSection {...props} />}
+        </div>
+      </div>
     </div>
   );
 }

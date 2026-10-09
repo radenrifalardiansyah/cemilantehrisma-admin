@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PackagePlus, PackageMinus, Plus, Trash2, Loader2, Undo2 } from 'lucide-react';
+import { PackagePlus, PackageMinus, Trash2, Loader2, Undo2, Plus } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
+import FilterSelect from '@/components/FilterSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import DataList, { type ExportCol } from './DataList';
 import {
   API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, qtyText,
   type SectionProps, type Receipt,
@@ -19,11 +21,8 @@ const todayKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-async function fetchReceipts(creds: string, consignorId: string, stallId: string): Promise<Receipt[]> {
-  const qs = new URLSearchParams();
-  if (consignorId) qs.set('consignorId', consignorId);
-  if (stallId) qs.set('stallId', stallId);
-  const r = await fetch(`${API}/api/consign/receipts?${qs}`, { headers: { 'x-admin-auth': creds } });
+async function fetchReceipts(creds: string): Promise<Receipt[]> {
+  const r = await fetch(`${API}/api/consign/receipts`, { headers: { 'x-admin-auth': creds } });
   return r.ok ? ((await r.json()) as { receipts: Receipt[] }).receipts : [];
 }
 
@@ -34,19 +33,18 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
   const [receipts, setReceipts] = useState<Receipt[] | null>(null);
   const [consignorFilter, setConsignorFilter] = useState('');
   const [stallFilter, setStallFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState('');
   const [editing, setEditing] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  const loadReceipts = useCallback(async () => {
-    setReceipts(await fetchReceipts(creds, consignorFilter, stallFilter));
-  }, [creds, consignorFilter, stallFilter]);
+  const loadReceipts = useCallback(async () => { setReceipts(await fetchReceipts(creds)); }, [creds]);
   useEffect(() => {
     let alive = true;
-    fetchReceipts(creds, consignorFilter, stallFilter).then(d => { if (alive) setReceipts(d); });
+    fetchReceipts(creds).then(d => { if (alive) setReceipts(d); });
     return () => { alive = false; };
-  }, [creds, consignorFilter, stallFilter]);
+  }, [creds]);
 
   const open = (kind: 'in' | 'return') => {
     setError('');
@@ -72,9 +70,10 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
       const { docNumber } = await r.json() as { docNumber: string };
       await Promise.all([reload(), loadReceipts()]);
       setEditing(null);
-      toast.success(`${editing.kind === 'in' ? 'Barang diterima' : 'Retur dicatat'}: ${docNumber}`);
+      toast.success(`${editing.kind === 'in' ? 'Barang berhasil diterima' : 'Retur berhasil dicatat'}: ${docNumber}`);
     } else {
-      setError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan dokumen.');
+      const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan dokumen.';
+      setError(msg); toast.error(msg);
     }
     setSaving(false);
   };
@@ -83,7 +82,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     if (!await confirm({ message: `Batalkan ${rc.docNumber}? Stok akan dikembalikan seperti sebelum dokumen ini.`, danger: true })) return;
     setVoidingId(rc.id);
     const r = await fetch(`${API}/api/consign/receipts/${rc.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await Promise.all([reload(), loadReceipts()]); toast.success('Dokumen dibatalkan.'); }
+    if (r.ok) { await Promise.all([reload(), loadReceipts()]); toast.success(`${rc.docNumber} berhasil dibatalkan.`); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan dokumen.');
     setVoidingId(null);
   };
@@ -92,58 +91,69 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     && editing.lines.some(l => l.productId && Number(l.qty) > 0)
     && editing.lines.every(l => !l.productId || Number(l.qty) > 0);
 
+  if (receipts === null) return <PageLoader />;
+
+  const items = receipts
+    .filter(r => !consignorFilter || r.consignorId === consignorFilter)
+    .filter(r => !stallFilter || r.stallId === stallFilter)
+    .filter(r => !kindFilter || r.kind === kindFilter);
+
+  const cols: ExportCol<Receipt>[] = [
+    { header: 'No. Dokumen', width: '14%', bold: true, value: r => r.docNumber },
+    { header: 'Jenis', width: '8%', value: r => r.kind === 'in' ? 'Terima' : 'Retur' },
+    { header: 'Tanggal', width: '10%', value: r => r.docDate },
+    { header: 'Penitip', width: '14%', value: r => r.consignorName },
+    { header: 'Lapak', width: '10%', value: r => r.stallName },
+    { header: 'Barang', width: '28%', value: r => r.items.map(i => `${i.productName} x${qtyText(i.qty)}`).join(', ') },
+    { header: 'Total Qty', width: '8%', align: 'right', value: r => r.totalQty },
+    { header: 'Dibuat Oleh', width: '8%', value: r => r.createdBy || '-' },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        <div className="flex items-center gap-2 flex-1 flex-wrap">
-          <select className="input text-sm" style={{ height: HEADER_BTN_H, padding: '0 10px', width: 'auto' }} value={consignorFilter} onChange={e => setConsignorFilter(e.target.value)}>
-            <option value="">Semua penitip</option>
-            {data.consignors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select className="input text-sm" style={{ height: HEADER_BTN_H, padding: '0 10px', width: 'auto' }} value={stallFilter} onChange={e => setStallFilter(e.target.value)}>
-            <option value="">Semua lapak</option>
-            {data.stalls.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </div>
-        {can('create') && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => open('return')} className="btn-ghost text-xs" style={{ height: HEADER_BTN_H }}><PackageMinus size={13} /> Retur ke Penitip</button>
-            <button onClick={() => open('in')} className="btn-primary text-xs" style={{ height: HEADER_BTN_H }}><PackagePlus size={13} /> Terima Barang</button>
-          </div>
+      <DataList<Receipt>
+        creds={creds} items={items} totalCount={receipts.length} getId={r => r.id} noun="dokumen"
+        searchText={r => `${r.docNumber} ${r.consignorName} ${r.stallName} ${r.items.map(i => i.productName).join(' ')}`}
+        searchPlaceholder="Cari no. dokumen, penitip, lapak, atau produk…" viewKey="consign-receipts"
+        resetKey={`${consignorFilter}|${stallFilter}|${kindFilter}`}
+        addLabel={can('create') ? 'Terima Barang' : undefined} onAdd={can('create') ? () => open('in') : undefined}
+        emptyHint="Catat barang titipan yang masuk ke lapak, atau retur ke penitip."
+        filters={(
+          <>
+            <FilterSelect value={kindFilter} onChange={setKindFilter}
+              options={[{ value: '', label: 'Semua jenis' }, { value: 'in', label: 'Terima' }, { value: 'return', label: 'Retur' }]} />
+            <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
+              options={[{ value: '', label: 'Semua penitip' }, ...data.consignors.map(c => ({ value: c.id, label: c.name }))]} />
+            <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
+              options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(s => ({ value: s.id, label: s.name }))]} />
+          </>
         )}
-      </div>
-
-      {receipts === null ? <PageLoader /> : receipts.length === 0 ? (
-        <div className="card py-12 text-center"><p className="text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada dokumen terima barang / retur.</p></div>
-      ) : (
-        <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-          {receipts.map((rc, idx) => (
-            <div key={rc.id} className="flex items-start gap-3 px-4 py-3.5" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-sm font-bold font-mono" style={{ color: 'var(--text-primary)' }}>{rc.docNumber}</p>
-                  <Badge tone={rc.kind === 'in' ? 'ok' : 'accent'}>{rc.kind === 'in' ? 'Terima' : 'Retur'}</Badge>
-                  <Badge>{rc.stallName}</Badge>
-                </div>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {rc.docDate} · {rc.consignorName} · total {qtyText(rc.totalQty)}
-                </p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                  {rc.items.map(i => `${i.productName} ×${qtyText(i.qty)}`).join(', ')}
-                </p>
-                {rc.note && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{rc.note}</p>}
-              </div>
-              {can('delete') && (
-                <Tooltip label="Batalkan dokumen">
-                  <button onClick={() => voidDoc(rc)} disabled={voidingId === rc.id} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-                    {voidingId === rc.id ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-                  </button>
-                </Tooltip>
-              )}
+        headerExtra={can('create') ? (
+          <button onClick={() => open('return')} className="btn-ghost text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+            <PackageMinus size={13} /> <span className="hidden sm:inline">Retur ke Penitip</span>
+          </button>
+        ) : undefined}
+        renderBody={r => (
+          <>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-sm font-bold font-mono" style={{ color: 'var(--text-primary)' }}>{r.docNumber}</p>
+              <Badge tone={r.kind === 'in' ? 'ok' : 'accent'}>{r.kind === 'in' ? 'Terima' : 'Retur'}</Badge>
+              <Badge>{r.stallName}</Badge>
             </div>
-          ))}
-        </div>
-      )}
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.docDate} · {r.consignorName} · total {qtyText(r.totalQty)}</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.items.map(i => `${i.productName} ×${qtyText(i.qty)}`).join(', ')}</p>
+            {r.note && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{r.note}</p>}
+          </>
+        )}
+        actions={r => can('delete') ? (
+          <Tooltip label="Batalkan dokumen">
+            <button onClick={() => voidDoc(r)} disabled={voidingId === r.id} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+              {voidingId === r.id ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+            </button>
+          </Tooltip>
+        ) : null}
+        exportCols={cols} exportTitle="DOKUMEN TITIP JUAL (TERIMA & RETUR)" exportFile="dokumen-titip-jual"
+      />
 
       {editing && (
         <ModalShell title={editing.kind === 'in' ? 'Terima Barang Titipan' : 'Retur ke Penitip'}

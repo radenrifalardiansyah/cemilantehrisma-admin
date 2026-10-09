@@ -161,3 +161,15 @@ export function usePaged<T>(items: T[], page: number, pageSize: number) {
   const safePage = Math.min(page, totalPages);
   return { totalPages, safePage, rows: items.slice((safePage - 1) * pageSize, safePage * pageSize) };
 }
+
+// Hapus beberapa data lewat endpoint DELETE satuan; yang ditolak server (masih dipakai) dilewati
+// dan dilaporkan di hasil.
+export async function deleteMany(base: string, ids: string[], headers: Record<string, string>): Promise<{ deleted: number; failed: number; firstError: string }> {
+  let deleted = 0, failed = 0, firstError = '';
+  for (const id of ids) {
+    const r = await fetch(`${API}${base}/${id}`, { method: 'DELETE', headers });
+    if (r.ok) deleted++;
+    else { failed++; if (!firstError) firstError = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? ''; }
+  }
+  return { deleted, failed, firstError };
+}
