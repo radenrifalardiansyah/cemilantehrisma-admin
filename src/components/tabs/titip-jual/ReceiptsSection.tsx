@@ -5,6 +5,9 @@ import { PackagePlus, PackageMinus, Trash2, Loader2, Undo2, Plus } from 'lucide-
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import FilterSelect from '@/components/FilterSelect';
+import SearchSelect from '@/components/SearchSelect';
+import { periodRange, type PeriodKey } from '@/lib/period';
+import PeriodBar from './PeriodBar';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
@@ -21,16 +24,22 @@ const todayKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-async function fetchReceipts(creds: string): Promise<Receipt[]> {
-  const r = await fetch(`${API}/api/consign/receipts`, { headers: { 'x-admin-auth': creds } });
-  return r.ok ? ((await r.json()) as { receipts: Receipt[] }).receipts : [];
+interface ReceiptsResult { receipts: Receipt[]; hasAny: boolean }
+
+async function fetchReceipts(creds: string, from: string, to: string): Promise<ReceiptsResult> {
+  const r = await fetch(`${API}/api/consign/receipts?from=${from}&to=${to}`, { headers: { 'x-admin-auth': creds } });
+  return r.ok ? await r.json() as ReceiptsResult : { receipts: [], hasAny: false };
 }
 
 export default function ReceiptsSection({ creds, data, reload, can }: SectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
-  const [receipts, setReceipts] = useState<Receipt[] | null>(null);
+  const [result, setResult] = useState<ReceiptsResult | null>(null);
+  const [period, setPeriod] = useState<PeriodKey>('month');
+  const [customFrom, setCustomFrom] = useState(todayKey());
+  const [customTo, setCustomTo] = useState(todayKey());
+  const { from, to } = periodRange(period, customFrom, customTo);
   const [consignorFilter, setConsignorFilter] = useState('');
   const [stallFilter, setStallFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('');
@@ -39,12 +48,12 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  const loadReceipts = useCallback(async () => { setReceipts(await fetchReceipts(creds)); }, [creds]);
+  const loadReceipts = useCallback(async () => { setResult(await fetchReceipts(creds, from, to)); }, [creds, from, to]);
   useEffect(() => {
     let alive = true;
-    fetchReceipts(creds).then(d => { if (alive) setReceipts(d); });
+    fetchReceipts(creds, from, to).then(d => { if (alive) setResult(d); });
     return () => { alive = false; };
-  }, [creds]);
+  }, [creds, from, to]);
 
   const open = (kind: 'in' | 'return') => {
     setError('');
@@ -91,7 +100,8 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     && editing.lines.some(l => l.productId && Number(l.qty) > 0)
     && editing.lines.every(l => !l.productId || Number(l.qty) > 0);
 
-  if (receipts === null) return <PageLoader />;
+  if (result === null) return <PageLoader />;
+  const receipts = result.receipts;
 
   const items = receipts
     .filter(r => !consignorFilter || r.consignorId === consignorFilter)
@@ -111,8 +121,9 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
 
   return (
     <div className="space-y-4">
+      {result.hasAny && <PeriodBar period={period} onPeriod={setPeriod} from={customFrom} to={customTo} onFrom={setCustomFrom} onTo={setCustomTo} />}
       <DataList<Receipt>
-        creds={creds} items={items} totalCount={receipts.length} getId={r => r.id} noun="dokumen"
+        creds={creds} items={items} totalCount={result.hasAny ? Math.max(receipts.length, 1) : 0} getId={r => r.id} noun="dokumen"
         searchText={r => `${r.docNumber} ${r.consignorName} ${r.stallName} ${r.items.map(i => i.productName).join(' ')}`}
         searchPlaceholder="Cari no. dokumen, penitip, lapak, atau produk…" viewKey="consign-receipts"
         resetKey={`${consignorFilter}|${stallFilter}|${kindFilter}`}
@@ -185,17 +196,14 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Penitip" required>
-                <select className="input" value={editing.consignorId}
-                  onChange={e => setEditing({ ...editing, consignorId: e.target.value, lines: [{ productId: '', qty: '' }] })}>
-                  <option value="">— Pilih penitip —</option>
-                  {data.consignors.filter(c => c.isActive).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <SearchSelect value={editing.consignorId} onChange={v => setEditing({ ...editing, consignorId: v, lines: [{ productId: '', qty: '' }] })}
+                  options={data.consignors.filter(c => c.isActive).map(c => ({ value: c.id, label: c.name, sublabel: c.code, imageUrl: c.logoUrl || undefined }))}
+                  placeholder="– Pilih penitip –" searchPlaceholder="Cari penitip…" />
               </Field>
               <Field label="Lapak" required>
-                <select className="input" value={editing.stallId} onChange={e => setEditing({ ...editing, stallId: e.target.value })}>
-                  <option value="">— Pilih lapak —</option>
-                  {data.stalls.filter(s => s.isActive).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <SearchSelect value={editing.stallId} onChange={v => setEditing({ ...editing, stallId: v })}
+                  options={data.stalls.filter(s => s.isActive).map(s => ({ value: s.id, label: s.name, sublabel: s.code }))}
+                  placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…" />
               </Field>
             </div>
             <Field label="Tanggal">
@@ -212,14 +220,14 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {editing.lines.map((l, idx) => (
                     <div key={idx} className="flex items-center gap-2">
-                      <select className="input" style={{ flex: 3 }} value={l.productId} onChange={e => setLine(idx, { productId: e.target.value })}>
-                        <option value="">— Pilih produk —</option>
-                        {consignorProducts.map(p => (
-                          <option key={p.id} value={p.id} disabled={editing.lines.some((o, oi) => oi !== idx && o.productId === p.id)}>
-                            {p.name}{editing.stallId ? ` (stok ${qtyText(stockOf(p.id, editing.stallId))})` : ''}
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ flex: 3, minWidth: 0 }}>
+                        <SearchSelect value={l.productId} onChange={v => setLine(idx, { productId: v })}
+                          // Produk yang sudah dipilih di baris lain tidak ditawarkan lagi.
+                          options={consignorProducts
+                            .filter(p => p.id === l.productId || !editing.lines.some((o, oi) => oi !== idx && o.productId === p.id))
+                            .map(p => ({ value: p.id, label: p.name, sublabel: editing.stallId ? `Stok di lapak: ${qtyText(stockOf(p.id, editing.stallId))} ${p.unit}` : p.code }))}
+                          placeholder="– Pilih produk –" searchPlaceholder="Cari produk…" />
+                      </div>
                       <input className="input" style={{ flex: 1, minWidth: 70 }} type="number" min={0} step="any" inputMode="decimal" placeholder="Qty"
                         value={l.qty} onChange={e => setLine(idx, { qty: e.target.value })} />
                       {editing.lines.length > 1 && (

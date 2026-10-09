@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
     order by doc_date desc, created_at desc
     limit 500
   `;
-  return Response.json({ receipts: rows.map(rowToReceipt) });
+  // hasAny: apakah ada dokumen sama sekali (di luar filter) — supaya layar kosong awal tetap
+  // menampilkan kartu "Terima Barang", bukan "tidak ada yang cocok".
+  const [{ has }] = await sql<{ has: boolean }[]>`select exists(select 1 from consign_receipts) as has`;
+  return Response.json({ receipts: rows.map(rowToReceipt), hasAny: has });
 }
 
 export async function POST(req: NextRequest) {

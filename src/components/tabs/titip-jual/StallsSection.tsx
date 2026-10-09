@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Store } from 'lucide-react';
+import SearchSelect from '@/components/SearchSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
@@ -121,10 +122,9 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
               <input className="input" value={editing.address} onChange={e => setEditing({ ...editing, address: e.target.value })} />
             </Field>
             <Field label="Gudang terkait (opsional)">
-              <select className="input" value={editing.warehouseId} onChange={e => setEditing({ ...editing, warehouseId: e.target.value })}>
-                <option value="">— Tanpa gudang —</option>
-                {data.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
+              <SearchSelect value={editing.warehouseId} onChange={v => setEditing({ ...editing, warehouseId: v })}
+                options={[{ value: '', label: '— Tanpa gudang —' }, ...data.warehouses.map(w => ({ value: w.id, label: w.name }))]}
+                placeholder="– Pilih gudang –" searchPlaceholder="Cari gudang…" />
             </Field>
             <Field label="Catatan (opsional)">
               <textarea className="input" style={{ resize: 'vertical', minHeight: 60 }} value={editing.note}

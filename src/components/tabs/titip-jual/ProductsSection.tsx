@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Package } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
+import SearchSelect from '@/components/SearchSelect';
 import NumberInput, { formatThousands } from '@/components/NumberInput';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -255,10 +256,10 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
             disabled={!editing.name.trim() || !editing.consignorId || !schemeCovered} label="Simpan Produk" />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Field label="Penitip" required>
-              <select className="input" value={editing.consignorId} onChange={e => setEditing({ ...editing, consignorId: e.target.value })}>
-                <option value="">{data.consignors.length === 0 ? '— Belum ada penitip (tambah di tab Penitip) —' : '— Pilih penitip —'}</option>
-                {data.consignors.filter(c => c.isActive || c.id === editing.consignorId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <SearchSelect value={editing.consignorId} onChange={v => setEditing({ ...editing, consignorId: v })}
+                options={data.consignors.filter(c => c.isActive || c.id === editing.consignorId).map(c => ({ value: c.id, label: c.name, sublabel: c.code, imageUrl: c.logoUrl || undefined }))}
+                placeholder={data.consignors.length === 0 ? '– Belum ada penitip (tambah di tab Penitip) –' : '– Pilih penitip –'}
+                searchPlaceholder="Cari penitip…" />
             </Field>
             <Field label="Nama Produk" required>
               <input className="input" value={editing.name} autoFocus={!editing.id} onChange={e => setEditing({ ...editing, name: e.target.value })} />

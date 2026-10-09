@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Loader2, Check, X } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import NumberInput from '@/components/NumberInput';
+import SearchSelect from '@/components/SearchSelect';
 import { resolveScheme, calcShare, schemeText, SCHEME_LABEL, type ShareScheme } from '@/lib/consign';
 
 export const API = '';
@@ -79,16 +80,18 @@ export function SchemeFields({ scheme, value, onChange, allowInherit, inheritLab
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8 }}>
-        <select className="input" style={{ flex: 2 }} value={scheme ?? ''}
-          onChange={e => {
-            const v = e.target.value as ShareScheme | '';
-            // Nilai dikosongkan saat skema diganti: 15 (%) tidak sepadan dengan Rp15.
-            onChange(v === '' ? null : v, null);
-          }}>
-          {allowInherit && <option value="">{inheritLabel ?? 'Ikut default'}</option>}
-          <option value="nominal">{SCHEME_LABEL.nominal}</option>
-          <option value="commission">{SCHEME_LABEL.commission}</option>
-        </select>
+        <div style={{ flex: 2, minWidth: 0 }}>
+          <SearchSelect value={scheme ?? ''} searchPlaceholder="Cari skema…"
+            onChange={v => {
+              // Nilai dikosongkan saat skema diganti: 15 (%) tidak sepadan dengan Rp15.
+              onChange(v === '' ? null : v as ShareScheme, null);
+            }}
+            options={[
+              ...(allowInherit ? [{ value: '', label: inheritLabel ?? 'Ikut default' }] : []),
+              { value: 'nominal', label: SCHEME_LABEL.nominal },
+              { value: 'commission', label: SCHEME_LABEL.commission },
+            ]} />
+        </div>
         {scheme === 'nominal' && (
           <NumberInput className="input" style={{ flex: 1 }} value={value ?? ''} placeholder="Rp setor"
             onChange={raw => onChange(scheme, raw === '' ? null : Number(raw))} />
