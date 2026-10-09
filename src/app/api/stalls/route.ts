@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
 
   await sql.begin(async tx => {
     await tx`
-      insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, created_at, updated_at)
-      values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, now(), now())
+      insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, created_at, updated_at)
+      values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, now(), now())
     `;
     if (openingBalance > 0) {
       await tx`

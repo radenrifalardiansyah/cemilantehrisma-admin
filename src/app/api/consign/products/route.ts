@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
     const existing = await tx<{ code: string | null }[]>`select code from consign_products`;
     code = nextCode('TJP', existing.map(r => r.code));
     await tx`
-      insert into consign_products (id, code, consignor_id, name, unit, default_price, scheme, scheme_value, note, is_active, min_stock, created_at, updated_at)
-      values (${id}, ${code}, ${v.consignorId}, ${v.name}, ${v.unit}, ${v.defaultPrice}, ${v.scheme}, ${v.schemeValue}, ${v.note}, ${v.isActive}, ${v.minStock}, now(), now())
+      insert into consign_products (id, code, consignor_id, name, unit, default_price, scheme, scheme_value, note, is_active, min_stock, image_url, created_at, updated_at)
+      values (${id}, ${code}, ${v.consignorId}, ${v.name}, ${v.unit}, ${v.defaultPrice}, ${v.scheme}, ${v.schemeValue}, ${v.note}, ${v.isActive}, ${v.minStock}, ${v.imageUrl}, now(), now())
     `;
     const e = await syncStallItems(tx, id, v.stallItems);
     if (e) throw new Error(e);

@@ -12,7 +12,7 @@ export const HEADER_BTN_H = 34;
 
 export interface Stall {
   id: string; code: string; name: string; address: string; warehouseId: string; note: string; isActive: boolean;
-  invoicePrefix: string; usernames: string[]; balance: number;
+  invoicePrefix: string; usernames: string[]; balance: number; showOwnProducts: boolean;
 }
 export interface StaffUser { username: string; fullName: string; role: string }
 export interface Consignor {
@@ -22,7 +22,7 @@ export interface Consignor {
 }
 export interface CProduct {
   id: string; code: string; consignorId: string; name: string; unit: string; defaultPrice: number;
-  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: number;
+  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: number; imageUrl: string;
 }
 export interface StallItem {
   id: string; productId: string; stallId: string; price: number | null;
@@ -204,4 +204,20 @@ export function reportImport(
   ].filter(Boolean).join(' · ');
   if (d.created > 0) toast.success(`${d.created} ${noun} berhasil diimpor.${extra ? ` (${extra})` : ''}`);
   else toast.error(extra || `Tidak ada ${noun} yang diimpor.`);
+}
+
+// Unggah gambar ke Cloudinary lewat /api/upload (sama seperti logo): diperkecil di browser (sisi
+// terpanjang `maxPx`) dan dikompres JPEG dulu. Mengembalikan URL atau melempar error.
+export async function uploadImage(file: File, creds: string, maxPx = 800): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const blob: Blob = await new Promise(resolve => canvas.toBlob(b => resolve(b!), 'image/jpeg', 0.85));
+  const form = new FormData();
+  form.append('file', new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+  const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
+  if (!r.ok) throw new Error('upload failed');
+  return ((await r.json()) as { url: string }).url;
 }

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Package } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import SearchSelect from '@/components/SearchSelect';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import NumberInput, { formatThousands } from '@/components/NumberInput';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -11,7 +12,7 @@ import { schemeText, type ShareScheme } from '@/lib/consign';
 import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
 import { downloadTemplate, readRows, type ImportCol } from './importers';
 import {
-  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport, rupiah, qtyText, effectiveFor,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport, uploadImage, rupiah, qtyText, effectiveFor,
   type SectionProps, type CProduct,
 } from './shared';
 
@@ -29,7 +30,7 @@ const IMPORT_COLS: ImportCol[] = [
 interface StallCfg { enabled: boolean; price: string; scheme: ShareScheme | null; schemeValue: number | null }
 interface Form {
   id?: string; consignorId: string; name: string; unit: string; defaultPrice: string;
-  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: string;
+  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: string; imageUrl: string;
   stalls: Record<string, StallCfg>;
 }
 
@@ -43,6 +44,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
 
   const consignorById = new Map(data.consignors.map(c => [c.id, c]));
   const stallById = new Map(data.stalls.map(s => [s.id, s]));
@@ -64,7 +66,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     setError('');
     setEditing({
       consignorId: consignorFilter || '', name: '', unit: 'pcs', defaultPrice: '', scheme: null, schemeValue: null,
-      note: '', isActive: true, minStock: '', stalls: blankStalls(),
+      note: '', isActive: true, minStock: '', imageUrl: '', stalls: blankStalls(),
     });
   };
   const openEdit = (p: CProduct) => {
@@ -75,7 +77,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     }
     setEditing({
       id: p.id, consignorId: p.consignorId, name: p.name, unit: p.unit, defaultPrice: String(p.defaultPrice),
-      scheme: p.scheme, schemeValue: p.schemeValue, note: p.note, isActive: p.isActive, minStock: p.minStock > 0 ? String(p.minStock) : '', stalls,
+      scheme: p.scheme, schemeValue: p.schemeValue, note: p.note, isActive: p.isActive, minStock: p.minStock > 0 ? String(p.minStock) : '', imageUrl: p.imageUrl, stalls,
     });
   };
 
@@ -84,7 +86,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     setSaving(true); setError('');
     const body = {
       consignorId: editing.consignorId, name: editing.name, unit: editing.unit, defaultPrice: Number(editing.defaultPrice || 0),
-      scheme: editing.scheme, schemeValue: editing.schemeValue, note: editing.note, isActive: editing.isActive, minStock: Number(editing.minStock || 0),
+      scheme: editing.scheme, schemeValue: editing.schemeValue, note: editing.note, isActive: editing.isActive, minStock: Number(editing.minStock || 0), imageUrl: editing.imageUrl,
       stallItems: Object.entries(editing.stalls).filter(([, c]) => c.enabled).map(([stallId, c]) => ({
         stallId, price: c.price === '' ? null : Number(c.price), scheme: c.scheme, schemeValue: c.schemeValue,
       })),
@@ -116,6 +118,15 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     await reload();
     if (res.deleted > 0) toast.success(`${res.deleted} produk berhasil dihapus.${res.failed ? ` ${res.failed} dilewati (sudah punya stok/riwayat).` : ''}`);
     else toast.error(res.firstError || 'Gagal menghapus produk yang dipilih.');
+  };
+
+  const pickImage = async (file: File) => {
+    setImageUploading(true);
+    try {
+      const url = await uploadImage(file, creds, 800);
+      setEditing(e => e && ({ ...e, imageUrl: url }));
+    } catch { toast.error('Gagal mengunggah gambar produk.'); }
+    finally { setImageUploading(false); }
   };
 
   const setStall = (stallId: string, patch: Partial<StallCfg>) =>
@@ -175,7 +186,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
         searchPlaceholder="Cari produk, kode, atau penitip…" viewKey="consign-products" resetKey={`${consignorFilter}|${stallFilter}`}
         addLabel={can('create') ? 'Tambah Produk' : undefined} onAdd={can('create') ? openNew : undefined}
         emptyHint="Produk titipan = barang milik penitip yang dijual di lapak. Tambahkan penitip & lapak dulu di tabnya."
-        avatar={p => initials(p.name)}
+        avatar={p => initials(p.name)} avatarImage={p => p.imageUrl || undefined}
         filters={(
           <>
             <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
@@ -261,9 +272,16 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
                 placeholder={data.consignors.length === 0 ? '– Belum ada penitip (tambah di tab Penitip) –' : '– Pilih penitip –'}
                 searchPlaceholder="Cari penitip…" />
             </Field>
-            <Field label="Nama Produk" required>
-              <input className="input" value={editing.name} autoFocus={!editing.id} onChange={e => setEditing({ ...editing, name: e.target.value })} />
-            </Field>
+            <div className="flex items-center gap-3">
+              <ImageUploadBox src={editing.imageUrl} alt={editing.name || 'Gambar produk'} uploading={imageUploading}
+                onSelect={f => pickImage(f)} onRemove={() => setEditing({ ...editing, imageUrl: '' })}
+                icon={<Package size={18} />} fit="contain" size={72} emptyText="Gambar" />
+              <div style={{ flex: 1 }}>
+                <Field label="Nama Produk" required>
+                  <input className="input" value={editing.name} autoFocus={!editing.id} onChange={e => setEditing({ ...editing, name: e.target.value })} />
+                </Field>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Harga jual default (Rp)" required>
                 <NumberInput value={editing.defaultPrice} placeholder="0" onChange={raw => setEditing({ ...editing, defaultPrice: raw })} />

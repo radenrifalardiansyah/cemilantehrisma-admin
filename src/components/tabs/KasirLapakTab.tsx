@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package } from 'lucide-react';
+import Image from 'next/image';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import PageLoader from '@/components/PageLoader';
@@ -13,6 +14,7 @@ import { Badge, Field, ModalShell, ErrorBox, rupiah, qtyText } from './titip-jua
 import ShiftModal from './kasir-lapak/ShiftModal';
 import HistoryModal from './kasir-lapak/HistoryModal';
 import Receipt from './kasir-lapak/Receipt';
+import StallProductCard, { itemEmoji } from './kasir-lapak/ProductCard';
 import { PAY_LABEL, itemKey, type PosStall, type CatalogItem, type Sale, type PaymentMethod } from './kasir-lapak/types';
 
 type KindFilter = 'all' | 'consign' | 'own';
@@ -170,17 +172,26 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
       {lines.length === 0 ? (
         <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Keranjang kosong. Ketuk barang untuk menambah.</p>
       ) : lines.map(l => (
-        <div key={l.key} className="flex items-center gap-2">
+        <div key={l.key} className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 relative" style={{ background: 'var(--surface-2)' }}>
+            {l.item.imageUrl
+              ? <Image src={l.item.imageUrl} alt={l.item.name} fill className="object-contain" sizes="40px" unoptimized />
+              : <div className="w-full h-full flex items-center justify-center text-lg">{itemEmoji(l.item)}</div>}
+          </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{l.item.name}</p>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{rupiah(l.item.price)} × {qtyText(l.qty)} = <b>{rupiah(l.item.price * l.qty)}</b></p>
+            <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{rupiah(l.item.price)} / {l.item.unit}</p>
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button className="btn-ghost p-1.5" onClick={() => setQty(l.key, l.qty - 1, l.item.stock)}><Minus size={13} /></button>
-            <span className="text-sm font-bold w-7 text-center">{qtyText(l.qty)}</span>
-            <button className="btn-ghost p-1.5" onClick={() => setQty(l.key, l.qty + 1, l.item.stock)} disabled={l.qty >= l.item.stock}><Plus size={13} /></button>
-            <button className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} onClick={() => setQty(l.key, 0, l.item.stock)}><Trash2 size={13} /></button>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+              onClick={() => setQty(l.key, l.qty - 1, l.item.stock)}><Minus size={11} strokeWidth={2.5} /></button>
+            <span className="w-6 text-center text-sm font-black tabular">{qtyText(l.qty)}</span>
+            <button className="w-7 h-7 rounded-full text-white flex items-center justify-center disabled:opacity-40" style={{ background: 'var(--accent)' }}
+              onClick={() => setQty(l.key, l.qty + 1, l.item.stock)} disabled={l.qty >= l.item.stock}><Plus size={11} strokeWidth={2.5} /></button>
           </div>
+          <span className="text-sm font-bold tabular w-20 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>{rupiah(l.item.price * l.qty)}</span>
+          <button className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}
+            onClick={() => setQty(l.key, 0, l.item.stock)}><Trash2 size={13} /></button>
         </div>
       ))}
 
@@ -240,28 +251,31 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
       </TopbarPortal>
 
       {/* Lapak aktif + status shift */}
-      <div className="flex-shrink-0 px-4 lg:px-6 pt-4 flex flex-wrap items-center gap-2">
-        <div style={{ minWidth: 200 }} className="flex-1 sm:flex-none">
-          {stalls.length > 1 ? (
-            <SearchSelect value={stallId} onChange={changeStall} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
-              options={stalls.map(s => ({ value: s.id, label: s.name, sublabel: s.code }))} />
-          ) : (
-            <div className="input flex items-center gap-2"><Badge tone="accent">{stall?.code}</Badge><b className="text-sm">{stall?.name}</b></div>
-          )}
+      <div className="flex-shrink-0 px-4 lg:px-6 pt-4">
+        <div className="card px-3 sm:px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <div className="flex-1 min-w-[200px] sm:flex-none sm:w-64">
+            {stalls.length > 1 ? (
+              <SearchSelect value={stallId} onChange={changeStall} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
+                options={stalls.map(s => ({ value: s.id, label: s.name, sublabel: s.code }))} />
+            ) : (
+              <div className="flex items-center gap-2 min-w-0"><Badge tone="accent">{stall?.code}</Badge><b className="text-sm truncate">{stall?.name}</b></div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-xs min-w-0">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: stall?.shift ? '#059669' : 'var(--danger)' }} />
+            <span style={{ color: 'var(--text-secondary)' }}>
+              {stall?.shift ? <>Kasir buka · kas awal <b>{rupiah(stall.shift.openingBalance)}</b></> : 'Kasir belum dibuka'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> <span className="hidden sm:inline">Riwayat</span></button>
+            {stall?.shift ? (
+              <button onClick={() => setShiftModal('close')} className="btn-ghost text-xs" style={{ height: 34, color: 'var(--danger)' }}><Lock size={13} /> Tutup Kasir</button>
+            ) : (
+              <button onClick={() => setShiftModal('open')} className="btn-primary text-xs" style={{ height: 34 }}><Unlock size={13} /> Buka Kasir</button>
+            )}
+          </div>
         </div>
-        {stall?.shift ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge tone="ok">Kasir buka · kas awal {rupiah(stall.shift.openingBalance)}</Badge>
-            <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> Riwayat</button>
-            <button onClick={() => setShiftModal('close')} className="btn-ghost text-xs" style={{ height: 34, color: 'var(--danger)' }}><Lock size={13} /> Tutup Kasir</button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge tone="danger">Kasir belum dibuka</Badge>
-            <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> Riwayat</button>
-            <button onClick={() => setShiftModal('open')} className="btn-primary text-xs" style={{ height: 34 }}><Unlock size={13} /> Buka Kasir</button>
-          </div>
-        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden lg:grid" style={{ gridTemplateColumns: '1fr 400px' }}>
@@ -281,10 +295,9 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
           </div>
 
           {!stall?.shift && (
-            <div className="card p-4 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'var(--accent)' }}>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Buka kasir dulu untuk mulai berjualan di <b>{stall?.name}</b>.</p>
-              <button onClick={() => setShiftModal('open')} className="btn-primary text-xs"><Unlock size={13} /> Buka Kasir</button>
-            </div>
+            <p className="text-xs px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+              Buka kasir dulu untuk mulai berjualan di <b>{stall?.name}</b>. Barang di bawah baru bisa ditambahkan ke keranjang setelah kasir dibuka.
+            </p>
           )}
 
           {items === null ? <PageLoader /> : shown.length === 0 ? (
@@ -301,21 +314,9 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {shown.map(i => {
                 const key = itemKey(i.kind, i.productId);
-                const inCart = cart[key] ?? 0;
-                const off = !!i.blocked || i.stock <= 0 || !stall?.shift;
                 return (
-                  <button key={key} onClick={() => add(i)} disabled={off} title={i.blocked || undefined}
-                    className="card p-3 text-left flex flex-col gap-1 relative transition-all disabled:opacity-50"
-                    style={{ outline: inCart > 0 ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
-                    {inCart > 0 && <span className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: 'var(--accent)' }}>{qtyText(inCart)}</span>}
-                    <Badge tone={i.kind === 'consign' ? 'accent' : 'muted'}>{i.kind === 'consign' ? 'Titipan' : 'Toko'}</Badge>
-                    <p className="text-sm font-bold leading-tight line-clamp-2" style={{ color: 'var(--text-primary)' }}>{i.name}</p>
-                    {i.consignorName && <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{i.consignorName}</p>}
-                    <p className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{rupiah(i.price)}</p>
-                    <p className="text-[11px]" style={{ color: i.blocked ? 'var(--danger)' : 'var(--text-muted)' }}>
-                      {i.blocked || (i.stock <= 0 ? 'Habis' : `Stok ${qtyText(i.stock)} ${i.unit}`)}
-                    </p>
-                  </button>
+                  <StallProductCard key={key} item={i} qty={cart[key] ?? 0} disabled={!stall?.shift}
+                    onAdd={() => add(i)} onMinus={() => setQty(key, (cart[key] ?? 0) - 1, i.stock)} />
                 );
               })}
             </div>

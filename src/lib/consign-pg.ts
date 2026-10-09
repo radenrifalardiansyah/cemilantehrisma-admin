@@ -10,12 +10,12 @@ const numOrNull = (v: string | number | null): number | null => (v === null ? nu
 
 export interface StallRow {
   id: string; code: string | null; name: string; address: string; warehouse_id: string | null;
-  note: string; is_active: boolean; invoice_prefix: string | null; created_at: Date; updated_at: Date | null;
+  note: string; is_active: boolean; invoice_prefix: string | null; show_own_products: boolean; created_at: Date; updated_at: Date | null;
 }
 export function rowToStall(r: StallRow) {
   return {
     id: r.id, code: r.code ?? '', name: r.name, address: r.address, warehouseId: r.warehouse_id ?? '',
-    note: r.note, isActive: r.is_active, invoicePrefix: r.invoice_prefix ?? r.code ?? '', createdAt: toTimestamp(r.created_at),
+    note: r.note, isActive: r.is_active, invoicePrefix: r.invoice_prefix ?? r.code ?? '', showOwnProducts: r.show_own_products, createdAt: toTimestamp(r.created_at),
   };
 }
 
@@ -35,13 +35,13 @@ export function rowToConsignor(r: ConsignorRow) {
 export interface ConsignProductRow {
   id: string; code: string | null; consignor_id: string; name: string; unit: string;
   default_price: string | number; scheme: ShareScheme | null; scheme_value: string | number | null;
-  note: string; is_active: boolean; min_stock: string | number; created_at: Date; updated_at: Date | null;
+  note: string; is_active: boolean; min_stock: string | number; image_url: string | null; created_at: Date; updated_at: Date | null;
 }
 export function rowToConsignProduct(r: ConsignProductRow) {
   return {
     id: r.id, code: r.code ?? '', consignorId: r.consignor_id, name: r.name, unit: r.unit,
     defaultPrice: num(r.default_price), scheme: r.scheme, schemeValue: numOrNull(r.scheme_value),
-    note: r.note, isActive: r.is_active, minStock: num(r.min_stock), createdAt: toTimestamp(r.created_at),
+    note: r.note, isActive: r.is_active, minStock: num(r.min_stock), imageUrl: r.image_url ?? '', createdAt: toTimestamp(r.created_at),
   };
 }
 

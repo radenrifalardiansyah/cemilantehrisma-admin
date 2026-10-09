@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
   const { stall } = guard;
   const sql = getSql();
 
-  const consignRows = await sql<ConsignPricingRow[]>`
-    select si.product_id, p.name, p.code, p.unit, p.default_price, p.scheme as p_scheme, p.scheme_value as p_value,
+  const consignRows = await sql<(ConsignPricingRow & { image_url: string | null })[]>`
+    select si.product_id, p.name, p.code, p.unit, p.image_url, p.default_price, p.scheme as p_scheme, p.scheme_value as p_value,
            si.price as si_price, si.scheme as si_scheme, si.scheme_value as si_value, si.stock_qty,
            c.id as consignor_id, c.name as consignor_name, c.scheme as c_scheme, c.scheme_value as c_value
     from consign_stall_items si
@@ -27,14 +27,15 @@ export async function GET(req: NextRequest) {
   const consign = consignRows.map(r => {
     const pricing = pricingFromRow(r);
     return {
-      kind: 'consign' as const, productId: r.product_id, name: r.name, code: r.code ?? '', unit: r.unit, price: pricing.price,
+      kind: 'consign' as const, productId: r.product_id, name: r.name, code: r.code ?? '', unit: r.unit, price: pricing.price, imageUrl: r.image_url ?? '',
       stock: Number(r.stock_qty), consignorName: r.consignor_name,
       // Tanpa skema bagi hasil, barang tidak boleh dijual (hutang ke penitip tak bisa dihitung).
       blocked: pricing.spec ? '' : 'Skema bagi hasil belum ditentukan',
     };
   });
 
-  const own = stall.warehouse_id
+  // Produk toko hanya tampil kalau lapak diatur menampilkannya DAN punya gudang terkait.
+  const own = stall.warehouse_id && stall.show_own_products
     ? (await sql<OwnRow[]>`
         select p.id, p.name, p.code, p.price, p.weight, p.emoji, p.image_urls, ws.stock_qty
         from warehouse_stock ws join products p on p.id = ws.product_id
@@ -46,5 +47,5 @@ export async function GET(req: NextRequest) {
       }))
     : [];
 
-  return Response.json({ items: [...consign, ...own], hasWarehouse: !!stall.warehouse_id });
+  return Response.json({ items: [...consign, ...own], hasWarehouse: !!stall.warehouse_id, showOwnProducts: stall.show_own_products });
 }

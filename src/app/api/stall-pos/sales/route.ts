@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
       const ownLines = merged.lines.filter(l => l.kind === 'own');
       if (ownLines.length > 0) {
         if (!stall.warehouse_id) throw new SaleError('Lapak ini belum punya gudang terkait — produk toko tidak bisa dijual di sini.');
+        if (!stall.show_own_products) throw new SaleError('Lapak ini tidak diatur untuk menjual produk toko.');
         const deltas = new Map<string, number>(ownLines.map(l => [l.productId, -l.qty]));
         const { products, shortageDetails } = await readProductsForDeltasPg(tx, deltas);
         if (shortageDetails.length > 0) throw new SaleError(`Stok tidak cukup: ${shortageDetails.map(s => s.message).join(', ')}`);

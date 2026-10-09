@@ -15,7 +15,7 @@ import {
 
 type StallForm = Omit<Stall, 'id' | 'code' | 'balance'> & { id?: string; openingBalance: string };
 
-const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], openingBalance: '' };
+const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], showOwnProducts: false, openingBalance: '' };
 
 const KIND_LABEL: Record<string, string> = { opening: 'Saldo awal', manual: 'Manual', sale: 'Penjualan', payout: 'Bayar penitip' };
 
@@ -85,7 +85,7 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
   const openNew = () => { setError(''); setStaffSearch(''); setEditing({ ...EMPTY }); };
   const openEdit = (s: Stall) => {
     setError(''); setStaffSearch('');
-    setEditing({ id: s.id, name: s.name, address: s.address, warehouseId: s.warehouseId, note: s.note, isActive: s.isActive, invoicePrefix: s.invoicePrefix, usernames: s.usernames, openingBalance: '' });
+    setEditing({ id: s.id, name: s.name, address: s.address, warehouseId: s.warehouseId, note: s.note, isActive: s.isActive, invoicePrefix: s.invoicePrefix, usernames: s.usernames, showOwnProducts: s.showOwnProducts, openingBalance: '' });
   };
 
   const q = staffSearch.trim().toLowerCase();
@@ -125,6 +125,7 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
               { label: 'Gudang Terkait', value: whName(s.warehouseId) },
               { label: 'Stok Titipan', value: (stockByStall.get(s.id) ?? 0).toLocaleString('id-ID') },
               { label: 'Produk Dijual', value: `${its.length} produk (${its.filter(i => i.stockQty > 0).length} ada stok)` },
+              { label: 'Produk toko di Kasir Lapak', value: s.showOwnProducts && s.warehouseId ? 'Ditampilkan' : 'Tidak ditampilkan' },
               { label: 'Saldo Dompet Lapak', value: rupiah(s.balance) },
               { label: 'Petugas', value: s.usernames.length ? s.usernames.map(staffLabel).join(', ') : '' },
               { label: 'Alamat', value: s.address, wide: true },
@@ -157,6 +158,17 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
                 options={[{ value: '', label: '— Tanpa gudang —' }, ...data.warehouses.map(w => ({ value: w.id, label: w.name }))]}
                 placeholder="– Pilih gudang –" searchPlaceholder="Cari gudang…" />
             </Field>
+            {editing.warehouseId && (
+              <label className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <input type="checkbox" className="mt-0.5" checked={editing.showOwnProducts} onChange={e => setEditing({ ...editing, showOwnProducts: e.target.checked })} />
+                <span>
+                  Jual juga produk toko dari gudang ini di Kasir Lapak
+                  <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Kalau dicentang, semua produk toko yang ada stoknya di gudang terkait tampil di Kasir Lapak. Kosongkan kalau lapak ini hanya menjual barang titipan.
+                  </span>
+                </span>
+              </label>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Awalan nomor invoice">
                 <input className="input font-mono" value={editing.invoicePrefix} maxLength={12} placeholder="otomatis dari kode lapak"
