@@ -7,9 +7,11 @@ import NumberInput from '@/components/NumberInput';
 import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { periodRange, type PeriodKey } from '@/lib/period';
+import PeriodBar from './PeriodBar';
 import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
 import {
-  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, deleteMany, rupiah,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, deleteMany, rupiah, qtyText, effectiveFor,
   type SectionProps, type Stall,
 } from './shared';
 
@@ -21,6 +23,48 @@ const KIND_LABEL: Record<string, string> = { opening: 'Saldo awal', manual: 'Man
 
 interface WalletEntry { id: string; kind: string; amount: number; note: string; createdBy: string; createdAt: { seconds: number } | null }
 
+interface StallStats { count: number; revenue: number; discount: number; itemsSold: number; ownRevenue: number; consignorShare: number; ourConsign: number; storeShare: number }
+const EMPTY_STATS: StallStats = { count: 0, revenue: 0, discount: 0, itemsSold: 0, ownRevenue: 0, consignorShare: 0, ourConsign: 0, storeShare: 0 };
+
+async function fetchStats(creds: string, from: string, to: string): Promise<Record<string, StallStats>> {
+  const r = await fetch(`${API}/api/consign/stall-stats?from=${from}&to=${to}`, { headers: { 'x-admin-auth': creds } });
+  return r.ok ? ((await r.json()) as { stats: Record<string, StallStats> }).stats : {};
+}
+
+const TILE_LABEL = 'text-[9px] font-semibold uppercase leading-tight whitespace-nowrap overflow-hidden text-ellipsis';
+const TILE_VALUE = 'text-xs font-bold tabular leading-tight mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis';
+const TILE_NOTE = 'text-[10px] tabular leading-tight whitespace-nowrap overflow-hidden text-ellipsis';
+
+function Tile({ title, main, note, bg, color }: { title: string; main: string; note?: string; bg?: string; color?: string }) {
+  return (
+    <div className="flex flex-col justify-between px-3 py-2 rounded-lg min-h-[52px] min-w-0" style={{ background: bg ?? 'var(--surface-2)' }}>
+      <p className={TILE_LABEL} style={{ color: 'var(--text-muted)' }}>{title}</p>
+      <div className="min-w-0">
+        <p className={TILE_VALUE} style={{ color: color ?? 'var(--text-primary)' }}>{main}</p>
+        {note && <p className={TILE_NOTE} style={{ color: 'var(--text-muted)' }}>{note}</p>}
+      </div>
+    </div>
+  );
+}
+
+// Ringkasan per lapak (gaya sama dengan kotak statistik lokasi di Mitra): stok & jumlah produk saat
+// ini, lalu pendapatan/transaksi/bagi hasil pada periode yang dipilih.
+// `dense`: tampilan kartu (kolom sempit) → maksimal 3 kolom supaya label tidak terpotong.
+function StallStatTiles({ stockQty, stockValue, products, productsInStock, stats, dense }: {
+  stockQty: number; stockValue: number; products: number; productsInStock: number; stats: StallStats; dense: boolean;
+}) {
+  return (
+    <div className={dense ? 'grid grid-cols-2 sm:grid-cols-3 gap-1.5' : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5'}>
+      <Tile title="Stok Saat Ini" main={`${qtyText(stockQty)} pcs`} note={rupiah(stockValue)} bg={stockQty > 0 ? 'var(--success-bg)' : undefined} color={stockQty > 0 ? 'var(--success)' : 'var(--text-muted)'} />
+      <Tile title="Total Produk" main={`${products} produk`} note={`${productsInStock} ada stok`} />
+      <Tile title="Pendapatan" main={rupiah(stats.revenue)} bg={stats.revenue > 0 ? 'var(--success-bg)' : undefined} color={stats.revenue > 0 ? 'var(--success)' : 'var(--text-muted)'} />
+      <Tile title="Transaksi" main={`${stats.count}`} note={`${qtyText(stats.itemsSold)} barang terjual`} />
+      <Tile title="Bagian Toko" main={rupiah(stats.storeShare)} />
+      <Tile title="Bagian Penitip" main={rupiah(stats.consignorShare)} />
+    </div>
+  );
+}
+
 export default function StallsSection({ creds, data, reload, can }: SectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -31,9 +75,34 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
   const [error, setError] = useState('');
   const [walletFor, setWalletFor] = useState<Stall | null>(null);
   const [staffSearch, setStaffSearch] = useState('');
+  const [period, setPeriod] = useState<PeriodKey>('month');
+  const [customFrom, setCustomFrom] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [customTo, setCustomTo] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [stats, setStats] = useState<Record<string, StallStats>>({});
+  const { from, to } = periodRange(period, customFrom, customTo);
+
+  useEffect(() => {
+    let alive = true;
+    fetchStats(creds, from, to).then(d => { if (alive) setStats(d); });
+    return () => { alive = false; };
+  }, [creds, from, to, data.stalls.length]);
+  const statsOf = (id: string): StallStats => stats[id] ?? EMPTY_STATS;
 
   const stockByStall = new Map<string, number>();
   for (const i of data.stallItems) stockByStall.set(i.stallId, (stockByStall.get(i.stallId) ?? 0) + i.stockQty);
+  const consignorById = new Map(data.consignors.map(c => [c.id, c]));
+  const productById = new Map(data.products.map(p => [p.id, p]));
+  const stockInfo = (stallId: string) => {
+    let qty = 0, value = 0, inStock = 0, products = 0;
+    for (const i of data.stallItems) {
+      if (i.stallId !== stallId) continue;
+      const p = productById.get(i.productId);
+      if (!p) continue;
+      products++;
+      if (i.stockQty > 0) { inStock++; qty += i.stockQty; value += i.stockQty * effectiveFor(p, consignorById.get(p.consignorId), i).price; }
+    }
+    return { qty, value, inStock, products };
+  };
   const staffByName = new Map(data.staff.map(u => [u.username, u]));
   const staffLabel = (u: string) => staffByName.get(u)?.fullName || u;
 
@@ -75,10 +144,12 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
     { header: 'Kode', width: '8%', value: s => s.code },
     { header: 'Nama', width: '16%', bold: true, value: s => s.name },
     { header: 'Awalan Invoice', width: '11%', value: s => s.invoicePrefix },
-    { header: 'Alamat', width: '20%', value: s => s.address || '-' },
+    { header: 'Alamat', width: '14%', value: s => s.address || '-' },
     { header: 'Gudang', width: '12%', value: s => whName(s.warehouseId) || '-' },
-    { header: 'Petugas', width: '15%', value: s => s.usernames.map(staffLabel).join(', ') || '-' },
+    { header: 'Petugas', width: '11%', value: s => s.usernames.map(staffLabel).join(', ') || '-' },
     { header: 'Saldo Dompet', width: '11%', align: 'right', value: s => rupiah(s.balance) },
+    { header: 'Pendapatan Periode', width: '12%', align: 'right', value: s => rupiah(statsOf(s.id).revenue) },
+    { header: 'Transaksi', width: '8%', align: 'right', value: s => statsOf(s.id).count },
     { header: 'Status', width: '7%', value: s => s.isActive ? 'Aktif' : 'Nonaktif' },
   ];
 
@@ -93,28 +164,34 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
 
   return (
     <div className="space-y-4">
+      {data.stalls.length > 0 && <PeriodBar period={period} onPeriod={setPeriod} from={customFrom} to={customTo} onFrom={setCustomFrom} onTo={setCustomTo} />}
       <DataList<Stall>
         creds={creds} items={items} totalCount={data.stalls.length} getId={s => s.id} noun="lapak"
         searchText={s => `${s.name} ${s.code} ${s.address} ${s.usernames.join(' ')}`} searchPlaceholder="Cari nama, kode, alamat, atau petugas…" viewKey="consign-stalls"
         addLabel={can('create') ? 'Tambah Lapak' : undefined} onAdd={can('create') ? openNew : undefined}
         emptyHint="Lapak = tempat barang titipan dijual (lapak 1, 2, 3, dst)."
         avatar={s => initials(s.name)}
-        renderBody={s => (
-          <>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
-              <Badge>{s.code}</Badge>
-              {!s.isActive && <Badge tone="danger">Nonaktif</Badge>}
-            </div>
-            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{s.address || 'Tanpa alamat'}</p>
-            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <Badge tone="accent">Stok titipan: {(stockByStall.get(s.id) ?? 0).toLocaleString('id-ID')}</Badge>
-              <Badge tone="ok">Dompet: {rupiah(s.balance)}</Badge>
-              <Badge>{s.usernames.length} petugas</Badge>
-              {whName(s.warehouseId) && <Badge>Gudang: {whName(s.warehouseId)}</Badge>}
-            </div>
-          </>
-        )}
+        renderBody={(s, view) => {
+          const info = stockInfo(s.id);
+          return (
+            <>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</p>
+                <Badge>{s.code}</Badge>
+                {!s.isActive && <Badge tone="danger">Nonaktif</Badge>}
+              </div>
+              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{s.address || 'Tanpa alamat'}</p>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <Badge tone="ok">Dompet: {rupiah(s.balance)}</Badge>
+                <Badge>{s.usernames.length} petugas</Badge>
+                {whName(s.warehouseId) && <Badge>Gudang: {whName(s.warehouseId)}</Badge>}
+              </div>
+              <div className="mt-2.5">
+                <StallStatTiles stockQty={info.qty} stockValue={info.value} products={info.products} productsInStock={info.inStock} stats={statsOf(s.id)} dense={view === 'card'} />
+              </div>
+            </>
+          );
+        }}
         renderDetail={s => {
           const its = data.stallItems.filter(i => i.stallId === s.id);
           return (

@@ -83,7 +83,7 @@ interface Props<T> {
   headerExtra?: React.ReactNode;       // tombol tambahan di sebelah tombol Tambah
   avatar?: (t: T) => string;           // teks inisial; kalau tidak diisi tidak ada avatar
   avatarImage?: (t: T) => string | undefined; // logo/gambar; kalau ada dipakai menggantikan inisial
-  renderBody: (t: T) => React.ReactNode;
+  renderBody: (t: T, view: 'table' | 'card') => React.ReactNode;
   actions?: (t: T) => React.ReactNode;
   renderDetail?: (t: T) => React.ReactNode; // isi panel detail; kalau ada, muncul tombol panah "Lihat detail"
   onBulkDelete?: (ids: string[]) => Promise<void>;
@@ -257,7 +257,7 @@ export default function DataList<T>(p: Props<T>) {
                   <Checkbox checked={isSel} onChange={() => toggle(id)} />
                   <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNum}</span>
                   {avatarBox(t)}
-                  <div className="flex-1 min-w-0">{p.renderBody(t)}</div>
+                  <div className="flex-1 min-w-0">{p.renderBody(t, 'table')}</div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {p.actions?.(t)}
                     {p.renderDetail && (
@@ -288,7 +288,7 @@ export default function DataList<T>(p: Props<T>) {
                 </div>
                 <div className="flex items-start gap-3 px-4 pt-2 pb-3 flex-1">
                   {avatarBox(t, true)}
-                  <div className="flex-1 min-w-0">{p.renderBody(t)}</div>
+                  <div className="flex-1 min-w-0">{p.renderBody(t, 'card')}</div>
                 </div>
                 {(p.actions || p.renderDetail) && (
                   <div className="flex items-center justify-between gap-2 px-3 py-1.5" style={{ borderTop: '1px solid var(--border-2)' }}>
