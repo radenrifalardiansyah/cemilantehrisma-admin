@@ -7,7 +7,7 @@ import PageLoader from '@/components/PageLoader';
 import FilterSelect from '@/components/FilterSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
-import DataList, { type ExportCol } from './DataList';
+import DataList, { DetailPanel, type ExportCol } from './DataList';
 import {
   API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, qtyText,
   type SectionProps, type Receipt,
@@ -144,6 +144,27 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.items.map(i => `${i.productName} ×${qtyText(i.qty)}`).join(', ')}</p>
             {r.note && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{r.note}</p>}
           </>
+        )}
+        renderDetail={r => (
+          <DetailPanel fields={[
+            { label: 'No. Dokumen', value: r.docNumber },
+            { label: 'Jenis', value: r.kind === 'in' ? 'Terima barang' : 'Retur ke penitip' },
+            { label: 'Tanggal', value: r.docDate },
+            { label: 'Dibuat Oleh', value: r.createdBy },
+            { label: 'Penitip', value: r.consignorName },
+            { label: 'Lapak', value: r.stallName },
+            ...(r.note ? [{ label: 'Catatan', value: r.note, wide: true }] : []),
+          ]}>
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Barang ({qtyText(r.totalQty)} total)</p>
+              {r.items.map(i => (
+                <div key={i.productId} className="flex items-center justify-between gap-2 text-xs rounded-lg px-3 py-2" style={{ background: 'var(--surface)', border: '1px solid var(--border-2)' }}>
+                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{i.productName}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{qtyText(i.qty)} {i.unit}</span>
+                </div>
+              ))}
+            </div>
+          </DetailPanel>
         )}
         actions={r => can('delete') ? (
           <Tooltip label="Batalkan dokumen">

@@ -6,7 +6,7 @@ import FilterSelect from '@/components/FilterSelect';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText, type ShareScheme } from '@/lib/consign';
-import DataList, { RowActions, initials, type ExportCol } from './DataList';
+import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
 import { downloadTemplate, readRows, type ImportCol } from './importers';
 import {
   API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport, rupiah, qtyText, effectiveFor,
@@ -203,6 +203,42 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
                 ))}
               </div>
             </>
+          );
+        }}
+        renderDetail={p => {
+          const c = consignorById.get(p.consignorId);
+          const base = effectiveFor(p, c, undefined);
+          const its = itemsByProduct.get(p.id) ?? [];
+          return (
+            <DetailPanel fields={[
+              { label: 'Kode Produk', value: p.code },
+              { label: 'Status', value: p.isActive ? 'Aktif' : 'Nonaktif' },
+              { label: 'Penitip', value: c?.name ?? '' },
+              { label: 'Satuan', value: p.unit },
+              { label: 'Harga Jual Default', value: rupiah(p.defaultPrice) },
+              { label: 'Skema Bagi Hasil', value: schemeText(base.spec) },
+              ...(p.note ? [{ label: 'Catatan', value: p.note, wide: true }] : []),
+            ]}>
+              {its.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum dijual di lapak mana pun.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Per lapak</p>
+                  {its.map(i => {
+                    const e = effectiveFor(p, c, i);
+                    return (
+                      <div key={i.id} className="flex items-center justify-between gap-2 text-xs rounded-lg px-3 py-2" style={{ background: 'var(--surface)', border: '1px solid var(--border-2)' }}>
+                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{stallById.get(i.stallId)?.name ?? '?'}</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          stok {qtyText(i.stockQty)} · jual {rupiah(e.price)}
+                          {e.share ? ` · penitip ${rupiah(e.share.consignor)} · kita ${rupiah(e.share.ours)}` : ' · skema belum ditentukan'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </DetailPanel>
           );
         }}
         actions={p => <RowActions onEdit={can('edit') ? () => openEdit(p) : undefined}

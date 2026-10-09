@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { History } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
+import { schemeText } from '@/lib/consign';
 import FilterSelect from '@/components/FilterSelect';
-import DataList, { type ExportCol } from './DataList';
+import DataList, { DetailPanel, type ExportCol } from './DataList';
 import {
   API, Badge, ModalShell, rupiah, qtyText, effectiveFor,
   type SectionProps, type CProduct, type Consignor, type Stall, type StallItem,
@@ -102,6 +103,20 @@ export default function StockSection({ creds, data }: SectionProps) {
               <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{l.p.unit}</p>
             </div>
           </div>
+        )}
+        renderDetail={l => (
+          <DetailPanel fields={[
+            { label: 'Kode Produk', value: l.p.code },
+            { label: 'Penitip', value: l.c?.name ?? '' },
+            { label: 'Lapak', value: l.stall?.name ?? '' },
+            { label: 'Stok', value: `${qtyText(l.item.stockQty)} ${l.p.unit}` },
+            { label: 'Harga Jual', value: rupiah(l.eff.price) },
+            { label: 'Skema Bagi Hasil', value: schemeText(l.eff.spec) },
+            { label: 'Bagian Penitip / unit', value: l.eff.share ? rupiah(l.eff.share.consignor) : '' },
+            { label: 'Bagian Kita / unit', value: l.eff.share ? rupiah(l.eff.share.ours) : '' },
+            { label: 'Nilai Stok untuk Penitip', value: l.eff.share ? rupiah(l.item.stockQty * l.eff.share.consignor) : '' },
+            { label: 'Potensi Bagian Kita', value: l.eff.share ? rupiah(l.item.stockQty * l.eff.share.ours) : '' },
+          ]} />
         )}
         actions={l => (
           <Tooltip label="Riwayat stok">

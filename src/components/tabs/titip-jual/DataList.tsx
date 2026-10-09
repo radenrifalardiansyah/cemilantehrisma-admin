@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Pencil, Trash2, Loader2, Search, Check, Upload } from 'lucide-react';
+import { Pencil, Trash2, Loader2, Search, Check, Upload, ChevronRight } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
@@ -33,6 +33,23 @@ export function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return (name.trim().slice(0, 2) || '?').toUpperCase();
+}
+
+// Panel detail standar: grid label/nilai 2 kolom, seperti SupplierDetail. `wide` = baris penuh.
+export function DetailPanel({ fields, children }: { fields: { label: string; value: React.ReactNode; wide?: boolean }[]; children?: React.ReactNode }) {
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        {fields.map((f, i) => (
+          <div key={i} className={`min-w-0 ${f.wide ? 'col-span-2' : ''}`}>
+            <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>{f.label}</p>
+            <div className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{f.value || '–'}</div>
+          </div>
+        ))}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 // Tombol edit + hapus standar untuk baris/kartu.
@@ -68,6 +85,7 @@ interface Props<T> {
   avatarImage?: (t: T) => string | undefined; // logo/gambar; kalau ada dipakai menggantikan inisial
   renderBody: (t: T) => React.ReactNode;
   actions?: (t: T) => React.ReactNode;
+  renderDetail?: (t: T) => React.ReactNode; // isi panel detail; kalau ada, muncul tombol panah "Lihat detail"
   onBulkDelete?: (ids: string[]) => Promise<void>;
   // Impor Excel (opsional): unduh template + unggah file. `onFile` menangani baca file & kirim ke server.
   importer?: { onTemplate: () => void; onFile: (file: File) => Promise<void> };
@@ -89,6 +107,7 @@ export default function DataList<T>(p: Props<T>) {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const resetKey = `${search}|${p.resetKey ?? ''}`;
@@ -228,13 +247,24 @@ export default function DataList<T>(p: Props<T>) {
             const isSel = selected.has(id);
             const rowNum = (safePage - 1) * (Number.isFinite(pageSize) ? pageSize : 0) + idx + 1;
             return (
-              <div key={id} className="flex items-center gap-2 px-4 py-3.5"
-                style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSel ? 'rgba(212,105,30,0.05)' : undefined, transition: 'background 0.1s' }}>
-                <Checkbox checked={isSel} onChange={() => toggle(id)} />
-                <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNum}</span>
-                {avatarBox(t)}
-                <div className="flex-1 min-w-0">{p.renderBody(t)}</div>
-                {p.actions && <div className="flex items-center gap-1 flex-shrink-0">{p.actions(t)}</div>}
+              <div key={id} style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSel ? 'rgba(212,105,30,0.05)' : undefined, transition: 'background 0.1s' }}>
+                <div className="flex items-center gap-2 px-4 py-3.5">
+                  <Checkbox checked={isSel} onChange={() => toggle(id)} />
+                  <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNum}</span>
+                  {avatarBox(t)}
+                  <div className="flex-1 min-w-0">{p.renderBody(t)}</div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {p.actions?.(t)}
+                    {p.renderDetail && (
+                      <Tooltip label="Lihat detail">
+                        <button onClick={() => setExpandedId(expandedId === id ? null : id)} className="btn-ghost p-2">
+                          <ChevronRight size={13} style={{ transform: expandedId === id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
+                </div>
+                {expandedId === id && p.renderDetail?.(t)}
               </div>
             );
           })}
@@ -255,7 +285,17 @@ export default function DataList<T>(p: Props<T>) {
                   {avatarBox(t, true)}
                   <div className="flex-1 min-w-0">{p.renderBody(t)}</div>
                 </div>
-                {p.actions && <div className="flex items-center justify-end gap-1 px-3 py-1.5" style={{ borderTop: '1px solid var(--border-2)' }}>{p.actions(t)}</div>}
+                {(p.actions || p.renderDetail) && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+                    {p.renderDetail ? (
+                      <button onClick={() => setExpandedId(expandedId === id ? null : id)} className="btn-ghost px-1.5 py-1.5 text-xs font-semibold flex items-center gap-1 flex-shrink-0">
+                        Detail <ChevronRight size={12} style={{ transform: expandedId === id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                      </button>
+                    ) : <span />}
+                    <div className="flex items-center gap-1 flex-shrink-0">{p.actions?.(t)}</div>
+                  </div>
+                )}
+                {expandedId === id && p.renderDetail?.(t)}
               </div>
             );
           })}

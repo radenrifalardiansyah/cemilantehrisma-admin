@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Store } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
-import DataList, { RowActions, initials, type ExportCol } from './DataList';
+import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, deleteMany, type SectionProps, type Stall } from './shared';
 
 const EMPTY: Omit<Stall, 'id' | 'code'> = { name: '', address: '', warehouseId: '', note: '', isActive: true };
@@ -88,6 +88,20 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
             </div>
           </>
         )}
+        renderDetail={s => {
+          const its = data.stallItems.filter(i => i.stallId === s.id);
+          return (
+            <DetailPanel fields={[
+              { label: 'Kode Lapak', value: s.code },
+              { label: 'Status', value: s.isActive ? 'Aktif' : 'Nonaktif' },
+              { label: 'Gudang Terkait', value: whName(s.warehouseId) },
+              { label: 'Stok Titipan', value: (stockByStall.get(s.id) ?? 0).toLocaleString('id-ID') },
+              { label: 'Produk Dijual', value: `${its.length} produk (${its.filter(i => i.stockQty > 0).length} ada stok)` },
+              { label: 'Alamat', value: s.address, wide: true },
+              ...(s.note ? [{ label: 'Catatan', value: s.note, wide: true }] : []),
+            ]} />
+          );
+        }}
         actions={s => <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...s }); } : undefined}
           onDelete={can('delete') ? () => del(s) : undefined} deleting={deletingId === s.id} />}
         onBulkDelete={can('delete') ? bulkDelete : undefined}

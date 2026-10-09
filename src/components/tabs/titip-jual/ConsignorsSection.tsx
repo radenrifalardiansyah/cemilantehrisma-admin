@@ -7,7 +7,7 @@ import ImageUploadBox from '@/components/ImageUploadBox';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText } from '@/lib/consign';
-import DataList, { RowActions, initials, type ExportCol } from './DataList';
+import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
 import { downloadTemplate, readRows, type ImportCol } from './importers';
 import {
   API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport,
@@ -166,6 +166,34 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
             </div>
           </>
         )}
+        renderDetail={c => {
+          const bank = data.banks.find(b => b.name === c.bankName);
+          const prods = data.products.filter(p => p.consignorId === c.id);
+          const stock = data.stallItems.filter(i => prods.some(p => p.id === i.productId)).reduce((a, i) => a + i.stockQty, 0);
+          return (
+            <DetailPanel fields={[
+              { label: 'Kode Penitip', value: c.code },
+              { label: 'Status', value: c.isActive ? 'Aktif' : 'Nonaktif' },
+              { label: 'Telepon', value: c.phone },
+              { label: 'Skema Bagi Hasil', value: c.scheme ? schemeText({ scheme: c.scheme, value: c.schemeValue }) : 'Belum ditentukan' },
+              { label: 'Jumlah Produk', value: String(prods.length) },
+              { label: 'Total Stok Titipan', value: stock.toLocaleString('id-ID') },
+              { label: 'Alamat', value: c.address, wide: true },
+              { label: 'Bank', value: c.bankName ? (
+                <span className="inline-flex items-center gap-1.5">
+                  {bank?.logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={bank.logoUrl} alt="" className="w-5 h-5" style={{ objectFit: 'contain' }} />
+                  )}
+                  {c.bankName}
+                </span>
+              ) : '' },
+              { label: 'No. Rekening', value: c.bankAccount },
+              { label: 'Atas Nama', value: c.bankHolder, wide: true },
+              ...(c.note ? [{ label: 'Catatan', value: c.note, wide: true }] : []),
+            ]} />
+          );
+        }}
         actions={c => <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...c }); } : undefined}
           onDelete={can('delete') ? () => del(c) : undefined} deleting={deletingId === c.id} />}
         onBulkDelete={can('delete') ? bulkDelete : undefined} importer={importer}
