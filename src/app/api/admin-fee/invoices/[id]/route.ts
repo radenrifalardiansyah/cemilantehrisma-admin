@@ -1,8 +1,16 @@
 import { NextRequest } from 'next/server';
+import { getDb } from '@/lib/firebase-admin';
+import { logHistory } from '@/lib/history';
 import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
 import { serializeInvoiceRow, type AdminFeeInvoiceRow } from '@/lib/admin-fee';
+
+async function auditInvoice(actor: Parameters<typeof logHistory>[1]['actor'], action: 'create' | 'update', id: string, label: string, before: Record<string, unknown> | null, after: Record<string, unknown>) {
+  try {
+    await logHistory(getDb(), { entity: 'admin-fee', entityCollection: 'invoices', entityId: id, entityLabel: label, action, actor, before, after });
+  } catch (err) { console.error('Failed to write admin-fee audit log', err); }
+}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requireAdminOrSuperAdmin(req);
@@ -30,7 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const sql = getSql();
-  const [row] = await sql<{ status: string }[]>`select status from admin_fee_invoices where id = ${id}`;
+  const [row] = await sql<{ status: string; invoice_no: string }[]>`select status, invoice_no from admin_fee_invoices where id = ${id}`;
   if (!row) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
   // Invoice yang sudah lunas tidak boleh dibatalkan begitu saja — uangnya sudah diterima,
   // koreksi seharusnya lewat pembukuan/refund, bukan menghapus jejak tagihan yang sudah dibayar.
@@ -64,6 +72,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     where id = ${id}
   `;
   if (result.count === 0) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
+  await auditInvoice(guard, 'update', id, `Invoice Biaya Admin ${row.invoice_no}`, { status: row.status }, { status: data.status });
   revalidateTag('admin-fee-invoices', { expire: 0 });
   return Response.json({ ok: true });
 }

@@ -1,7 +1,15 @@
 import { NextRequest } from 'next/server';
+import { getDb } from '@/lib/firebase-admin';
+import { logHistory } from '@/lib/history';
 import { revalidateTag } from 'next/cache';
 import { getSql } from '@/lib/db';
 import { requireAdminOrSuperAdmin } from '@/lib/rbac';
+
+async function auditInvoice(actor: Parameters<typeof logHistory>[1]['actor'], action: 'create' | 'update', id: string, label: string, before: Record<string, unknown> | null, after: Record<string, unknown>) {
+  try {
+    await logHistory(getDb(), { entity: 'admin-fee', entityCollection: 'invoices', entityId: id, entityLabel: label, action, actor, before, after });
+  } catch (err) { console.error('Failed to write admin-fee audit log', err); }
+}
 
 // Aksi "Bayar" milik `admin` (pemilik usaha) atas invoice Biaya Admin yang sudah ditagihkan
 // superadmin — pembayaran manual (transfer di luar sistem, lalu konfirmasi di sini), bukan
@@ -15,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({})) as { note?: string };
 
   const sql = getSql();
-  const [row] = await sql<{ status: string }[]>`select status from admin_fee_invoices where id = ${id}`;
+  const [row] = await sql<{ status: string; invoice_no: string }[]>`select status, invoice_no from admin_fee_invoices where id = ${id}`;
   if (!row) return Response.json({ error: 'Invoice tidak ditemukan.' }, { status: 404 });
   if (row.status !== 'invoiced') {
     return Response.json({ error: 'Invoice ini belum ditagihkan atau sudah dibayar.' }, { status: 400 });
@@ -28,6 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where id = ${id}
   `;
 
+  await auditInvoice(guard, 'update', id, `Invoice Biaya Admin ${row.invoice_no}`, { status: 'invoiced' }, { status: 'paid', note: body.note?.trim() || null });
   revalidateTag('admin-fee-invoices', { expire: 0 });
   return Response.json({ ok: true });
 }

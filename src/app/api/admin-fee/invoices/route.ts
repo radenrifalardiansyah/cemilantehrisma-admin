@@ -1,10 +1,18 @@
 import { NextRequest } from 'next/server';
+import { getDb } from '@/lib/firebase-admin';
+import { logHistory } from '@/lib/history';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { getSql } from '@/lib/db';
 import { requireSuperAdmin, requireAdminOrSuperAdmin } from '@/lib/rbac';
 import { parseDateKey } from '@/lib/validate-input';
 import { computeReport, collectTransactionIds, serializeInvoiceRow, type AdminFeeInvoiceRow } from '@/lib/admin-fee';
+
+async function auditInvoice(actor: Parameters<typeof logHistory>[1]['actor'], action: 'create' | 'update', id: string, label: string, before: Record<string, unknown> | null, after: Record<string, unknown>) {
+  try {
+    await logHistory(getDb(), { entity: 'admin-fee', entityCollection: 'invoices', entityId: id, entityLabel: label, action, actor, before, after });
+  } catch (err) { console.error('Failed to write admin-fee audit log', err); }
+}
 
 // Cached unfiltered — role-based filtering below stays outside the cache (per-request, not
 // baked into the shared cached value) since which rows `admin` may see depends on the caller.
@@ -69,6 +77,7 @@ export async function POST(req: NextRequest) {
     `;
   });
 
+  await auditInvoice(guard, 'create', id, `Invoice Biaya Admin ${invoiceNo}`, null, { invoiceNo, from, to, status: 'draft' });
   revalidateTag('admin-fee-invoices', { expire: 0 });
   return Response.json({ id, invoiceNo });
 }

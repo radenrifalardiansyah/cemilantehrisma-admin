@@ -61,6 +61,7 @@ const ENTITY_META: Record<string, { icon: ReactNode; direction: Direction }> = {
   production:           { icon: <Factory size={16} />,      direction: 'neutral' },
   materials:            { icon: <Boxes size={16} />,        direction: 'neutral' },
   consignment:          { icon: <Store size={16} />,        direction: 'neutral' },
+  'admin-fee':          { icon: <Banknote size={16} />,     direction: 'out' },
   consign:              { icon: <Store size={16} />,        direction: 'neutral' },
   stock:                { icon: <Warehouse size={16} />,    direction: 'neutral' },
   warehouses:           { icon: <Warehouse size={16} />,    direction: 'neutral' },
