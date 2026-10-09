@@ -57,7 +57,7 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
 
   if (!data) return <PageLoader />;
 
-  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a) };
+  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub };
 
   return (
     <div className="flex flex-col h-full">

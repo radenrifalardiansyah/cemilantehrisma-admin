@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { History } from 'lucide-react';
+import { History, PackageCheck } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import { schemeText } from '@/lib/consign';
 import FilterSelect from '@/components/FilterSelect';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import {
-  API, Badge, ModalShell, rupiah, qtyText, effectiveFor,
+  API, HEADER_BTN_H, Badge, ModalShell, rupiah, qtyText, effectiveFor,
   type SectionProps, type CProduct, type Consignor, type Stall, type StallItem,
 } from './shared';
 
@@ -20,10 +20,10 @@ const TYPE_LABEL: Record<string, string> = { in: 'Terima barang', return: 'Retur
 
 interface Line { item: StallItem; p: CProduct; c: Consignor | undefined; stall: Stall | undefined; eff: ReturnType<typeof effectiveFor> }
 
-export default function StockSection({ creds, data }: SectionProps) {
+export default function StockSection({ creds, data, can, goTo }: SectionProps) {
   const [stallFilter, setStallFilter] = useState('');
   const [consignorFilter, setConsignorFilter] = useState('');
-  const [stockFilter, setStockFilter] = useState('stock');
+  const [onlyInStock, setOnlyInStock] = useState(false);
   const [history, setHistory] = useState<{ title: string; productId: string; stallId: string } | null>(null);
 
   const productById = new Map(data.products.map(p => [p.id, p]));
@@ -39,8 +39,13 @@ export default function StockSection({ creds, data }: SectionProps) {
   const lines = all
     .filter(l => !stallFilter || l.item.stallId === stallFilter)
     .filter(l => !consignorFilter || l.p.consignorId === consignorFilter)
-    .filter(l => stockFilter === 'all' || l.item.stockQty > 0)
+    .filter(l => !onlyInStock || l.item.stockQty > 0)
     .sort((a, b) => a.p.name.localeCompare(b.p.name, 'id', { sensitivity: 'base' }));
+
+  // Kosong = belum ada produk yang dijual di lapak mana pun — tampilkan kartu "Terima Barang"
+  // seperti tab lain.
+  const empty = all.length === 0;
+  const canReceive = can('create') && !!goTo;
 
   const totalQty = lines.reduce((a, l) => a + l.item.stockQty, 0);
   const totalOwed = lines.reduce((a, l) => a + l.item.stockQty * (l.eff.share?.consignor ?? 0), 0);
@@ -59,7 +64,7 @@ export default function StockSection({ creds, data }: SectionProps) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
+      {!empty && <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total stok', val: qtyText(totalQty) },
           { label: 'Nilai untuk penitip', val: rupiah(totalOwed) },
@@ -70,21 +75,29 @@ export default function StockSection({ creds, data }: SectionProps) {
             <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{s.val}</p>
           </div>
         ))}
-      </div>
+      </div>}
 
       <DataList<Line>
-        creds={creds} items={lines} totalCount={all.length} getId={l => l.item.id} noun="baris stok"
+        creds={creds} items={lines} totalCount={empty ? 0 : all.length} getId={l => l.item.id} noun="baris stok"
         searchText={l => `${l.p.name} ${l.c?.name ?? ''} ${l.stall?.name ?? ''}`} searchPlaceholder="Cari produk, penitip, atau lapak…"
-        viewKey="consign-stock" resetKey={`${stallFilter}|${consignorFilter}|${stockFilter}`}
-        emptyHint="Belum ada stok titipan. Catat penerimaan barang di tab Terima & Retur."
+        viewKey="consign-stock" resetKey={`${stallFilter}|${consignorFilter}|${onlyInStock}`}
+        addLabel={canReceive ? 'Terima Barang' : undefined} onAdd={canReceive ? () => goTo!('receipts') : undefined}
+        emptyHint="Belum ada stok titipan. Catat barang yang diterima dari penitip di tab Terima & Retur."
         filters={(
           <>
             <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
               options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(s => ({ value: s.id, label: s.name }))]} />
             <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
               options={[{ value: '', label: 'Semua penitip' }, ...data.consignors.map(c => ({ value: c.id, label: c.name }))]} />
-            <FilterSelect value={stockFilter} onChange={setStockFilter}
-              options={[{ value: 'stock', label: 'Hanya ada stok' }, { value: 'all', label: 'Semua baris' }]} />
+            <button onClick={() => setOnlyInStock(v => !v)} aria-pressed={onlyInStock}
+              className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+              style={{
+                height: HEADER_BTN_H,
+                background: onlyInStock ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+                color: onlyInStock ? 'white' : 'var(--text-muted)',
+              }}>
+              <PackageCheck size={14} /> <span className="hidden sm:inline">Ada Stok</span>
+            </button>
           </>
         )}
         renderBody={l => (
