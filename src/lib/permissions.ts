@@ -26,6 +26,7 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   // `delete` = membatalkan (void) penjualan lapak.
   { key: 'stall-pos',        label: 'Kasir Lapak',        actions: ['view', 'create', 'delete'] },
   { key: 'stall-sales-report', label: 'Laporan Penjualan per Kasir', actions: ['view'] },
+  { key: 'stall-report',     label: 'Laporan Penjualan Lapak', actions: ['view'] },
   { key: 'income',           label: 'Pemasukan',          actions: CRUD },
   { key: 'expenses',         label: 'Pengeluaran',        actions: CRUD },
   { key: 'capital',          label: 'Modal & Prive',      actions: CRUD },

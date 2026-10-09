@@ -31,6 +31,7 @@ import SuppliersTab  from '@/components/tabs/SuppliersTab';
 import TitipJualTab  from '@/components/tabs/TitipJualTab';
 import KasirLapakTab from '@/components/tabs/KasirLapakTab';
 import CashierSalesReportTab from '@/components/tabs/CashierSalesReportTab';
+import StallSalesReportTab from '@/components/tabs/StallSalesReportTab';
 import ProcurementReportTab from '@/components/tabs/ProcurementReportTab';
 import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
@@ -1522,6 +1523,7 @@ export default function AdminPage() {
       {activeTab === 'consign'    && <TitipJualTab  creds={creds} can={(a: Action) => can('consign', a)} />}
       {activeTab === 'stall-pos'  && <KasirLapakTab creds={creds} can={(a: Action) => can('stall-pos', a)} />}
       {activeTab === 'stall-sales-report' && <CashierSalesReportTab creds={creds} />}
+      {activeTab === 'stall-report' && <StallSalesReportTab creds={creds} />}
       {activeTab === 'income'     && <IncomeTab     creds={creds} />}
       {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
       {activeTab === 'capital'    && <CapitalTab    creds={creds} />}

@@ -54,7 +54,7 @@ async function unregisterPushToken(creds: string): Promise<void> {
 export type TabId =
   | 'dashboard' | 'pos' | 'products' | 'categories' | 'orders' | 'resellers' | 'customers'
   | 'storefront-customers' | 'reviews'
-  | 'stock' | 'stock-report' | 'po-report' | 'gr-report' | 'opname-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'consign' | 'stall-pos' | 'stall-sales-report' | 'income' | 'expenses'
+  | 'stock' | 'stock-report' | 'po-report' | 'gr-report' | 'opname-report' | 'materials' | 'suppliers' | 'production' | 'consignment' | 'consign' | 'stall-pos' | 'stall-sales-report' | 'stall-report' | 'income' | 'expenses'
   | 'finance-report' | 'product-report' | 'capital' | 'wallets' | 'settings'
   | 'users' | 'roles' | 'modules' | 'menus' | 'role-permissions' | 'history'
   | 'admin-fee' | 'tagihan-admin-fee' | 'notifications';

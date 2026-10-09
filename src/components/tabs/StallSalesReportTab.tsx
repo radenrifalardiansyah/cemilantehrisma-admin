@@ -9,11 +9,12 @@ import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { useToast } from '@/components/Toast';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
-import PeriodBar from './PeriodBar';
-import { exportExcel, exportPdf, type ExportCol } from './exporters';
-import { API, HEADER_BTN_H, Badge, rupiah, qtyText, type SectionProps } from './shared';
+import PeriodBar from './titip-jual/PeriodBar';
+import { exportExcel, exportPdf, type ExportCol } from './titip-jual/exporters';
+import { HEADER_BTN_H, Badge, rupiah, qtyText } from './titip-jual/shared';
 
 interface Report {
+  stallOptions: { id: string; name: string }[];
   summary: { count: number; revenue: number; discount: number; ownRevenue: number; ownCost: number; consignSold: number; consignorShare: number; ourConsign: number; storeShare: number; grossProfit: number };
   methods: { method: string; count: number; amount: number }[];
   daily: { date: string; count: number; revenue: number }[];
@@ -27,12 +28,12 @@ const METHOD: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', transfer: 
 const todayKey = () => new Date().toLocaleDateString('en-CA');
 
 async function fetchReport(creds: string, from: string, to: string, stallId: string): Promise<Report | null> {
-  const r = await fetch(`${API}/api/consign/stall-report?from=${from}&to=${to}&stallId=${stallId}`, { headers: { 'x-admin-auth': creds } });
+  const r = await fetch(`/api/stall-pos/report?from=${from}&to=${to}&stallId=${stallId}`, { headers: { 'x-admin-auth': creds } });
   return r.ok ? await r.json() as Report : null;
 }
 
-// Laporan penjualan lapak — terpisah dari laporan toko.
-export default function StallReportSection({ creds, data }: SectionProps) {
+// Keuangan → Laporan → Laporan Penjualan Lapak — terpisah dari laporan toko.
+export default function StallSalesReportTab({ creds }: { creds: string }) {
   const toast = useToast();
   const store = useStoreHeader(creds);
   const [period, setPeriod] = useState<PeriodKey>('month');
@@ -49,7 +50,7 @@ export default function StallReportSection({ creds, data }: SectionProps) {
     return () => { alive = false; };
   }, [creds, from, to, stallId]);
 
-  const label = `${from === to ? from : `${from} s/d ${to}`}${stallId ? ` · ${data.stalls.find(s => s.id === stallId)?.name ?? ''}` : ' · semua lapak'}`;
+  const label = `${from === to ? from : `${from} s/d ${to}`}${stallId ? ` · ${report?.stallOptions.find(s => s.id === stallId)?.name ?? ''}` : ' · semua lapak'}`;
 
   const consignorCols: ExportCol<Report['consignors'][number]>[] = [
     { header: 'Penitip', width: '22%', bold: true, value: c => c.consignorName },
@@ -100,12 +101,12 @@ export default function StallReportSection({ creds, data }: SectionProps) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="p-4 lg:p-6 space-y-4 animate-fade-up">
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
         <div className="flex-1 min-w-0"><PeriodBar period={period} onPeriod={setPeriod} from={customFrom} to={customTo} onFrom={setCustomFrom} onTo={setCustomTo} /></div>
         <div className="w-full sm:w-52">
           <FilterSelect value={stallId} onChange={setStallId} searchPlaceholder="Cari lapak…"
-            options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(x => ({ value: x.id, label: x.name }))]} />
+            options={[{ value: '', label: 'Semua lapak' }, ...report.stallOptions.map(x => ({ value: x.id, label: x.name }))]} />
         </div>
       </div>
 

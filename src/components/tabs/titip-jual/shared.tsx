@@ -45,7 +45,7 @@ export interface SectionProps {
   data: TitipJualData;
   reload: () => Promise<void>;
   can: (a: 'view' | 'create' | 'edit' | 'delete') => boolean;
-  goTo?: (tab: 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements' | 'report') => void; // pindah sub-tab
+  goTo?: (tab: 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements') => void; // pindah sub-tab
 }
 
 export const rupiah = (n: number) => `Rp${Math.round(n).toLocaleString('id-ID')}`;

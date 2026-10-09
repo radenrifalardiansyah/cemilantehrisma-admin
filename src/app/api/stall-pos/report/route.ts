@@ -3,10 +3,11 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { DATE_RE } from '@/lib/consign-settlement';
 
-// Laporan penjualan lapak (data lapak terpisah dari laporan toko). Semua angka berasal dari
-// stall_sales / consign_sale_lines; penjualan yang dibatalkan tidak dihitung.
+// Laporan Penjualan Lapak (menu Keuangan → Laporan; data lapak terpisah dari laporan toko). Semua angka
+// berasal dari stall_sales / consign_sale_lines; penjualan yang dibatalkan tidak dihitung. Izin sendiri
+// ('stall-report'), jadi bisa dibuka role keuangan tanpa akses ke Titip Jual.
 export async function GET(req: NextRequest) {
-  const guard = await requirePermission(req, 'consign', 'view');
+  const guard = await requirePermission(req, 'stall-report', 'view');
   if (guard instanceof Response) return guard;
   const sp = new URL(req.url).searchParams;
   const from = sp.get('from') ?? '';
@@ -17,7 +18,8 @@ export async function GET(req: NextRequest) {
   const sql = getSql();
   const stallFilter = stallId ? sql`and s.stall_id = ${stallId}` : sql``;
 
-  const [totals, methods, daily, stalls, products, consignors] = await Promise.all([
+  const [stallList, totals, methods, daily, stalls, products, consignors] = await Promise.all([
+    sql<{ id: string; name: string }[]>`select id, name from stalls order by name`,
     sql<{ n: string; revenue: string | null; discount: string | null }[]>`
       select count(*) as n, sum(total) as revenue, sum(discount) as discount
       from stall_sales s where s.status = 'paid' and s.date >= ${from} and s.date <= ${to} ${stallFilter}
@@ -69,6 +71,7 @@ export async function GET(req: NextRequest) {
   const discount = num(totals[0].discount);
 
   return Response.json({
+    stallOptions: stallList.map(s => ({ id: s.id, name: s.name })),
     summary: {
       count: num(totals[0].n), revenue: num(totals[0].revenue), discount,
       // Bagian toko = produk toko + bagian toko dari titipan − diskon (diskon ditanggung toko).
