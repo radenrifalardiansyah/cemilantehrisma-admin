@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Pencil, Trash2, Loader2, Search, Check } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Pencil, Trash2, Loader2, Search, Check, Upload } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
@@ -68,6 +68,8 @@ interface Props<T> {
   renderBody: (t: T) => React.ReactNode;
   actions?: (t: T) => React.ReactNode;
   onBulkDelete?: (ids: string[]) => Promise<void>;
+  // Impor Excel (opsional): unduh template + unggah file. `onFile` menangani baca file & kirim ke server.
+  importer?: { onTemplate: () => void; onFile: (file: File) => Promise<void> };
   exportCols: ExportCol<T>[]; exportTitle: string; exportFile: string;
 }
 
@@ -85,6 +87,8 @@ export default function DataList<T>(p: Props<T>) {
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
 
   const resetKey = `${search}|${p.resetKey ?? ''}`;
   const page = pageState.key === resetKey ? pageState.page : 1;
@@ -134,8 +138,34 @@ export default function DataList<T>(p: Props<T>) {
 
   const btn = { height: HEADER_BTN_H, width: HEADER_BTN_H };
 
+  const handleFile = async (f: File) => {
+    setImporting(true);
+    try { await p.importer!.onFile(f); } finally { setImporting(false); }
+  };
+  const importButtons = p.importer && (
+    <>
+      <Tooltip label="Unduh Template">
+        <button onClick={p.importer.onTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={btn}>
+          <ExcelIcon size={14} />
+        </button>
+      </Tooltip>
+      <Tooltip label={importing ? 'Mengimpor…' : 'Upload Excel'}>
+        <button onClick={() => importRef.current?.click()} disabled={importing} aria-label="Upload Excel" className="btn-ghost p-0 flex items-center justify-center" style={btn}>
+          {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+        </button>
+      </Tooltip>
+      <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }} />
+    </>
+  );
+
   if (p.totalCount === 0) {
-    return <EmptyAddCard label={p.addLabel ?? p.emptyHint ?? `Belum ada ${p.noun}`} onClick={p.onAdd} hint={p.addLabel ? p.emptyHint : undefined} />;
+    return (
+      <div className="space-y-4">
+        {p.importer && <div className="flex items-center justify-end gap-2">{importButtons}</div>}
+        <EmptyAddCard label={p.addLabel ?? p.emptyHint ?? `Belum ada ${p.noun}`} onClick={p.onAdd} hint={p.addLabel ? p.emptyHint : undefined} />
+      </div>
+    );
   }
 
   const avatarBox = (t: T, big?: boolean) => p.avatar && (
@@ -153,6 +183,7 @@ export default function DataList<T>(p: Props<T>) {
         </div>
         <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           {p.filters}
+          {importButtons}
           <Tooltip label="Export Excel">
             <button onClick={() => doExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={btn}>
               {exporting ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}

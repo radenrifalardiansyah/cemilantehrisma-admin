@@ -7,10 +7,22 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText, type ShareScheme } from '@/lib/consign';
 import DataList, { RowActions, initials, type ExportCol } from './DataList';
+import { downloadTemplate, readRows, type ImportCol } from './importers';
 import {
-  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, rupiah, qtyText, effectiveFor,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport, rupiah, qtyText, effectiveFor,
   type SectionProps, type CProduct,
 } from './shared';
+
+const IMPORT_COLS: ImportCol[] = [
+  { header: 'Penitip* (nama/kode)', key: 'consignor', width: 24, aliases: ['penitip', 'namapenitip', 'kodepenitip'], required: true },
+  { header: 'Nama Produk*', key: 'name', width: 26, aliases: ['namaproduk', 'produk', 'nama'], required: true },
+  { header: 'Satuan', key: 'unit', width: 10, aliases: ['satuan', 'unit'] },
+  { header: 'Harga Jual*', key: 'price', width: 14, aliases: ['hargajual', 'harga', 'hargajualdefault'], required: true },
+  { header: 'Skema (Nominal/Komisi)', key: 'scheme', width: 22, aliases: ['skema', 'skemabagihasil'] },
+  { header: 'Nilai (Rp setor atau % komisi)', key: 'value', width: 28, aliases: ['nilai', 'nilaibagihasil'] },
+  { header: 'Lapak (pisahkan dengan koma)', key: 'stalls', width: 28, aliases: ['lapak', 'dijualdilapak'] },
+  { header: 'Catatan', key: 'note', width: 28, aliases: ['catatan', 'note'] },
+];
 
 interface StallCfg { enabled: boolean; price: string; scheme: ShareScheme | null; schemeValue: number | null }
 interface Form {
@@ -110,6 +122,32 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
   const editConsignor = editing ? consignorById.get(editing.consignorId) : undefined;
   const editPrice = Number(editing?.defaultPrice) || 0;
 
+  const importer = can('create') ? {
+    onTemplate: () => downloadTemplate({
+      sheet: 'Template Produk Titipan', title: 'TEMPLATE IMPORT PRODUK TITIP JUAL — CEMILAN TEH RISMA', file: 'template-produk-titip-jual.xlsx',
+      note: 'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3; isi data mulai baris 4, satu produk per baris. '
+        + 'Penitip dan Lapak harus sudah terdaftar (tulis nama atau kodenya). Skema kosong = ikut skema default penitip; atau isi "Nominal"/"Komisi" beserta nilainya. '
+        + 'Lapak boleh lebih dari satu, pisahkan dengan koma (cth: Lapak 1, Lapak 2). Stok awal dicatat lewat tab Terima & Retur. Produk yang sudah ada dilewati.',
+      cols: IMPORT_COLS,
+      example: { consignor: 'Bu Sari Kue Kering', name: 'Nastar 250gr', unit: 'toples', price: '35000', scheme: 'Nominal', value: '28000', stalls: 'Lapak 1, Lapak 2', note: 'Contoh — timpa dengan data produk Anda' },
+    }),
+    onFile: async (file: File) => {
+      try {
+        const parsed = await readRows(file, IMPORT_COLS);
+        if ('error' in parsed) { toast.error(parsed.error); return; }
+        const rows = parsed.rows.filter(r => r.name.trim() || r.consignor.trim());
+        if (rows.length === 0) { toast.error('Tidak ada data produk valid pada file tersebut.'); return; }
+        const r = await fetch(`${API}/api/consign/products/bulk-import`, { method: 'POST', headers, body: JSON.stringify({ products: rows }) });
+        const d = await r.json().catch(() => ({})) as { error?: string; created: number; skippedDuplicate: number; errors: string[]; errorCount: number };
+        if (!r.ok) { toast.error(d.error ?? 'Gagal mengimpor produk titipan.'); return; }
+        await reload();
+        reportImport(toast, 'produk', d);
+      } catch {
+        toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+      }
+    },
+  } : undefined;
+
   const stallSummary = (p: CProduct) => (itemsByProduct.get(p.id) ?? [])
     .map(i => `${stallById.get(i.stallId)?.name ?? '?'}: ${qtyText(i.stockQty)} @ ${rupiah(effectiveFor(p, consignorById.get(p.consignorId), i).price)}`).join('; ');
   const cols: ExportCol<CProduct>[] = [
@@ -165,7 +203,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
         }}
         actions={p => <RowActions onEdit={can('edit') ? () => openEdit(p) : undefined}
           onDelete={can('delete') ? () => del(p) : undefined} deleting={deletingId === p.id} />}
-        onBulkDelete={can('delete') ? bulkDelete : undefined}
+        onBulkDelete={can('delete') ? bulkDelete : undefined} importer={importer}
         exportCols={cols} exportTitle="DAFTAR PRODUK TITIP JUAL" exportFile="produk-titip-jual"
       />
 

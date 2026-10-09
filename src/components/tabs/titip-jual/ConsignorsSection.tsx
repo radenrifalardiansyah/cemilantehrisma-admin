@@ -6,10 +6,23 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText } from '@/lib/consign';
 import DataList, { RowActions, initials, type ExportCol } from './DataList';
+import { downloadTemplate, readRows, type ImportCol } from './importers';
 import {
-  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport,
   type SectionProps, type Consignor,
 } from './shared';
+
+const IMPORT_COLS: ImportCol[] = [
+  { header: 'Nama*', key: 'name', width: 24, aliases: ['nama', 'namapenitip', 'penitip'], required: true },
+  { header: 'Telepon', key: 'phone', width: 18, aliases: ['telepon', 'telp', 'hp', 'whatsapp', 'phone'] },
+  { header: 'Alamat', key: 'address', width: 30, aliases: ['alamat', 'address'] },
+  { header: 'Skema (Nominal/Komisi)', key: 'scheme', width: 22, aliases: ['skema', 'skemabagihasil'] },
+  { header: 'Nilai (Rp setor atau % komisi)', key: 'value', width: 28, aliases: ['nilai', 'nilaibagihasil', 'setor', 'komisi'] },
+  { header: 'Bank', key: 'bankName', width: 14, aliases: ['bank', 'namabank'] },
+  { header: 'No. Rekening', key: 'bankAccount', width: 20, aliases: ['norekening', 'nomorrekening', 'rekening'] },
+  { header: 'Atas Nama', key: 'bankHolder', width: 20, aliases: ['atasnama', 'pemilikrekening'] },
+  { header: 'Catatan', key: 'note', width: 28, aliases: ['catatan', 'note'] },
+];
 
 const EMPTY: Omit<Consignor, 'id' | 'code'> = {
   name: '', phone: '', address: '', bankName: '', bankAccount: '', bankHolder: '', note: '',
@@ -62,6 +75,32 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
     else toast.error(res.firstError || 'Gagal menghapus penitip yang dipilih.');
   };
 
+  const importer = can('create') ? {
+    onTemplate: () => downloadTemplate({
+      sheet: 'Template Penitip', title: 'TEMPLATE IMPORT DATA PENITIP — CEMILAN TEH RISMA', file: 'template-penitip.xlsx',
+      note: 'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3; isi data mulai baris 4, satu penitip per baris. '
+        + 'Skema: isi "Nominal" (harga setor tetap per unit, nilai = rupiah) atau "Komisi" (persen untuk kita, nilai = persen). Kosong = Nominal Rp0. '
+        + 'Penitip dengan nama yang sudah ada dilewati.',
+      cols: IMPORT_COLS, textKeys: ['phone', 'bankAccount'],
+      example: { name: 'Bu Sari Kue Kering', phone: '081234567890', address: 'Jl. Melati No. 3', scheme: 'Nominal', value: '10000', bankName: 'BCA', bankAccount: '1234567890', bankHolder: 'Sari', note: 'Contoh — timpa dengan data penitip Anda' },
+    }),
+    onFile: async (file: File) => {
+      try {
+        const parsed = await readRows(file, IMPORT_COLS);
+        if ('error' in parsed) { toast.error(parsed.error); return; }
+        const rows = parsed.rows.filter(r => r.name.trim());
+        if (rows.length === 0) { toast.error('Tidak ada data penitip valid pada file tersebut.'); return; }
+        const r = await fetch(`${API}/api/consignors/bulk-import`, { method: 'POST', headers, body: JSON.stringify({ consignors: rows }) });
+        const d = await r.json().catch(() => ({})) as { error?: string; created: number; skippedDuplicate: number; errors: string[]; errorCount: number };
+        if (!r.ok) { toast.error(d.error ?? 'Gagal mengimpor data penitip.'); return; }
+        await reload();
+        reportImport(toast, 'penitip', d);
+      } catch {
+        toast.error('Gagal membaca file Excel. Pastikan format sesuai template.');
+      }
+    },
+  } : undefined;
+
   const cols: ExportCol<Consignor>[] = [
     { header: 'Kode', width: '8%', value: c => c.code },
     { header: 'Nama', width: '16%', bold: true, value: c => c.name },
@@ -101,7 +140,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
         )}
         actions={c => <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...c }); } : undefined}
           onDelete={can('delete') ? () => del(c) : undefined} deleting={deletingId === c.id} />}
-        onBulkDelete={can('delete') ? bulkDelete : undefined}
+        onBulkDelete={can('delete') ? bulkDelete : undefined} importer={importer}
         exportCols={cols} exportTitle="DAFTAR PENITIP" exportFile="penitip"
       />
 

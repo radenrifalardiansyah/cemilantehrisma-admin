@@ -173,3 +173,17 @@ export async function deleteMany(base: string, ids: string[], headers: Record<st
   }
   return { deleted, failed, firstError };
 }
+
+// Ringkas hasil impor dari server jadi satu pesan toast.
+export function reportImport(
+  toast: { success: (m: string) => void; error: (m: string) => void },
+  noun: string,
+  d: { created: number; skippedDuplicate: number; errors: string[]; errorCount: number },
+) {
+  const extra = [
+    d.skippedDuplicate > 0 ? `${d.skippedDuplicate} duplikat dilewati` : '',
+    d.errorCount > 0 ? `${d.errorCount} baris bermasalah: ${d.errors.slice(0, 3).join('; ')}${d.errorCount > 3 ? '; …' : ''}` : '',
+  ].filter(Boolean).join(' · ');
+  if (d.created > 0) toast.success(`${d.created} ${noun} berhasil diimpor.${extra ? ` (${extra})` : ''}`);
+  else toast.error(extra || `Tidak ada ${noun} yang diimpor.`);
+}
