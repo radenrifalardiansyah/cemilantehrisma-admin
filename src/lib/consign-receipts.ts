@@ -56,7 +56,7 @@ export async function createReceipt(
   await tx`
     insert into consign_receipts (id, doc_number, kind, consignor_id, consignor_name, stall_id, stall_name, doc_date, items, total_qty, note, created_by, created_at)
     values (${id}, ${docNumber}, ${p.kind}, ${p.consignorId}, ${p.consignorName}, ${p.stallId}, ${p.stallName}, ${p.docDate},
-      ${JSON.stringify(p.items)}::jsonb, ${totalQty}, ${p.note}, ${p.createdBy}, now())
+      ${tx.json(p.items as never)}, ${totalQty}, ${p.note}, ${p.createdBy}, now())
   `;
   for (const i of ordered) {
     await moveConsignStock(tx, {

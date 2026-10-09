@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       await tx`
         insert into stall_sales (id, invoice_no, stall_id, stall_name, shift_id, date, cashier, items, subtotal, discount, total,
           payment_method, amount_paid, change_amount, note, status, created_at)
-        values (${saleId}, ${invoiceNo}, ${stall.id}, ${stall.name}, ${shift.id}, ${dateKey}, ${user.username}, ${JSON.stringify(items)}::jsonb,
+        values (${saleId}, ${invoiceNo}, ${stall.id}, ${stall.name}, ${shift.id}, ${dateKey}, ${user.username}, ${tx.json(items as never)},
           ${subtotal}, ${discountInput}, ${total}, ${pay.method}, ${pay.amountPaid}, ${pay.change}, ${note}, 'paid', now())
       `;
       for (const i of items.filter(x => x.kind === 'consign')) {

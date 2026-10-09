@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw } from 'lucide-react';
+import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw, Banknote, BarChart3 } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
@@ -14,8 +14,10 @@ import ConsignorsSection from './titip-jual/ConsignorsSection';
 import StallsSection from './titip-jual/StallsSection';
 import StockSection from './titip-jual/StockSection';
 import ReceiptsSection from './titip-jual/ReceiptsSection';
+import SettlementsSection from './titip-jual/SettlementsSection';
+import StallReportSection from './titip-jual/StallReportSection';
 
-type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts';
+type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements' | 'report';
 
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'products', label: 'Produk', Icon: Package },
@@ -23,6 +25,8 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stalls', label: 'Lapak', Icon: Store },
   { id: 'stock', label: 'Stok per Lapak', Icon: Boxes },
   { id: 'receipts', label: 'Terima & Retur', Icon: ArrowLeftRight },
+  { id: 'settlements', label: 'Rekap & Bayar', Icon: Banknote },
+  { id: 'report', label: 'Laporan', Icon: BarChart3 },
 ];
 
 // Titip Jual: pihak luar menitipkan barang untuk dijual di lapak kita. Tahap 1 = data induk
@@ -90,6 +94,8 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
           {sub === 'stalls' && <StallsSection {...props} />}
           {sub === 'stock' && <StockSection {...props} />}
           {sub === 'receipts' && <ReceiptsSection {...props} />}
+          {sub === 'settlements' && <SettlementsSection {...props} />}
+          {sub === 'report' && <StallReportSection {...props} />}
         </div>
       </div>
     </div>

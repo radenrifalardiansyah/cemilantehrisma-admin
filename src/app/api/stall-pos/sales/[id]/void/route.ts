@@ -31,6 +31,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const [shift] = sale.shift_id ? await tx<{ status: string }[]>`select status from stall_shifts where id = ${sale.shift_id}` : [];
       if (!shift || shift.status !== 'open') throw new SaleError('Shift penjualan ini sudah ditutup — pembatalan hanya bisa selama shift masih terbuka.');
 
+      // Penjualan yang bagi hasilnya sudah masuk rekap tidak boleh dibatalkan (angka rekap sudah dikunci).
+      const [inSettlement] = await tx`select 1 from consign_sale_lines where sale_id = ${id} and settlement_id is not null limit 1`;
+      if (inSettlement) throw new SaleError('Penjualan ini sudah masuk rekap bagi hasil penitip — batalkan rekapnya dulu.');
+
       const items = rowToSale(sale).items;
       for (const i of [...items].filter(x => x.kind === 'consign').sort((a, b) => a.productId.localeCompare(b.productId))) {
         await moveConsignStock(tx, {
