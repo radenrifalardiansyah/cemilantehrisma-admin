@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PackagePlus, PackageMinus, Trash2, Loader2, Undo2, Plus } from 'lucide-react';
+import { PackagePlus, PackageMinus, X, Loader2, Undo2, Plus } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import FilterSelect from '@/components/FilterSelect';
@@ -12,7 +12,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import {
-  API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, qtyText,
+  API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, qtyText, rupiah, effectiveFor,
   type SectionProps, type Receipt,
 } from './shared';
 
@@ -64,6 +64,19 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
   const stockOf = (productId: string, stallId: string) =>
     data.stallItems.find(i => i.productId === productId && i.stallId === stallId)?.stockQty ?? 0;
 
+  // Info tiap baris (produk, stok di lapak terpilih, bagian penitip per unit) untuk tampilan & validasi.
+  const consignorOf = editing ? data.consignors.find(c => c.id === editing.consignorId) : undefined;
+  const lineInfo = (l: Line) => {
+    const p = consignorProducts.find(x => x.id === l.productId);
+    if (!p || !editing) return null;
+    const item = data.stallItems.find(i => i.productId === p.id && i.stallId === editing.stallId);
+    const share = effectiveFor(p, consignorOf, item).share;
+    return { unit: p.unit, stock: item?.stockQty ?? 0, qty: Number(l.qty) || 0, consignorShare: share ? share.consignor : null };
+  };
+  const infos = editing ? editing.lines.map(lineInfo) : [];
+  const totalQty = infos.reduce((a, i) => a + (i?.qty ?? 0), 0);
+  const totalValue = infos.reduce((a, i) => a + (i && i.consignorShare !== null ? i.qty * i.consignorShare : 0), 0);
+
   const setLine = (idx: number, patch: Partial<Line>) =>
     setEditing(e => e && ({ ...e, lines: e.lines.map((l, i) => i === idx ? { ...l, ...patch } : l) }));
 
@@ -98,7 +111,8 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
 
   const valid = !!editing && !!editing.consignorId && !!editing.stallId
     && editing.lines.some(l => l.productId && Number(l.qty) > 0)
-    && editing.lines.every(l => !l.productId || Number(l.qty) > 0);
+    && editing.lines.every(l => !l.productId || Number(l.qty) > 0)
+    && (editing.kind !== 'return' || editing.lines.every(l => { const i = lineInfo(l); return !i || i.qty <= i.stock; }));
 
   if (result === null) return <PageLoader />;
   const receipts = result.receipts;
@@ -194,6 +208,26 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
           footer={<ModalFooter onClose={() => setEditing(null)} onSave={save} saving={saving} disabled={!valid}
             label={editing.kind === 'in' ? 'Simpan Penerimaan' : 'Simpan Retur'} />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Jenis dokumen: Terima (stok bertambah) atau Retur (stok berkurang) */}
+            <div>
+              <div className="grid grid-cols-2 gap-2">
+                {([['in', 'Terima Barang', PackagePlus], ['return', 'Retur ke Penitip', PackageMinus]] as const).map(([k, label, Icon]) => (
+                  <button key={k} type="button" onClick={() => setEditing({ ...editing, kind: k })}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all"
+                    style={editing.kind === k
+                      ? { background: k === 'in' ? 'var(--success)' : 'linear-gradient(135deg,#E8821A,#C96018)', color: '#fff' }
+                      : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                    <Icon size={14} /> {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] mt-2 px-3 py-2 rounded-lg" style={{ background: editing.kind === 'in' ? 'var(--success-bg)' : 'var(--accent-bg)', color: editing.kind === 'in' ? 'var(--success)' : 'var(--accent)' }}>
+                {editing.kind === 'in'
+                  ? 'Stok titipan di lapak BERTAMBAH. Catat saat barang diterima dari penitip.'
+                  : 'Stok titipan di lapak BERKURANG — barang dikembalikan ke penitip (tidak laku/rusak). Ini bukan penjualan, jadi tidak masuk hutang.'}
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Penitip" required>
                 <SearchSelect value={editing.consignorId} onChange={v => setEditing({ ...editing, consignorId: v, lines: [{ productId: '', qty: '' }] })}
@@ -211,41 +245,78 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
             </Field>
 
             <div>
-              <p className="field-label">Barang</p>
+              <label className="field-label" style={{ marginBottom: 0 }}>{editing.kind === 'in' ? 'Produk Diterima' : 'Produk Diretur'}</label>
               {!editing.consignorId ? (
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Pilih penitip dulu untuk memilih produknya.</p>
+                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Pilih penitip dulu untuk memilih produknya.</p>
               ) : consignorProducts.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Penitip ini belum punya produk. Tambahkan di tab Produk.</p>
+                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Penitip ini belum punya produk. Tambahkan di tab Produk.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {editing.lines.map((l, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <div style={{ flex: 3, minWidth: 0 }}>
-                        <SearchSelect value={l.productId} onChange={v => setLine(idx, { productId: v })}
-                          // Produk yang sudah dipilih di baris lain tidak ditawarkan lagi.
-                          options={consignorProducts
-                            .filter(p => p.id === l.productId || !editing.lines.some((o, oi) => oi !== idx && o.productId === p.id))
-                            .map(p => ({ value: p.id, label: p.name, sublabel: editing.stallId ? `Stok di lapak: ${qtyText(stockOf(p.id, editing.stallId))} ${p.unit}` : p.code }))}
-                          placeholder="– Pilih produk –" searchPlaceholder="Cari produk…" />
-                      </div>
-                      <input className="input" style={{ flex: 1, minWidth: 70 }} type="number" min={0} step="any" inputMode="decimal" placeholder="Qty"
-                        value={l.qty} onChange={e => setLine(idx, { qty: e.target.value })} />
-                      {editing.lines.length > 1 && (
-                        <button className="btn-ghost p-2" style={{ color: 'var(--danger)' }}
-                          onClick={() => setEditing({ ...editing, lines: editing.lines.filter((_, i) => i !== idx) })}><Trash2 size={13} /></button>
-                      )}
-                    </div>
-                  ))}
-                  <button className="btn-ghost text-xs self-start" onClick={() => setEditing({ ...editing, lines: [...editing.lines, { productId: '', qty: '' }] })}>
-                    <Plus size={12} /> Tambah baris
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                    {editing.lines.map((l, idx) => {
+                      const info = lineInfo(l);
+                      const over = editing.kind === 'return' && !!info && info.qty > info.stock;
+                      return (
+                        <div key={idx} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <SearchSelect value={l.productId} onChange={v => setLine(idx, { productId: v })}
+                                // Produk yang sudah dipilih di baris lain tidak ditawarkan lagi.
+                                options={consignorProducts
+                                  .filter(p => p.id === l.productId || !editing.lines.some((o, oi) => oi !== idx && o.productId === p.id))
+                                  .map(p => ({ value: p.id, label: p.name, sublabel: editing.stallId ? `Stok di lapak: ${qtyText(stockOf(p.id, editing.stallId))} ${p.unit}` : p.code, imageUrl: p.imageUrl || undefined }))}
+                                placeholder="– Produk –" searchPlaceholder="Cari produk…" />
+                            </div>
+                            <Tooltip label="Hapus baris">
+                              <button onClick={() => setEditing({ ...editing, lines: editing.lines.filter((_, i) => i !== idx) })} disabled={editing.lines.length === 1}
+                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
+                            </Tooltip>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="field-label" style={{ fontSize: 11 }}>{editing.kind === 'in' ? 'Qty diterima' : 'Qty diretur'}{info ? ` (${info.unit})` : ''}</label>
+                              <input className={`input${over ? ' input-error' : ''}`} type="number" min={0} step="any" inputMode="decimal" placeholder="0"
+                                value={l.qty} onChange={e => setLine(idx, { qty: e.target.value })} />
+                            </div>
+                            <div>
+                              <label className="field-label" style={{ fontSize: 11 }}>Stok di lapak</label>
+                              <div className="input flex items-center justify-between" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                                <span className="tabular">{info && editing.stallId ? qtyText(info.stock) : '–'}</span>
+                                {info && editing.stallId && info.qty > 0 && (
+                                  <span className="text-[11px] tabular" style={{ color: over ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                    → {qtyText(editing.kind === 'in' ? info.stock + info.qty : info.stock - info.qty)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {over && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Qty retur melebihi stok di lapak ({qtyText(info!.stock)} {info!.unit}).</p>}
+                          {info && info.qty > 0 && info.consignorShare !== null && (
+                            <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Nilai bagian penitip: {rupiah(info.qty * info.consignorShare)}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={() => setEditing({ ...editing, lines: [...editing.lines, { productId: '', qty: '' }] })} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                    <Plus size={12} /> Tambah Baris Produk
                   </button>
-                </div>
+                </>
               )}
             </div>
 
-            <Field label="Catatan (opsional)">
-              <textarea className="input" style={{ resize: 'vertical', minHeight: 56 }} value={editing.note} onChange={e => setEditing({ ...editing, note: e.target.value })} />
+            <Field label="Catatan">
+              <input className="input" type="text" value={editing.note} placeholder="Catatan tambahan (opsional)" onChange={e => setEditing({ ...editing, note: e.target.value })} />
             </Field>
+
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
+              <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{qtyText(totalQty)} pcs</span>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Nilai Bagian Penitip</span>
+              <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{rupiah(totalValue)}</span>
+            </div>
             <ErrorBox message={error} />
           </div>
         </ModalShell>
