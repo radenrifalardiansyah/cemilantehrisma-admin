@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { DATE_RE } from '@/lib/consign-settlement';
 
@@ -18,7 +19,9 @@ export async function GET(req: NextRequest) {
   const sql = getSql();
   const stallFilter = stallId ? sql`and s.stall_id = ${stallId}` : sql``;
 
-  const [stallList, totals, methods, daily, stalls, products, consignors] = await Promise.all([
+  // Query dijalankan BERURUTAN (seq): tujuh query sekaligus lewat PgBouncer pernah membuat laporan ini
+  // loading tanpa henti (lihat src/lib/db-seq.ts).
+  const [stallList, totals, methods, daily] = await seq([
     sql<{ id: string; name: string }[]>`select id, name from stalls order by name`,
     sql<{ n: string; revenue: string | null; discount: string | null }[]>`
       select count(*) as n, sum(total) as revenue, sum(discount) as discount
@@ -32,6 +35,8 @@ export async function GET(req: NextRequest) {
       select date, count(*) as n, sum(total) as revenue
       from stall_sales s where s.status = 'paid' and s.date >= ${from} and s.date <= ${to} ${stallFilter} group by date order by date
     `,
+  ]);
+  const [stalls, products, consignors] = await seq([
     sql<{ stall_id: string; stall_name: string; n: string; revenue: string }[]>`
       select stall_id, stall_name, count(*) as n, sum(total) as revenue
       from stall_sales s where s.status = 'paid' and s.date >= ${from} and s.date <= ${to} ${stallFilter}

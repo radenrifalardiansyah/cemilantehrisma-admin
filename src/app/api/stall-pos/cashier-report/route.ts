@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd } from '@/lib/date';
 import { toTimestamp } from '@/lib/orders-pg';
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   const stallFilter = stallId ? sql`and s.stall_id = ${stallId}` : sql``;
   const shiftStallFilter = stallId ? sql`and sh.stall_id = ${stallId}` : sql``;
 
-  const [stalls, totals, cashiers, shifts] = await Promise.all([
+  const [stalls, totals, cashiers, shifts] = await seq([
     sql<{ id: string; name: string }[]>`select id, name from stalls order by name`,
     sql<{ n: string; revenue: string; discount: string }[]>`
       select count(*) as n, coalesce(sum(total), 0) as revenue, coalesce(sum(discount), 0) as discount

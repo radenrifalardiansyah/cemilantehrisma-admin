@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { rowToStall, nextCode, type StallRow } from '@/lib/consign-pg';
 import { normalizeInvoicePrefix } from '@/lib/stall-access';
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'consign', 'view');
   if (guard instanceof Response) return guard;
   const sql = getSql();
-  const [rows, users, balances] = await Promise.all([
+  const [rows, users, balances] = await seq([
     sql<StallRow[]>`select * from stalls order by created_at asc`,
     sql<{ stall_id: string; username: string }[]>`select stall_id, username from stall_users order by username`,
     sql<{ stall_id: string; balance: string }[]>`select stall_id, sum(amount) as balance from stall_wallet_entries group by stall_id`,

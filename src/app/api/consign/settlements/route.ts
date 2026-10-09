@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDateKey } from '@/lib/date';
 import { nextDocNumber, periodOf } from '@/lib/doc-number';
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'consign', 'view');
   if (guard instanceof Response) return guard;
   const sql = getSql();
-  const [rows, payables] = await Promise.all([
+  const [rows, payables] = await seq([
     sql<SettlementRow[]>`select * from consign_settlements order by created_at desc limit 500`,
     sql<{ stall_id: string; consignor_id: string; consignor_name: string; amount: string; lines: string; first_at: Date; last_at: Date }[]>`
       select l.stall_id, l.consignor_id, l.consignor_name, sum(l.consignor_amount) as amount, count(*) as lines,

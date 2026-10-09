@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { nextCode } from '@/lib/consign-pg';
 import { validateScheme } from '@/lib/consign';
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   const sql = getSql();
-  const [consignors, stalls, existing, categories] = await Promise.all([
+  const [consignors, stalls, existing, categories] = await seq([
     sql<{ id: string; name: string; code: string | null; scheme: string | null }[]>`select id, name, code, scheme from consignors`,
     sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from stalls`,
     sql<{ code: string | null; consignor_id: string; name: string }[]>`select code, consignor_id, name from consign_products`,

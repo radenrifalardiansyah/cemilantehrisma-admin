@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useConfirm } from '@/components/Confirm';
 import Tooltip from '@/components/Tooltip';
+import MarqueeText from '@/components/MarqueeText';
 import AboutModal from '@/components/AboutModal';
 import EditProfileModal from '@/components/EditProfileModal';
 import ChatWidget, { type PendingLoginRequest } from '@/components/chat/ChatWidget';
@@ -428,9 +429,9 @@ export default function AppShell({
                           style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
                         />
                         {!collapsed && (
-                          <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
+                          <MarqueeText className="flex-1 text-left min-w-0" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
                             {tab.label}
-                          </span>
+                          </MarqueeText>
                         )}
                         {!collapsed && tab.id === 'pos' && hasCart && (
                           <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
@@ -493,9 +494,9 @@ export default function AppShell({
                                   strokeWidth={childIsActive ? 2.2 : 1.7}
                                   style={{ color: childIsActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
                                 />
-                                <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: childIsActive ? '#F0C89A' : '#EDD9C4' }}>
+                                <MarqueeText className="flex-1 text-left min-w-0" style={{ color: childIsActive ? '#F0C89A' : '#EDD9C4' }}>
                                   {child.label}
-                                </span>
+                                </MarqueeText>
                               </button>
                             );
                           })}
@@ -538,9 +539,9 @@ export default function AppShell({
                         style={{ color: isActive ? '#F0C89A' : '#8A6248', flexShrink: 0 }}
                       />
                       {!collapsed && (
-                        <span className="flex-1 text-left overflow-hidden whitespace-nowrap" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
+                        <MarqueeText className="flex-1 text-left min-w-0" style={{ color: isActive ? '#F0C89A' : '#EDD9C4' }}>
                           {PINNED_TAB.label}
-                        </span>
+                        </MarqueeText>
                       )}
                     </button>
                   );

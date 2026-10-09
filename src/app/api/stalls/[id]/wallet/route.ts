@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { toTimestamp } from '@/lib/orders-pg';
 import { auditConsign } from '@/lib/consign-audit';
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const sql = getSql();
   const [stall] = await sql`select id from stalls where id = ${id}`;
   if (!stall) return Response.json({ error: 'Lapak tidak ditemukan.' }, { status: 404 });
-  const [rows, [{ balance }]] = await Promise.all([
+  const [rows, [{ balance }]] = await seq([
     sql<EntryRow[]>`select id, kind, amount, ref_id, note, created_by, created_at from stall_wallet_entries where stall_id = ${id} order by created_at desc limit 300`,
     sql<{ balance: string | null }[]>`select sum(amount) as balance from stall_wallet_entries where stall_id = ${id}`,
   ]);

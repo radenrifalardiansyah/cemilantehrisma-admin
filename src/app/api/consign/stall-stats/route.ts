@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { DATE_RE } from '@/lib/consign-settlement';
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (!DATE_RE.test(from) || !DATE_RE.test(to)) return Response.json({ error: 'Periode tidak valid.' }, { status: 400 });
 
   const sql = getSql();
-  const [sales, items, lines] = await Promise.all([
+  const [sales, items, lines] = await seq([
     sql<{ stall_id: string; n: string; revenue: string; discount: string }[]>`
       select stall_id, count(*) as n, coalesce(sum(total), 0) as revenue, coalesce(sum(discount), 0) as discount
       from stall_sales where status = 'paid' and date >= ${from} and date <= ${to} group by stall_id

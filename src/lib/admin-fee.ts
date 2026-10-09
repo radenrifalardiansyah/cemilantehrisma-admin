@@ -195,14 +195,16 @@ export async function computeReport(from: string, to: string, pgTx?: PgClient): 
   interface RecapRow { id: string; total_revenue: string; payment_status: string; created_at: Date; location_name: string }
   interface LapakRow { id: string; invoice_no: string; stall_name: string; total: string; created_at: Date }
   const sql = pgTx ?? getSql();
-  const [orderRows, recapRows, lapakRows, rateHistories, invoicedMap] = await Promise.all([
+  const [orderRows, recapRows, rateHistories, invoicedMap] = await Promise.all([
     sql<OrderRow[]>`select id, total, source, status, payment_status, created_at, invoice_no, customer_name from orders where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
     sql<RecapRow[]>`select id, total_revenue, payment_status, created_at, location_name from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
-    // Penjualan Kasir Lapak (tabel terpisah dari orders); yang dibatalkan tidak ditagih.
-    sql<LapakRow[]>`select id, invoice_no, stall_name, total, created_at from stall_sales where status = 'paid' and created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`,
     getAllRateHistories(pgTx),
     getInvoicedTransactionMap(pgTx),
   ]);
+
+  // Penjualan Kasir Lapak (tabel terpisah dari orders); yang dibatalkan tidak ditagih. Dijalankan SETELAH
+  // query lain (bukan di Promise.all) supaya jumlah query bersamaan tidak bertambah dari sebelum fitur lapak.
+  const lapakRows = await sql<LapakRow[]>`select id, invoice_no, stall_name, total, created_at from stall_sales where status = 'paid' and created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`;
 
   const orders = orderRows.map((r): OrderDoc & { id: string } => ({
     id: r.id, total: Number(r.total), source: r.source, status: r.status, paymentStatus: r.payment_status,

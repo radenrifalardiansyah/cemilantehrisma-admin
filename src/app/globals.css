@@ -653,3 +653,18 @@ body {
   #pos-receipt, #pos-receipt *, #order-receipt-print, #order-receipt-print *, #stall-receipt, #stall-receipt * { visibility: visible; }
   #pos-receipt, #order-receipt-print, #stall-receipt { position: fixed; left: 0; top: 0; width: 80mm; box-sizing: border-box; }
 }
+
+
+/* ── Teks berjalan (MarqueeText): label menu panjang di sidebar ───────────── */
+@keyframes marqueeSlide {
+  0%, 18%   { transform: translateX(0); }
+  50%, 68%  { transform: translateX(var(--marquee-shift, 0px)); }
+  100%      { transform: translateX(0); }
+}
+.marquee-run {
+  display: inline-block;
+  animation: marqueeSlide var(--marquee-dur, 8s) ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-run { animation: none; }
+}

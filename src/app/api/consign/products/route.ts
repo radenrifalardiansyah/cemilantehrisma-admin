@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import {
   rowToConsignProduct, rowToStallItem, nextCode,
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'consign', 'view');
   if (guard instanceof Response) return guard;
   const sql = getSql();
-  const [products, stallItems] = await Promise.all([
+  const [products, stallItems] = await seq([
     sql<ConsignProductRow[]>`select * from consign_products order by created_at asc`,
     sql<StallItemRow[]>`select id, product_id, stall_id, price, scheme, scheme_value, stock_qty from consign_stall_items`,
   ]);
