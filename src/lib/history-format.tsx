@@ -61,6 +61,7 @@ const ENTITY_META: Record<string, { icon: ReactNode; direction: Direction }> = {
   production:           { icon: <Factory size={16} />,      direction: 'neutral' },
   materials:            { icon: <Boxes size={16} />,        direction: 'neutral' },
   consignment:          { icon: <Store size={16} />,        direction: 'neutral' },
+  consign:              { icon: <Store size={16} />,        direction: 'neutral' },
   stock:                { icon: <Warehouse size={16} />,    direction: 'neutral' },
   warehouses:           { icon: <Warehouse size={16} />,    direction: 'neutral' },
   capital:              { icon: <Landmark size={16} />,     direction: 'neutral' }, // arah ditentukan per-entri (modal vs prive), lihat directionFor()
