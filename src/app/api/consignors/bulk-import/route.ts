@@ -41,12 +41,13 @@ export async function POST(req: NextRequest) {
     if (!name) { errors.push(`${label}: nama kosong`); continue; }
     if (names.has(name.toLowerCase())) { skippedDuplicate++; continue; }
 
-    // Skema: kosong/"nominal"/"setor" → nominal, "komisi"/"persen"/"%" → commission.
+    // Skema: kosong → belum ditentukan (produk wajib punya skema sendiri); "komisi"/"persen"/"%"
+    // → commission; selain itu ("nominal"/"setor") → nominal.
     const schemeText = t(row.scheme).toLowerCase();
-    const scheme = /komisi|persen|%/.test(schemeText) ? 'commission' as const : 'nominal' as const;
+    const scheme = !schemeText ? null : /komisi|persen|%/.test(schemeText) ? 'commission' as const : 'nominal' as const;
     const valueText = t(row.value);
-    const value = valueText ? parseIdNumber(valueText) : 0;
-    const err = Number.isFinite(value) ? validateScheme(scheme, value) : 'nilai bagi hasil bukan angka';
+    const value = scheme && valueText ? parseIdNumber(valueText) : 0;
+    const err = scheme ? (Number.isFinite(value) ? validateScheme(scheme, value) : 'nilai bagi hasil bukan angka') : null;
     if (err) { errors.push(`${label} (${name}): ${err}`); continue; }
 
     const code = nextCode('PNT', codePool);

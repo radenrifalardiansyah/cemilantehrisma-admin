@@ -55,13 +55,17 @@ async function main() {
       bank_account text not null default '',
       bank_holder text not null default '',
       note text not null default '',
-      scheme text not null default 'nominal' check (scheme in ('nominal', 'commission')),
+      scheme text check (scheme in ('nominal', 'commission')),
       scheme_value numeric not null default 0 check (scheme_value >= 0),
       is_active boolean not null default true,
       created_at timestamptz not null default now(),
       updated_at timestamptz
     )
   `;
+  // NULL = "Belum ditentukan": produk penitip ini wajib punya skema sendiri. (Perubahan setelah
+  // rilis awal — aman diulang.)
+  await sql`alter table consignors alter column scheme drop not null`;
+  await sql`alter table consignors add column if not exists logo_url text`;
   console.log('OK  table consignors');
 
   // scheme/scheme_value NULL = ikut default penitip.

@@ -6,7 +6,7 @@ import {
   rowToConsignProduct, rowToStallItem, nextCode,
   type ConsignProductRow, type StallItemRow,
 } from '@/lib/consign-pg';
-import { parseProductBody, syncStallItems } from '@/lib/consign-products';
+import { parseProductBody, syncStallItems, schemeCoverageError } from '@/lib/consign-products';
 import { auditConsign } from '@/lib/consign-audit';
 
 export async function GET(req: NextRequest) {
@@ -28,8 +28,10 @@ export async function POST(req: NextRequest) {
   const v = parsed.value;
 
   const sql = getSql();
-  const [c] = await sql`select id from consignors where id = ${v.consignorId}`;
+  const [c] = await sql<{ id: string; scheme: string | null }[]>`select id, scheme from consignors where id = ${v.consignorId}`;
   if (!c) return Response.json({ error: 'Penitip tidak ditemukan.' }, { status: 400 });
+  const coverage = schemeCoverageError(c.scheme, v);
+  if (coverage) return Response.json({ error: coverage }, { status: 400 });
 
   const id = randomUUID();
   let code = '';

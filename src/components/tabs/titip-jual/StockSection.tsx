@@ -42,8 +42,8 @@ export default function StockSection({ creds, data }: SectionProps) {
     .sort((a, b) => a.p.name.localeCompare(b.p.name, 'id', { sensitivity: 'base' }));
 
   const totalQty = lines.reduce((a, l) => a + l.item.stockQty, 0);
-  const totalOwed = lines.reduce((a, l) => a + l.item.stockQty * l.eff.share.consignor, 0);
-  const totalOurs = lines.reduce((a, l) => a + l.item.stockQty * l.eff.share.ours, 0);
+  const totalOwed = lines.reduce((a, l) => a + l.item.stockQty * (l.eff.share?.consignor ?? 0), 0);
+  const totalOurs = lines.reduce((a, l) => a + l.item.stockQty * (l.eff.share?.ours ?? 0), 0);
 
   const cols: ExportCol<Line>[] = [
     { header: 'Produk', width: '18%', bold: true, value: l => l.p.name },
@@ -52,8 +52,8 @@ export default function StockSection({ creds, data }: SectionProps) {
     { header: 'Stok', width: '7%', align: 'right', value: l => l.item.stockQty },
     { header: 'Satuan', width: '7%', value: l => l.p.unit },
     { header: 'Harga Jual', width: '10%', align: 'right', value: l => rupiah(l.eff.price) },
-    { header: 'Bagian Penitip', width: '11%', align: 'right', value: l => rupiah(l.eff.share.consignor) },
-    { header: 'Bagian Kita', width: '10%', align: 'right', value: l => rupiah(l.eff.share.ours) },
+    { header: 'Bagian Penitip', width: '11%', align: 'right', value: l => l.eff.share ? rupiah(l.eff.share.consignor) : '-' },
+    { header: 'Bagian Kita', width: '10%', align: 'right', value: l => l.eff.share ? rupiah(l.eff.share.ours) : '-' },
   ];
 
   return (
@@ -94,7 +94,7 @@ export default function StockSection({ creds, data }: SectionProps) {
                 <Badge tone="accent">{l.stall?.name ?? '?'}</Badge>
               </div>
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {l.c?.name ?? '—'} · jual {rupiah(l.eff.price)} · penitip {rupiah(l.eff.share.consignor)} · kita {rupiah(l.eff.share.ours)}
+                {l.c?.name ?? '—'} · jual {rupiah(l.eff.price)}{l.eff.share ? ` · penitip ${rupiah(l.eff.share.consignor)} · kita ${rupiah(l.eff.share.ours)}` : ' · skema belum ditentukan'}
               </p>
             </div>
             <div className="text-right flex-shrink-0">

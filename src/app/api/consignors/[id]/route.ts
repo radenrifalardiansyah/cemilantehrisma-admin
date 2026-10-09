@@ -16,18 +16,26 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!name) return Response.json({ error: 'Nama penitip wajib diisi.' }, { status: 400 });
   const parsed = parseSchemeInput(data.scheme, data.schemeValue);
   if ('error' in parsed) return Response.json({ error: parsed.error }, { status: 400 });
-  if (!parsed.scheme) return Response.json({ error: 'Skema bagi hasil wajib dipilih.' }, { status: 400 });
-  const schemeErr = validateScheme(parsed.scheme, parsed.value ?? 0);
-  if (schemeErr) return Response.json({ error: schemeErr }, { status: 400 });
+  // Skema default boleh kosong ("Belum ditentukan"): produk penitip ini lalu wajib punya skema sendiri.
+  if (parsed.scheme) {
+    const schemeErr = validateScheme(parsed.scheme, parsed.value ?? 0);
+    if (schemeErr) return Response.json({ error: schemeErr }, { status: 400 });
+  }
 
   const sql = getSql();
   const [before] = await sql<ConsignorRow[]>`select * from consignors where id = ${id}`;
   if (!before) return Response.json({ error: 'Penitip tidak ditemukan.' }, { status: 404 });
+  if (!parsed.scheme) {
+    const [{ n }] = await sql<{ n: string }[]>`select count(*) as n from consign_products where consignor_id = ${id} and scheme is null`;
+    if (Number(n) > 0) {
+      return Response.json({ error: `Masih ada ${n} produk yang mengikuti skema default penitip ini — beri skema di produknya dulu sebelum mengosongkan default.` }, { status: 400 });
+    }
+  }
   await sql`
     update consignors set name = ${name}, phone = ${(data.phone as string) ?? ''}, address = ${(data.address as string) ?? ''},
       bank_name = ${(data.bankName as string) ?? ''}, bank_account = ${(data.bankAccount as string) ?? ''},
-      bank_holder = ${(data.bankHolder as string) ?? ''}, note = ${(data.note as string) ?? ''},
-      scheme = ${parsed.scheme}, scheme_value = ${parsed.value ?? 0}, is_active = ${data.isActive !== false}, updated_at = now()
+      bank_holder = ${(data.bankHolder as string) ?? ''}, note = ${(data.note as string) ?? ''}, logo_url = ${(data.logoUrl as string) || null},
+      scheme = ${parsed.scheme}, scheme_value = ${parsed.scheme ? (parsed.value ?? 0) : 0}, is_active = ${data.isActive !== false}, updated_at = now()
     where id = ${id}
   `;
   await auditConsign(guard, 'update', 'consignors', id, `Penitip ${name}`,

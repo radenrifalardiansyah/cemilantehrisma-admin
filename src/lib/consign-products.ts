@@ -75,3 +75,11 @@ export async function syncStallItems(tx: TransactionSql, productId: string, item
   await tx`delete from consign_stall_items where product_id = ${productId} and stock_qty = 0 ${keep}`;
   return null;
 }
+
+// Setiap produk harus punya skema yang bisa ditentukan: dari produk, dari default penitip, atau —
+// kalau keduanya kosong — dari skema di SETIAP lapak tempat produk dijual (minimal satu lapak).
+export function schemeCoverageError(consignorScheme: string | null, v: ProductInput): string | null {
+  if (v.scheme || consignorScheme) return null;
+  if (v.stallItems.length > 0 && v.stallItems.every(i => i.scheme)) return null;
+  return 'Penitip ini belum punya skema default — pilih skema bagi hasil untuk produk ini (atau isi skema di setiap lapak).';
+}

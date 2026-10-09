@@ -121,6 +121,10 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
 
   const editConsignor = editing ? consignorById.get(editing.consignorId) : undefined;
   const editPrice = Number(editing?.defaultPrice) || 0;
+  // Skema harus bisa ditentukan: dari produk, default penitip, atau skema di setiap lapak yang dipilih.
+  const enabledStalls = editing ? Object.values(editing.stalls).filter(c => c.enabled) : [];
+  const schemeCovered = !editing || !!editing.scheme || !!editConsignor?.scheme
+    || (enabledStalls.length > 0 && enabledStalls.every(c => !!c.scheme));
 
   const importer = can('create') ? {
     onTemplate: () => downloadTemplate({
@@ -189,7 +193,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
                 <Badge>{p.code}</Badge>
                 {!p.isActive && <Badge tone="danger">Nonaktif</Badge>}
               </div>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c?.name ?? '—'} · {rupiah(base.price)}/{p.unit} · {schemeText(base.spec)}</p>
+              <p className="text-xs" style={{ color: base.spec ? 'var(--text-muted)' : 'var(--danger)' }}>{c?.name ?? '—'} · {rupiah(base.price)}/{p.unit} · {schemeText(base.spec)}</p>
               <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                 {its.length === 0 && <Badge>Belum ada lapak</Badge>}
                 {its.map(i => (
@@ -211,7 +215,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
         <ModalShell title={editing.id ? 'Edit Produk Titipan' : 'Tambah Produk Titipan'} subtitle="Harga & bagi hasil per lapak"
           icon={<Package size={17} />} onClose={() => setEditing(null)} size="modal-md"
           footer={<ModalFooter onClose={() => setEditing(null)} onSave={save} saving={saving}
-            disabled={!editing.name.trim() || !editing.consignorId} label="Simpan Produk" />}>
+            disabled={!editing.name.trim() || !editing.consignorId || !schemeCovered} label="Simpan Produk" />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Field label="Penitip" required>
               <select className="input" value={editing.consignorId} onChange={e => setEditing({ ...editing, consignorId: e.target.value })}>
@@ -232,7 +236,9 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
             </div>
             <Field label="Skema bagi hasil produk">
               <SchemeFields scheme={editing.scheme} value={editing.schemeValue} allowInherit price={editPrice}
-                inheritLabel={editConsignor ? `Ikut penitip (${schemeText({ scheme: editConsignor.scheme, value: editConsignor.schemeValue })})` : 'Ikut default penitip'}
+                inheritLabel={editConsignor?.scheme
+                  ? `Ikut penitip (${schemeText({ scheme: editConsignor.scheme, value: editConsignor.schemeValue })})`
+                  : editConsignor ? '— Pilih skema (penitip belum punya default) —' : 'Ikut default penitip'}
                 onChange={(s, v) => setEditing({ ...editing, scheme: s, schemeValue: v })} />
             </Field>
 

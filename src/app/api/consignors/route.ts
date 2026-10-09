@@ -21,22 +21,23 @@ export async function POST(req: NextRequest) {
   const name = typeof data.name === 'string' ? data.name.trim() : '';
   if (!name) return Response.json({ error: 'Nama penitip wajib diisi.' }, { status: 400 });
 
-  // Skema default penitip wajib terisi (produk/lapak bisa meng-override).
   const parsed = parseSchemeInput(data.scheme, data.schemeValue);
   if ('error' in parsed) return Response.json({ error: parsed.error }, { status: 400 });
-  if (!parsed.scheme) return Response.json({ error: 'Skema bagi hasil wajib dipilih.' }, { status: 400 });
-  const schemeErr = validateScheme(parsed.scheme, parsed.value ?? 0);
-  if (schemeErr) return Response.json({ error: schemeErr }, { status: 400 });
+  // Skema default boleh kosong ("Belum ditentukan"): produk penitip ini lalu wajib punya skema sendiri.
+  if (parsed.scheme) {
+    const schemeErr = validateScheme(parsed.scheme, parsed.value ?? 0);
+    if (schemeErr) return Response.json({ error: schemeErr }, { status: 400 });
+  }
 
   const sql = getSql();
   const id = randomUUID();
   const existing = await sql<{ code: string | null }[]>`select code from consignors`;
   const code = nextCode('PNT', existing.map(r => r.code));
   await sql`
-    insert into consignors (id, code, name, phone, address, bank_name, bank_account, bank_holder, note, scheme, scheme_value, is_active, created_at, updated_at)
+    insert into consignors (id, code, name, phone, address, bank_name, bank_account, bank_holder, note, logo_url, scheme, scheme_value, is_active, created_at, updated_at)
     values (${id}, ${code}, ${name}, ${(data.phone as string) ?? ''}, ${(data.address as string) ?? ''},
       ${(data.bankName as string) ?? ''}, ${(data.bankAccount as string) ?? ''}, ${(data.bankHolder as string) ?? ''},
-      ${(data.note as string) ?? ''}, ${parsed.scheme}, ${parsed.value ?? 0}, ${data.isActive !== false}, now(), now())
+      ${(data.note as string) ?? ''}, ${(data.logoUrl as string) || null}, ${parsed.scheme}, ${parsed.scheme ? (parsed.value ?? 0) : 0}, ${data.isActive !== false}, now(), now())
   `;
   await auditConsign(guard, 'create', 'consignors', id, `Penitip ${name}`, null, { code, name, scheme: parsed.scheme, schemeValue: parsed.value });
   return Response.json({ id, code });

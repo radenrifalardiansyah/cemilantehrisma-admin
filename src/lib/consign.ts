@@ -18,11 +18,14 @@ export const SCHEME_LABEL: Record<ShareScheme, string> = {
 // Tingkat diurutkan dari yang paling spesifik (produk di lapak) ke paling umum (default penitip).
 // Skema dan nilainya dipilih sebagai satu paket dari tingkat pertama yang mengisi scheme —
 // jangan campur skema satu tingkat dengan nilai tingkat lain (nilai 10.000 vs 15% tidak sepadan).
-export function resolveScheme(levels: (SchemeLevel | null | undefined)[]): SchemeSpec {
+// Mengembalikan null kalau tidak ada satu tingkat pun yang menentukan skema (penitip "Belum
+// ditentukan" dan produk/lapak tidak mengisi) — pemanggil harus menolak/menandai kasus ini, jangan
+// diam-diam menganggap harga setor Rp0.
+export function resolveScheme(levels: (SchemeLevel | null | undefined)[]): SchemeSpec | null {
   for (const l of levels) {
     if (l && l.scheme) return { scheme: l.scheme, value: l.value ?? 0 };
   }
-  return { scheme: 'nominal', value: 0 };
+  return null;
 }
 
 export interface ShareResult { consignor: number; ours: number }
@@ -48,7 +51,8 @@ export function validateScheme(scheme: ShareScheme, value: number, price?: numbe
   return null;
 }
 
-export function schemeText(spec: SchemeSpec): string {
+export function schemeText(spec: SchemeSpec | null): string {
+  if (!spec) return 'Skema belum ditentukan';
   return spec.scheme === 'commission'
     ? `Komisi ${spec.value}%`
     : `Setor Rp${Math.round(spec.value).toLocaleString('id-ID')}`;

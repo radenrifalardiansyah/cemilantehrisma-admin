@@ -3,7 +3,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import type { ConsignProductRow } from '@/lib/consign-pg';
 import { auditConsign } from '@/lib/consign-audit';
-import { parseProductBody, syncStallItems } from '@/lib/consign-products';
+import { parseProductBody, syncStallItems, schemeCoverageError } from '@/lib/consign-products';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,6 +18,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const sql = getSql();
   const [before] = await sql<ConsignProductRow[]>`select * from consign_products where id = ${id}`;
   if (!before) return Response.json({ error: 'Produk tidak ditemukan.' }, { status: 404 });
+  const [c] = await sql<{ id: string; scheme: string | null }[]>`select id, scheme from consignors where id = ${v.consignorId}`;
+  if (!c) return Response.json({ error: 'Penitip tidak ditemukan.' }, { status: 400 });
+  const coverage = schemeCoverageError(c.scheme, v);
+  if (coverage) return Response.json({ error: coverage }, { status: 400 });
   // Pemilik produk tidak boleh berpindah penitip setelah ada stok/riwayat — stok & rekap hutang
   // ikut penitip, jadi pindah pemilik diam-diam akan mengacaukan hutang.
   if (before.consignor_id !== v.consignorId) {

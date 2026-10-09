@@ -15,7 +15,8 @@ const getCachedBanks = unstable_cache(
 );
 
 export async function GET(req: NextRequest) {
-  const guard = await requirePermission(req, 'settings', 'view');
+  // Daftar bank juga dibaca form Penitip (Titip Jual), jadi 'consign' ikut diizinkan melihat.
+  const guard = await requirePermission(req, ['settings', 'consign'], 'view');
   if (guard instanceof Response) return guard;
   const banks = await getCachedBanks();
   return Response.json({ banks });

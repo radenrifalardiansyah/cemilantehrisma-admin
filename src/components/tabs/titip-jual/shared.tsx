@@ -13,8 +13,8 @@ export interface Stall {
 }
 export interface Consignor {
   id: string; code: string; name: string; phone: string; address: string;
-  bankName: string; bankAccount: string; bankHolder: string; note: string;
-  scheme: ShareScheme; schemeValue: number; isActive: boolean;
+  bankName: string; bankAccount: string; bankHolder: string; note: string; logoUrl: string;
+  scheme: ShareScheme | null; schemeValue: number; isActive: boolean;
 }
 export interface CProduct {
   id: string; code: string; consignorId: string; name: string; unit: string; defaultPrice: number;
@@ -30,9 +30,10 @@ export interface Receipt {
   stallId: string; stallName: string; docDate: string; items: ReceiptItem[]; totalQty: number; note: string; createdBy: string;
 }
 export interface Warehouse { id: string; name: string }
+export interface MasterBank { name: string; bankCode?: string; logoUrl?: string }
 
 export interface TitipJualData {
-  stalls: Stall[]; consignors: Consignor[]; products: CProduct[]; stallItems: StallItem[]; warehouses: Warehouse[];
+  stalls: Stall[]; consignors: Consignor[]; products: CProduct[]; stallItems: StallItem[]; warehouses: Warehouse[]; banks: MasterBank[];
 }
 
 export interface SectionProps {
@@ -53,7 +54,8 @@ export function effectiveFor(product: CProduct, consignor: Consignor | undefined
     { scheme: product.scheme, value: product.schemeValue },
     consignor ? { scheme: consignor.scheme, value: consignor.schemeValue } : null,
   ]);
-  return { price, spec, share: calcShare(price, spec) };
+  // spec/share null = skema belum bisa ditentukan (penitip "Belum ditentukan" dan produk/lapak kosong).
+  return { price, spec, share: spec ? calcShare(price, spec) : null };
 }
 
 export function Badge({ children, tone = 'muted' }: { children: React.ReactNode; tone?: 'muted' | 'accent' | 'danger' | 'ok' }) {

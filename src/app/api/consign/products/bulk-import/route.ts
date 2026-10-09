@@ -29,13 +29,17 @@ export async function POST(req: NextRequest) {
 
   const sql = getSql();
   const [consignors, stalls, existing] = await Promise.all([
-    sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from consignors`,
+    sql<{ id: string; name: string; code: string | null; scheme: string | null }[]>`select id, name, code, scheme from consignors`,
     sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from stalls`,
     sql<{ code: string | null; consignor_id: string; name: string }[]>`select code, consignor_id, name from consign_products`,
   ]);
   // Penitip & lapak dicocokkan lewat nama ATAU kode (tidak peka huruf besar/kecil).
   const consignorBy = new Map<string, string>();
-  for (const c of consignors) { consignorBy.set(key(c.name), c.id); if (c.code) consignorBy.set(key(c.code), c.id); }
+  const consignorHasScheme = new Map<string, boolean>();
+  for (const c of consignors) {
+    consignorBy.set(key(c.name), c.id); if (c.code) consignorBy.set(key(c.code), c.id);
+    consignorHasScheme.set(c.id, !!c.scheme);
+  }
   const stallBy = new Map<string, string>();
   for (const s of stalls) { stallBy.set(key(s.name), s.id); if (s.code) stallBy.set(key(s.code), s.id); }
   const seen = new Set(existing.map(p => `${p.consignor_id}|${key(p.name)}`));
@@ -65,6 +69,10 @@ export async function POST(req: NextRequest) {
       schemeValue = parseIdNumber(t(row.value));
       const err = Number.isFinite(schemeValue) ? validateScheme(scheme, schemeValue, price) : 'nilai bagi hasil bukan angka';
       if (err) { errors.push(`${label}: ${err}`); continue; }
+    }
+
+    if (!scheme && !consignorHasScheme.get(consignorId)) {
+      errors.push(`${label}: penitip "${t(row.consignor)}" belum punya skema default — isi kolom Skema & Nilai`); continue;
     }
 
     const stallIds: string[] = [];

@@ -29,6 +29,9 @@ describe('resolveScheme', () => {
   it('jatuh ke default penitip; skema dan nilai tidak dicampur antar tingkat', () => {
     expect(resolveScheme([{ scheme: null, value: 99 }, null, consignor])).toEqual({ scheme: 'nominal', value: 5000 });
   });
+  it('null kalau tidak ada tingkat yang menentukan skema (penitip "belum ditentukan")', () => {
+    expect(resolveScheme([{ scheme: null, value: null }, { scheme: null, value: null }, { scheme: null, value: 0 }])).toBeNull();
+  });
 });
 
 describe('validateScheme', () => {

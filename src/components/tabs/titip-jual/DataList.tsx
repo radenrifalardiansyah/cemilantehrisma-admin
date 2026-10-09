@@ -65,6 +65,7 @@ interface Props<T> {
   filters?: React.ReactNode;           // filter tambahan di toolbar
   headerExtra?: React.ReactNode;       // tombol tambahan di sebelah tombol Tambah
   avatar?: (t: T) => string;           // teks inisial; kalau tidak diisi tidak ada avatar
+  avatarImage?: (t: T) => string | undefined; // logo/gambar; kalau ada dipakai menggantikan inisial
   renderBody: (t: T) => React.ReactNode;
   actions?: (t: T) => React.ReactNode;
   onBulkDelete?: (ids: string[]) => Promise<void>;
@@ -169,8 +170,13 @@ export default function DataList<T>(p: Props<T>) {
   }
 
   const avatarBox = (t: T, big?: boolean) => p.avatar && (
-    <div className={`${big ? 'w-12 h-12 rounded-2xl text-sm' : 'w-10 h-10 rounded-xl text-xs'} flex-shrink-0 flex items-center justify-center font-bold`}
-      style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>{p.avatar!(t)}</div>
+    <div className={`${big ? 'w-12 h-12 rounded-2xl text-sm' : 'w-10 h-10 rounded-xl text-xs'} flex-shrink-0 flex items-center justify-center font-bold overflow-hidden`}
+      style={{ background: p.avatarImage?.(t) ? 'var(--surface)' : 'var(--accent-bg)', color: 'var(--accent)' }}>
+      {p.avatarImage?.(t)
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={p.avatarImage(t)} alt="" className="w-full h-full" style={{ objectFit: 'contain' }} />
+        : p.avatar!(t)}
+    </div>
   );
 
   return (

@@ -21,13 +21,13 @@ export function rowToStall(r: StallRow) {
 
 export interface ConsignorRow {
   id: string; code: string | null; name: string; phone: string; address: string;
-  bank_name: string; bank_account: string; bank_holder: string; note: string;
-  scheme: ShareScheme; scheme_value: string | number; is_active: boolean; created_at: Date; updated_at: Date | null;
+  bank_name: string; bank_account: string; bank_holder: string; note: string; logo_url: string | null;
+  scheme: ShareScheme | null; scheme_value: string | number; is_active: boolean; created_at: Date; updated_at: Date | null;
 }
 export function rowToConsignor(r: ConsignorRow) {
   return {
     id: r.id, code: r.code ?? '', name: r.name, phone: r.phone, address: r.address,
-    bankName: r.bank_name, bankAccount: r.bank_account, bankHolder: r.bank_holder, note: r.note,
+    bankName: r.bank_name, bankAccount: r.bank_account, bankHolder: r.bank_holder, note: r.note, logoUrl: r.logo_url ?? '',
     scheme: r.scheme, schemeValue: num(r.scheme_value), isActive: r.is_active, createdAt: toTimestamp(r.created_at),
   };
 }

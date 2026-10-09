@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { Users } from 'lucide-react';
+import SearchSelect from '@/components/SearchSelect';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText } from '@/lib/consign';
@@ -25,8 +27,8 @@ const IMPORT_COLS: ImportCol[] = [
 ];
 
 const EMPTY: Omit<Consignor, 'id' | 'code'> = {
-  name: '', phone: '', address: '', bankName: '', bankAccount: '', bankHolder: '', note: '',
-  scheme: 'nominal', schemeValue: 0, isActive: true,
+  name: '', phone: '', address: '', bankName: '', bankAccount: '', bankHolder: '', note: '', logoUrl: '',
+  scheme: null, schemeValue: 0, isActive: true,
 };
 
 export default function ConsignorsSection({ creds, data, reload, can }: SectionProps) {
@@ -37,6 +39,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const productCount = new Map<string, number>();
   for (const p of data.products) productCount.set(p.consignorId, (productCount.get(p.consignorId) ?? 0) + 1);
@@ -79,7 +82,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
     onTemplate: () => downloadTemplate({
       sheet: 'Template Penitip', title: 'TEMPLATE IMPORT DATA PENITIP — CEMILAN TEH RISMA', file: 'template-penitip.xlsx',
       note: 'PETUNJUK: Kolom bertanda (*) wajib diisi. Jangan mengubah judul kolom di baris 3; isi data mulai baris 4, satu penitip per baris. '
-        + 'Skema: isi "Nominal" (harga setor tetap per unit, nilai = rupiah) atau "Komisi" (persen untuk kita, nilai = persen). Kosong = Nominal Rp0. '
+        + 'Skema: isi "Nominal" (harga setor tetap per unit, nilai = rupiah) atau "Komisi" (persen untuk kita, nilai = persen). Kosong = belum ditentukan (skema wajib diisi di setiap produk penitip ini). '
         + 'Penitip dengan nama yang sudah ada dilewati.',
       cols: IMPORT_COLS, textKeys: ['phone', 'bankAccount'],
       example: { name: 'Bu Sari Kue Kering', phone: '081234567890', address: 'Jl. Melati No. 3', scheme: 'Nominal', value: '10000', bankName: 'BCA', bankAccount: '1234567890', bankHolder: 'Sari', note: 'Contoh — timpa dengan data penitip Anda' },
@@ -105,12 +108,35 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
     { header: 'Kode', width: '8%', value: c => c.code },
     { header: 'Nama', width: '16%', bold: true, value: c => c.name },
     { header: 'Telepon', width: '12%', value: c => c.phone || '-' },
-    { header: 'Bagi Hasil', width: '14%', value: c => schemeText({ scheme: c.scheme, value: c.schemeValue }) },
+    { header: 'Bagi Hasil', width: '14%', value: c => c.scheme ? schemeText({ scheme: c.scheme, value: c.schemeValue }) : 'Belum ditentukan' },
     { header: 'Produk', width: '7%', align: 'center', value: c => productCount.get(c.id) ?? 0 },
     { header: 'Bank', width: '14%', value: c => [c.bankName, c.bankAccount].filter(Boolean).join(' ') || '-' },
     { header: 'Atas Nama', width: '12%', value: c => c.bankHolder || '-' },
     { header: 'Status', width: '8%', value: c => c.isActive ? 'Aktif' : 'Nonaktif' },
   ];
+
+  // Logo diperkecil (maks 400px) dan dikompres sebelum diunggah — sama seperti logo Mitra.
+  const uploadLogo = async (file: File) => {
+    setLogoUploading(true);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 400 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob: Blob = await new Promise(resolve => canvas.toBlob(b => resolve(b!), 'image/jpeg', 0.85));
+      const form = new FormData();
+      form.append('file', new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+      const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'x-admin-auth': creds }, body: form });
+      if (!r.ok) throw new Error('upload failed');
+      const { url } = await r.json() as { url: string };
+      setEditing(e => e && ({ ...e, logoUrl: url }));
+    } catch {
+      toast.error('Gagal mengunggah logo penitip.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const openNew = () => { setError(''); setEditing({ ...EMPTY }); };
 
@@ -121,7 +147,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
         searchText={c => `${c.name} ${c.code} ${c.phone}`} searchPlaceholder="Cari nama, kode, atau telepon…" viewKey="consign-consignors"
         addLabel={can('create') ? 'Tambah Penitip' : undefined} onAdd={can('create') ? openNew : undefined}
         emptyHint="Penitip = pihak luar yang menitipkan barangnya untuk dijual di lapak kita."
-        avatar={c => initials(c.name)}
+        avatar={c => initials(c.name)} avatarImage={c => c.logoUrl || undefined}
         renderBody={c => (
           <>
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -133,7 +159,9 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
               {[c.phone, c.bankName && `${c.bankName} ${c.bankAccount}`].filter(Boolean).join(' · ') || 'Tidak ada kontak'}
             </p>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <Badge tone="accent">{schemeText({ scheme: c.scheme, value: c.schemeValue })}</Badge>
+              {c.scheme
+                ? <Badge tone="accent">{schemeText({ scheme: c.scheme, value: c.schemeValue })}</Badge>
+                : <Badge>Skema: belum ditentukan</Badge>}
               <Badge>{productCount.get(c.id) ?? 0} produk</Badge>
             </div>
           </>
@@ -149,24 +177,36 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
           icon={<Users size={17} />} onClose={() => setEditing(null)}
           footer={<ModalFooter onClose={() => setEditing(null)} onSave={save} saving={saving} disabled={!editing.name.trim()} label="Simpan Penitip" />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Field label="Nama Penitip" required>
-              <input className="input" value={editing.name} autoFocus onChange={e => setEditing({ ...editing, name: e.target.value })} />
-            </Field>
+            <div className="flex items-center gap-3">
+              <ImageUploadBox src={editing.logoUrl} alt={editing.name || 'Logo penitip'} uploading={logoUploading}
+                onSelect={f => uploadLogo(f)} onRemove={() => setEditing({ ...editing, logoUrl: '' })}
+                icon={<Users size={18} />} fit="contain" size={56} emptyText="Logo" />
+              <div style={{ flex: 1 }}>
+                <Field label="Nama Penitip" required>
+                  <input className="input" value={editing.name} autoFocus onChange={e => setEditing({ ...editing, name: e.target.value })} />
+                </Field>
+              </div>
+            </div>
             <Field label="Telepon / WhatsApp (opsional)">
               <input className="input" value={editing.phone} onChange={e => setEditing({ ...editing, phone: e.target.value })} />
             </Field>
             <Field label="Alamat (opsional)">
               <input className="input" value={editing.address} onChange={e => setEditing({ ...editing, address: e.target.value })} />
             </Field>
-            <Field label="Skema bagi hasil default" required>
-              <SchemeFields scheme={editing.scheme} value={editing.schemeValue}
-                onChange={(s, v) => setEditing({ ...editing, scheme: s ?? 'nominal', schemeValue: v ?? 0 })} />
+            <Field label="Skema bagi hasil default">
+              <SchemeFields scheme={editing.scheme} value={editing.schemeValue} allowInherit
+                inheritLabel="Belum ditentukan (isi skema di setiap produk)"
+                onChange={(s, v) => setEditing({ ...editing, scheme: s, schemeValue: v ?? 0 })} />
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                Berlaku untuk semua produk penitip ini, kecuali produk/lapak punya skema sendiri.
+                Berlaku untuk produk penitip ini yang tidak punya skema sendiri. Pilih &quot;Belum ditentukan&quot; kalau harga setor tiap produk berbeda — skema lalu wajib diisi di setiap produk.
               </p>
             </Field>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Bank"><input className="input" value={editing.bankName} placeholder="BCA / BRI…" onChange={e => setEditing({ ...editing, bankName: e.target.value })} /></Field>
+              <Field label="Bank">
+                <SearchSelect value={editing.bankName} onChange={v => setEditing({ ...editing, bankName: v })}
+                  options={data.banks.map(b => ({ value: b.name, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
+                  placeholder="– Pilih bank –" searchPlaceholder="Cari bank…" />
+              </Field>
               <Field label="No. Rekening"><input className="input" value={editing.bankAccount} onChange={e => setEditing({ ...editing, bankAccount: e.target.value })} /></Field>
               <Field label="Atas Nama"><input className="input" value={editing.bankHolder} onChange={e => setEditing({ ...editing, bankHolder: e.target.value })} /></Field>
             </div>
