@@ -9,6 +9,9 @@ import { mergeSaleLines, discountProblem, paymentResult } from '@/lib/stall-pos'
 import { moveConsignStock, ConsignStockError } from '@/lib/consign-receipts';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { auditConsign } from '@/lib/consign-audit';
+import { getDb } from '@/lib/firebase-admin';
+import { notifyProductLowStock } from '@/lib/low-stock';
+import { notifyConsignLowStock } from '@/lib/low-stock-consign';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -146,6 +149,13 @@ export async function POST(req: NextRequest) {
     }));
     const result = rowToSale(sale);
     await auditConsign(user, 'create', 'stall-sales', saleId, `Penjualan lapak ${result.invoiceNo}`, null, { total: result.total, stall: stall.name, items: result.items.length });
+    // Pengingat stok menipis (tanpa cron): hanya saat stok BARU melewati batas minimum; best-effort.
+    const db = getDb();
+    const source = `penjualan lapak ${stall.name}`;
+    const soldConsign = new Map(merged.lines.filter(l => l.kind === 'consign').map(l => [l.productId, l.qty]));
+    const ownDeltas = new Map(merged.lines.filter(l => l.kind === 'own').map(l => [l.productId, -l.qty]));
+    await notifyConsignLowStock(db, { id: stall.id, name: stall.name }, soldConsign, user, source);
+    await notifyProductLowStock(db, ownDeltas, user, source);
     return Response.json({ sale: result });
   } catch (err) {
     if (err instanceof SaleError || err instanceof ConsignStockError) return Response.json({ error: err.message }, { status: 400 });

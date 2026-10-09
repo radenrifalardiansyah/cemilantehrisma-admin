@@ -35,13 +35,13 @@ export function rowToConsignor(r: ConsignorRow) {
 export interface ConsignProductRow {
   id: string; code: string | null; consignor_id: string; name: string; unit: string;
   default_price: string | number; scheme: ShareScheme | null; scheme_value: string | number | null;
-  note: string; is_active: boolean; created_at: Date; updated_at: Date | null;
+  note: string; is_active: boolean; min_stock: string | number; created_at: Date; updated_at: Date | null;
 }
 export function rowToConsignProduct(r: ConsignProductRow) {
   return {
     id: r.id, code: r.code ?? '', consignorId: r.consignor_id, name: r.name, unit: r.unit,
     defaultPrice: num(r.default_price), scheme: r.scheme, schemeValue: numOrNull(r.scheme_value),
-    note: r.note, isActive: r.is_active, createdAt: toTimestamp(r.created_at),
+    note: r.note, isActive: r.is_active, minStock: num(r.min_stock), createdAt: toTimestamp(r.created_at),
   };
 }
 

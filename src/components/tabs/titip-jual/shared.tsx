@@ -22,7 +22,7 @@ export interface Consignor {
 }
 export interface CProduct {
   id: string; code: string; consignorId: string; name: string; unit: string; defaultPrice: number;
-  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean;
+  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: number;
 }
 export interface StallItem {
   id: string; productId: string; stallId: string; price: number | null;

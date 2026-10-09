@@ -6,7 +6,7 @@ import { validateScheme } from '@/lib/consign';
 export interface ProductInput {
   consignorId: string; name: string; unit: string; defaultPrice: number;
   scheme: 'nominal' | 'commission' | null; schemeValue: number | null;
-  note: string; isActive: boolean;
+  note: string; isActive: boolean; minStock: number;
   stallItems: { stallId: string; price: number | null; scheme: 'nominal' | 'commission' | null; schemeValue: number | null }[];
 }
 
@@ -25,6 +25,9 @@ export function parseProductBody(data: Record<string, unknown>): { value: Produc
     const e = validateScheme(scheme.scheme, scheme.value ?? 0, defaultPrice);
     if (e) return { error: e };
   }
+
+  const minStock = data.minStock === undefined || data.minStock === '' || data.minStock === null ? 0 : Number(data.minStock);
+  if (!Number.isFinite(minStock) || minStock < 0) return { error: 'Batas stok menipis tidak valid.' };
 
   const rawStalls = Array.isArray(data.stallItems) ? data.stallItems as Record<string, unknown>[] : [];
   const seen = new Set<string>();
@@ -50,7 +53,7 @@ export function parseProductBody(data: Record<string, unknown>): { value: Produc
     value: {
       consignorId, name, unit: (typeof data.unit === 'string' && data.unit.trim()) || 'pcs', defaultPrice,
       scheme: scheme.scheme, schemeValue: scheme.value, note: (data.note as string) ?? '',
-      isActive: data.isActive !== false, stallItems,
+      isActive: data.isActive !== false, minStock, stallItems,
     },
   };
 }

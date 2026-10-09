@@ -34,7 +34,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const err = await sql.begin(async tx => {
     await tx`
       update consign_products set consignor_id = ${v.consignorId}, name = ${v.name}, unit = ${v.unit}, default_price = ${v.defaultPrice},
-        scheme = ${v.scheme}, scheme_value = ${v.schemeValue}, note = ${v.note}, is_active = ${v.isActive}, updated_at = now()
+        scheme = ${v.scheme}, scheme_value = ${v.schemeValue}, note = ${v.note}, is_active = ${v.isActive}, min_stock = ${v.minStock}, updated_at = now()
       where id = ${id}
     `;
     const e = await syncStallItems(tx, id, v.stallItems);

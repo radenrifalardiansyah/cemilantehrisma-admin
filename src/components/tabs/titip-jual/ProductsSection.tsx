@@ -29,7 +29,7 @@ const IMPORT_COLS: ImportCol[] = [
 interface StallCfg { enabled: boolean; price: string; scheme: ShareScheme | null; schemeValue: number | null }
 interface Form {
   id?: string; consignorId: string; name: string; unit: string; defaultPrice: string;
-  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean;
+  scheme: ShareScheme | null; schemeValue: number | null; note: string; isActive: boolean; minStock: string;
   stalls: Record<string, StallCfg>;
 }
 
@@ -64,7 +64,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     setError('');
     setEditing({
       consignorId: consignorFilter || '', name: '', unit: 'pcs', defaultPrice: '', scheme: null, schemeValue: null,
-      note: '', isActive: true, stalls: blankStalls(),
+      note: '', isActive: true, minStock: '', stalls: blankStalls(),
     });
   };
   const openEdit = (p: CProduct) => {
@@ -75,7 +75,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     }
     setEditing({
       id: p.id, consignorId: p.consignorId, name: p.name, unit: p.unit, defaultPrice: String(p.defaultPrice),
-      scheme: p.scheme, schemeValue: p.schemeValue, note: p.note, isActive: p.isActive, stalls,
+      scheme: p.scheme, schemeValue: p.schemeValue, note: p.note, isActive: p.isActive, minStock: p.minStock > 0 ? String(p.minStock) : '', stalls,
     });
   };
 
@@ -84,7 +84,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
     setSaving(true); setError('');
     const body = {
       consignorId: editing.consignorId, name: editing.name, unit: editing.unit, defaultPrice: Number(editing.defaultPrice || 0),
-      scheme: editing.scheme, schemeValue: editing.schemeValue, note: editing.note, isActive: editing.isActive,
+      scheme: editing.scheme, schemeValue: editing.schemeValue, note: editing.note, isActive: editing.isActive, minStock: Number(editing.minStock || 0),
       stallItems: Object.entries(editing.stalls).filter(([, c]) => c.enabled).map(([stallId, c]) => ({
         stallId, price: c.price === '' ? null : Number(c.price), scheme: c.scheme, schemeValue: c.schemeValue,
       })),
@@ -199,7 +199,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
               <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                 {its.length === 0 && <Badge>Belum ada lapak</Badge>}
                 {its.map(i => (
-                  <Badge key={i.id} tone={i.stockQty > 0 ? 'ok' : 'muted'}>
+                  <Badge key={i.id} tone={p.minStock > 0 && i.stockQty <= p.minStock ? 'danger' : i.stockQty > 0 ? 'ok' : 'muted'}>
                     {stallById.get(i.stallId)?.name ?? '?'}: {qtyText(i.stockQty)} · {rupiah(effectiveFor(p, c, i).price)}
                   </Badge>
                 ))}
@@ -319,6 +319,13 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
               </p>
             </div>
 
+            <Field label="Batas stok menipis per lapak (opsional)">
+              <input className="input" type="number" min={0} step="any" inputMode="decimal" value={editing.minStock} placeholder="0 = tidak diingatkan"
+                onChange={e => setEditing({ ...editing, minStock: e.target.value })} />
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                Admin mendapat notifikasi saat stok produk ini di sebuah lapak turun sampai batas ini (sekali saja, tidak diulang di setiap penjualan).
+              </p>
+            </Field>
             <Field label="Catatan (opsional)">
               <textarea className="input" style={{ resize: 'vertical', minHeight: 56 }} value={editing.note} onChange={e => setEditing({ ...editing, note: e.target.value })} />
             </Field>
