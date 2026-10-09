@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Store, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Store, Wallet } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
-import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { periodRange, type PeriodKey } from '@/lib/period';
@@ -19,9 +18,6 @@ type StallForm = Omit<Stall, 'id' | 'code' | 'balance'> & { id?: string; opening
 
 const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], showOwnProducts: false, openingBalance: '' };
 
-const KIND_LABEL: Record<string, string> = { opening: 'Saldo awal', manual: 'Manual', sale: 'Penjualan', payout: 'Bayar penitip' };
-
-interface WalletEntry { id: string; kind: string; amount: number; note: string; createdBy: string; createdAt: { seconds: number } | null }
 
 interface StallStats { count: number; revenue: number; discount: number; itemsSold: number; ownRevenue: number; consignorShare: number; ourConsign: number; storeShare: number }
 const EMPTY_STATS: StallStats = { count: 0, revenue: 0, discount: 0, itemsSold: 0, ownRevenue: 0, consignorShare: 0, ourConsign: 0, storeShare: 0 };
@@ -65,7 +61,7 @@ function StallStatTiles({ stockQty, stockValue, products, productsInStock, stats
   );
 }
 
-export default function StallsSection({ creds, data, reload, can }: SectionProps) {
+export default function StallsSection({ creds, data, reload, can, openJournal }: SectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
@@ -73,7 +69,6 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [walletFor, setWalletFor] = useState<Stall | null>(null);
   const [staffSearch, setStaffSearch] = useState('');
   const [period, setPeriod] = useState<PeriodKey>('month');
   const [customFrom, setCustomFrom] = useState(() => new Date().toLocaleDateString('en-CA'));
@@ -208,7 +203,7 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
               { label: 'Alamat', value: s.address, wide: true },
               ...(s.note ? [{ label: 'Catatan', value: s.note, wide: true }] : []),
             ]}>
-              <button onClick={() => setWalletFor(s)} className="btn-ghost text-xs"><Wallet size={13} /> Dompet &amp; Riwayat Kas</button>
+              <button onClick={() => openJournal?.(s.id)} className="btn-ghost text-xs"><Wallet size={13} /> Jurnal Kas Lapak</button>
             </DetailPanel>
           );
         }}
@@ -305,101 +300,6 @@ export default function StallsSection({ creds, data, reload, can }: SectionProps
         </ModalShell>
       )}
 
-      {walletFor && (
-        <WalletModal creds={creds} stall={walletFor} canEdit={can('edit')} onClose={() => setWalletFor(null)} onChanged={reload} />
-      )}
     </div>
-  );
-}
-
-async function fetchWallet(creds: string, id: string): Promise<{ balance: number; entries: WalletEntry[] }> {
-  const r = await fetch(`${API}/api/stalls/${id}/wallet`, { headers: { 'x-admin-auth': creds } });
-  return r.ok ? await r.json() as { balance: number; entries: WalletEntry[] } : { balance: 0, entries: [] };
-}
-
-// Dompet lapak: saldo, riwayat kas, dan entri manual (tambah modal / ambil kas).
-function WalletModal({ creds, stall, canEdit, onClose, onChanged }: { creds: string; stall: Stall; canEdit: boolean; onClose: () => void; onChanged: () => Promise<void> }) {
-  const toast = useToast();
-  const [wallet, setWallet] = useState<{ balance: number; entries: WalletEntry[] } | null>(null);
-  const [direction, setDirection] = useState<'in' | 'out'>('in');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const load = useCallback(async () => { setWallet(await fetchWallet(creds, stall.id)); }, [creds, stall.id]);
-  useEffect(() => {
-    let alive = true;
-    fetchWallet(creds, stall.id).then(d => { if (alive) setWallet(d); });
-    return () => { alive = false; };
-  }, [creds, stall.id]);
-
-  const submit = async () => {
-    setSaving(true); setError('');
-    const r = await fetch(`${API}/api/stalls/${stall.id}/wallet`, {
-      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ direction, amount: Number(amount), note }),
-    });
-    if (r.ok) {
-      setAmount(''); setNote('');
-      await Promise.all([load(), onChanged()]);
-      toast.success('Entri kas dicatat.');
-    } else {
-      const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal mencatat entri.';
-      setError(msg); toast.error(msg);
-    }
-    setSaving(false);
-  };
-
-  return (
-    <ModalShell title="Dompet Lapak" subtitle={stall.name} icon={<Wallet size={17} />} onClose={onClose} size="modal-md"
-      footer={<button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>}>
-      {wallet === null ? <PageLoader /> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="card p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Saldo dompet</p>
-            <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{rupiah(wallet.balance)}</p>
-          </div>
-
-          {canEdit && (
-            <div className="card p-3" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div className="flex gap-2">
-                {([['in', 'Tambah kas', ArrowDownLeft], ['out', 'Ambil kas', ArrowUpRight]] as const).map(([d, label, Icon]) => (
-                  <button key={d} onClick={() => setDirection(d)} className="flex-1 px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
-                    style={direction === d ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                    <Icon size={13} /> {label}
-                  </button>
-                ))}
-              </div>
-              <NumberInput value={amount} placeholder="Jumlah (Rp)" onChange={setAmount} />
-              <input className="input" value={note} maxLength={200} placeholder={direction === 'in' ? 'Keterangan, cth: modal awal minggu ini' : 'Keterangan, cth: setor ke toko'}
-                onChange={e => setNote(e.target.value)} />
-              <ErrorBox message={error} />
-              <button onClick={submit} disabled={saving || !(Number(amount) > 0) || !note.trim()} className="btn-primary text-xs" style={{ justifyContent: 'center' }}>
-                {saving ? 'Menyimpan…' : 'Catat'}
-              </button>
-            </div>
-          )}
-
-          <div>
-            <p className="field-label">Riwayat kas</p>
-            {wallet.entries.length === 0 ? (
-              <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>Belum ada entri kas.</p>
-            ) : wallet.entries.map((e, idx) => (
-              <div key={e.id} className="flex items-center justify-between gap-3 py-2.5" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{KIND_LABEL[e.kind] ?? e.kind}{e.note ? ` · ${e.note}` : ''}</p>
-                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    {e.createdAt ? new Date(e.createdAt.seconds * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                    {e.createdBy ? ` · ${e.createdBy}` : ''}
-                  </p>
-                </div>
-                <p className="text-sm font-bold flex-shrink-0" style={{ color: e.amount >= 0 ? '#059669' : 'var(--danger)' }}>{e.amount >= 0 ? '+' : '-'}{rupiah(Math.abs(e.amount))}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </ModalShell>
   );
 }

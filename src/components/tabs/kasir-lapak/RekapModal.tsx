@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, FileDown, Loader2 } from 'lucide-react';
+import { ClipboardList, FileDown, Loader2, MessageCircle } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { ModalShell, Badge, rupiah, qtyText } from '../titip-jual/shared';
 import type { Settlement } from '../titip-jual/settlementPdf';
+import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
 import type { PosStall } from './types';
 
 interface Payable { consignorId: string; consignorName: string; amount: number; qty: number; lines: number; firstDate: string; lastDate: string }
@@ -20,8 +21,8 @@ async function fetchRekap(creds: string, stallId: string): Promise<Result> {
 
 // Rekap penjualan titipan oleh kasir lapak (biasanya siang hari): buat rekap per penitip lalu unduh
 // PDF untuk dilaporkan ke owner. Pembayaran ke penitip dilakukan owner (Titip Jual → Rekap & Bayar).
-export default function RekapModal({ creds, stall, canCreate, onClose, onPdf }: {
-  creds: string; stall: PosStall; canCreate: boolean; onClose: () => void; onPdf: (s: Settlement) => Promise<void>;
+export default function RekapModal({ creds, stall, canCreate, ownerPhone, storeName, onClose, onPdf }: {
+  creds: string; stall: PosStall; canCreate: boolean; ownerPhone?: string; storeName: string; onClose: () => void; onPdf: (s: Settlement) => Promise<void>;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -105,6 +106,11 @@ export default function RekapModal({ creds, stall, canCreate, onClose, onPdf }: 
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.consignorName} · {dt(s.createdAt)}{s.createdBy ? ` · ${s.createdBy}` : ''}</p>
                 </div>
                 <p className="text-sm font-bold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{rupiah(s.totalAmount)}</p>
+                <Tooltip label="Kirim laporan ke owner lewat WhatsApp">
+                  <button onClick={() => window.open(waLink(ownerPhone, settlementMessage(s, storeName, 'owner')), '_blank', 'noopener')} className="btn-ghost p-2 flex-shrink-0" style={{ color: '#059669' }}>
+                    <MessageCircle size={14} />
+                  </button>
+                </Tooltip>
                 <Tooltip label="Unduh PDF untuk owner">
                   <button onClick={() => pdf(s)} disabled={busy === s.id} className="btn-ghost p-2 flex-shrink-0">
                     {busy === s.id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={14} />}

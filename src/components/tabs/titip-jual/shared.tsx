@@ -31,8 +31,8 @@ export interface StallItem {
 }
 export interface ReceiptItem { productId: string; productName: string; unit: string; qty: number }
 export interface Receipt {
-  id: string; docNumber: string; kind: 'in' | 'return'; consignorId: string; consignorName: string;
-  stallId: string; stallName: string; docDate: string; items: ReceiptItem[]; totalQty: number; note: string; createdBy: string;
+  id: string; docNumber: string; kind: 'in' | 'return' | 'transfer'; consignorId: string; consignorName: string;
+  stallId: string; stallName: string; toStallId: string; toStallName: string; docDate: string; items: ReceiptItem[]; totalQty: number; note: string; createdBy: string;
 }
 export interface Warehouse { id: string; name: string }
 export interface Category { id: string; name: string; emoji: string }
@@ -47,7 +47,9 @@ export interface SectionProps {
   data: TitipJualData;
   reload: () => Promise<void>;
   can: (a: 'view' | 'create' | 'edit' | 'delete') => boolean;
-  goTo?: (tab: 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements') => void; // pindah sub-tab
+  goTo?: (tab: 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'adjustments' | 'journal' | 'settlements') => void;
+  journalStallId?: string;                              // lapak yang difokuskan di tab Jurnal Kas
+  openJournal?: (stallId: string) => void;               // pindah ke tab Jurnal Kas untuk lapak tertentu // pindah sub-tab
 }
 
 export const rupiah = (n: number) => `Rp${Math.round(n).toLocaleString('id-ID')}`;

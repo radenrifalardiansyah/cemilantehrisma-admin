@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
     sql<{ stall_id: string; consignor_id: string; consignor_name: string; amount: string; lines: string; first_at: Date; last_at: Date }[]>`
       select l.stall_id, l.consignor_id, l.consignor_name, sum(l.consignor_amount) as amount, count(*) as lines,
              min(l.created_at) as first_at, max(l.created_at) as last_at
-      from consign_sale_lines l join stall_sales s on s.id = l.sale_id
-      where not l.voided and l.settlement_id is null and s.status = 'paid'
+      from consign_sale_lines l left join stall_sales s on s.id = l.sale_id
+      where not l.voided and l.settlement_id is null and (l.sale_id is null or s.status = 'paid')
       group by l.stall_id, l.consignor_id, l.consignor_name
     `,
   ]);

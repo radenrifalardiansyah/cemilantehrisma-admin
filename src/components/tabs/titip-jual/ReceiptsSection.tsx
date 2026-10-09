@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PackagePlus, PackageMinus, X, Loader2, Undo2, Plus } from 'lucide-react';
+import { PackagePlus, PackageMinus, ArrowRightLeft, X, Loader2, Undo2, Plus } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import FilterSelect from '@/components/FilterSelect';
@@ -17,7 +17,10 @@ import {
 } from './shared';
 
 interface Line { productId: string; qty: string }
-interface Form { kind: 'in' | 'return'; consignorId: string; stallId: string; docDate: string; note: string; lines: Line[] }
+type Kind = 'in' | 'return' | 'transfer';
+interface Form { kind: Kind; consignorId: string; stallId: string; toStallId: string; docDate: string; note: string; lines: Line[] }
+const KIND_LABEL: Record<Kind, string> = { in: 'Terima', return: 'Retur', transfer: 'Pindah' };
+const stallText = (r: Receipt) => r.kind === 'transfer' ? `${r.stallName} → ${r.toStallName}` : r.stallName;
 
 const todayKey = () => {
   const d = new Date();
@@ -55,12 +58,12 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     return () => { alive = false; };
   }, [creds, from, to]);
 
-  const open = (kind: 'in' | 'return') => {
+  const open = (kind: Kind) => {
     setError('');
-    setEditing({ kind, consignorId: consignorFilter, stallId: stallFilter, docDate: todayKey(), note: '', lines: [{ productId: '', qty: '' }] });
+    setEditing({ kind, consignorId: consignorFilter, stallId: stallFilter, toStallId: '', docDate: todayKey(), note: '', lines: [{ productId: '', qty: '' }] });
   };
 
-  const consignorProducts = editing ? data.products.filter(p => p.consignorId === editing.consignorId && (p.isActive || editing.kind === 'return')) : [];
+  const consignorProducts = editing ? data.products.filter(p => p.consignorId === editing.consignorId && (p.isActive || editing.kind !== 'in')) : [];
   const stockOf = (productId: string, stallId: string) =>
     data.stallItems.find(i => i.productId === productId && i.stallId === stallId)?.stockQty ?? 0;
 
@@ -71,7 +74,8 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     if (!p || !editing) return null;
     const item = data.stallItems.find(i => i.productId === p.id && i.stallId === editing.stallId);
     const share = effectiveFor(p, consignorOf, item).share;
-    return { unit: p.unit, stock: item?.stockQty ?? 0, qty: Number(l.qty) || 0, consignorShare: share ? share.consignor : null };
+    const toStock = editing.toStallId ? (data.stallItems.find(i => i.productId === p.id && i.stallId === editing.toStallId)?.stockQty ?? 0) : null;
+    return { unit: p.unit, stock: item?.stockQty ?? 0, toStock, qty: Number(l.qty) || 0, consignorShare: share ? share.consignor : null };
   };
   const infos = editing ? editing.lines.map(lineInfo) : [];
   const totalQty = infos.reduce((a, i) => a + (i?.qty ?? 0), 0);
@@ -84,7 +88,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     if (!editing) return;
     setSaving(true); setError('');
     const body = {
-      kind: editing.kind, consignorId: editing.consignorId, stallId: editing.stallId, docDate: editing.docDate, note: editing.note,
+      kind: editing.kind, consignorId: editing.consignorId, stallId: editing.stallId, toStallId: editing.kind === 'transfer' ? editing.toStallId : undefined, docDate: editing.docDate, note: editing.note,
       items: editing.lines.filter(l => l.productId).map(l => ({ productId: l.productId, qty: Number(l.qty) })),
     };
     const r = await fetch(`${API}/api/consign/receipts`, { method: 'POST', headers, body: JSON.stringify(body) });
@@ -92,7 +96,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
       const { docNumber } = await r.json() as { docNumber: string };
       await Promise.all([reload(), loadReceipts()]);
       setEditing(null);
-      toast.success(`${editing.kind === 'in' ? 'Barang berhasil diterima' : 'Retur berhasil dicatat'}: ${docNumber}`);
+      toast.success(`${editing.kind === 'in' ? 'Barang berhasil diterima' : editing.kind === 'transfer' ? 'Stok berhasil dipindah' : 'Retur berhasil dicatat'}: ${docNumber}`);
     } else {
       const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan dokumen.';
       setError(msg); toast.error(msg);
@@ -112,22 +116,23 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
   const valid = !!editing && !!editing.consignorId && !!editing.stallId
     && editing.lines.some(l => l.productId && Number(l.qty) > 0)
     && editing.lines.every(l => !l.productId || Number(l.qty) > 0)
-    && (editing.kind !== 'return' || editing.lines.every(l => { const i = lineInfo(l); return !i || i.qty <= i.stock; }));
+    && (editing.kind === 'in' || editing.lines.every(l => { const i = lineInfo(l); return !i || i.qty <= i.stock; }))
+    && (editing.kind !== 'transfer' || (!!editing.toStallId && editing.toStallId !== editing.stallId));
 
   if (result === null) return <PageLoader />;
   const receipts = result.receipts;
 
   const items = receipts
     .filter(r => !consignorFilter || r.consignorId === consignorFilter)
-    .filter(r => !stallFilter || r.stallId === stallFilter)
+    .filter(r => !stallFilter || r.stallId === stallFilter || r.toStallId === stallFilter)
     .filter(r => !kindFilter || r.kind === kindFilter);
 
   const cols: ExportCol<Receipt>[] = [
     { header: 'No. Dokumen', width: '14%', bold: true, value: r => r.docNumber },
-    { header: 'Jenis', width: '8%', value: r => r.kind === 'in' ? 'Terima' : 'Retur' },
+    { header: 'Jenis', width: '8%', value: r => KIND_LABEL[r.kind] },
     { header: 'Tanggal', width: '10%', value: r => r.docDate },
     { header: 'Penitip', width: '14%', value: r => r.consignorName },
-    { header: 'Lapak', width: '10%', value: r => r.stallName },
+    { header: 'Lapak', width: '10%', value: r => stallText(r) },
     { header: 'Barang', width: '28%', value: r => r.items.map(i => `${i.productName} x${qtyText(i.qty)}`).join(', ') },
     { header: 'Total Qty', width: '8%', align: 'right', value: r => r.totalQty },
     { header: 'Dibuat Oleh', width: '8%', value: r => r.createdBy || '-' },
@@ -146,7 +151,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
         filters={(
           <>
             <FilterSelect value={kindFilter} onChange={setKindFilter}
-              options={[{ value: '', label: 'Semua jenis' }, { value: 'in', label: 'Terima' }, { value: 'return', label: 'Retur' }]} />
+              options={[{ value: '', label: 'Semua jenis' }, { value: 'in', label: 'Terima' }, { value: 'return', label: 'Retur' }, { value: 'transfer', label: 'Pindah' }]} />
             <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
               options={[{ value: '', label: 'Semua penitip' }, ...data.consignors.map(c => ({ value: c.id, label: c.name }))]} />
             <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
@@ -154,16 +159,21 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
           </>
         )}
         headerExtra={can('create') ? (
-          <button onClick={() => open('return')} className="btn-ghost text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
-            <PackageMinus size={13} /> <span className="hidden sm:inline">Retur ke Penitip</span>
-          </button>
+          <>
+            <button onClick={() => open('transfer')} className="btn-ghost text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+              <ArrowRightLeft size={13} /> <span className="hidden sm:inline">Pindah Lapak</span>
+            </button>
+            <button onClick={() => open('return')} className="btn-ghost text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+              <PackageMinus size={13} /> <span className="hidden sm:inline">Retur ke Penitip</span>
+            </button>
+          </>
         ) : undefined}
         renderBody={r => (
           <>
             <div className="flex items-center gap-1.5 flex-wrap">
               <p className="text-sm font-bold font-mono" style={{ color: 'var(--text-primary)' }}>{r.docNumber}</p>
-              <Badge tone={r.kind === 'in' ? 'ok' : 'accent'}>{r.kind === 'in' ? 'Terima' : 'Retur'}</Badge>
-              <Badge>{r.stallName}</Badge>
+              <Badge tone={r.kind === 'in' ? 'ok' : 'accent'}>{KIND_LABEL[r.kind]}</Badge>
+              <Badge>{stallText(r)}</Badge>
             </div>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.docDate} · {r.consignorName} · total {qtyText(r.totalQty)}</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.items.map(i => `${i.productName} ×${qtyText(i.qty)}`).join(', ')}</p>
@@ -173,11 +183,12 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
         renderDetail={r => (
           <DetailPanel fields={[
             { label: 'No. Dokumen', value: r.docNumber },
-            { label: 'Jenis', value: r.kind === 'in' ? 'Terima barang' : 'Retur ke penitip' },
+            { label: 'Jenis', value: r.kind === 'in' ? 'Terima barang' : r.kind === 'transfer' ? 'Pindah antar lapak' : 'Retur ke penitip' },
             { label: 'Tanggal', value: r.docDate },
             { label: 'Dibuat Oleh', value: r.createdBy },
             { label: 'Penitip', value: r.consignorName },
-            { label: 'Lapak', value: r.stallName },
+            { label: r.kind === 'transfer' ? 'Lapak Asal' : 'Lapak', value: r.stallName },
+            ...(r.kind === 'transfer' ? [{ label: 'Lapak Tujuan', value: r.toStallName }] : []),
             ...(r.note ? [{ label: 'Catatan', value: r.note, wide: true }] : []),
           ]}>
             <div className="space-y-1.5">
@@ -202,28 +213,30 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
       />
 
       {editing && (
-        <ModalShell title={editing.kind === 'in' ? 'Terima Barang Titipan' : 'Retur ke Penitip'}
-          subtitle={editing.kind === 'in' ? 'Menambah stok titipan di lapak' : 'Mengurangi stok titipan di lapak'}
-          icon={editing.kind === 'in' ? <PackagePlus size={17} /> : <PackageMinus size={17} />} onClose={() => setEditing(null)} size="modal-md"
+        <ModalShell title={editing.kind === 'in' ? 'Terima Barang Titipan' : editing.kind === 'transfer' ? 'Pindah Stok Antar Lapak' : 'Retur ke Penitip'}
+          subtitle={editing.kind === 'in' ? 'Menambah stok titipan di lapak' : editing.kind === 'transfer' ? 'Memindahkan stok titipan dari satu lapak ke lapak lain' : 'Mengurangi stok titipan di lapak'}
+          icon={editing.kind === 'in' ? <PackagePlus size={17} /> : editing.kind === 'transfer' ? <ArrowRightLeft size={17} /> : <PackageMinus size={17} />} onClose={() => setEditing(null)} size="modal-md"
           footer={<ModalFooter onClose={() => setEditing(null)} onSave={save} saving={saving} disabled={!valid}
-            label={editing.kind === 'in' ? 'Simpan Penerimaan' : 'Simpan Retur'} />}>
+            label={editing.kind === 'in' ? 'Simpan Penerimaan' : editing.kind === 'transfer' ? 'Simpan Pindah Stok' : 'Simpan Retur'} />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Jenis dokumen: Terima (stok bertambah) atau Retur (stok berkurang) */}
             <div>
-              <div className="grid grid-cols-2 gap-2">
-                {([['in', 'Terima Barang', PackagePlus], ['return', 'Retur ke Penitip', PackageMinus]] as const).map(([k, label, Icon]) => (
+              <div className="grid grid-cols-3 gap-2">
+                {([['in', 'Terima', PackagePlus], ['transfer', 'Pindah Lapak', ArrowRightLeft], ['return', 'Retur', PackageMinus]] as const).map(([k, label, Icon]) => (
                   <button key={k} type="button" onClick={() => setEditing({ ...editing, kind: k })}
                     className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all"
                     style={editing.kind === k
                       ? { background: k === 'in' ? 'var(--success)' : 'linear-gradient(135deg,#E8821A,#C96018)', color: '#fff' }
                       : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                    <Icon size={14} /> {label}
+                    <Icon size={14} /> <span className="truncate">{label}</span>
                   </button>
                 ))}
               </div>
               <p className="text-[11px] mt-2 px-3 py-2 rounded-lg" style={{ background: editing.kind === 'in' ? 'var(--success-bg)' : 'var(--accent-bg)', color: editing.kind === 'in' ? 'var(--success)' : 'var(--accent)' }}>
                 {editing.kind === 'in'
                   ? 'Stok titipan di lapak BERTAMBAH. Catat saat barang diterima dari penitip.'
+                  : editing.kind === 'transfer'
+                  ? 'Stok BERKURANG di lapak asal dan BERTAMBAH di lapak tujuan (penitip sama). Produk yang belum terdaftar di lapak tujuan otomatis didaftarkan dengan harga default.'
                   : 'Stok titipan di lapak BERKURANG — barang dikembalikan ke penitip (tidak laku/rusak). Ini bukan penjualan, jadi tidak masuk hutang.'}
               </p>
             </div>
@@ -234,18 +247,25 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                   options={data.consignors.filter(c => c.isActive).map(c => ({ value: c.id, label: c.name, sublabel: c.code, imageUrl: c.logoUrl || undefined }))}
                   placeholder="– Pilih penitip –" searchPlaceholder="Cari penitip…" />
               </Field>
-              <Field label="Lapak" required>
-                <SearchSelect value={editing.stallId} onChange={v => setEditing({ ...editing, stallId: v })}
+              <Field label={editing.kind === 'transfer' ? 'Lapak Asal' : 'Lapak'} required>
+                <SearchSelect value={editing.stallId} onChange={v => setEditing({ ...editing, stallId: v, toStallId: editing.toStallId === v ? '' : editing.toStallId })}
                   options={data.stalls.filter(s => s.isActive).map(s => ({ value: s.id, label: s.name, sublabel: s.code }))}
                   placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…" />
               </Field>
             </div>
+            {editing.kind === 'transfer' && (
+              <Field label="Lapak Tujuan" required>
+                <SearchSelect value={editing.toStallId} onChange={v => setEditing({ ...editing, toStallId: v })}
+                  options={data.stalls.filter(s => s.isActive && s.id !== editing.stallId).map(s => ({ value: s.id, label: s.name, sublabel: s.code }))}
+                  placeholder="– Pilih lapak tujuan –" searchPlaceholder="Cari lapak…" />
+              </Field>
+            )}
             <Field label="Tanggal">
               <input className="input" type="date" value={editing.docDate} onChange={e => setEditing({ ...editing, docDate: e.target.value })} />
             </Field>
 
             <div>
-              <label className="field-label" style={{ marginBottom: 0 }}>{editing.kind === 'in' ? 'Produk Diterima' : 'Produk Diretur'}</label>
+              <label className="field-label" style={{ marginBottom: 0 }}>{editing.kind === 'in' ? 'Produk Diterima' : editing.kind === 'transfer' ? 'Produk Dipindah' : 'Produk Diretur'}</label>
               {!editing.consignorId ? (
                 <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Pilih penitip dulu untuk memilih produknya.</p>
               ) : consignorProducts.length === 0 ? (
@@ -255,7 +275,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
                     {editing.lines.map((l, idx) => {
                       const info = lineInfo(l);
-                      const over = editing.kind === 'return' && !!info && info.qty > info.stock;
+                      const over = editing.kind !== 'in' && !!info && info.qty > info.stock;
                       return (
                         <div key={idx} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
                           <div className="flex items-center gap-2 mb-2">
@@ -274,12 +294,12 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="field-label" style={{ fontSize: 11 }}>{editing.kind === 'in' ? 'Qty diterima' : 'Qty diretur'}{info ? ` (${info.unit})` : ''}</label>
+                              <label className="field-label" style={{ fontSize: 11 }}>{editing.kind === 'in' ? 'Qty diterima' : editing.kind === 'transfer' ? 'Qty dipindah' : 'Qty diretur'}{info ? ` (${info.unit})` : ''}</label>
                               <input className={`input${over ? ' input-error' : ''}`} type="number" min={0} step="any" inputMode="decimal" placeholder="0"
                                 value={l.qty} onChange={e => setLine(idx, { qty: e.target.value })} />
                             </div>
                             <div>
-                              <label className="field-label" style={{ fontSize: 11 }}>Stok di lapak</label>
+                              <label className="field-label" style={{ fontSize: 11 }}>{editing.kind === 'transfer' ? 'Stok lapak asal' : 'Stok di lapak'}</label>
                               <div className="input flex items-center justify-between" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
                                 <span className="tabular">{info && editing.stallId ? qtyText(info.stock) : '–'}</span>
                                 {info && editing.stallId && info.qty > 0 && (
@@ -290,7 +310,10 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                               </div>
                             </div>
                           </div>
-                          {over && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Qty retur melebihi stok di lapak ({qtyText(info!.stock)} {info!.unit}).</p>}
+                          {over && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Qty melebihi stok di lapak ({qtyText(info!.stock)} {info!.unit}).</p>}
+                          {editing.kind === 'transfer' && info && info.toStock !== null && (
+                            <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Stok lapak tujuan: {qtyText(info.toStock)}{info.qty > 0 ? ` → ${qtyText(info.toStock + info.qty)}` : ''}</p>
+                          )}
                           {info && info.qty > 0 && info.consignorShare !== null && (
                             <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Nilai bagian penitip: {rupiah(info.qty * info.consignorShare)}</p>
                           )}

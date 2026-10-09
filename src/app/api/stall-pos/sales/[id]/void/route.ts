@@ -28,6 +28,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const voided = await withDeadlockRetry(() => sql.begin(async tx => {
       const [sale] = await tx<SaleRow[]>`select * from stall_sales where id = ${id} for update`;
       if (sale.status !== 'paid') throw new SaleError('Penjualan ini sudah dibatalkan.');
+      if (Number(sale.refund_total) > 0) throw new SaleError('Penjualan ini sudah punya retur sebagian — tidak bisa dibatalkan seluruhnya.');
       const [shift] = sale.shift_id ? await tx<{ status: string }[]>`select status from stall_shifts where id = ${sale.shift_id}` : [];
       if (!shift || shift.status !== 'open') throw new SaleError('Shift penjualan ini sudah ditutup — pembatalan hanya bisa selama shift masih terbuka.');
 

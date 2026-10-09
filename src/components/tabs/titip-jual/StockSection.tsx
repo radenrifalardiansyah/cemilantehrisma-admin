@@ -16,7 +16,7 @@ interface LedgerEntry {
   id: string; type: string; qty: number; balanceAfter: number; note: string; createdAt: { seconds: number } | null;
 }
 
-const TYPE_LABEL: Record<string, string> = { in: 'Terima barang', return: 'Retur ke penitip', void: 'Pembatalan', sale: 'Terjual' };
+const TYPE_LABEL: Record<string, string> = { in: 'Terima barang', return: 'Retur ke penitip', void: 'Pembatalan', sale: 'Terjual', transfer_in: 'Pindah masuk', transfer_out: 'Pindah keluar', adjust_opname: 'Opname', adjust_damage: 'Rusak', adjust_lost: 'Hilang', adjust_expired: 'Kadaluarsa', adjust_other: 'Penyesuaian' };
 
 interface Line { item: StallItem; p: CProduct; c: Consignor | undefined; stall: Stall | undefined; eff: ReturnType<typeof effectiveFor> }
 

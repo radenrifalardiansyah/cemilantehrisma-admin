@@ -14,12 +14,13 @@ export interface CatalogItem {
 }
 export interface SaleItem {
   kind: 'own' | 'consign'; productId: string; name: string; unit: string; qty: number; price: number; subtotal: number;
+  returnedQty?: number;
 }
 export type PaymentMethod = 'cash' | 'qris' | 'transfer';
 export interface Sale {
   id: string; invoiceNo: string; stallId: string; stallName: string; shiftId: string; date: string; cashier: string;
   items: SaleItem[]; subtotal: number; discount: number; total: number; paymentMethod: PaymentMethod;
-  amountPaid: number; changeAmount: number; note: string; status: 'paid' | 'void'; voidReason: string; createdAt: Ts | null;
+  amountPaid: number; changeAmount: number; note: string; refundTotal: number; customerName: string; customerPhone: string; status: 'paid' | 'void'; voidReason: string; createdAt: Ts | null;
 }
 export const PAY_LABEL: Record<PaymentMethod, string> = { cash: 'Tunai', qris: 'QRIS', transfer: 'Transfer' };
 export const itemKey = (kind: string, productId: string) => `${kind}:${productId}`;

@@ -21,6 +21,7 @@ export default function Receipt({ sale, store, printedAt }: { sale: Sale; store:
         <div style={line} />
         <p style={{ margin: 0 }}>No: {sale.invoiceNo}</p>
         <p style={{ margin: 0 }}>{sale.date} · Kasir: {sale.cashier}</p>
+        {sale.customerName && <p style={{ margin: 0 }}>Pelanggan: {sale.customerName}</p>}
         {printedAt && <p style={{ margin: 0 }}>Dicetak: {printedAt}</p>}
         <div style={line} />
         {sale.items.map((it, i) => (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw, Banknote } from 'lucide-react';
+import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw, Banknote, ClipboardCheck, BookOpen } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
@@ -15,8 +15,10 @@ import StallsSection from './titip-jual/StallsSection';
 import StockSection from './titip-jual/StockSection';
 import ReceiptsSection from './titip-jual/ReceiptsSection';
 import SettlementsSection from './titip-jual/SettlementsSection';
+import AdjustmentsSection from './titip-jual/AdjustmentsSection';
+import JournalSection from './titip-jual/JournalSection';
 
-type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements';
+type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'adjustments' | 'journal' | 'settlements';
 
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'products', label: 'Produk', Icon: Package },
@@ -24,6 +26,8 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stalls', label: 'Lapak', Icon: Store },
   { id: 'stock', label: 'Stok per Lapak', Icon: Boxes },
   { id: 'receipts', label: 'Terima & Retur', Icon: ArrowLeftRight },
+  { id: 'adjustments', label: 'Opname', Icon: ClipboardCheck },
+  { id: 'journal', label: 'Jurnal Kas', Icon: BookOpen },
   { id: 'settlements', label: 'Rekap & Bayar', Icon: Banknote },
 ];
 
@@ -51,6 +55,7 @@ async function fetchAll(creds: string): Promise<TitipJualData> {
 export default function TitipJualTab({ creds, can }: { creds: string; can: (a: Action) => boolean }) {
   const [sub, setSub] = useState<SubTab>('products');
   const [data, setData] = useState<TitipJualData | null>(null);
+  const [journalStall, setJournalStall] = useState('');
 
   const load = useCallback(async () => { setData(await fetchAll(creds)); }, [creds]);
   useEffect(() => {
@@ -61,7 +66,7 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
 
   if (!data) return <PageLoader />;
 
-  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub };
+  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub, journalStallId: journalStall, openJournal: (id: string) => { setJournalStall(id); setSub('journal'); } };
 
   return (
     <div className="flex flex-col h-full">
@@ -93,6 +98,8 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
           {sub === 'stalls' && <StallsSection {...props} />}
           {sub === 'stock' && <StockSection {...props} />}
           {sub === 'receipts' && <ReceiptsSection {...props} />}
+          {sub === 'adjustments' && <AdjustmentsSection {...props} />}
+          {sub === 'journal' && <JournalSection key={journalStall} {...props} />}
           {sub === 'settlements' && <SettlementsSection {...props} />}
         </div>
       </div>

@@ -21,7 +21,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       // Kunci dokumen supaya dua pembatalan bersamaan tidak membalik stok dua kali.
       const [locked] = await tx`select id from consign_receipts where id = ${id} for update`;
       if (!locked) throw new ConsignStockError('Dokumen sudah dibatalkan.');
-      await voidReceipt(tx, { id: r.id, docNumber: r.docNumber, kind: r.kind, stallId: r.stallId, stallName: r.stallName, items: r.items });
+      await voidReceipt(tx, { id: r.id, docNumber: r.docNumber, kind: r.kind, stallId: r.stallId, stallName: r.stallName, toStallId: r.toStallId, toStallName: r.toStallName, items: r.items });
     });
   } catch (err) {
     if (err instanceof ConsignStockError) return Response.json({ error: err.message }, { status: 400 });

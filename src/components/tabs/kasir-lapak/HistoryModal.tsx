@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { History, Undo2, Printer } from 'lucide-react';
+import { History, Undo2, Printer, RotateCcw } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { ModalShell, Badge, Field, ErrorBox, rupiah } from '../titip-jual/shared';
 import { PAY_LABEL, type PosStall, type Sale } from './types';
+import ReturnModal from './ReturnModal';
 
 const todayKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 
@@ -23,6 +24,7 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
   const [date, setDate] = useState(todayKey());
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [voiding, setVoiding] = useState<Sale | null>(null);
+  const [returning, setReturning] = useState<Sale | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -52,7 +54,7 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
   };
 
   const paid = (sales ?? []).filter(s => s.status === 'paid');
-  const total = paid.reduce((a, s) => a + s.total, 0);
+  const total = paid.reduce((a, s) => a + s.total - s.refundTotal, 0);
 
   return (
     <>
@@ -78,13 +80,19 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         {s.createdAt ? new Date(s.createdAt.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''} · {s.cashier}
                       </p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{s.items.map(i => `${i.name} ×${i.qty}`).join(', ')}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{s.items.map(i => `${i.name} ×${i.qty}${(i.returnedQty ?? 0) > 0 ? ` (retur ${i.returnedQty})` : ''}`).join(', ')}</p>
+                      {s.refundTotal > 0 && <p className="text-[11px] font-semibold" style={{ color: 'var(--accent)' }}>Retur sebagian {rupiah(s.refundTotal)} · bersih {rupiah(s.total - s.refundTotal)}</p>}
                       {s.status === 'void' && <p className="text-[11px]" style={{ color: 'var(--danger)' }}>Dibatalkan: {s.voidReason}</p>}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <p className="text-sm font-bold mr-1" style={{ color: 'var(--text-primary)', textDecoration: s.status === 'void' ? 'line-through' : undefined }}>{rupiah(s.total)}</p>
                       <Tooltip label="Cetak struk"><button onClick={() => onPrint(s)} className="btn-ghost p-2"><Printer size={13} /></button></Tooltip>
-                      {canVoid && s.status === 'paid' && (
+                      {canVoid && s.status === 'paid' && s.items.some(i => i.qty - (i.returnedQty ?? 0) > 0) && (
+                        <Tooltip label="Retur sebagian">
+                          <button onClick={() => setReturning(s)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><RotateCcw size={13} /></button>
+                        </Tooltip>
+                      )}
+                      {canVoid && s.status === 'paid' && s.refundTotal === 0 && (
                         <Tooltip label="Batalkan penjualan">
                           <button onClick={() => { setVoiding(s); setReason(''); setError(''); }} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
                         </Tooltip>
@@ -98,6 +106,10 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
         </div>
       </ModalShell>
 
+      {returning && (
+        <ReturnModal creds={creds} sale={returning} onClose={() => setReturning(null)}
+          onDone={async () => { setReturning(null); await load(); onChanged(); }} />
+      )}
       {voiding && (
         <ModalShell title="Batalkan Penjualan" subtitle={voiding.invoiceNo} icon={<Undo2 size={17} />} onClose={() => setVoiding(null)}
           footer={(

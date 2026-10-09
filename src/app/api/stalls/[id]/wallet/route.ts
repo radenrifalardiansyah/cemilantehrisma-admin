@@ -5,10 +5,11 @@ import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { toTimestamp } from '@/lib/orders-pg';
 import { auditConsign } from '@/lib/consign-audit';
+import { isWalletCategory } from '@/lib/stall-wallet';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-interface EntryRow { id: string; kind: string; amount: string; ref_id: string | null; note: string; created_by: string | null; created_at: Date }
+interface EntryRow { id: string; kind: string; amount: string; ref_id: string | null; note: string; category: string; created_by: string | null; created_at: Date }
 
 // Buku kas/dompet lapak: saldo + riwayat entri (terbaru dulu).
 export async function GET(req: NextRequest, ctx: Ctx) {
@@ -19,12 +20,12 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const [stall] = await sql`select id from stalls where id = ${id}`;
   if (!stall) return Response.json({ error: 'Lapak tidak ditemukan.' }, { status: 404 });
   const [rows, [{ balance }]] = await seq([
-    sql<EntryRow[]>`select id, kind, amount, ref_id, note, created_by, created_at from stall_wallet_entries where stall_id = ${id} order by created_at desc limit 300`,
+    sql<EntryRow[]>`select id, kind, amount, ref_id, note, category, created_by, created_at from stall_wallet_entries where stall_id = ${id} order by created_at desc limit 300`,
     sql<{ balance: string | null }[]>`select sum(amount) as balance from stall_wallet_entries where stall_id = ${id}`,
   ]);
   return Response.json({
     balance: Number(balance ?? 0),
-    entries: rows.map(r => ({ id: r.id, kind: r.kind, amount: Number(r.amount), refId: r.ref_id, note: r.note, createdBy: r.created_by ?? '', createdAt: toTimestamp(r.created_at) })),
+    entries: rows.map(r => ({ id: r.id, kind: r.kind, amount: Number(r.amount), refId: r.ref_id, note: r.note, category: r.category, createdBy: r.created_by ?? '', createdAt: toTimestamp(r.created_at) })),
   });
 }
 
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!Number.isFinite(amount) || amount <= 0) return Response.json({ error: 'Jumlah harus lebih dari 0.' }, { status: 400 });
   const direction = data.direction === 'out' ? 'out' : 'in';
   const note = typeof data.note === 'string' ? data.note.trim().slice(0, 200) : '';
+  const category = isWalletCategory(data.category) ? data.category : 'lain';
   if (!note) return Response.json({ error: 'Keterangan wajib diisi.' }, { status: 400 });
 
   const sql = getSql();
@@ -52,8 +54,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (current + signed < 0) throw new Error(`INSUFFICIENT:${current}`);
       const entryId = randomUUID();
       await tx`
-        insert into stall_wallet_entries (id, stall_id, kind, amount, note, created_by, created_at)
-        values (${entryId}, ${id}, 'manual', ${signed}, ${note}, ${guard.username}, now())
+        insert into stall_wallet_entries (id, stall_id, kind, amount, note, category, created_by, created_at)
+        values (${entryId}, ${id}, 'manual', ${signed}, ${note}, ${category}, ${guard.username}, now())
       `;
       return { entryId, name: stall.name, balance: current + signed };
     });

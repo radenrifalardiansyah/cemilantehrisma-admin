@@ -15,12 +15,12 @@ import { HEADER_BTN_H, Badge, rupiah, qtyText } from './titip-jual/shared';
 
 interface Report {
   stallOptions: { id: string; name: string }[];
-  summary: { count: number; revenue: number; discount: number; ownRevenue: number; ownCost: number; consignSold: number; consignorShare: number; ourConsign: number; storeShare: number; grossProfit: number };
+  summary: { count: number; revenue: number; discount: number; ownRevenue: number; ownCost: number; consignSold: number; consignorShare: number; ourConsign: number; lossCompensation: number; storeShare: number; grossProfit: number };
   methods: { method: string; count: number; amount: number }[];
   daily: { date: string; count: number; revenue: number }[];
   stalls: { stallId: string; stallName: string; count: number; revenue: number }[];
   products: { kind: string; productId: string; name: string; qty: number; revenue: number }[];
-  consignors: { consignorId: string; consignorName: string; sold: number; owed: number; ours: number; unsettled: number; unpaid: number; paid: number }[];
+  consignors: { consignorId: string; consignorName: string; sold: number; owed: number; ours: number; loss: number; unsettled: number; unpaid: number; paid: number }[];
 }
 interface PRow { kind: string; name: string; qty: number; revenue: number }
 
@@ -81,7 +81,7 @@ export default function StallSalesReportTab({ creds }: { creds: string }) {
   const cards = [
     { label: 'Omzet lapak', val: rupiah(s.revenue), sub: `${s.count} transaksi` },
     { label: 'Bagian toko', val: rupiah(s.storeShare), sub: 'produk toko + bagian toko dari titipan − diskon' },
-    { label: 'Bagian penitip', val: rupiah(s.consignorShare), sub: 'hutang ke penitip dari penjualan' },
+    { label: 'Bagian penitip', val: rupiah(s.consignorShare), sub: s.lossCompensation > 0 ? `termasuk kompensasi kerugian ${rupiah(s.lossCompensation)}` : 'hutang ke penitip dari penjualan' },
     { label: 'Laba kotor lapak', val: rupiah(s.grossProfit), sub: 'bagian toko dikurangi HPP produk toko' },
   ];
 
@@ -170,6 +170,7 @@ export default function StallSalesReportTab({ creds }: { creds: string }) {
                   </div>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Terjual {rupiah(c.sold)} · bagian toko {rupiah(c.ours)}</p>
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {c.loss > 0 && <Badge tone="danger">Termasuk kompensasi kerugian {rupiah(c.loss)}</Badge>}
                     {c.unsettled > 0 && <Badge tone="danger">Belum direkap {rupiah(c.unsettled)}</Badge>}
                     {c.unpaid > 0 && <Badge tone="accent">Rekap belum dibayar {rupiah(c.unpaid)}</Badge>}
                     {c.paid > 0 && <Badge tone="ok">Sudah dibayar {rupiah(c.paid)}</Badge>}

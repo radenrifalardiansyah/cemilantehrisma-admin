@@ -58,14 +58,14 @@ export function rowToStallItem(r: StallItemRow) {
 
 export interface ReceiptItem { productId: string; productName: string; unit: string; qty: number }
 export interface ReceiptRow {
-  id: string; doc_number: string; kind: 'in' | 'return'; consignor_id: string; consignor_name: string;
-  stall_id: string; stall_name: string; doc_date: string; items: unknown; total_qty: string | number;
+  id: string; doc_number: string; kind: 'in' | 'return' | 'transfer'; consignor_id: string; consignor_name: string;
+  stall_id: string; stall_name: string; to_stall_id: string | null; to_stall_name: string | null; doc_date: string; items: unknown; total_qty: string | number;
   note: string; created_by: string | null; created_at: Date;
 }
 export function rowToReceipt(r: ReceiptRow) {
   return {
     id: r.id, docNumber: r.doc_number, kind: r.kind, consignorId: r.consignor_id, consignorName: r.consignor_name,
-    stallId: r.stall_id, stallName: r.stall_name, docDate: r.doc_date,
+    stallId: r.stall_id, stallName: r.stall_name, toStallId: r.to_stall_id ?? '', toStallName: r.to_stall_name ?? '', docDate: r.doc_date,
     items: parseJsonb<ReceiptItem[]>(r.items as ReceiptItem[] | string | null) ?? [],
     totalQty: num(r.total_qty), note: r.note, createdBy: r.created_by ?? '', createdAt: toTimestamp(r.created_at),
   };

@@ -27,17 +27,17 @@ export async function GET(req: NextRequest) {
   const [stalls, totals, cashiers, shifts] = await seq([
     sql<{ id: string; name: string }[]>`select id, name from stalls order by name`,
     sql<{ n: string; revenue: string; discount: string }[]>`
-      select count(*) as n, coalesce(sum(total), 0) as revenue, coalesce(sum(discount), 0) as discount
+      select count(*) as n, coalesce(sum(total - refund_total), 0) as revenue, coalesce(sum(discount), 0) as discount
       from stall_sales s where s.status = 'paid' and s.date >= ${from} and s.date <= ${to} ${stallFilter}
     `,
     sql<{ cashier: string; n: string; revenue: string; discount: string; cash: string; qris: string; transfer: string; voids: string; void_amount: string }[]>`
       select coalesce(s.cashier, '-') as cashier,
              count(*) filter (where s.status = 'paid') as n,
-             coalesce(sum(s.total) filter (where s.status = 'paid'), 0) as revenue,
+             coalesce(sum(s.total - s.refund_total) filter (where s.status = 'paid'), 0) as revenue,
              coalesce(sum(s.discount) filter (where s.status = 'paid'), 0) as discount,
-             coalesce(sum(s.total) filter (where s.status = 'paid' and s.payment_method = 'cash'), 0) as cash,
-             coalesce(sum(s.total) filter (where s.status = 'paid' and s.payment_method = 'qris'), 0) as qris,
-             coalesce(sum(s.total) filter (where s.status = 'paid' and s.payment_method = 'transfer'), 0) as transfer,
+             coalesce(sum(s.total - s.refund_total) filter (where s.status = 'paid' and s.payment_method = 'cash'), 0) as cash,
+             coalesce(sum(s.total - s.refund_total) filter (where s.status = 'paid' and s.payment_method = 'qris'), 0) as qris,
+             coalesce(sum(s.total - s.refund_total) filter (where s.status = 'paid' and s.payment_method = 'transfer'), 0) as transfer,
              count(*) filter (where s.status = 'void') as voids,
              coalesce(sum(s.total) filter (where s.status = 'void'), 0) as void_amount
       from stall_sales s where s.date >= ${from} and s.date <= ${to} ${stallFilter}

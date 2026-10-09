@@ -49,6 +49,8 @@ export async function POST(req: NextRequest) {
   if ('error' in merged) return Response.json({ error: merged.error }, { status: 400 });
   const discountInput = data.discount === undefined || data.discount === '' ? 0 : Number(data.discount);
   const note = typeof data.note === 'string' ? data.note.trim().slice(0, 200) : '';
+  const customerName = typeof data.customerName === 'string' ? data.customerName.trim().slice(0, 80) : '';
+  const customerPhone = typeof data.customerPhone === 'string' ? data.customerPhone.replace(/[^\d+\-\s]/g, '').trim().slice(0, 20) : '';
 
   const sql = getSql();
   const dateKey = wibDateKey(new Date());
@@ -127,9 +129,9 @@ export async function POST(req: NextRequest) {
 
       await tx`
         insert into stall_sales (id, invoice_no, stall_id, stall_name, shift_id, date, cashier, items, subtotal, discount, total,
-          payment_method, amount_paid, change_amount, note, status, created_at)
+          payment_method, amount_paid, change_amount, note, customer_name, customer_phone, status, created_at)
         values (${saleId}, ${invoiceNo}, ${stall.id}, ${stall.name}, ${shift.id}, ${dateKey}, ${user.username}, ${tx.json(items as never)},
-          ${subtotal}, ${discountInput}, ${total}, ${pay.method}, ${pay.amountPaid}, ${pay.change}, ${note}, 'paid', now())
+          ${subtotal}, ${discountInput}, ${total}, ${pay.method}, ${pay.amountPaid}, ${pay.change}, ${note}, ${customerName}, ${customerPhone}, 'paid', now())
       `;
       for (const i of items.filter(x => x.kind === 'consign')) {
         await tx`

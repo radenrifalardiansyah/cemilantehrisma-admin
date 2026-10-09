@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
       name: str(s.storeName) || 'Cemilan Teh Risma',
       address: [str(s.address), str(s.city)].filter(Boolean).join(', '),
       logo: str(s.logo),
+      whatsapp: str(s.whatsapp),
     },
   });
 }

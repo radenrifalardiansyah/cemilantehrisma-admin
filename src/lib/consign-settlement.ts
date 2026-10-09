@@ -24,7 +24,7 @@ export function rowToSettlement(r: SettlementRow) {
   };
 }
 
-interface LineRow { id: string; product_id: string; product_name: string; qty: string; consignor_amount: string }
+interface LineRow { id: string; product_id: string; product_name: string; qty: string; consignor_amount: string; source: string }
 
 // Baris bagi hasil yang BELUM direkap dan tidak dibatalkan untuk satu lapak × penitip dalam rentang
 // tanggal WIB. `lock` = kunci baris (dipakai saat membuat rekap supaya dua rekap bersamaan tidak
@@ -35,19 +35,22 @@ export async function loadUnsettledLines(
   const start = wibDayStart(p.from).toDate();
   const end = wibDayEnd(p.to).toDate();
   const rows = await tx<LineRow[]>`
-    select l.id, l.product_id, l.product_name, l.qty, l.consignor_amount
-    from consign_sale_lines l join stall_sales s on s.id = l.sale_id
+    select l.id, l.product_id, l.product_name, l.qty, l.consignor_amount, l.source
+    from consign_sale_lines l left join stall_sales s on s.id = l.sale_id
     where l.stall_id = ${p.stallId} and l.consignor_id = ${p.consignorId}
-      and not l.voided and l.settlement_id is null and s.status = 'paid'
+      and not l.voided and l.settlement_id is null and (l.sale_id is null or s.status = 'paid')
       and l.created_at >= ${start} and l.created_at <= ${end}
     order by l.product_name, l.id
     ${p.lock ? tx`for update of l` : tx``}
   `;
+  // Penjualan dan kompensasi kerugian (barang rusak/hilang yang ditanggung toko) dipisah barisnya.
   const byProduct = new Map<string, SettlementItem>();
   for (const r of rows) {
-    const cur = byProduct.get(r.product_id) ?? { productId: r.product_id, productName: r.product_name, qty: 0, amount: 0 };
+    const loss = r.source === 'loss';
+    const key = loss ? `${r.product_id}~loss` : r.product_id;
+    const cur = byProduct.get(key) ?? { productId: key, productName: loss ? `${r.product_name} (kompensasi kerugian)` : r.product_name, qty: 0, amount: 0 };
     cur.qty += Number(r.qty); cur.amount += Number(r.consignor_amount);
-    byProduct.set(r.product_id, cur);
+    byProduct.set(key, cur);
   }
   const items = [...byProduct.values()];
   return { ids: rows.map(r => r.id), items, total: items.reduce((a, i) => a + i.amount, 0), count: rows.length };

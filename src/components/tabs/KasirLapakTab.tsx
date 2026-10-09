@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package, PackagePlus, ClipboardList } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package, PackagePlus, ClipboardList, ScanLine, PauseCircle, MessageCircle } from 'lucide-react';
 import Image from 'next/image';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import PageLoader from '@/components/PageLoader';
 import ScrollChips from '@/components/ScrollChips';
+import BarcodeScannerModal from '@/components/BarcodeScannerModal';
+import { useConfirm } from '@/components/Confirm';
+import { waLink, receiptMessage } from '@/lib/stall-whatsapp';
+import { resolveStallScan } from './kasir-lapak/scan';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import { useToast } from '@/components/Toast';
@@ -27,6 +31,13 @@ const KIND_TABS: { id: KindFilter; label: string }[] = [
   { id: 'all', label: 'Semua' }, { id: 'consign', label: 'Titipan' }, { id: 'own', label: 'Produk Toko' },
 ];
 const STALL_KEY = 'kasirLapak:stall';
+const heldKey = (stallId: string) => `kasirLapak:held:${stallId}`;
+
+// Transaksi yang ditahan (disimpan di perangkat ini saja — bukan di server, tidak mengunci stok).
+interface Held { id: string; at: number; cart: Record<string, number>; discount: string; method: PaymentMethod; note: string; customerName: string; customerPhone: string }
+const readHeld = (stallId: string): Held[] => {
+  try { return JSON.parse(window.localStorage.getItem(heldKey(stallId)) ?? '[]') as Held[]; } catch { return []; }
+};
 
 async function fetchStalls(creds: string): Promise<PosStall[]> {
   const r = await fetch('/api/stall-pos/stalls', { headers: { 'x-admin-auth': creds } });
@@ -43,7 +54,8 @@ async function fetchCatalog(creds: string, stallId: string): Promise<Catalog> {
 // Hanya menampilkan barang yang ada di lapak: titipan (stok titipan lapak) + produk toko (stok gudang terkait).
 export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: Action) => boolean }) {
   const toast = useToast();
-  const [store, setStore] = useState<{ name: string; address?: string; logo?: string }>({ name: 'Cemilan Teh Risma' });
+  const confirm = useConfirm();
+  const [store, setStore] = useState<{ name: string; address?: string; logo?: string; whatsapp?: string }>({ name: 'Cemilan Teh Risma' });
   const [stalls, setStalls] = useState<PosStall[] | null>(null);
   const [stallId, setStallId] = useState('');
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -55,6 +67,11 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [paid, setPaid] = useState('');
   const [note, setNote] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const [held, setHeld] = useState<Held[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
@@ -81,7 +98,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   useEffect(() => {
     let alive = true;
     fetch('/api/stall-pos/store', { headers: { 'x-admin-auth': creds } })
-      .then(r => r.ok ? r.json() as Promise<{ store: { name: string; address: string; logo: string } }> : null)
+      .then(r => r.ok ? r.json() as Promise<{ store: { name: string; address: string; logo: string; whatsapp: string } }> : null)
       .then(d => { if (alive && d) setStore(d.store); })
       .catch(() => {});
     return () => { alive = false; };
@@ -90,6 +107,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   useEffect(() => {
     if (!stallId) return;
     let alive = true;
+    Promise.resolve().then(() => { if (alive) setHeld(readHeld(stallId)); });
     fetchCatalog(creds, stallId).then(c => { if (alive) setCatalog(c); });
     return () => { alive = false; };
   }, [creds, stallId]);
@@ -103,7 +121,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const items = catalog && catalog.stallId === stallId ? catalog.items : null;
 
   const changeStall = (id: string) => {
-    setStallId(id); setCart({}); setCat(''); setDiscount(''); setPaid(''); setNote(''); setSearch(''); setCatalog(null);
+    setStallId(id); setCart({}); setCat(''); setDiscount(''); setPaid(''); setNote(''); setCustomerName(''); setCustomerPhone(''); setSearch(''); setCatalog(null);
     try { window.localStorage.setItem(STALL_KEY, id); } catch { /* abaikan */ }
   };
 
@@ -139,19 +157,57 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
     const r = await fetch('/api/stall-pos/sales', {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        stallId: stall.id, discount: discountNum, paymentMethod: method, amountPaid: method === 'cash' ? paidNum : total, note,
+        stallId: stall.id, discount: discountNum, paymentMethod: method, amountPaid: method === 'cash' ? paidNum : total, note, customerName, customerPhone,
         items: lines.map(l => ({ kind: l.item.kind, productId: l.item.productId, qty: l.qty })),
       }),
     });
     const d = await r.json().catch(() => ({})) as { sale?: Sale; error?: string };
     if (r.ok && d.sale) {
-      setDone(d.sale); setCart({}); setDiscount(''); setPaid(''); setNote(''); setCartOpen(false);
+      setDone(d.sale); setCart({}); setDiscount(''); setPaid(''); setNote(''); setCustomerName(''); setCustomerPhone(''); setCartOpen(false);
       await reloadAll();
     } else {
       const msg = d.error ?? 'Gagal menyimpan transaksi.';
       setError(msg); toast.error(msg);
     }
     setProcessing(false);
+  };
+
+  const saveHeld = (list: Held[]) => {
+    setHeld(list);
+    try { window.localStorage.setItem(heldKey(stallId), JSON.stringify(list)); } catch { /* abaikan */ }
+  };
+  const resetCart = () => { setCart({}); setDiscount(''); setPaid(''); setNote(''); setCustomerName(''); setCustomerPhone(''); setError(''); };
+  const holdCurrent = () => {
+    if (lines.length === 0) return;
+    saveHeld([{ id: String(Date.now()), at: Date.now(), cart, discount, method, note, customerName, customerPhone }, ...held]);
+    resetCart(); setCartOpen(false);
+    toast.success('Transaksi ditahan. Lanjutkan lewat tombol "Tertahan".');
+  };
+  const resumeHeld = (h: Held) => {
+    if (lines.length > 0) { toast.error('Keranjang masih berisi barang — tahan atau kosongkan dulu.'); return; }
+    // Stok bisa berubah sejak ditahan: barang yang sudah tidak ada dibuang, jumlah dibatasi stok sekarang.
+    const next: Record<string, number> = {};
+    for (const [key, qty] of Object.entries(h.cart)) {
+      const it = items?.find(i => itemKey(i.kind, i.productId) === key);
+      if (it && !it.blocked && it.stock > 0) next[key] = Math.min(qty, it.stock);
+    }
+    if (Object.keys(next).length === 0) { toast.error('Barang di transaksi ini sudah tidak tersedia.'); return; }
+    setCart(next); setDiscount(h.discount); setMethod(h.method); setNote(h.note); setCustomerName(h.customerName); setCustomerPhone(h.customerPhone);
+    saveHeld(held.filter(x => x.id !== h.id)); setHeldOpen(false);
+    if (Object.keys(next).length < Object.keys(h.cart).length) toast.error('Sebagian barang sudah habis/tidak tersedia dan dikeluarkan dari keranjang.');
+  };
+  const dropHeld = async (h: Held) => {
+    if (!await confirm({ message: 'Hapus transaksi tertahan ini?', danger: true })) return;
+    saveHeld(held.filter(x => x.id !== h.id));
+  };
+  const handleScan = (text: string) => {
+    const it = items ? resolveStallScan(text, items) : null;
+    if (!stall?.shift) return { ok: false, label: 'Buka kasir dulu' };
+    if (!it) return { ok: false, label: `Tidak dikenali: ${text.slice(0, 40)}` };
+    if (it.blocked) return { ok: false, label: `${it.name}: ${it.blocked}` };
+    if (it.stock <= 0) return { ok: false, label: `${it.name}: stok habis` };
+    add(it);
+    return { ok: true, label: `${it.name} ditambahkan` };
   };
 
   const print = (s: Sale) => {
@@ -206,6 +262,10 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
 
       {lines.length > 0 && (
         <>
+          <div className="flex items-center justify-between">
+            <button onClick={holdCurrent} className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--accent)' }}><PauseCircle size={13} /> Tahan transaksi</button>
+            <button onClick={resetCart} className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--danger)' }}><Trash2 size={12} /> Kosongkan</button>
+          </div>
           <Field label="Diskon (Rp, ditanggung toko)">
             <NumberInput value={discount} placeholder="0" onChange={setDiscount} />
           </Field>
@@ -227,6 +287,14 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
               </div>
             </Field>
           )}
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Nama pelanggan">
+              <input className="input" value={customerName} maxLength={80} placeholder="opsional" onChange={e => setCustomerName(e.target.value)} />
+            </Field>
+            <Field label="WhatsApp pelanggan">
+              <input className="input" value={customerPhone} maxLength={20} inputMode="tel" placeholder="untuk kirim struk" onChange={e => setCustomerPhone(e.target.value)} />
+            </Field>
+          </div>
           <Field label="Catatan (opsional)">
             <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
           </Field>
@@ -278,6 +346,12 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
           </div>
           <div className="flex items-center gap-2 ml-auto">
             {can('create') && <button onClick={() => setReceiveOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><PackagePlus size={13} /> <span className="hidden sm:inline">Terima Barang</span></button>}
+            {held.length > 0 && (
+              <button onClick={() => setHeldOpen(true)} className="btn-ghost text-xs relative" style={{ height: 34 }}>
+                <PauseCircle size={13} /> <span className="hidden sm:inline">Tertahan</span>
+                <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-black flex items-center justify-center" style={{ background: 'var(--accent)' }}>{held.length}</span>
+              </button>
+            )}
             <button onClick={() => setRekapOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><ClipboardList size={13} /> <span className="hidden sm:inline">Rekap</span></button>
             <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> <span className="hidden sm:inline">Riwayat</span></button>
             {stall?.shift ? (
@@ -293,9 +367,14 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
         {/* Katalog */}
         <div className="h-full overflow-y-auto thin-scrollbar p-4 lg:p-6 pb-28 lg:pb-6 space-y-4" style={{ borderRight: '1px solid var(--border)' }}>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <div className="relative flex-1 min-w-0">
-              <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-              <input className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }} placeholder="Cari barang atau penitip…" value={search} onChange={e => setSearch(e.target.value)} />
+            <div className="relative flex-1 min-w-0 flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                <input className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }} placeholder="Cari barang atau penitip…" value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <Tooltip label="Scan barcode / QR produk">
+                <button onClick={() => setScanOpen(true)} disabled={!stall?.shift} className="btn-ghost p-0 flex items-center justify-center flex-shrink-0 disabled:opacity-40" style={{ height: 34, width: 34 }}><ScanLine size={15} /></button>
+              </Tooltip>
             </div>
             <div className="inline-flex rounded-xl overflow-x-auto no-scrollbar border self-start" style={{ borderColor: 'var(--border)' }}>
               {KIND_TABS.map(t => (
@@ -372,7 +451,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
         <ReceiveModal creds={creds} stall={stall} items={items ?? []} onClose={() => setReceiveOpen(false)} onDone={reloadAll} />
       )}
       {rekapOpen && stall && (
-        <RekapModal creds={creds} stall={stall} canCreate={can('create')} onClose={() => setRekapOpen(false)}
+        <RekapModal creds={creds} stall={stall} canCreate={can('create')} ownerPhone={store.whatsapp} storeName={store.name} onClose={() => setRekapOpen(false)}
           onPdf={async (s: Settlement) => downloadSettlementPdf(s, { name: store.name, address: store.address, logo: await toDataUri(store.logo) })} />
       )}
       {historyOpen && stall && (
@@ -383,7 +462,11 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
         <ModalShell title="Transaksi Berhasil" subtitle={done.invoiceNo} icon={<CheckCircle2 size={17} />} onClose={() => setDone(null)}
           footer={(
             <>
-              <button onClick={() => print(done)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}><Printer size={14} /> Cetak Struk</button>
+              <button onClick={() => print(done)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}><Printer size={14} /> Cetak</button>
+              <button onClick={() => {
+                if (!done.customerPhone) toast.error('Nomor WhatsApp pelanggan tidak diisi — pilih kontaknya manual di WhatsApp.');
+                window.open(waLink(done.customerPhone, receiptMessage(done, store.name, done.customerName || undefined)), '_blank', 'noopener');
+              }} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', color: '#059669' }}><MessageCircle size={14} /> WhatsApp</button>
               <button onClick={() => setDone(null)} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Transaksi Baru</button>
             </>
           )}>
@@ -394,6 +477,29 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
             {done.paymentMethod === 'cash' && <p className="text-lg font-bold" style={{ color: '#059669' }}>Kembalian {rupiah(done.changeAmount)}</p>}
           </div>
         </ModalShell>
+      )}
+
+      {heldOpen && (
+        <ModalShell title="Transaksi Tertahan" subtitle={`${stall?.name ?? ''} · tersimpan di perangkat ini`} icon={<PauseCircle size={17} />} onClose={() => setHeldOpen(false)}
+          footer={<button onClick={() => setHeldOpen(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>}>
+          {held.length === 0 ? <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi tertahan.</p> : held.map((h, idx) => {
+            const n = Object.values(h.cart).reduce((a, q) => a + q, 0);
+            const sum = Object.entries(h.cart).reduce((a, [k, q]) => a + q * (items?.find(i => itemKey(i.kind, i.productId) === k)?.price ?? 0), 0);
+            return (
+              <div key={h.id} className="flex items-center gap-3 py-3" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{h.customerName || 'Tanpa nama'} · {qtyText(n)} barang</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{new Date(h.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · ± {rupiah(sum)}</p>
+                </div>
+                <button onClick={() => resumeHeld(h)} className="btn-primary text-xs flex-shrink-0" style={{ height: 32 }}>Lanjutkan</button>
+                <button onClick={() => dropHeld(h)} className="btn-ghost p-2 flex-shrink-0" style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
+              </div>
+            );
+          })}
+        </ModalShell>
+      )}
+      {scanOpen && (
+        <BarcodeScannerModal title="Scan Barang" subtitle="Setiap kode yang terbaca langsung masuk keranjang" onDetect={handleScan} onClose={() => setScanOpen(false)} />
       )}
 
       {printSale && <Receipt sale={printSale} store={store} printedAt={printedAt} />}

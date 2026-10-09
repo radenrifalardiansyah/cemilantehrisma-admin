@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Banknote, Undo2, FileDown, Loader2, HandCoins } from 'lucide-react';
+import { Banknote, Undo2, FileDown, Loader2, HandCoins, MessageCircle } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
@@ -12,6 +12,7 @@ import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import PeriodBar from './PeriodBar';
+import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
 import { downloadSettlementPdf, type Settlement, type SettlementItem } from './settlementPdf';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText, type SectionProps } from './shared';
 
@@ -65,6 +66,13 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
     if (r.ok) { await load(); toast.success(`${s.docNumber} dibatalkan.`); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan rekap.');
     setBusyId(null);
+  };
+
+  // Kirim rekap ke penitip lewat WhatsApp (tautan wa.me — pengguna menekan kirim sendiri).
+  const sendWa = (s: Settlement) => {
+    const phone = data.consignors.find(c => c.id === s.consignorId)?.phone;
+    if (!phone) toast.error('Nomor WhatsApp penitip belum diisi — pilih kontaknya manual di WhatsApp.');
+    window.open(waLink(phone, settlementMessage(s, store.name, 'penitip')), '_blank', 'noopener');
   };
 
   const downloadPdf = async (s: Settlement) => {
@@ -180,6 +188,9 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
               <button onClick={() => downloadPdf(s)} disabled={busyId === s.id} className="btn-ghost p-2">
                 {busyId === s.id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
               </button>
+            </Tooltip>
+            <Tooltip label="Kirim rekap ke penitip lewat WhatsApp">
+              <button onClick={() => sendWa(s)} className="btn-ghost p-2" style={{ color: '#059669' }}><MessageCircle size={13} /></button>
             </Tooltip>
             {s.status === 'unpaid' && can('edit') && (
               <Tooltip label="Bayar dari dompet lapak">

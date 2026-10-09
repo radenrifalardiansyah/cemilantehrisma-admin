@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { Users } from 'lucide-react';
+import { Users, History } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { schemeText } from '@/lib/consign';
 import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
+import ConsignorHistoryModal from './ConsignorHistoryModal';
+import Tooltip from '@/components/Tooltip';
 import { downloadTemplate, readRows, type ImportCol } from './importers';
 import {
   API, Badge, Field, ModalShell, ModalFooter, ErrorBox, SchemeFields, deleteMany, reportImport,
@@ -40,6 +42,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
+  const [historyFor, setHistoryFor] = useState<Consignor | null>(null);
 
   const productCount = new Map<string, number>();
   for (const p of data.products) productCount.set(p.consignorId, (productCount.get(p.consignorId) ?? 0) + 1);
@@ -194,8 +197,11 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
             ]} />
           );
         }}
-        actions={c => <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...c }); } : undefined}
-          onDelete={can('delete') ? () => del(c) : undefined} deleting={deletingId === c.id} />}
+        actions={c => (<>
+          <Tooltip label="Riwayat & ringkasan"><button onClick={() => setHistoryFor(c)} className="btn-ghost p-2"><History size={13} /></button></Tooltip>
+          <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...c }); } : undefined}
+          onDelete={can('delete') ? () => del(c) : undefined} deleting={deletingId === c.id} />
+        </>)}
         onBulkDelete={can('delete') ? bulkDelete : undefined} importer={importer}
         exportCols={cols} exportTitle="DAFTAR PENITIP" exportFile="penitip"
       />
@@ -249,6 +255,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
           </div>
         </ModalShell>
       )}
+      {historyFor && <ConsignorHistoryModal creds={creds} consignor={historyFor} onClose={() => setHistoryFor(null)} />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { guardStall, rowToShift, type ShiftRow } from '@/lib/stall-pos-server';
+import { randomUUID } from 'crypto';
 import { auditConsign } from '@/lib/consign-audit';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -22,11 +23,19 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const [locked] = await tx<ShiftRow[]>`select * from stall_shifts where id = ${id} for update`;
     if (locked.status !== 'open') return null;
     const [{ cash }] = await tx<{ cash: string | null }[]>`
-      select sum(total) as cash from stall_sales where shift_id = ${id} and payment_method = 'cash' and status = 'paid'
+      select sum(total - refund_total) as cash from stall_sales where shift_id = ${id} and payment_method = 'cash' and status = 'paid'
     `;
     const cashTotal = Number(cash ?? 0);
     const expected = Number(locked.opening_balance) + cashTotal;
     const difference = actual - expected;
+    // Selisih kas (hitungan fisik − seharusnya) dicatat otomatis di dompet lapak supaya saldo dompet
+    // mengikuti kenyataan di laci: kurang = pengeluaran, lebih = pemasukan.
+    if (difference !== 0) {
+      await tx`
+        insert into stall_wallet_entries (id, stall_id, kind, amount, ref_id, note, created_by, created_at)
+        values (${randomUUID()}, ${locked.stall_id}, 'shift_diff', ${difference}, ${id}, ${`Selisih kas tutup shift (seharusnya ${expected}, hitungan ${actual})`}, ${guard.user.username}, now())
+      `;
+    }
     const [row] = await tx<ShiftRow[]>`
       update stall_shifts set status = 'closed', closed_at = now(), closed_by = ${guard.user.username},
         cash_sales_total = ${cashTotal}, expected_balance = ${expected}, actual_balance = ${actual}, difference = ${difference},

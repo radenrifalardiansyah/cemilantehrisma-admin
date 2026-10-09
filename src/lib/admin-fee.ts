@@ -204,7 +204,7 @@ export async function computeReport(from: string, to: string, pgTx?: PgClient): 
 
   // Penjualan Kasir Lapak (tabel terpisah dari orders); yang dibatalkan tidak ditagih. Dijalankan SETELAH
   // query lain (bukan di Promise.all) supaya jumlah query bersamaan tidak bertambah dari sebelum fitur lapak.
-  const lapakRows = await sql<LapakRow[]>`select id, invoice_no, stall_name, total, created_at from stall_sales where status = 'paid' and created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`;
+  const lapakRows = await sql<LapakRow[]>`select id, invoice_no, stall_name, total - refund_total as total, created_at from stall_sales where status = 'paid' and created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}`;
 
   const orders = orderRows.map((r): OrderDoc & { id: string } => ({
     id: r.id, total: Number(r.total), source: r.source, status: r.status, paymentStatus: r.payment_status,

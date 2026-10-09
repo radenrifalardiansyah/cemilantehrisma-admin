@@ -42,6 +42,7 @@ export function rowToShift(r: ShiftRow) {
 
 export interface SaleItem {
   kind: 'own' | 'consign'; productId: string; name: string; unit: string; qty: number; price: number; subtotal: number;
+  returnedQty?: number;   // jumlah yang sudah diretur (retur sebagian)
   // own: HPP per unit saat transaksi. consign: penitip + bagi hasil per unit saat transaksi.
   costPrice?: number;
   consignorId?: string; consignorName?: string; scheme?: string; schemeValue?: number; consignorShare?: number; ourShare?: number;
@@ -49,14 +50,14 @@ export interface SaleItem {
 export interface SaleRow {
   id: string; invoice_no: string; stall_id: string; stall_name: string; shift_id: string | null; date: string; cashier: string | null;
   items: unknown; subtotal: string; discount: string; total: string; payment_method: string; amount_paid: string; change_amount: string;
-  note: string; status: string; void_reason: string | null; voided_by: string | null; voided_at: Date | null; created_at: Date;
+  note: string; refund_total: string; customer_name: string; customer_phone: string; status: string; void_reason: string | null; voided_by: string | null; voided_at: Date | null; created_at: Date;
 }
 export function rowToSale(r: SaleRow) {
   const items = typeof r.items === 'string' ? JSON.parse(r.items) as SaleItem[] : (r.items as SaleItem[]);
   return {
     id: r.id, invoiceNo: r.invoice_no, stallId: r.stall_id, stallName: r.stall_name, shiftId: r.shift_id ?? '', date: r.date,
     cashier: r.cashier ?? '', items, subtotal: Number(r.subtotal), discount: Number(r.discount), total: Number(r.total),
-    paymentMethod: r.payment_method, amountPaid: Number(r.amount_paid), changeAmount: Number(r.change_amount), note: r.note,
+    paymentMethod: r.payment_method, amountPaid: Number(r.amount_paid), changeAmount: Number(r.change_amount), note: r.note, refundTotal: Number(r.refund_total), customerName: r.customer_name, customerPhone: r.customer_phone,
     status: r.status, voidReason: r.void_reason ?? '', voidedBy: r.voided_by ?? '', voidedAt: toTimestamp(r.voided_at),
     createdAt: toTimestamp(r.created_at),
   };

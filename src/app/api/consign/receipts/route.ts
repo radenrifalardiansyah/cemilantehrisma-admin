@@ -3,7 +3,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDateKey } from '@/lib/date';
 import { rowToReceipt, type ReceiptRow, type ReceiptItem } from '@/lib/consign-pg';
-import { createReceipt, ConsignStockError } from '@/lib/consign-receipts';
+import { createReceipt, createTransfer, ConsignStockError } from '@/lib/consign-receipts';
 import { auditConsign } from '@/lib/consign-audit';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       ${from && DATE_RE.test(from) ? sql`and doc_date >= ${from}` : sql``}
       ${to && DATE_RE.test(to) ? sql`and doc_date <= ${to}` : sql``}
       ${consignorId ? sql`and consignor_id = ${consignorId}` : sql``}
-      ${stallId ? sql`and stall_id = ${stallId}` : sql``}
+      ${stallId ? sql`and (stall_id = ${stallId} or to_stall_id = ${stallId})` : sql``}
     order by doc_date desc, created_at desc
     limit 500
   `;
@@ -38,12 +38,17 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as Record<string, unknown>;
 
-  const kind = data.kind === 'return' ? 'return' : data.kind === 'in' ? 'in' : null;
+  const kind = data.kind === 'return' ? 'return' : data.kind === 'in' ? 'in' : data.kind === 'transfer' ? 'transfer' : null;
   if (!kind) return Response.json({ error: 'Jenis dokumen tidak valid.' }, { status: 400 });
   const consignorId = typeof data.consignorId === 'string' ? data.consignorId : '';
   const stallId = typeof data.stallId === 'string' ? data.stallId : '';
   if (!consignorId) return Response.json({ error: 'Penitip wajib dipilih.' }, { status: 400 });
   if (!stallId) return Response.json({ error: 'Lapak wajib dipilih.' }, { status: 400 });
+  const toStallId = typeof data.toStallId === 'string' ? data.toStallId : '';
+  if (kind === 'transfer') {
+    if (!toStallId) return Response.json({ error: 'Lapak tujuan wajib dipilih.' }, { status: 400 });
+    if (toStallId === stallId) return Response.json({ error: 'Lapak asal dan tujuan tidak boleh sama.' }, { status: 400 });
+  }
   const docDate = typeof data.docDate === 'string' && DATE_RE.test(data.docDate) ? data.docDate : wibDateKey(new Date());
 
   // Gabungkan baris produk yang sama, tolak qty <= 0.
@@ -63,6 +68,13 @@ export async function POST(req: NextRequest) {
   if (!stall) return Response.json({ error: 'Lapak tidak ditemukan.' }, { status: 400 });
   if (kind === 'in' && !stall.is_active) return Response.json({ error: 'Lapak nonaktif — tidak bisa menerima barang.' }, { status: 400 });
 
+  let toStall: { id: string; name: string; is_active: boolean } | undefined;
+  if (kind === 'transfer') {
+    [toStall] = await sql<{ id: string; name: string; is_active: boolean }[]>`select id, name, is_active from stalls where id = ${toStallId}`;
+    if (!toStall) return Response.json({ error: 'Lapak tujuan tidak ditemukan.' }, { status: 400 });
+    if (!toStall.is_active) return Response.json({ error: 'Lapak tujuan nonaktif.' }, { status: 400 });
+  }
+
   const ids = [...merged.keys()];
   const products = await sql<{ id: string; name: string; unit: string; consignor_id: string }[]>`
     select id, name, unit, consignor_id from consign_products where id in ${sql(ids)}
@@ -73,12 +85,17 @@ export async function POST(req: NextRequest) {
   const items: ReceiptItem[] = products.map(p => ({ productId: p.id, productName: p.name, unit: p.unit, qty: merged.get(p.id)! }));
 
   try {
-    const result = await sql.begin(tx => createReceipt(tx, {
-      kind, consignorId, consignorName: consignor.name, stallId, stallName: stall.name,
-      docDate, note: (data.note as string) ?? '', createdBy: guard.username, items,
-    }));
-    await auditConsign(guard, 'create', 'receipts', result.id, `${kind === 'in' ? 'Terima barang' : 'Retur titipan'} ${result.docNumber}`,
-      null, { docNumber: result.docNumber, consignor: consignor.name, stall: stall.name, items: items.map(i => ({ name: i.productName, qty: i.qty })) });
+    const result = await sql.begin(tx => kind === 'transfer'
+      ? createTransfer(tx, {
+          consignorId, consignorName: consignor.name, fromStallId: stallId, fromStallName: stall.name, toStallId, toStallName: toStall!.name,
+          docDate, note: (data.note as string) ?? '', createdBy: guard.username, items,
+        })
+      : createReceipt(tx, {
+          kind, consignorId, consignorName: consignor.name, stallId, stallName: stall.name,
+          docDate, note: (data.note as string) ?? '', createdBy: guard.username, items,
+        }));
+    await auditConsign(guard, 'create', 'receipts', result.id, `${kind === 'in' ? 'Terima barang' : kind === 'transfer' ? 'Pindah stok' : 'Retur titipan'} ${result.docNumber}`,
+      null, { docNumber: result.docNumber, consignor: consignor.name, stall: stall.name, ...(toStall ? { toStall: toStall.name } : {}), items: items.map(i => ({ name: i.productName, qty: i.qty })) });
     return Response.json(result);
   } catch (err) {
     if (err instanceof ConsignStockError) return Response.json({ error: err.message }, { status: 400 });

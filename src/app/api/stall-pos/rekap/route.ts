@@ -14,10 +14,11 @@ export async function GET(req: NextRequest) {
   const sql = getSql();
   const [payables, settlements] = await seq([
     sql<{ consignor_id: string; consignor_name: string; amount: string; qty: string; lines: string; first_at: Date; last_at: Date }[]>`
-      select l.consignor_id, l.consignor_name, sum(l.consignor_amount) as amount, sum(l.qty) as qty, count(*) as lines,
+      select l.consignor_id, l.consignor_name, sum(l.consignor_amount) as amount,
+             coalesce(sum(l.qty) filter (where l.source = 'sale'), 0) as qty, count(*) as lines,
              min(l.created_at) as first_at, max(l.created_at) as last_at
-      from consign_sale_lines l join stall_sales s on s.id = l.sale_id
-      where l.stall_id = ${guard.stall.id} and not l.voided and l.settlement_id is null and s.status = 'paid'
+      from consign_sale_lines l left join stall_sales s on s.id = l.sale_id
+      where l.stall_id = ${guard.stall.id} and not l.voided and l.settlement_id is null and (l.sale_id is null or s.status = 'paid')
       group by l.consignor_id, l.consignor_name order by l.consignor_name
     `,
     sql<SettlementRow[]>`select * from consign_settlements where stall_id = ${guard.stall.id} order by created_at desc limit 40`,
