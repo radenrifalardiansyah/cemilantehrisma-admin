@@ -200,14 +200,19 @@ export default function DataList<T>(p: Props<T>) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-row items-center gap-2 sm:gap-3">
+      {/* Toolbar: di HP bertumpuk (cari → filter → aksi) seperti Mitra; di layar lebar satu baris. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
         <div className="relative flex-1 min-w-0">
           <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-full"
             style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder={p.searchPlaceholder} />
         </div>
-        <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
-          {p.filters}
+        {p.filters && (
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto [&>button]:flex-[1_1_140px] [&>button]:min-w-0 sm:[&>button]:flex-none">
+            {p.filters}
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2 w-full sm:w-auto flex-shrink-0">
           {importButtons}
           <Tooltip label="Export Excel">
             <button onClick={() => doExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={btn}>

@@ -10,12 +10,12 @@ const numOrNull = (v: string | number | null): number | null => (v === null ? nu
 
 export interface StallRow {
   id: string; code: string | null; name: string; address: string; warehouse_id: string | null;
-  note: string; is_active: boolean; created_at: Date; updated_at: Date | null;
+  note: string; is_active: boolean; invoice_prefix: string | null; created_at: Date; updated_at: Date | null;
 }
 export function rowToStall(r: StallRow) {
   return {
     id: r.id, code: r.code ?? '', name: r.name, address: r.address, warehouseId: r.warehouse_id ?? '',
-    note: r.note, isActive: r.is_active, createdAt: toTimestamp(r.created_at),
+    note: r.note, isActive: r.is_active, invoicePrefix: r.invoice_prefix ?? r.code ?? '', createdAt: toTimestamp(r.created_at),
   };
 }
 

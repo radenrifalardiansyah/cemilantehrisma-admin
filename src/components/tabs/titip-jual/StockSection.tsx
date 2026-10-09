@@ -64,15 +64,15 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
 
   return (
     <div className="space-y-4">
-      {!empty && <div className="grid grid-cols-3 gap-3">
+      {!empty && <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Total stok', val: qtyText(totalQty) },
           { label: 'Nilai untuk penitip', val: rupiah(totalOwed) },
           { label: 'Potensi bagian kita', val: rupiah(totalOurs) },
         ].map(s => (
-          <div key={s.label} className="card p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
-            <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{s.val}</p>
+          <div key={s.label} className="card p-2.5 sm:p-3 min-w-0">
+            <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
+            <p className="text-xs sm:text-sm font-bold mt-0.5 break-words" style={{ color: 'var(--text-primary)' }}>{s.val}</p>
           </div>
         ))}
       </div>}
@@ -92,7 +92,7 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
             <button onClick={() => setOnlyInStock(v => !v)} aria-pressed={onlyInStock}
               className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
               style={{
-                height: HEADER_BTN_H,
+                height: HEADER_BTN_H, flex: '0 0 auto',
                 background: onlyInStock ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
                 color: onlyInStock ? 'white' : 'var(--text-muted)',
               }}>

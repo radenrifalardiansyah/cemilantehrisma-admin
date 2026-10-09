@@ -315,7 +315,7 @@ export default function ProductsSection({ creds, data, reload, can }: SectionPro
                 </div>
               )}
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                Lapak yang sudah punya stok tidak bisa dilepas — kembalikan stoknya lebih dulu lewat tab Dokumen.
+                Lapak yang sudah punya stok tidak bisa dilepas — kembalikan stoknya lebih dulu lewat tab Terima & Retur.
               </p>
             </div>
 

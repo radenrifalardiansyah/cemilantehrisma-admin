@@ -17,10 +17,10 @@ export default function PeriodBar({ period, onPeriod, from, to, onFrom, onTo }: 
         </button>
       ))}
       {period === 'custom' && (
-        <div className="flex items-center gap-2">
-          <input type="date" value={from} onChange={e => onFrom(e.target.value)} className="input" style={{ height: 36 }} />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <input type="date" value={from} onChange={e => onFrom(e.target.value)} className="input flex-1 min-w-0 sm:flex-none" style={{ height: 36 }} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-          <input type="date" value={to} onChange={e => onTo(e.target.value)} className="input" style={{ height: 36 }} />
+          <input type="date" value={to} onChange={e => onTo(e.target.value)} className="input flex-1 min-w-0 sm:flex-none" style={{ height: 36 }} />
         </div>
       )}
     </div>

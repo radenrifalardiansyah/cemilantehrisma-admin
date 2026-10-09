@@ -7,7 +7,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 import type { Action } from '@/types/rbac';
 import {
-  API, type TitipJualData, type Stall, type Consignor, type CProduct, type StallItem, type Warehouse, type MasterBank,
+  API, type TitipJualData, type Stall, type Consignor, type CProduct, type StallItem, type Warehouse, type MasterBank, type StaffUser,
 } from './titip-jual/shared';
 import ProductsSection from './titip-jual/ProductsSection';
 import ConsignorsSection from './titip-jual/ConsignorsSection';
@@ -34,14 +34,15 @@ async function fetchAll(creds: string): Promise<TitipJualData> {
     const r = await fetch(`${API}${url}`, { headers: h });
     return r.ok ? await r.json() as T : fallback;
   };
-  const [s, c, p, w, b] = await Promise.all([
+  const [s, c, p, w, b, u] = await Promise.all([
     json<{ stalls: Stall[] }>('/api/stalls', { stalls: [] }),
     json<{ consignors: Consignor[] }>('/api/consignors', { consignors: [] }),
     json<{ products: CProduct[]; stallItems: StallItem[] }>('/api/consign/products', { products: [], stallItems: [] }),
     json<{ warehouses: Warehouse[] }>('/api/warehouses', { warehouses: [] }),
     json<{ banks: MasterBank[] }>('/api/master-banks', { banks: [] }),
+    json<{ users: StaffUser[] }>('/api/stalls/assignable-users', { users: [] }),
   ]);
-  return { stalls: s.stalls, consignors: c.consignors, products: p.products, stallItems: p.stallItems, warehouses: w.warehouses, banks: b.banks };
+  return { stalls: s.stalls, consignors: c.consignors, products: p.products, stallItems: p.stallItems, warehouses: w.warehouses, banks: b.banks, staff: u.users };
 }
 
 export default function TitipJualTab({ creds, can }: { creds: string; can: (a: Action) => boolean }) {
@@ -73,9 +74,10 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
         <div className="inline-flex max-w-full rounded-xl overflow-x-auto no-scrollbar border" style={{ borderColor: 'var(--border)' }}>
           {SUB_TABS.map(t => (
             <button key={t.id} onClick={() => setSub(t.id)}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0"
+              aria-label={t.label}
+              className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0"
               style={sub === t.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-              <t.Icon size={13} /> {t.label}
+              <t.Icon size={13} /> <span className={sub === t.id ? '' : 'hidden sm:inline'}>{t.label}</span>
             </button>
           ))}
         </div>

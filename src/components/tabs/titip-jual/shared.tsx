@@ -12,7 +12,9 @@ export const HEADER_BTN_H = 34;
 
 export interface Stall {
   id: string; code: string; name: string; address: string; warehouseId: string; note: string; isActive: boolean;
+  invoicePrefix: string; usernames: string[]; balance: number;
 }
+export interface StaffUser { username: string; fullName: string; role: string }
 export interface Consignor {
   id: string; code: string; name: string; phone: string; address: string;
   bankName: string; bankAccount: string; bankHolder: string; note: string; logoUrl: string;
@@ -35,7 +37,7 @@ export interface Warehouse { id: string; name: string }
 export interface MasterBank { name: string; bankCode?: string; logoUrl?: string }
 
 export interface TitipJualData {
-  stalls: Stall[]; consignors: Consignor[]; products: CProduct[]; stallItems: StallItem[]; warehouses: Warehouse[]; banks: MasterBank[];
+  stalls: Stall[]; consignors: Consignor[]; products: CProduct[]; stallItems: StallItem[]; warehouses: Warehouse[]; banks: MasterBank[]; staff: StaffUser[];
 }
 
 export interface SectionProps {
