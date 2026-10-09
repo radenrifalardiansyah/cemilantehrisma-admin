@@ -78,6 +78,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
 
   await sql`delete from profiles where username = ${username}`;
+  // Lepaskan dari penugasan lapak (Titip Jual) supaya tidak jadi petugas hantu.
+  await sql`delete from stall_users where username = ${username}`;
   // getSessionInvalidatedAt membaca null untuk baris yang sudah tidak ada, tapi cache-nya bisa
   // menyimpan hasil "ada" sampai 30 detik — invalidasi segera supaya token akun yang baru
   // dihapus langsung ditolak di request berikutnya, bukan menunggu TTL habis.

@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
   const okRows = results.filter(x => !x.error).map(x => x.r);
   if (okRows.length > 0) {
     await sql`delete from profiles where username in ${sql(okRows.map(r => r.username))}`;
+    await sql`delete from stall_users where username in ${sql(okRows.map(r => r.username))}`;
     revalidateTag(SESSION_TAG, { expire: 0 });
   }
 

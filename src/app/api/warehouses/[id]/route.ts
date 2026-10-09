@@ -67,6 +67,16 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   const [before] = await sql<WarehouseRow[]>`select id, name, location, description from warehouses where id = ${id}`;
 
+  // Gudang yang masih menjadi "gudang terkait" sebuah lapak (Titip Jual) tidak boleh dihapus —
+  // lapak itu akan menunjuk gudang yang sudah tidak ada dan produk tokonya hilang dari Kasir Lapak.
+  // Dicek SEBELUM stok dikosongkan supaya penolakan tidak meninggalkan efek samping.
+  const linkedStalls = await sql<{ name: string }[]>`select name from stalls where warehouse_id = ${id} order by name`;
+  if (linkedStalls.length > 0) {
+    return Response.json({
+      error: `Tidak bisa dihapus — gudang ini masih terhubung ke lapak: ${linkedStalls.map(s => s.name).join(', ')}. Lepaskan dulu di Titip Jual → Lapak (ubah "Gudang terkait").`,
+    }, { status: 400 });
+  }
+
   // Kembalikan dulu stok tiap produk di gudang ini ke `products.stockQty` global SEBELUM baris
   // warehouse_stock-nya dihapus — kalau dihapus langsung tanpa lewat sini, stockQty global tetap
   // menghitung stok yang sudah tidak ada di gudang manapun (stok hantu).
