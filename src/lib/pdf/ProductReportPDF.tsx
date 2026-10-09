@@ -61,33 +61,33 @@ const s = StyleSheet.create({
 
   divider: { borderBottomWidth: 1.5, borderBottomColor: C.accent, marginTop: 10, marginBottom: 12 },
 
-  summaryRow: { flexDirection: 'row', gap: 8 },
-  summaryBox: { flex: 1, borderRadius: 6, borderWidth: 1, borderColor: C.border, padding: 7 },
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  summaryBox: { width: '31.5%', borderRadius: 6, borderWidth: 1, borderColor: C.border, padding: 7 },
   summaryLabel: { fontSize: 6.8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.2, marginBottom: 2 },
   summaryValue: { fontSize: 11.5, fontFamily: 'Helvetica-Bold' },
 
   table: { marginTop: 14, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
   tHeadRow: { flexDirection: 'row', backgroundColor: C.accent },
-  tHeadCell: { color: C.white, fontSize: 7.5, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 4 },
+  tHeadCell: { color: C.white, fontSize: 6.5, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 3 },
   tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
   tRowAlt: { backgroundColor: C.accentBg },
-  tCell: { fontSize: 8, paddingVertical: 4.5, paddingHorizontal: 4, color: C.dark },
+  tCell: { fontSize: 7, paddingVertical: 4.5, paddingHorizontal: 3, color: C.dark },
 
-  colNo:      { width: '3%' },
-  colProduk:  { width: '17%' },
-  colKat:     { width: '9%' },
-  colKasir:   { width: '6%', textAlign: 'right' },
+  colNo:      { width: '4%' },
+  colProduk:  { width: '16%' },
+  colKat:     { width: '8%' },
+  colKasir:   { width: '5%', textAlign: 'right' },
   colOnline:  { width: '6%', textAlign: 'right' },
-  colKons:    { width: '8%', textAlign: 'right' },
-  colFree:    { width: '5%', textAlign: 'right' },
-  colTotal:   { width: '7%', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
-  colOmzet:   { width: '10%', textAlign: 'right' },
+  colKons:    { width: '7%', textAlign: 'right' },
+  colFree:    { width: '6%', textAlign: 'right' },
+  colTotal:   { width: '6%', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
+  colOmzet:   { width: '12%', textAlign: 'right' },
   colHppPcs:  { width: '9%', textAlign: 'right' },
-  colHpp:     { width: '10%', textAlign: 'right' },
+  colHpp:     { width: '11%', textAlign: 'right' },
   colLaba:    { width: '10%', textAlign: 'right' },
 
   totalsRow: { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border },
-  totalsCell: { fontSize: 8, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 4, color: C.dark },
+  totalsCell: { fontSize: 7, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 3, color: C.dark },
 
   footer: { position: 'absolute', bottom: 18, left: 32, right: 32, textAlign: 'center', fontSize: 7, color: C.muted },
   pageNo: { position: 'absolute', bottom: 18, right: 32, fontSize: 7, color: C.muted },
@@ -100,7 +100,7 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
 
   return (
     <Document>
-      <Page size="A4" orientation="landscape" style={s.page}>
+      <Page size="A4" style={s.page}>
         <View style={s.topBar} />
 
         <View style={s.headerRow}>
@@ -158,8 +158,8 @@ export default function ProductReportPDF({ data, store }: { data: ProductReportP
             <Text style={[s.tHeadCell, s.colKat]}>Kategori</Text>
             <Text style={[s.tHeadCell, s.colKasir]}>Kasir</Text>
             <Text style={[s.tHeadCell, s.colOnline]}>Online</Text>
-            <Text style={[s.tHeadCell, s.colKons]}>Konsinyasi</Text>
-            <Text style={[s.tHeadCell, s.colTotal]}>Total Qty</Text>
+            <Text style={[s.tHeadCell, s.colKons]}>Konsin.</Text>
+            <Text style={[s.tHeadCell, s.colTotal]}>Total</Text>
             <Text style={[s.tHeadCell, s.colFree]}>Gratis</Text>
             <Text style={[s.tHeadCell, s.colOmzet]}>Omzet</Text>
             <Text style={[s.tHeadCell, s.colHppPcs]}>HPP/pcs</Text>
