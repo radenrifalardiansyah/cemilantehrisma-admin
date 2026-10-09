@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { Loader2, Check, X } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { resolveScheme, calcShare, schemeText, SCHEME_LABEL, type ShareScheme } from '@/lib/consign';
@@ -103,7 +104,9 @@ export function ModalShell({ title, subtitle, icon, onClose, children, footer, s
   title: string; subtitle?: string; icon: React.ReactNode; onClose: () => void;
   children: React.ReactNode; footer: React.ReactNode; size?: string;
 }) {
-  return (
+  // Dirender lewat portal ke <body>: area konten tab memakai animasi (transform) dan scroll sendiri,
+  // yang membuat `position: fixed` menempel ke area itu — modal jadi terpotong di bawah header.
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className={`modal-sheet ${size}`} onClick={e => e.stopPropagation()}>
         <div className="modal-accent" />
@@ -121,7 +124,8 @@ export function ModalShell({ title, subtitle, icon, onClose, children, footer, s
         <div className="modal-body">{children}</div>
         <div className="modal-footer">{footer}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
