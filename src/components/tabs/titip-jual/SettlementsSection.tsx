@@ -2,26 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Banknote, Undo2, FileDown, Loader2, HandCoins } from 'lucide-react';
-import { pdf } from '@react-pdf/renderer';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
-import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import PeriodBar from './PeriodBar';
+import { downloadSettlementPdf, type Settlement, type SettlementItem } from './settlementPdf';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText, type SectionProps } from './shared';
 
-interface SettlementItem { productId: string; productName: string; qty: number; amount: number }
-interface Settlement {
-  id: string; docNumber: string; stallId: string; stallName: string; consignorId: string; consignorName: string;
-  periodFrom: string; periodTo: string; totalAmount: number; linesCount: number; items: SettlementItem[]; status: 'unpaid' | 'paid';
-  note: string; createdBy: string; createdAt: { seconds: number } | null; paidAt: { seconds: number } | null; paidBy: string;
-}
 interface Payable { stallId: string; consignorId: string; consignorName: string; amount: number; lines: number; firstDate: string; lastDate: string }
 interface Result { settlements: Settlement[]; payables: Payable[] }
 
@@ -76,27 +69,8 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
 
   const downloadPdf = async (s: Settlement) => {
     setBusyId(s.id);
-    try {
-      const blob = await pdf(
-        <GenericTablePDF store={store} data={{
-          title: 'REKAP BAGI HASIL TITIP JUAL',
-          label: `${s.docNumber} · ${s.consignorName} · ${s.stallName} · ${s.periodFrom} s/d ${s.periodTo} · ${s.status === 'paid' ? 'SUDAH DIBAYAR' : 'BELUM DIBAYAR'}`,
-          generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          columns: [
-            { header: 'No', width: '8%', align: 'center' }, { header: 'Produk', width: '52%', bold: true },
-            { header: 'Terjual', width: '15%', align: 'right' }, { header: 'Bagian Penitip', width: '25%', align: 'right' },
-          ],
-          rows: [
-            ...s.items.map((i, idx) => [idx + 1, i.productName, qtyText(i.qty), rupiah(i.amount)]),
-            ['', 'TOTAL', qtyText(s.items.reduce((a, i) => a + i.qty, 0)), rupiah(s.totalAmount)],
-          ],
-        }} />,
-      ).toBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `rekap-${s.docNumber}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch { toast.error('Gagal membuat PDF.'); }
+    try { await downloadSettlementPdf(s, store); }
+    catch { toast.error('Gagal membuat PDF.'); }
     setBusyId(null);
   };
 

@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const consign = consignRows.map(r => {
     const pricing = pricingFromRow(r);
     return {
-      kind: 'consign' as const, productId: r.product_id, name: r.name, code: r.code ?? '', unit: r.unit, price: pricing.price, imageUrl: r.image_url ?? '', weight: r.weight, description: r.description, category: r.category_name ?? '',
+      kind: 'consign' as const, productId: r.product_id, name: r.name, code: r.code ?? '', unit: r.unit, price: pricing.price, imageUrl: r.image_url ?? '', consignorId: r.consignor_id, weight: r.weight, description: r.description, category: r.category_name ?? '',
       stock: Number(r.stock_qty), consignorName: r.consignor_name,
       // Tanpa skema bagi hasil, barang tidak boleh dijual (hutang ke penitip tak bisa dihitung).
       blocked: pricing.spec ? '' : 'Skema bagi hasil belum ditentukan',

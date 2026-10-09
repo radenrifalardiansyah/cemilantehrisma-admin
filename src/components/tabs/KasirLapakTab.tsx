@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package, PackagePlus, ClipboardList } from 'lucide-react';
 import Image from 'next/image';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -14,6 +14,10 @@ import type { Action } from '@/types/rbac';
 import { Badge, Field, ModalShell, ErrorBox, rupiah, qtyText } from './titip-jual/shared';
 import ShiftModal from './kasir-lapak/ShiftModal';
 import HistoryModal from './kasir-lapak/HistoryModal';
+import ReceiveModal from './kasir-lapak/ReceiveModal';
+import RekapModal from './kasir-lapak/RekapModal';
+import { downloadSettlementPdf, type Settlement } from './titip-jual/settlementPdf';
+import { toDataUri } from '@/lib/pdf/logo';
 import Receipt from './kasir-lapak/Receipt';
 import StallProductCard, { itemEmoji } from './kasir-lapak/ProductCard';
 import { PAY_LABEL, itemKey, type PosStall, type CatalogItem, type Sale, type PaymentMethod } from './kasir-lapak/types';
@@ -59,6 +63,8 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const [printedAt, setPrintedAt] = useState('');
   const [shiftModal, setShiftModal] = useState<'open' | 'close' | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
+  const [rekapOpen, setRekapOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -271,6 +277,8 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
             </span>
           </div>
           <div className="flex items-center gap-2 ml-auto">
+            {can('create') && <button onClick={() => setReceiveOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><PackagePlus size={13} /> <span className="hidden sm:inline">Terima Barang</span></button>}
+            <button onClick={() => setRekapOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><ClipboardList size={13} /> <span className="hidden sm:inline">Rekap</span></button>
             <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> <span className="hidden sm:inline">Riwayat</span></button>
             {stall?.shift ? (
               <button onClick={() => setShiftModal('close')} className="btn-ghost text-xs" style={{ height: 34, color: 'var(--danger)' }}><Lock size={13} /> Tutup Kasir</button>
@@ -359,6 +367,13 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
       {shiftModal && stall && (
         <ShiftModal creds={creds} stall={stall} mode={shiftModal} onClose={() => setShiftModal(null)}
           onDone={async () => { setShiftModal(null); await reloadAll(); }} />
+      )}
+      {receiveOpen && stall && (
+        <ReceiveModal creds={creds} stall={stall} items={items ?? []} onClose={() => setReceiveOpen(false)} onDone={reloadAll} />
+      )}
+      {rekapOpen && stall && (
+        <RekapModal creds={creds} stall={stall} canCreate={can('create')} onClose={() => setRekapOpen(false)}
+          onPdf={async (s: Settlement) => downloadSettlementPdf(s, { name: store.name, address: store.address, logo: await toDataUri(store.logo) })} />
       )}
       {historyOpen && stall && (
         <HistoryModal creds={creds} stall={stall} canVoid={can('delete')} onClose={() => setHistoryOpen(false)} onChanged={reloadAll} onPrint={print} />

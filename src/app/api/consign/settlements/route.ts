@@ -1,12 +1,10 @@
-import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDateKey } from '@/lib/date';
-import { nextDocNumber, periodOf } from '@/lib/doc-number';
 import { auditConsign } from '@/lib/consign-audit';
-import { DATE_RE, rowToSettlement, loadUnsettledLines, type SettlementRow } from '@/lib/consign-settlement';
+import { DATE_RE, rowToSettlement, createSettlementDoc, type SettlementRow } from '@/lib/consign-settlement';
 
 // Daftar rekap + hutang yang belum direkap (dikelompokkan per lapak × penitip).
 export async function GET(req: NextRequest) {
@@ -50,20 +48,7 @@ export async function POST(req: NextRequest) {
   const [consignor] = await sql<{ id: string; name: string }[]>`select id, name from consignors where id = ${consignorId}`;
   if (!stall || !consignor) return Response.json({ error: 'Lapak atau penitip tidak ditemukan.' }, { status: 400 });
 
-  const result = await sql.begin(async tx => {
-    const found = await loadUnsettledLines(tx, { stallId, consignorId, from, to, lock: true });
-    if (found.count === 0) return null;
-    const id = randomUUID();
-    const docNumber = await nextDocNumber(tx, 'TJB', periodOf(wibDateKey(new Date())));
-    await tx`
-      insert into consign_settlements (id, doc_number, stall_id, stall_name, consignor_id, consignor_name, period_from, period_to,
-        total_amount, lines_count, items, status, note, created_by, created_at)
-      values (${id}, ${docNumber}, ${stall.id}, ${stall.name}, ${consignor.id}, ${consignor.name}, ${from}, ${to},
-        ${found.total}, ${found.count}, ${tx.json(found.items as never)}, 'unpaid', ${typeof data.note === 'string' ? data.note.trim().slice(0, 200) : ''}, ${guard.username}, now())
-    `;
-    await tx`update consign_sale_lines set settlement_id = ${id} where id in ${tx(found.ids)}`;
-    return { id, docNumber, total: found.total };
-  });
+  const result = await createSettlementDoc(sql, { stall, consignor, from, to, note: typeof data.note === 'string' ? data.note : '', createdBy: guard.username });
   if (!result) return Response.json({ error: 'Tidak ada penjualan yang belum direkap pada periode ini.' }, { status: 400 });
   await auditConsign(guard, 'create', 'settlements', result.id, `Rekap ${result.docNumber}`, null, { stall: stall.name, consignor: consignor.name, from, to, total: result.total });
   return Response.json(result);

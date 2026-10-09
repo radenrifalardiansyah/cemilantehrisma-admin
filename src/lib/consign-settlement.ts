@@ -1,5 +1,8 @@
+import { randomUUID } from 'crypto';
 import type { TransactionSql } from 'postgres';
-import { wibDayStart, wibDayEnd } from '@/lib/date';
+import type { getSql } from '@/lib/db';
+import { nextDocNumber, periodOf } from '@/lib/doc-number';
+import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { toTimestamp } from '@/lib/orders-pg';
 import { parseJsonb } from '@/lib/db';
 
@@ -48,4 +51,28 @@ export async function loadUnsettledLines(
   }
   const items = [...byProduct.values()];
   return { ids: rows.map(r => r.id), items, total: items.reduce((a, i) => a + i.amount, 0), count: rows.length };
+}
+
+// Buat dokumen rekap: semua baris bagi hasil yang belum direkap untuk lapak × penitip dalam periode
+// dikunci ke dokumen ini (tidak bisa masuk rekap lain, dan penjualannya tidak bisa dibatalkan lagi).
+// Dipakai admin (Titip Jual → Rekap & Bayar) dan kasir lapak (Kasir Lapak → Rekap). null = tidak ada
+// penjualan yang belum direkap pada periode itu.
+export async function createSettlementDoc(
+  sql: ReturnType<typeof getSql>,
+  p: { stall: { id: string; name: string }; consignor: { id: string; name: string }; from: string; to: string; note: string; createdBy: string },
+): Promise<{ id: string; docNumber: string; total: number } | null> {
+  return sql.begin(async tx => {
+    const found = await loadUnsettledLines(tx, { stallId: p.stall.id, consignorId: p.consignor.id, from: p.from, to: p.to, lock: true });
+    if (found.count === 0) return null;
+    const id = randomUUID();
+    const docNumber = await nextDocNumber(tx, 'TJB', periodOf(wibDateKey(new Date())));
+    await tx`
+      insert into consign_settlements (id, doc_number, stall_id, stall_name, consignor_id, consignor_name, period_from, period_to,
+        total_amount, lines_count, items, status, note, created_by, created_at)
+      values (${id}, ${docNumber}, ${p.stall.id}, ${p.stall.name}, ${p.consignor.id}, ${p.consignor.name}, ${p.from}, ${p.to},
+        ${found.total}, ${found.count}, ${tx.json(found.items as never)}, 'unpaid', ${p.note.trim().slice(0, 200)}, ${p.createdBy}, now())
+    `;
+    await tx`update consign_sale_lines set settlement_id = ${id} where id in ${tx(found.ids)}`;
+    return { id, docNumber, total: found.total };
+  });
 }
