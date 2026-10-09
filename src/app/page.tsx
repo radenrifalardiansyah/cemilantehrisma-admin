@@ -310,6 +310,7 @@ export default function AdminPage() {
 
   // ── Tab ──────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [journalStallId, setJournalStallId] = useState('');
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(null);
@@ -1520,7 +1521,9 @@ export default function AdminPage() {
           highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
           onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
       )}
-      {activeTab === 'consign'    && <TitipJualTab  creds={creds} can={(a: Action) => can('consign', a)} />}
+      {activeTab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
+      {activeTab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}
+      {activeTab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} />}
       {activeTab === 'stall-pos'  && <KasirLapakTab creds={creds} can={(a: Action) => can('stall-pos', a)} />}
       {activeTab === 'stall-sales-report' && <CashierSalesReportTab creds={creds} />}
       {activeTab === 'stall-report' && <StallSalesReportTab creds={creds} />}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw, Banknote, ClipboardCheck, BookOpen } from 'lucide-react';
+import { Package, Users, Store, Boxes, ArrowLeftRight, RefreshCw, Banknote } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
@@ -18,7 +18,9 @@ import SettlementsSection from './titip-jual/SettlementsSection';
 import AdjustmentsSection from './titip-jual/AdjustmentsSection';
 import JournalSection from './titip-jual/JournalSection';
 
-type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'adjustments' | 'journal' | 'settlements';
+type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements';
+// 'main' = halaman Titip Jual bertab; 'opname' & 'journal' = menu sendiri di sidebar (satu layar penuh).
+export type TitipJualMode = 'main' | 'opname' | 'journal';
 
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'products', label: 'Produk', Icon: Package },
@@ -26,8 +28,6 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stalls', label: 'Lapak', Icon: Store },
   { id: 'stock', label: 'Stok per Lapak', Icon: Boxes },
   { id: 'receipts', label: 'Terima & Retur', Icon: ArrowLeftRight },
-  { id: 'adjustments', label: 'Opname', Icon: ClipboardCheck },
-  { id: 'journal', label: 'Jurnal Kas', Icon: BookOpen },
   { id: 'settlements', label: 'Rekap & Bayar', Icon: Banknote },
 ];
 
@@ -52,10 +52,11 @@ async function fetchAll(creds: string): Promise<TitipJualData> {
   return { stalls: s.stalls, consignors: c.consignors, products: p.products, stallItems: p.stallItems, warehouses: w.warehouses, banks: b.banks, staff: u.users, categories: cat.categories };
 }
 
-export default function TitipJualTab({ creds, can }: { creds: string; can: (a: Action) => boolean }) {
+export default function TitipJualTab({ creds, can, mode, journalStallId = '', onOpenJournal }: {
+  creds: string; can: (a: Action) => boolean; mode: TitipJualMode; journalStallId?: string; onOpenJournal?: (stallId: string) => void;
+}) {
   const [sub, setSub] = useState<SubTab>('products');
   const [data, setData] = useState<TitipJualData | null>(null);
-  const [journalStall, setJournalStall] = useState('');
 
   const load = useCallback(async () => { setData(await fetchAll(creds)); }, [creds]);
   useEffect(() => {
@@ -66,7 +67,7 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
 
   if (!data) return <PageLoader />;
 
-  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub, journalStallId: journalStall, openJournal: (id: string) => { setJournalStall(id); setSub('journal'); } };
+  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub, journalStallId, openJournal: onOpenJournal };
 
   return (
     <div className="flex flex-col h-full">
@@ -78,7 +79,7 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
         </Tooltip>
       </TopbarPortal>
 
-      <div className="flex-shrink-0 px-4 lg:px-6 pt-4">
+      {mode === 'main' && <div className="flex-shrink-0 px-4 lg:px-6 pt-4">
         <div className="inline-flex max-w-full rounded-xl overflow-x-auto no-scrollbar border" style={{ borderColor: 'var(--border)' }}>
           {SUB_TABS.map(t => (
             <button key={t.id} onClick={() => setSub(t.id)}
@@ -89,18 +90,18 @@ export default function TitipJualTab({ creds, can }: { creds: string; can: (a: A
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up">
-          {sub === 'products' && <ProductsSection {...props} />}
-          {sub === 'consignors' && <ConsignorsSection {...props} />}
-          {sub === 'stalls' && <StallsSection {...props} />}
-          {sub === 'stock' && <StockSection {...props} />}
-          {sub === 'receipts' && <ReceiptsSection {...props} />}
-          {sub === 'adjustments' && <AdjustmentsSection {...props} />}
-          {sub === 'journal' && <JournalSection key={journalStall} {...props} />}
-          {sub === 'settlements' && <SettlementsSection {...props} />}
+          {mode === 'opname' && <AdjustmentsSection {...props} />}
+          {mode === 'journal' && <JournalSection key={journalStallId} {...props} />}
+          {mode === 'main' && sub === 'products' && <ProductsSection {...props} />}
+          {mode === 'main' && sub === 'consignors' && <ConsignorsSection {...props} />}
+          {mode === 'main' && sub === 'stalls' && <StallsSection {...props} />}
+          {mode === 'main' && sub === 'stock' && <StockSection {...props} />}
+          {mode === 'main' && sub === 'receipts' && <ReceiptsSection {...props} />}
+          {mode === 'main' && sub === 'settlements' && <SettlementsSection {...props} />}
         </div>
       </div>
     </div>

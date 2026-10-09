@@ -47,7 +47,7 @@ export interface SectionProps {
   data: TitipJualData;
   reload: () => Promise<void>;
   can: (a: 'view' | 'create' | 'edit' | 'delete') => boolean;
-  goTo?: (tab: 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'adjustments' | 'journal' | 'settlements') => void;
+  goTo?: (tab: 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements') => void;
   journalStallId?: string;                              // lapak yang difokuskan di tab Jurnal Kas
   openJournal?: (stallId: string) => void;               // pindah ke tab Jurnal Kas untuk lapak tertentu // pindah sub-tab
 }
