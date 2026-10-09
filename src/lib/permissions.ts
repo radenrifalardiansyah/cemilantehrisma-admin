@@ -23,6 +23,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'reviews',          label: 'Ulasan',             actions: ['view', 'edit', 'delete'] },
   { key: 'consignment',      label: 'Mitra',              actions: CRUD },
   { key: 'consign',          label: 'Titip Jual',         actions: CRUD },
+  // `delete` = membatalkan (void) penjualan lapak.
+  { key: 'stall-pos',        label: 'Kasir Lapak',        actions: ['view', 'create', 'delete'] },
   { key: 'income',           label: 'Pemasukan',          actions: CRUD },
   { key: 'expenses',         label: 'Pengeluaran',        actions: CRUD },
   { key: 'capital',          label: 'Modal & Prive',      actions: CRUD },

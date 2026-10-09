@@ -11,6 +11,7 @@ export const HISTORY_ENTITIES: { key: string; label: string }[] = [
   { key: 'materials',           label: 'Bahan Baku' },
   { key: 'consignment',         label: 'Konsinyasi' },
   { key: 'consign',             label: 'Titip Jual' },
+  { key: 'stall-pos',           label: 'Kasir Lapak' },
   { key: 'stock',                label: 'Stok' },
   { key: 'warehouses',           label: 'Gudang' },
   { key: 'pos',                  label: 'Kasir' },

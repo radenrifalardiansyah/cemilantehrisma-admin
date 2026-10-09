@@ -1,0 +1,375 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package } from 'lucide-react';
+import SearchSelect from '@/components/SearchSelect';
+import NumberInput from '@/components/NumberInput';
+import PageLoader from '@/components/PageLoader';
+import Tooltip from '@/components/Tooltip';
+import TopbarPortal from '@/components/TopbarPortal';
+import { useToast } from '@/components/Toast';
+import type { Action } from '@/types/rbac';
+import { Badge, Field, ModalShell, ErrorBox, rupiah, qtyText } from './titip-jual/shared';
+import ShiftModal from './kasir-lapak/ShiftModal';
+import HistoryModal from './kasir-lapak/HistoryModal';
+import Receipt from './kasir-lapak/Receipt';
+import { PAY_LABEL, itemKey, type PosStall, type CatalogItem, type Sale, type PaymentMethod } from './kasir-lapak/types';
+
+type KindFilter = 'all' | 'consign' | 'own';
+const KIND_TABS: { id: KindFilter; label: string }[] = [
+  { id: 'all', label: 'Semua' }, { id: 'consign', label: 'Titipan' }, { id: 'own', label: 'Produk Toko' },
+];
+const STALL_KEY = 'kasirLapak:stall';
+
+async function fetchStalls(creds: string): Promise<PosStall[]> {
+  const r = await fetch('/api/stall-pos/stalls', { headers: { 'x-admin-auth': creds } });
+  return r.ok ? ((await r.json()) as { stalls: PosStall[] }).stalls : [];
+}
+interface Catalog { stallId: string; items: CatalogItem[]; hasWarehouse: boolean }
+async function fetchCatalog(creds: string, stallId: string): Promise<Catalog> {
+  const r = await fetch(`/api/stall-pos/catalog?stallId=${stallId}`, { headers: { 'x-admin-auth': creds } });
+  const d = r.ok ? await r.json() as { items: CatalogItem[]; hasWarehouse: boolean } : { items: [], hasWarehouse: false };
+  return { stallId, ...d };
+}
+
+// Kasir Lapak: kasir khusus per lapak (data penjualan, stok, dan uang terpisah dari Kasir toko).
+// Hanya menampilkan barang yang ada di lapak: titipan (stok titipan lapak) + produk toko (stok gudang terkait).
+export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: Action) => boolean }) {
+  const toast = useToast();
+  const [store, setStore] = useState<{ name: string; address?: string; logo?: string }>({ name: 'Cemilan Teh Risma' });
+  const [stalls, setStalls] = useState<PosStall[] | null>(null);
+  const [stallId, setStallId] = useState('');
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [search, setSearch] = useState('');
+  const [kind, setKind] = useState<KindFilter>('all');
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [discount, setDiscount] = useState('');
+  const [method, setMethod] = useState<PaymentMethod>('cash');
+  const [paid, setPaid] = useState('');
+  const [note, setNote] = useState('');
+  const [cartOpen, setCartOpen] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState<Sale | null>(null);
+  const [printSale, setPrintSale] = useState<Sale | null>(null);
+  const [printedAt, setPrintedAt] = useState('');
+  const [shiftModal, setShiftModal] = useState<'open' | 'close' | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchStalls(creds).then(list => {
+      if (!alive) return;
+      setStalls(list);
+      let saved = '';
+      try { saved = window.localStorage.getItem(STALL_KEY) ?? ''; } catch { /* abaikan */ }
+      setStallId(prev => [prev, saved].find(id => id && list.some(s => s.id === id)) ?? list[0]?.id ?? '');
+    });
+    return () => { alive = false; };
+  }, [creds]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/stall-pos/store', { headers: { 'x-admin-auth': creds } })
+      .then(r => r.ok ? r.json() as Promise<{ store: { name: string; address: string; logo: string } }> : null)
+      .then(d => { if (alive && d) setStore(d.store); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [creds]);
+
+  useEffect(() => {
+    if (!stallId) return;
+    let alive = true;
+    fetchCatalog(creds, stallId).then(c => { if (alive) setCatalog(c); });
+    return () => { alive = false; };
+  }, [creds, stallId]);
+
+  const reloadAll = useCallback(async () => {
+    const [list, cat] = await Promise.all([fetchStalls(creds), stallId ? fetchCatalog(creds, stallId) : Promise.resolve(null)]);
+    setStalls(list); if (cat) setCatalog(cat);
+  }, [creds, stallId]);
+
+  const stall = stalls?.find(s => s.id === stallId) ?? null;
+  const items = catalog && catalog.stallId === stallId ? catalog.items : null;
+
+  const changeStall = (id: string) => {
+    setStallId(id); setCart({}); setDiscount(''); setPaid(''); setNote(''); setSearch(''); setCatalog(null);
+    try { window.localStorage.setItem(STALL_KEY, id); } catch { /* abaikan */ }
+  };
+
+  const lines = Object.entries(cart).flatMap(([key, qty]) => {
+    const item = items?.find(i => itemKey(i.kind, i.productId) === key);
+    return item ? [{ key, item, qty }] : [];
+  });
+  const subtotal = lines.reduce((a, l) => a + l.item.price * l.qty, 0);
+  const discountNum = Number(discount || 0);
+  const total = Math.max(0, subtotal - discountNum);
+  const paidNum = Number(paid || 0);
+  const change = method === 'cash' ? paidNum - total : 0;
+  const count = lines.reduce((a, l) => a + l.qty, 0);
+  const canPay = lines.length > 0 && !!stall?.shift && (method !== 'cash' || paidNum >= total);
+
+  const add = (item: CatalogItem) => {
+    if (item.blocked || item.stock <= 0) return;
+    const key = itemKey(item.kind, item.productId);
+    setCart(c => {
+      const next = (c[key] ?? 0) + 1;
+      if (next > item.stock) { toast.error(`Stok ${item.name} hanya ${qtyText(item.stock)}.`); return c; }
+      return { ...c, [key]: next };
+    });
+  };
+  const setQty = (key: string, qty: number, max: number) => setCart(c => {
+    if (qty <= 0) { const { [key]: _removed, ...rest } = c; void _removed; return rest; }
+    return { ...c, [key]: Math.min(qty, max) };
+  });
+
+  const pay = async () => {
+    if (!stall) return;
+    setProcessing(true); setError('');
+    const r = await fetch('/api/stall-pos/sales', {
+      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stallId: stall.id, discount: discountNum, paymentMethod: method, amountPaid: method === 'cash' ? paidNum : total, note,
+        items: lines.map(l => ({ kind: l.item.kind, productId: l.item.productId, qty: l.qty })),
+      }),
+    });
+    const d = await r.json().catch(() => ({})) as { sale?: Sale; error?: string };
+    if (r.ok && d.sale) {
+      setDone(d.sale); setCart({}); setDiscount(''); setPaid(''); setNote(''); setCartOpen(false);
+      await reloadAll();
+    } else {
+      const msg = d.error ?? 'Gagal menyimpan transaksi.';
+      setError(msg); toast.error(msg);
+    }
+    setProcessing(false);
+  };
+
+  const print = (s: Sale) => {
+    setPrintSale(s);
+    setPrintedAt(new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+    setTimeout(() => window.print(), 0);
+  };
+
+  if (stalls === null) return <PageLoader />;
+  if (stalls.length === 0) {
+    return (
+      <div className="p-4 lg:p-6">
+        <div className="card py-12 px-6 text-center space-y-1">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Belum ada lapak untuk akun ini</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Minta admin menugaskan Anda ke sebuah lapak (menu Titip Jual → Lapak → Petugas).</p>
+        </div>
+      </div>
+    );
+  }
+
+  const q = search.trim().toLowerCase();
+  const shown = (items ?? []).filter(i => (kind === 'all' || i.kind === kind) && (!q || `${i.name} ${i.code} ${i.consignorName ?? ''}`.toLowerCase().includes(q)));
+
+  const checkout = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {lines.length === 0 ? (
+        <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Keranjang kosong. Ketuk barang untuk menambah.</p>
+      ) : lines.map(l => (
+        <div key={l.key} className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{l.item.name}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{rupiah(l.item.price)} × {qtyText(l.qty)} = <b>{rupiah(l.item.price * l.qty)}</b></p>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button className="btn-ghost p-1.5" onClick={() => setQty(l.key, l.qty - 1, l.item.stock)}><Minus size={13} /></button>
+            <span className="text-sm font-bold w-7 text-center">{qtyText(l.qty)}</span>
+            <button className="btn-ghost p-1.5" onClick={() => setQty(l.key, l.qty + 1, l.item.stock)} disabled={l.qty >= l.item.stock}><Plus size={13} /></button>
+            <button className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }} onClick={() => setQty(l.key, 0, l.item.stock)}><Trash2 size={13} /></button>
+          </div>
+        </div>
+      ))}
+
+      {lines.length > 0 && (
+        <>
+          <Field label="Diskon (Rp, ditanggung toko)">
+            <NumberInput value={discount} placeholder="0" onChange={setDiscount} />
+          </Field>
+          <div className="flex gap-2">
+            {(Object.keys(PAY_LABEL) as PaymentMethod[]).map(m => (
+              <button key={m} onClick={() => setMethod(m)} className="flex-1 px-3 py-2 rounded-xl text-xs font-bold"
+                style={method === m ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                {PAY_LABEL[m]}
+              </button>
+            ))}
+          </div>
+          {method === 'cash' && (
+            <Field label="Uang diterima (Rp)">
+              <NumberInput value={paid} placeholder="0" onChange={setPaid} />
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {[total, 20000, 50000, 100000].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map((v, i) => (
+                  <button key={v} onClick={() => setPaid(String(v))} className="btn-ghost text-[11px] px-2.5 py-1">{i === 0 ? 'Uang pas' : rupiah(v)}</button>
+                ))}
+              </div>
+            </Field>
+          )}
+          <Field label="Catatan (opsional)">
+            <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
+          </Field>
+          <div className="card p-3 space-y-1" style={{ background: 'var(--surface-2)' }}>
+            <div className="flex justify-between text-xs"><span style={{ color: 'var(--text-muted)' }}>Subtotal ({qtyText(count)} barang)</span><span>{rupiah(subtotal)}</span></div>
+            {discountNum > 0 && <div className="flex justify-between text-xs"><span style={{ color: 'var(--text-muted)' }}>Diskon</span><span>-{rupiah(discountNum)}</span></div>}
+            <div className="flex justify-between text-base font-bold"><span>Total</span><span style={{ color: 'var(--accent)' }}>{rupiah(total)}</span></div>
+            {method === 'cash' && paidNum > 0 && (
+              <div className="flex justify-between text-xs"><span style={{ color: 'var(--text-muted)' }}>{change >= 0 ? 'Kembalian' : 'Kurang'}</span>
+                <b style={{ color: change >= 0 ? '#059669' : 'var(--danger)' }}>{rupiah(Math.abs(change))}</b></div>
+            )}
+          </div>
+          <ErrorBox message={error} />
+        </>
+      )}
+    </div>
+  );
+
+  const payButton = (
+    <button onClick={pay} disabled={!canPay || processing} className="btn-primary w-full" style={{ justifyContent: 'center', padding: '12px 0' }}>
+      {processing ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} Bayar {total > 0 ? rupiah(total) : ''}
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <TopbarPortal>
+        <Tooltip label="Refresh">
+          <button onClick={() => { reloadAll(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center"><RefreshCw size={14} /></button>
+        </Tooltip>
+      </TopbarPortal>
+
+      {/* Lapak aktif + status shift */}
+      <div className="flex-shrink-0 px-4 lg:px-6 pt-4 flex flex-wrap items-center gap-2">
+        <div style={{ minWidth: 200 }} className="flex-1 sm:flex-none">
+          {stalls.length > 1 ? (
+            <SearchSelect value={stallId} onChange={changeStall} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
+              options={stalls.map(s => ({ value: s.id, label: s.name, sublabel: s.code }))} />
+          ) : (
+            <div className="input flex items-center gap-2"><Badge tone="accent">{stall?.code}</Badge><b className="text-sm">{stall?.name}</b></div>
+          )}
+        </div>
+        {stall?.shift ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge tone="ok">Kasir buka · kas awal {rupiah(stall.shift.openingBalance)}</Badge>
+            <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> Riwayat</button>
+            <button onClick={() => setShiftModal('close')} className="btn-ghost text-xs" style={{ height: 34, color: 'var(--danger)' }}><Lock size={13} /> Tutup Kasir</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge tone="danger">Kasir belum dibuka</Badge>
+            <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> Riwayat</button>
+            <button onClick={() => setShiftModal('open')} className="btn-primary text-xs" style={{ height: 34 }}><Unlock size={13} /> Buka Kasir</button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-hidden lg:grid" style={{ gridTemplateColumns: '1fr 400px' }}>
+        {/* Katalog */}
+        <div className="h-full overflow-y-auto thin-scrollbar p-4 lg:p-6 pb-28 lg:pb-6 space-y-4" style={{ borderRight: '1px solid var(--border)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }} placeholder="Cari barang atau penitip…" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div className="inline-flex rounded-xl overflow-x-auto no-scrollbar border self-start" style={{ borderColor: 'var(--border)' }}>
+              {KIND_TABS.map(t => (
+                <button key={t.id} onClick={() => setKind(t.id)} className="px-3.5 py-2 text-xs font-bold whitespace-nowrap"
+                  style={kind === t.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>{t.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {!stall?.shift && (
+            <div className="card p-4 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'var(--accent)' }}>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Buka kasir dulu untuk mulai berjualan di <b>{stall?.name}</b>.</p>
+              <button onClick={() => setShiftModal('open')} className="btn-primary text-xs"><Unlock size={13} /> Buka Kasir</button>
+            </div>
+          )}
+
+          {items === null ? <PageLoader /> : shown.length === 0 ? (
+            <div className="card py-12 text-center space-y-1">
+              <Package size={22} className="mx-auto" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                {items.length === 0 ? 'Belum ada barang di lapak ini. Catat penerimaan barang titipan di Titip Jual → Terima & Retur.' : 'Tidak ada barang yang cocok.'}
+              </p>
+              {items.length === 0 && catalog && !catalog.hasWarehouse && (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Produk toko baru tampil jika lapak punya gudang terkait.</p>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+              {shown.map(i => {
+                const key = itemKey(i.kind, i.productId);
+                const inCart = cart[key] ?? 0;
+                const off = !!i.blocked || i.stock <= 0 || !stall?.shift;
+                return (
+                  <button key={key} onClick={() => add(i)} disabled={off} title={i.blocked || undefined}
+                    className="card p-3 text-left flex flex-col gap-1 relative transition-all disabled:opacity-50"
+                    style={{ outline: inCart > 0 ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                    {inCart > 0 && <span className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: 'var(--accent)' }}>{qtyText(inCart)}</span>}
+                    <Badge tone={i.kind === 'consign' ? 'accent' : 'muted'}>{i.kind === 'consign' ? 'Titipan' : 'Toko'}</Badge>
+                    <p className="text-sm font-bold leading-tight line-clamp-2" style={{ color: 'var(--text-primary)' }}>{i.name}</p>
+                    {i.consignorName && <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{i.consignorName}</p>}
+                    <p className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{rupiah(i.price)}</p>
+                    <p className="text-[11px]" style={{ color: i.blocked ? 'var(--danger)' : 'var(--text-muted)' }}>
+                      {i.blocked || (i.stock <= 0 ? 'Habis' : `Stok ${qtyText(i.stock)} ${i.unit}`)}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Keranjang (desktop) */}
+        <div className="hidden lg:flex flex-col h-full overflow-hidden">
+          <div className="px-5 pt-5 pb-2 flex items-center gap-2"><ShoppingCart size={16} /><p className="text-sm font-bold">Keranjang</p></div>
+          <div className="flex-1 overflow-y-auto thin-scrollbar px-5 pb-4">{checkout}</div>
+          <div className="p-4" style={{ borderTop: '1px solid var(--border)' }}>{payButton}</div>
+        </div>
+      </div>
+
+      {/* Bar keranjang (HP) */}
+      {count > 0 && (
+        <button onClick={() => setCartOpen(true)} className="lg:hidden fixed left-4 right-4 bottom-20 z-30 btn-primary flex items-center justify-between"
+          style={{ padding: '12px 16px', boxShadow: '0 8px 24px rgba(0,0,0,0.25)' }}>
+          <span className="flex items-center gap-2"><ShoppingCart size={16} /> {qtyText(count)} barang</span>
+          <span className="font-bold">{rupiah(subtotal)}</span>
+        </button>
+      )}
+      {cartOpen && (
+        <ModalShell title="Keranjang" subtitle={stall?.name} icon={<ShoppingCart size={17} />} onClose={() => setCartOpen(false)} footer={payButton}>
+          {checkout}
+        </ModalShell>
+      )}
+
+      {shiftModal && stall && (
+        <ShiftModal creds={creds} stall={stall} mode={shiftModal} onClose={() => setShiftModal(null)}
+          onDone={async () => { setShiftModal(null); await reloadAll(); }} />
+      )}
+      {historyOpen && stall && (
+        <HistoryModal creds={creds} stall={stall} canVoid={can('delete')} onClose={() => setHistoryOpen(false)} onChanged={reloadAll} onPrint={print} />
+      )}
+
+      {done && (
+        <ModalShell title="Transaksi Berhasil" subtitle={done.invoiceNo} icon={<CheckCircle2 size={17} />} onClose={() => setDone(null)}
+          footer={(
+            <>
+              <button onClick={() => print(done)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}><Printer size={14} /> Cetak Struk</button>
+              <button onClick={() => setDone(null)} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Transaksi Baru</button>
+            </>
+          )}>
+          <div className="text-center space-y-1 py-2">
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Total</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{rupiah(done.total)}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{PAY_LABEL[done.paymentMethod]}{done.paymentMethod === 'cash' ? ` · diterima ${rupiah(done.amountPaid)}` : ''}</p>
+            {done.paymentMethod === 'cash' && <p className="text-lg font-bold" style={{ color: '#059669' }}>Kembalian {rupiah(done.changeAmount)}</p>}
+          </div>
+        </ModalShell>
+      )}
+
+      {printSale && <Receipt sale={printSale} store={store} printedAt={printedAt} />}
+    </div>
+  );
+}
