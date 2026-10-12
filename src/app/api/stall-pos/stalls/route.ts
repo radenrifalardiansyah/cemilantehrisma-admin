@@ -15,11 +15,13 @@ export async function GET(req: NextRequest) {
     ? await sql<StallRow[]>`select * from stalls where is_active order by name`
     : ids.length === 0 ? [] : await sql<StallRow[]>`select * from stalls where is_active and id in ${sql(ids)} order by name`;
   const shifts = stalls.length === 0 ? [] : await sql<ShiftRow[]>`select * from stall_shifts where status = 'open' and stall_id in ${sql(stalls.map(s => s.id))}`;
+  const balances = stalls.length === 0 ? [] : await sql<{ stall_id: string; balance: string }[]>`select stall_id, sum(amount) as balance from stall_wallet_entries where stall_id in ${sql(stalls.map(s => s.id))} group by stall_id`;
+  const balanceByStall = new Map(balances.map(b => [b.stall_id, Number(b.balance)]));
   const shiftByStall = new Map(shifts.map(s => [s.stall_id, rowToShift(s)]));
   return Response.json({
     stalls: stalls.map(s => ({
       id: s.id, code: s.code ?? '', name: s.name, address: s.address, warehouseId: s.warehouse_id ?? '',
-      invoicePrefix: s.invoice_prefix ?? s.code ?? '', shift: shiftByStall.get(s.id) ?? null,
+      invoicePrefix: s.invoice_prefix ?? s.code ?? '', shift: shiftByStall.get(s.id) ?? null, walletBalance: balanceByStall.get(s.id) ?? 0,
     })),
   });
 }

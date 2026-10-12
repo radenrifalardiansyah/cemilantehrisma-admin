@@ -396,7 +396,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
           <div className="flex items-center gap-2 text-xs min-w-0">
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: stall?.shift ? '#059669' : 'var(--danger)' }} />
             <span style={{ color: 'var(--text-secondary)' }}>
-              {stall?.shift ? <>Kasir buka · kas awal <b>{rupiah(stall.shift.openingBalance)}</b></> : 'Kasir belum dibuka'}
+              {stall?.shift ? <>Kasir buka · kas awal <b>{rupiah(stall.shift.openingBalance)}</b> · saldo Dompet Lapak <b>{rupiah(stall.walletBalance)}</b></> : 'Kasir belum dibuka'}
             </span>
           </div>
           <div className="flex items-center gap-2 ml-auto">

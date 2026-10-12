@@ -12,7 +12,7 @@ export default function ShiftModal({ creds, stall, mode, onClose, onDone }: {
   creds: string; stall: PosStall; mode: 'open' | 'close'; onClose: () => void; onDone: (shift: Shift | null) => void;
 }) {
   const toast = useToast();
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(mode === 'open' ? String(Math.max(0, stall.walletBalance)) : '');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -51,8 +51,9 @@ export default function ShiftModal({ creds, stall, mode, onClose, onDone }: {
         <Field label={mode === 'open' ? 'Kas awal di laci (Rp)' : 'Uang tunai di laci saat ini (Rp)'}>
           <NumberInput value={amount} placeholder="0" autoFocus onChange={setAmount} />
           <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-            {mode === 'open' ? 'Uang tunai yang ada di laci saat mulai berjualan.' : 'Hitung uang tunai fisik. Sistem membandingkannya dengan kas awal + penjualan tunai.'}
+            {mode === 'open' ? 'Uang tunai yang ada di laci saat mulai berjualan. Terisi otomatis dari saldo Dompet Lapak, boleh diubah.' : 'Hitung uang tunai fisik. Sistem membandingkannya dengan kas awal + penjualan tunai; selisihnya dicatat di Dompet Lapak.'}
           </p>
+          <p className="text-xs mt-1.5 tabular font-semibold" style={{ color: 'var(--text-secondary)' }}>Saldo Dompet Lapak {stall.name}: {rupiah(stall.walletBalance)}</p>
         </Field>
         <Field label="Catatan (opsional)">
           <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />

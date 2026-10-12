@@ -5,7 +5,7 @@ export interface Shift {
   cashSalesTotal?: number; expectedBalance?: number; actualBalance?: number; difference?: number;
 }
 export interface PosStall {
-  id: string; code: string; name: string; address: string; warehouseId: string; invoicePrefix: string; shift: Shift | null;
+  id: string; code: string; name: string; address: string; warehouseId: string; invoicePrefix: string; shift: Shift | null; walletBalance: number;
 }
 export interface CatalogItem {
   kind: 'own' | 'consign'; productId: string; name: string; code: string; unit: string; price: number; stock: number;
