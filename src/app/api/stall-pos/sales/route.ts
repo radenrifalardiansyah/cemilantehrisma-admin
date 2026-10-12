@@ -4,15 +4,16 @@ import { getSql } from '@/lib/db';
 import { withDeadlockRetry } from '@/lib/db-retry';
 import { wibDateKey } from '@/lib/date';
 import { nextDocNumber, periodOf } from '@/lib/doc-number';
-import { guardStall, rowToSale, pricingFromRow, SaleError, type SaleRow, type SaleItem, type ConsignPricingRow } from '@/lib/stall-pos-server';
+import { guardStall, rowToSale, SaleError, type SaleRow, type SaleItem } from '@/lib/stall-pos-server';
 import { mergeSaleLines, discountProblem, paymentResult } from '@/lib/stall-pos';
-import { moveConsignStock, ConsignStockError } from '@/lib/consign-receipts';
+import { ConsignStockError } from '@/lib/consign-receipts';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { auditConsign } from '@/lib/consign-audit';
 import { getDb } from '@/lib/firebase-admin';
 import { notifyProductLowStock } from '@/lib/low-stock';
 import { notifyConsignLowStock } from '@/lib/low-stock-consign';
 import { ownPriceMap } from '@/lib/stall-own';
+import { sellConsignLines, insertConsignSaleLines } from '@/lib/store-consign';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -66,30 +67,7 @@ export async function POST(req: NextRequest) {
       const items: SaleItem[] = [];
 
       // 1) Barang titipan — urut productId (urutan kunci seragam, hindari deadlock).
-      const consignLines = merged.lines.filter(l => l.kind === 'consign').sort((a, b) => a.productId.localeCompare(b.productId));
-      for (const l of consignLines) {
-        const [r] = await tx<ConsignPricingRow[]>`
-          select si.product_id, p.name, p.code, p.unit, p.default_price, p.scheme as p_scheme, p.scheme_value as p_value,
-                 si.price as si_price, si.scheme as si_scheme, si.scheme_value as si_value, si.stock_qty,
-                 c.id as consignor_id, c.name as consignor_name, c.scheme as c_scheme, c.scheme_value as c_value
-          from consign_stall_items si
-          join consign_products p on p.id = si.product_id
-          join consignors c on c.id = p.consignor_id
-          where si.stall_id = ${stall.id} and si.product_id = ${l.productId} and p.is_active and c.is_active
-        `;
-        if (!r) throw new SaleError('Ada produk titipan yang tidak tersedia di lapak ini.');
-        const pricing = pricingFromRow(r);
-        if (!pricing.spec || !pricing.share) throw new SaleError(`${r.name}: skema bagi hasil belum ditentukan — tidak bisa dijual.`);
-        await moveConsignStock(tx, {
-          productId: l.productId, productName: r.name, stallId: stall.id, stallName: stall.name,
-          delta: -l.qty, type: 'sale', receiptId: saleId, note: invoiceNo,
-        });
-        items.push({
-          kind: 'consign', productId: l.productId, name: r.name, unit: r.unit, qty: l.qty, price: pricing.price, subtotal: pricing.price * l.qty,
-          consignorId: r.consignor_id, consignorName: r.consignor_name, scheme: pricing.spec.scheme, schemeValue: pricing.spec.value,
-          consignorShare: pricing.share.consignor, ourShare: pricing.share.ours,
-        });
-      }
+      items.push(...await sellConsignLines(tx, { stall, lines: merged.lines.filter(l => l.kind === 'consign'), saleId, invoiceNo }));
 
       // 2) Produk toko — stok dari gudang terkait lapak.
       const ownLines = merged.lines.filter(l => l.kind === 'own');
@@ -135,13 +113,7 @@ export async function POST(req: NextRequest) {
         values (${saleId}, ${invoiceNo}, ${stall.id}, ${stall.name}, ${shift.id}, ${dateKey}, ${user.username}, ${tx.json(items as never)},
           ${subtotal}, ${discountInput}, ${total}, ${pay.method}, ${pay.amountPaid}, ${pay.change}, ${note}, ${customerName}, ${customerPhone}, 'paid', now())
       `;
-      for (const i of items.filter(x => x.kind === 'consign')) {
-        await tx`
-          insert into consign_sale_lines (id, sale_id, stall_id, consignor_id, consignor_name, product_id, product_name, qty, price, scheme, scheme_value, consignor_amount, our_amount, created_at)
-          values (${randomUUID()}, ${saleId}, ${stall.id}, ${i.consignorId!}, ${i.consignorName!}, ${i.productId}, ${i.name}, ${i.qty}, ${i.price},
-            ${i.scheme!}, ${i.schemeValue ?? 0}, ${(i.consignorShare ?? 0) * i.qty}, ${(i.ourShare ?? 0) * i.qty}, now())
-        `;
-      }
+      await insertConsignSaleLines(tx, { saleId, stallId: stall.id, items });
       // Produk toko: baris tagihan lapak ke toko (dasar setoran/rekap), harga = harga di lapak ini.
       for (const i of items.filter(x => x.kind === 'own')) {
         await tx`

@@ -16,7 +16,7 @@ import {
 
 type StallForm = Omit<Stall, 'id' | 'code' | 'balance'> & { id?: string; openingBalance: string };
 
-const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], showOwnProducts: false, openingBalance: '' };
+const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], showOwnProducts: false, isStore: false, openingBalance: '' };
 
 
 interface StallStats { count: number; revenue: number; discount: number; itemsSold: number; ownRevenue: number; consignorShare: number; ourConsign: number; storeShare: number }
@@ -151,7 +151,7 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
   const openNew = () => { setError(''); setStaffSearch(''); setEditing({ ...EMPTY }); };
   const openEdit = (s: Stall) => {
     setError(''); setStaffSearch('');
-    setEditing({ id: s.id, name: s.name, address: s.address, warehouseId: s.warehouseId, note: s.note, isActive: s.isActive, invoicePrefix: s.invoicePrefix, usernames: s.usernames, showOwnProducts: s.showOwnProducts, openingBalance: '' });
+    setEditing({ id: s.id, name: s.name, address: s.address, warehouseId: s.warehouseId, note: s.note, isActive: s.isActive, invoicePrefix: s.invoicePrefix, usernames: s.usernames, showOwnProducts: s.showOwnProducts, isStore: s.isStore, openingBalance: '' });
   };
 
   const q = staffSearch.trim().toLowerCase();
@@ -197,6 +197,7 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
               { label: 'Gudang Terkait', value: whName(s.warehouseId) },
               { label: 'Stok Titipan', value: (stockByStall.get(s.id) ?? 0).toLocaleString('id-ID') },
               { label: 'Produk Dijual', value: `${its.length} produk (${its.filter(i => i.stockQty > 0).length} ada stok)` },
+              { label: 'Jenis', value: s.isStore ? 'Toko (titipan dijual di Kasir toko)' : 'Lapak' },
               { label: 'Produk toko di Kasir Lapak', value: s.showOwnProducts && s.warehouseId ? 'Ditampilkan' : 'Tidak ditampilkan' },
               { label: 'Saldo Dompet Lapak', value: rupiah(s.balance) },
               { label: 'Petugas', value: s.usernames.length ? s.usernames.map(staffLabel).join(', ') : '' },
@@ -241,6 +242,15 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
                 </span>
               </label>
             )}
+            <label className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" className="mt-0.5" checked={editing.isStore} onChange={e => setEditing({ ...editing, isStore: e.target.checked })} />
+              <span>
+                Lapak ini adalah Toko (titipan dijual lewat Kasir toko)
+                <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Barang titipan yang diterima ke lapak ini muncul di Kasir toko biasa, satu keranjang dengan produk toko. Uangnya masuk dompet lapak ini, terpisah dari dompet toko. Hanya boleh satu lapak bertanda Toko.
+                </span>
+              </span>
+            </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Awalan nomor invoice">
                 <input className="input font-mono" value={editing.invoicePrefix} maxLength={12} placeholder="otomatis dari kode lapak"

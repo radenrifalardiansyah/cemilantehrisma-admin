@@ -17,6 +17,9 @@ import { paymentProblem } from '@/lib/installment';
 import { computeVoucherDiscount, normalizeVoucherCode, voucherDiscountLabel } from '@/lib/voucher';
 import { voucherProblem, voucherRule, customerVoucherUses, hasVoucherIdentity, type VoucherRow } from '@/lib/vouchers-pg';
 import { rowToOrder, resolveUniqueInvoiceNo, OrderRow } from '@/lib/orders-pg';
+import { createStoreConsignSale, type StoreConsignLine } from '@/lib/store-consign';
+import { auditConsign } from '@/lib/consign-audit';
+import { notifyConsignLowStock } from '@/lib/low-stock-consign';
 
 // `orders` dibaca dengan from=2000-01-01 (seluruh riwayat) oleh useWalletBalances di 7 tab
 // berbeda (Kasir, Pesanan, Pemasukan, Pengeluaran, Modal, Bahan Baku, Mitra) SETIAP kali ada
@@ -66,7 +69,12 @@ interface OrderCreateBody {
   isFree?: boolean; freeReason?: string;
   // DP kredit dari Kasir — dicatat sebagai pembayaran pertama (cicilan) di transaksi yang sama.
   downPayment?: { amount: number; walletId: string }; transactionAt?: string; items?: OrderItemInput[]; isPreOrder?: boolean;
+  // Barang titipan dari lapak bertanda Toko (satu keranjang): dicatat sebagai penjualan lapak Toko yang
+  // dibayar penuh saat itu juga — bukan bagian pesanan (total/item/laporan toko tidak ikut berubah).
+  consignItems?: { productId?: string; qty?: number }[]; consignPaymentMethod?: string;
 }
+
+interface ConsignOutcome { saleId: string; invoiceNo: string; total: number; items: { name: string; qty: number; price: number; subtotal: number }[] }
 
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'orders', 'create');
@@ -75,6 +83,7 @@ export async function POST(req: NextRequest) {
   const qtyError = invalidQtyMessage(data.items);
   if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const db = getDb();
+  const sql = getSql();
   // Kasir bisa mengedit tanggal & jam transaksi (mis. transaksi baru sempat diinput belakangan) —
   // kalau dikirim, itu yang jadi created_at (dipakai buat urutan & filter periode di Pesanan/
   // Laporan Keuangan). Kalau tidak dikirim, pakai waktu server seperti biasa.
@@ -90,7 +99,6 @@ export async function POST(req: NextRequest) {
     deltas.set(item.productId, (deltas.get(item.productId) ?? 0) - item.qty);
   }
 
-  const sql = getSql();
   let isPreOrder = false;
   let itemsWithCost: OrderItemInput[] = [];
   let finalInvoiceNo: string | undefined;
@@ -101,6 +109,38 @@ export async function POST(req: NextRequest) {
   const freeReason = (data.freeReason ?? '').trim().slice(0, 200);
   if (isFree && !freeReason) return Response.json({ error: 'Alasan transaksi gratis wajib diisi.' }, { status: 400 });
   if (isFree && data.downPayment) return Response.json({ error: 'Transaksi gratis tidak bisa memakai DP.' }, { status: 400 });
+  const consignMerged = new Map<string, number>();
+  for (const c of data.consignItems ?? []) {
+    const qty = Number(c.qty);
+    if (!c.productId || !Number.isFinite(qty) || qty <= 0) return Response.json({ error: 'Jumlah barang titipan harus lebih dari 0.' }, { status: 400 });
+    consignMerged.set(c.productId, (consignMerged.get(c.productId) ?? 0) + qty);
+  }
+  const consignLines: StoreConsignLine[] = [...consignMerged].map(([productId, qty]) => ({ productId, qty }));
+  if (consignLines.length > 0) {
+    if (isFree) return Response.json({ error: 'Transaksi gratis tidak bisa memuat barang titipan.' }, { status: 400 });
+    if (data.consignPaymentMethod !== 'cash' && data.consignPaymentMethod !== 'transfer') return Response.json({ error: 'Metode bayar barang titipan tidak valid.' }, { status: 400 });
+  }
+  const consignMethod = data.consignPaymentMethod === 'transfer' ? 'transfer' as const : 'cash' as const;
+  let consignOutcome: ConsignOutcome | null = null;
+  let consignStall: { id: string; name: string } | null = null;
+  const consignResult = (r: { saleId: string; invoiceNo: string; total: number; items: { name: string; qty: number; price: number; subtotal: number }[] }): ConsignOutcome =>
+    ({ saleId: r.saleId, invoiceNo: r.invoiceNo, total: r.total, items: r.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, subtotal: i.subtotal })) });
+
+  // Keranjang hanya berisi barang titipan: tidak ada pesanan toko, cukup penjualan lapak Toko.
+  if (consignLines.length > 0 && (data.items ?? []).length === 0) {
+    try {
+      const sale = await withDeadlockRetry(() => sql.begin(async tx => createStoreConsignSale(tx, {
+        username: guard.username, lines: consignLines, paymentMethod: consignMethod, orderId: null, posShiftId: data.shiftId ?? null,
+        customerName: data.customerName ?? '', customerPhone: data.customerPhone ?? '', note: 'Kasir toko',
+      })));
+      await auditConsign(guard, 'create', 'stall-sales', sale.saleId, `Penjualan titipan Kasir toko ${sale.invoiceNo}`, null, { total: sale.total, items: sale.items.length });
+      await notifyConsignLowStock(db, sale.stall, new Map(consignLines.map(l => [l.productId, l.qty])), guard, `penjualan titipan ${sale.invoiceNo}`);
+      return Response.json({ id: null, consign: consignResult(sale) });
+    } catch (err) {
+      return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan transaksi.' }, { status: 400 });
+    }
+  }
+
   // Transaksi gratis tidak memakai voucher/diskon — total dipaksa Rp0 di bawah.
   const voucherCode = isFree ? undefined : normalizeVoucherCode(data.voucherCode);
   let finalSubtotal = Number(data.subtotal) || 0;
@@ -202,6 +242,15 @@ export async function POST(req: NextRequest) {
           values (${randomUUID()}, ${id}, ${dp.walletId}, ${Number(dp.amount)}, now(), 'DP (Kasir)', ${guard.username})
         `;
       }
+      // Bagian titipan: penjualan lapak Toko, dibayar penuh sekarang (uangnya ke dompet lapak Toko).
+      if (consignLines.length > 0) {
+        const sale = await createStoreConsignSale(pgTx, {
+          username: guard.username, lines: consignLines, paymentMethod: consignMethod, orderId: id, posShiftId: data.shiftId ?? null,
+          customerName: data.customerName ?? '', customerPhone: data.customerPhone ?? '', note: `Kasir toko · ${finalInvoiceNo ?? ''}`,
+        });
+        consignOutcome = consignResult(sale);
+        consignStall = sale.stall;
+      }
       return id;
     }));
   } catch (err) {
@@ -235,7 +284,12 @@ export async function POST(req: NextRequest) {
     revalidateProductStock();
     await notifyProductLowStock(db, deltas, guard, `penjualan ${finalInvoiceNo ?? ''}`.trim());
   }
+  if (consignOutcome && consignStall) {
+    const co: ConsignOutcome = consignOutcome;
+    await auditConsign(guard, 'create', 'stall-sales', co.saleId, `Penjualan titipan Kasir toko ${co.invoiceNo}`, null, { total: co.total, orderInvoice: finalInvoiceNo ?? '' });
+    await notifyConsignLowStock(db, consignStall, new Map(consignLines.map(l => [l.productId, l.qty])), guard, `penjualan titipan ${co.invoiceNo}`);
+  }
   revalidateTag('admin-analytics', { expire: 0 });
 
-  return Response.json({ id: orderId });
+  return Response.json({ id: orderId, ...(consignOutcome ? { consign: consignOutcome } : {}) });
 }

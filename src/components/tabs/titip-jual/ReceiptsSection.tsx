@@ -249,14 +249,14 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
               </Field>
               <Field label={editing.kind === 'transfer' ? 'Lapak Asal' : 'Lapak'} required>
                 <SearchSelect value={editing.stallId} onChange={v => setEditing({ ...editing, stallId: v, toStallId: editing.toStallId === v ? '' : editing.toStallId })}
-                  options={data.stalls.filter(s => s.isActive).map(s => ({ value: s.id, label: s.name, sublabel: s.code }))}
+                  options={data.stalls.filter(s => s.isActive).map(s => ({ value: s.id, label: s.name, sublabel: s.isStore ? 'Toko · dijual di Kasir toko' : s.code }))}
                   placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…" />
               </Field>
             </div>
             {editing.kind === 'transfer' && (
               <Field label="Lapak Tujuan" required>
                 <SearchSelect value={editing.toStallId} onChange={v => setEditing({ ...editing, toStallId: v })}
-                  options={data.stalls.filter(s => s.isActive && s.id !== editing.stallId).map(s => ({ value: s.id, label: s.name, sublabel: s.code }))}
+                  options={data.stalls.filter(s => s.isActive && s.id !== editing.stallId).map(s => ({ value: s.id, label: s.name, sublabel: s.isStore ? 'Toko · dijual di Kasir toko' : s.code }))}
                   placeholder="– Pilih lapak tujuan –" searchPlaceholder="Cari lapak…" />
               </Field>
             )}

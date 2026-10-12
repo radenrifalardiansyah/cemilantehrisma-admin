@@ -14,6 +14,7 @@ import { rowToOrder, syncInvoicePaymentStatus, OrderRow } from '@/lib/orders-pg'
 import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
 import { paidAmountOf } from '@/lib/order-payments-pg';
+import { voidStoreConsignSaleForOrder } from '@/lib/store-consign';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -81,6 +82,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
         const order = rowToOrder(orderRow);
         if (order.status === 'dibatalkan') throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diedit.');
+        const [withConsign] = await pgTx`select 1 from stall_sales where order_id = ${id} and status = 'paid' limit 1`;
+        if (withConsign) throw new OrderValidationError('Pesanan ini memuat barang titipan — item tidak bisa diedit. Batalkan pesanan lalu buat ulang.');
         // Pesanan yang sudah menerima cicilan: status/metode bayar hanya berubah lewat pembayaran
         // (Catat Pembayaran), dan total tidak boleh di bawah uang yang sudah diterima.
         const paidSoFar = await paidAmountOf(pgTx, id);
@@ -293,6 +296,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // Batalkan pesanan → kembalikan stok yang sudah dipotong (sekali saja per pesanan)
       if (status === 'dibatalkan') {
         await restoreOrderStockInTxPg(pgTx, toRestorable(order));
+        // Bagian titipan (penjualan lapak Toko) ikut dibatalkan.
+        await voidStoreConsignSaleForOrder(pgTx, { orderId: id, username: guard.username, reason: 'Pesanan dibatalkan' });
         // Kuota voucher yang dipakai pesanan ini dikembalikan (sekali — kode dikosongkan).
         if (order.voucherCode) {
           await pgTx`update vouchers set used_count = greatest(used_count - 1, 0) where code = ${order.voucherCode}`;
@@ -347,6 +352,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         throw new Error('Pesanan ini punya catatan pembayaran cicilan — batalkan pembayarannya dulu sebelum menghapus pesanan.');
       }
       await restoreOrderStockInTxPg(pgTx, toRestorable(order));
+      await voidStoreConsignSaleForOrder(pgTx, { orderId: id, username: guard.username, reason: 'Pesanan dihapus' });
       if (order.voucherCode) await pgTx`update vouchers set used_count = greatest(used_count - 1, 0) where code = ${order.voucherCode}`;
       await pgTx`delete from orders where id = ${id}`;
       return order;

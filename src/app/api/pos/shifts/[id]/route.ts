@@ -31,7 +31,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     select coalesce(sum(total), 0) as total from orders
     where shift_id = ${id} and payment_method = 'cash' and status != 'dibatalkan'
   `;
-  const cashSalesTotal = Number(total) || 0;
+  // Titipan yang dijual di keranjang yang sama (penjualan lapak Toko) juga uang tunai di laci.
+  const [{ consign }] = await sql<{ consign: string }[]>`
+    select coalesce(sum(total - refund_total), 0) as consign from stall_sales
+    where pos_shift_id = ${id} and payment_method = 'cash' and status = 'paid'
+  `;
+  const cashSalesTotal = (Number(total) || 0) + (Number(consign) || 0);
 
   const openingBalance = Number(shift.opening_balance) || 0;
   const expectedBalance = openingBalance + cashSalesTotal;

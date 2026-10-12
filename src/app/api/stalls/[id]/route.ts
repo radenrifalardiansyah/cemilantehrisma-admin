@@ -35,10 +35,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   const isActive = data.isActive !== false;
+  const isStore = data.isStore === true;
+  if (isStore) {
+    const [other] = await sql<{ name: string }[]>`select name from stalls where is_store and id <> ${id}`;
+    if (other) return Response.json({ error: `Sudah ada lapak bertanda Toko ("${other.name}"). Hanya boleh satu.` }, { status: 400 });
+  }
   await sql.begin(async tx => {
     await tx`
       update stalls set name = ${name}, address = ${(data.address as string) ?? ''}, warehouse_id = ${warehouseId},
-        note = ${(data.note as string) ?? ''}, is_active = ${isActive}, invoice_prefix = ${prefix}, show_own_products = ${data.showOwnProducts === true && !!warehouseId}, updated_at = now()
+        note = ${(data.note as string) ?? ''}, is_active = ${isActive}, invoice_prefix = ${prefix}, show_own_products = ${data.showOwnProducts === true && !!warehouseId}, is_store = ${isStore}, updated_at = now()
       where id = ${id}
     `;
     // Petugas diganti sebagai satu set: yang tidak ada di daftar baru dilepas.

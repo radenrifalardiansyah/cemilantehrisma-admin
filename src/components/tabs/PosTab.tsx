@@ -57,6 +57,8 @@ function setLastWallet(method: string, walletId: string) {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type CartEntry     = { productId: string; qty: number };
+// Barang titipan (lapak bertanda Toko) yang dijual di keranjang yang sama — dicatat terpisah dari pesanan toko.
+interface ConsignCatalogItem { productId: string; name: string; code: string; unit: string; price: number; imageUrl: string; consignorName: string; category: string; stock: number; blocked: string }
 // Item bebas input di checkout (bukan produk katalog) — mis. ongkir, bungkus kado, atau nominal
 // tambahan lain. Bisa ditambahkan lebih dari satu, ikut masuk ke total & struk seperti item biasa.
 type CustomItem    = { id: string; name: string; price: number; qty: number };
@@ -194,6 +196,56 @@ function quickCashAmounts(total: number): number[] {
 }
 
 // ─── POS Product Card ─────────────────────────────────────────────────────────
+// Kartu barang titipan di Kasir toko: nama, penitip, harga, dan stok titipan di lapak Toko.
+function ConsignGrid({ items, qtyOf, onAdd, onMinus }: {
+  items: ConsignCatalogItem[]; qtyOf: (id: string) => number; onAdd: (id: string) => void; onMinus: (id: string) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada barang titipan di lapak Toko. Terima barang titipan ke lapak Toko lewat menu Titip Jual.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+      {items.map(i => {
+        const qty = qtyOf(i.productId);
+        const empty = i.stock <= 0;
+        return (
+          <div key={i.productId} className="card overflow-hidden flex flex-col" style={{ opacity: empty ? 0.5 : 1 }}>
+            <div className="relative w-full" style={{ aspectRatio: '1 / 1', background: 'var(--surface-2)' }}>
+              {i.imageUrl
+                ? <Image src={i.imageUrl} alt={i.name} fill className="object-contain" sizes="160px" unoptimized />
+                : <div className="w-full h-full flex items-center justify-center text-2xl font-bold" style={{ color: 'var(--text-muted)' }}>{i.name.slice(0, 2).toUpperCase()}</div>}
+              <span className="absolute top-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>Titipan</span>
+            </div>
+            <div className="p-2.5 flex flex-col gap-1 flex-1">
+              <p className="text-xs font-bold leading-tight line-clamp-2" style={{ color: 'var(--text-primary)' }}>{i.name}</p>
+              <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{i.consignorName} · stok {i.stock}</p>
+              <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent-dark)' }}>{formatCurrency(i.price)}</p>
+              {i.blocked && <p className="text-[10px]" style={{ color: 'var(--danger)' }}>{i.blocked}</p>}
+              <div className="mt-auto pt-1 flex items-center justify-between">
+                {qty > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => onMinus(i.productId)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}><Minus size={11} strokeWidth={2.5} /></button>
+                    <span className="w-5 text-center text-sm font-black tabular">{qty}</span>
+                    <button onClick={() => onAdd(i.productId)} className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}><Plus size={11} strokeWidth={2.5} /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => onAdd(i.productId)} disabled={empty || !!i.blocked} className="btn-primary text-xs w-full justify-center disabled:opacity-40" style={{ height: 30 }}>
+                    <Plus size={12} /> Tambah
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PosProductCard({ product, qty, onAdd, onMinus }: {
   product: PosProduct; qty: number; onAdd: () => void; onMinus: () => void;
 }) {
@@ -292,6 +344,10 @@ export default function PosTab({
   const [query,        setQuery]        = useState('');
   const [cart,         setCart]         = useState<CartEntry[]>([]);
   const [customItems,        setCustomItems]        = useState<CustomItem[]>([]);
+  const [consignCart,  setConsignCart]  = useState<CartEntry[]>([]);
+  const [consignCatalog, setConsignCatalog] = useState<ConsignCatalogItem[]>([]);
+  const [storeStall,    setStoreStall]   = useState<{ id: string; name: string } | null>(null);
+  const [catalogMode,   setCatalogMode]  = useState<'toko' | 'titipan'>('toko');
   const [showCustomItemForm, setShowCustomItemForm] = useState(false);
   const [customItemName,     setCustomItemName]     = useState('');
   const [customItemPriceRaw, setCustomItemPriceRaw] = useState('');
@@ -382,6 +438,7 @@ export default function PosTab({
   // secara otomatis di latar belakang, tanpa menahan kasir menunggu.
   const handleNewTransaction = () => {
     resetPOS();
+    loadConsignCatalog();
     Promise.resolve(onRefreshStock()).catch(() => toast.error('Gagal memuat ulang data.'));
   };
 
@@ -390,7 +447,13 @@ export default function PosTab({
   const cartItems    = cart.filter(i => i.qty > 0);
   const customItemsTotal = customItems.reduce((s, i) => s + i.price * i.qty, 0);
   const customItemsCount = customItems.reduce((s, i) => s + i.qty, 0);
-  const cartCount    = cartItems.reduce((s, i) => s + i.qty, 0) + customItemsCount;
+  const consignLines = consignCart.flatMap(c => {
+    const item = consignCatalog.find(i => i.productId === c.productId);
+    return item && c.qty > 0 ? [{ ...c, item }] : [];
+  });
+  const consignTotal = consignLines.reduce((a, l) => a + l.item.price * l.qty, 0);
+  const consignCount = consignLines.reduce((a, l) => a + l.qty, 0);
+  const cartCount    = cartItems.reduce((s, i) => s + i.qty, 0) + customItemsCount + consignCount;
   const cartSubtotal = cartItems.reduce((s, i) => {
     const p = posProducts.find(pr => pr.id === i.productId);
     return s + (p?.price ?? 0) * i.qty;
@@ -411,6 +474,9 @@ export default function PosTab({
   const discountLabel = voucherActive ? voucherDiscountLabel(voucher!.code) : discountType === 'percent' ? `${discountNum}%` : formatCurrency(discountAmount);
   const discountInfo  = discountAmount > 0 ? { amount: discountAmount, label: discountLabel } : undefined;
   const cartTotal = isFreeTx ? 0 : cartSubtotal - discountAmount;
+  // Yang dibayar pelanggan = produk toko + barang titipan. Hanya produk toko yang masuk pesanan (cartTotal);
+  // titipan dibayar penuh saat itu juga dan dicatat sebagai penjualan lapak Toko.
+  const payableTotal = cartTotal + consignTotal;
   const applyVoucher = async () => {
     const code = voucherInput.trim();
     if (!code) return;
@@ -429,7 +495,7 @@ export default function PosTab({
     else setVoucherError(d.error ?? 'Voucher tidak valid.');
     setVoucherChecking(false);
   };
-  const hasCart   = cartItems.length > 0 || customItems.length > 0;
+  const hasCart   = cartItems.length > 0 || customItems.length > 0 || consignLines.length > 0;
   // Kalau keranjang berisi produk "Buka PO", kasir BOLEH (tidak otomatis) menandai transaksi ini
   // sebagai PO lewat checkbox "Jual sebagai PO" — lepas dari stok saat ini. Kalau ditandai, server
   // menyimpan pesanan sebagai 'baru' tanpa memotong stok sekarang, persis pesanan Website, baru
@@ -437,10 +503,10 @@ export default function PosTab({
   // ditandai, transaksi dijual normal seperti biasa (perlu stok cukup).
   const cartHasOpenPO = cartItems.some(i => posProducts.find(p => p.id === i.productId)?.openPO);
   const amountPaidNum      = parseFloat(amountPaidRaw) || 0;
-  const changeAmount       = amountPaidNum - cartTotal;
+  const changeAmount       = amountPaidNum - payableTotal;
   const transferAmountNum  = parseFloat(transferAmountRaw) || 0;
   const dpNum              = paymentMethod === 'kredit' ? Math.floor(parseFloat(dpRaw) || 0) : 0;
-  const transferDiff       = transferAmountNum - cartTotal;
+  const transferDiff       = transferAmountNum - payableTotal;
   const selectedReseller = selectedCustRef.startsWith('reseller:')
     ? resellerList.find(r => r.id === selectedCustRef.slice('reseller:'.length))
     : undefined;
@@ -448,11 +514,12 @@ export default function PosTab({
   // tetap tercatat di menu Pesanan dan bisa ditandai Lunas begitu pelanggan bayar.
   const availablePaymentMethods = [...PAYMENT_METHODS, KREDIT_METHOD];
   const canProcess = hasCart
+    && !(isFreeTx && consignLines.length > 0)
     && (isFreeTx ? freeReason.trim().length > 0 : (true
-    && (paymentMethod !== 'cash'     || amountPaidNum >= cartTotal)
-    && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= cartTotal))
-    && (paymentMethod !== 'kredit'   || !dpRaw || (dpNum > 0 && dpNum < cartTotal && !!dpWalletId))
-    && (paymentMethod === 'kredit'   || !!walletId)));
+    && (paymentMethod !== 'cash'     || amountPaidNum >= payableTotal)
+    && (paymentMethod !== 'transfer' || (transferBank && transferAmountNum >= payableTotal))
+    && (paymentMethod !== 'kredit'   || (cartTotal > 0 && (consignTotal > 0 ? (dpNum >= consignTotal && dpNum - consignTotal < cartTotal && !!dpWalletId) : (!dpRaw || (dpNum > 0 && dpNum < cartTotal && !!dpWalletId)))))
+    && (paymentMethod === 'kredit'   || cartTotal === 0 || !!walletId)));
 
   const filteredProducts = (activeCat === 'semua' ? posProducts : posProducts.filter(p => p.category === activeCat))
     .filter(p => p.published !== false)
@@ -514,7 +581,23 @@ export default function PosTab({
     prev.flatMap(i => i.id === id ? (i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []) : [i])
   );
 
-  const clearCart = () => { setCart([]); setCustomItems([]); };
+  // Barang titipan: katalognya dari lapak bertanda Toko; stok dicek di klien (server tetap memeriksa ulang).
+  const loadConsignCatalog = () => fetch('/api/pos/consign-catalog', { headers: { 'x-admin-auth': creds } })
+    .then(r => r.ok ? r.json() as Promise<{ storeStall: { id: string; name: string } | null; items: ConsignCatalogItem[] }> : null)
+    .then(d => { if (d) { setStoreStall(d.storeStall); setConsignCatalog(d.items); } })
+    .catch(() => {});
+  const getConsignQty = (id: string) => consignCart.find(i => i.productId === id)?.qty ?? 0;
+  const addConsign = (id: string) => {
+    const item = consignCatalog.find(i => i.productId === id);
+    if (!item) return;
+    if (item.blocked) { toast.error(`${item.name}: ${item.blocked}.`); return; }
+    if (getConsignQty(id) + 1 > item.stock) { toast.error(`Stok titipan ${item.name} tinggal ${item.stock}.`); return; }
+    setConsignCart(prev => prev.some(i => i.productId === id) ? prev.map(i => i.productId === id ? { ...i, qty: i.qty + 1 } : i) : [...prev, { productId: id, qty: 1 }]);
+  };
+  const removeConsign = (id: string) => setConsignCart(prev => prev.flatMap(i => i.productId === id ? (i.qty > 1 ? [{ ...i, qty: i.qty - 1 }] : []) : [i]));
+  useEffect(() => { if (isActive && creds) loadConsignCatalog(); }, [isActive, creds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clearCart = () => { setCart([]); setCustomItems([]); setConsignCart([]); };
   const resetPOS = () => {
     setPosView('products'); setActiveCat('semua'); setQuery(''); clearCart();
     setShowCustomItemForm(false); setCustomItemName(''); setCustomItemPriceRaw('');
@@ -640,6 +723,7 @@ export default function PosTab({
   // Tahan transaksi berjalan: simpan ke server lalu kosongkan form untuk pelanggan berikutnya
   const holdTransaction = async () => {
     if (!hasCart) return;
+    if (consignLines.length > 0) { toast.error('Transaksi berisi barang titipan tidak bisa ditahan. Hapus barang titipan dulu atau selesaikan transaksinya.'); return; }
     const held = await holdCurrentCart(Date.now());
     if (!held) { toast.error('Gagal menahan transaksi.'); return; }
     setHeldTransactions(prev => [...prev, held]);
@@ -653,6 +737,7 @@ export default function PosTab({
 
   // Lanjutkan transaksi tertahan — kalau ada keranjang berjalan, itu ikut ditahan dulu supaya tidak hilang
   const resumeHeldTransaction = async (h: HeldTransaction) => {
+    if (consignLines.length > 0) { toast.error('Keranjang berisi barang titipan tidak bisa ditahan. Selesaikan atau kosongkan dulu.'); return; }
     if (hasCart && !window.confirm('Keranjang saat ini akan ditahan otomatis agar tidak hilang. Lanjutkan ke transaksi tertahan ini?')) return;
     if (hasCart) {
       const held = await holdCurrentCart(Date.now());
@@ -735,7 +820,7 @@ export default function PosTab({
 
   // ── Refresh stok otomatis: langsung saat tab Kasir dibuka, lalu tiap STOCK_POLL_MS
   // selama tab masih aktif & jendela browser terlihat (auto-pause di tab background) ──
-  const pollStock = () => { if (isActive) Promise.resolve(onRefreshStock()).catch(() => {}); };
+  const pollStock = () => { if (isActive) { Promise.resolve(onRefreshStock()).catch(() => {}); loadConsignCatalog(); } };
   useVisiblePolling(pollStock, STOCK_POLL_MS, [isActive]);
 
   // ── Proses transaksi ──────────────────────────────────────
@@ -757,17 +842,28 @@ export default function PosTab({
         }),
         ...customItems.map(ci => ({ name: ci.name, weight: '', qty: ci.qty, price: ci.price, subtotal: ci.price * ci.qty })),
       ];
-      const res = await fetch('/api/pos/invoice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
-        body: JSON.stringify({
-          invoiceNo: invNoDraft, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
-          paymentStatus: paymentMethod === 'kredit' && !isFreeTx ? 'belum_lunas' : 'lunas',
-        }),
-      });
-      if (!res.ok) throw new Error('Gagal generate PDF');
-      // Nomor final dari server (dijamin unik) — dipakai juga untuk pesanan & struk.
-      const { url: pdfUrl, invoiceNo: invNo } = await res.json() as { url: string; invoiceNo: string };
+      // Barang titipan (lapak Toko) ikut tercetak di invoice/struk, tapi tidak jadi item pesanan toko.
+      const consignItems = consignLines.map(l => ({ name: `${l.item.name} (titipan)`, weight: '', qty: l.qty, price: l.item.price, subtotal: l.item.price * l.qty }));
+      const receiptItems = [...items, ...consignItems];
+      const onlyConsign = items.length === 0 && consignLines.length > 0;
+      // Metode bayar bagian titipan: tunai/transfer mengikuti pembayaran; kredit → mengikuti jenis dompet DP.
+      const consignMethod = paymentMethod === 'kredit' ? (wallets.find(w => w.id === dpWalletId)?.type === 'cash' ? 'cash' : 'transfer') : paymentMethod === 'transfer' ? 'transfer' : 'cash';
+      let pdfUrl: string | undefined;
+      let invNo = '';
+      if (!onlyConsign) {
+        const res = await fetch('/api/pos/invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-auth': creds },
+          body: JSON.stringify({
+            invoiceNo: invNoDraft, date: dateStr, customerName: finalCustName, customerPhone: custPhone, items: receiptItems, subtotal: cartSubtotal + consignTotal, discount: discountInfo, total: payableTotal,
+            paymentStatus: paymentMethod === 'kredit' && !isFreeTx ? 'belum_lunas' : 'lunas',
+          }),
+        });
+        if (!res.ok) throw new Error('Gagal generate PDF');
+        // Nomor final dari server (dijamin unik) — dipakai juga untuk pesanan & struk.
+        const made = await res.json() as { url: string; invoiceNo: string };
+        pdfUrl = made.url; invNo = made.invoiceNo;
+      }
       const reseller = selectedReseller;
       const selectedCustomer = selectedCustRef.startsWith('customer:')
         ? customerList.find(c => c.id === selectedCustRef.slice('customer:'.length))
@@ -781,12 +877,14 @@ export default function PosTab({
         body: JSON.stringify({
           invoiceNo: invNo, date: dateStr, transactionAt: now.toISOString(), customerName: finalCustName, customerPhone: custPhone, items,
           subtotal: cartSubtotal, discount: discountInfo, total: cartTotal, pdfUrl,
+          ...(consignLines.length > 0 ? { consignItems: consignLines.map(l => ({ productId: l.productId, qty: l.qty })), consignPaymentMethod: consignMethod } : {}),
           ...(isFreeTx ? { isFree: true, freeReason: freeReason.trim(), paymentMethod: 'gratis', paymentStatus: 'lunas' } : {
           ...(voucherActive ? { voucherCode: voucher!.code } : {}),
           paymentMethod,
-          ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
-          ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
-          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas', ...(dueDate ? { dueDate } : {}), ...(dpNum > 0 ? { downPayment: { amount: dpNum, walletId: dpWalletId } } : {}) } : { walletId }),
+          // Angka bayar ke pesanan = bagian produk toko saja (bagian titipan dibayar penuh & dicatat terpisah).
+          ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum - consignTotal, changeAmount } : {}),
+          ...(paymentMethod === 'transfer' ? { transferBank: bank?.name ?? transferBank, transferAmount: transferAmountNum - consignTotal, ...(transferProofUrl ? { transferProofUrl } : {}) } : {}),
+          ...(paymentMethod === 'kredit' ? { paymentStatus: 'belum_lunas', ...(dueDate ? { dueDate } : {}), ...(dpNum - consignTotal > 0 ? { downPayment: { amount: dpNum - consignTotal, walletId: dpWalletId } } : {}) } : { walletId }),
           }),
           ...(reseller ? { resellerId: reseller.id, customerId: reseller.customerId } : {}),
           ...(!reseller && selectedCustomer ? { customerId: selectedCustomer.id } : {}),
@@ -800,9 +898,11 @@ export default function PosTab({
         throw new Error(error ?? 'Gagal menyimpan transaksi.');
       }
 
+      const orderData = await orderRes.json().catch(() => ({})) as { consign?: { invoiceNo: string } };
+      if (onlyConsign && orderData.consign) invNo = orderData.consign.invoiceNo;
       refetchBalances();
       setLastReceipt({
-        invoiceNo: invNo, dateStr, items, subtotal: cartSubtotal, discount: discountInfo, total: cartTotal,
+        invoiceNo: invNo, dateStr, items: receiptItems, subtotal: cartSubtotal + consignTotal, discount: discountInfo, total: payableTotal,
         paymentMethod,
         ...(isFreeTx ? { isFree: true, freeReason: freeReason.trim() } : {}),
         ...(paymentMethod === 'cash' ? { amountPaid: amountPaidNum, changeAmount } : {}),
@@ -898,6 +998,17 @@ export default function PosTab({
             </button>
           </Tooltip>
         </div>
+        {storeStall && (
+          <div className="inline-flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
+            {([['toko', 'Produk Toko'], ['titipan', `Titipan${consignCount > 0 ? ` (${consignCount})` : ''}`]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setCatalogMode(k)} className="px-4 py-2 transition-all"
+                style={catalogMode === k ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {catalogMode === 'toko' && (
         <ScrollChips gap="gap-2">
           {[POS_CAT_ALL, ...posCategories].map(c => (
             <button key={c.id} onClick={() => setActiveCat(c.id)}
@@ -906,9 +1017,13 @@ export default function PosTab({
             </button>
           ))}
         </ScrollChips>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-44 lg:pb-4 thin-scrollbar">
-        {posProducts.length === 0 ? (
+        {catalogMode === 'titipan' && storeStall ? (
+          <ConsignGrid items={consignCatalog.filter(i => query.trim() === '' || `${i.name} ${i.consignorName} ${i.code}`.toLowerCase().includes(query.trim().toLowerCase()))}
+            qtyOf={getConsignQty} onAdd={addConsign} onMinus={removeConsign} />
+        ) : posProducts.length === 0 ? (
           <EmptyAddCard label="Belum ada produk" hint="Tambahkan produk lewat menu Produk." />
         ) : filteredProducts.length === 0 ? (
           <div className="text-center py-16">
@@ -939,8 +1054,8 @@ export default function PosTab({
               </span>
             </div>
             <div className="flex-1 text-left min-w-0">
-              <p className="text-[11px] text-white/70 truncate">{cartItems.length + customItems.length} item · {cartCount} pcs</p>
-              <p className="text-[15px] font-black tabular">{formatCurrency(cartTotal)}</p>
+              <p className="text-[11px] text-white/70 truncate">{cartItems.length + customItems.length + consignLines.length} item · {cartCount} pcs</p>
+              <p className="text-[15px] font-black tabular">{formatCurrency(payableTotal)}</p>
             </div>
             <span className="text-sm opacity-90 flex-shrink-0">Checkout →</span>
           </button>
@@ -1058,6 +1173,25 @@ export default function PosTab({
                 ))}
               </div>
               )}
+              {consignLines.length > 0 && (
+              <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)', borderTop: '1px solid var(--border-2)' }}>
+                {consignLines.map(l => (
+                  <div key={l.productId} className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>Titipan</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{l.item.name}</p>
+                      <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatCurrency(l.item.price)} / {l.item.unit} · {l.item.consignorName}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => removeConsign(l.productId)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}><Minus size={11} strokeWidth={2.5} /></button>
+                      <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{l.qty}</span>
+                      <button onClick={() => addConsign(l.productId)} className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}><Plus size={11} strokeWidth={2.5} /></button>
+                    </div>
+                    <span className="text-sm font-bold tabular w-16 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>{formatCurrency(l.item.price * l.qty)}</span>
+                  </div>
+                ))}
+              </div>
+              )}
               <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-2)' }}>
                 {showCustomItemForm ? (
                   <div className="space-y-2">
@@ -1098,9 +1232,23 @@ export default function PosTab({
                     </div>
                   </>
                 )}
+                {consignTotal > 0 && (
+                  <>
+                    {cartTotal > 0 && (
+                      <div className="px-4 py-2.5 flex justify-between">
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Produk toko</span>
+                        <span className="text-sm font-semibold tabular" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(cartTotal)}</span>
+                      </div>
+                    )}
+                    <div className="px-4 py-2.5 flex justify-between">
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Barang titipan (dibayar lunas, tanpa diskon)</span>
+                      <span className="text-sm font-semibold tabular" style={{ color: 'var(--text-secondary)' }}>{formatCurrency(consignTotal)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="px-4 py-3.5 flex justify-between" style={{ background: 'var(--accent-bg)' }}>
                   <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Bayar</span>
-                  <span className="text-xl font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatCurrency(cartTotal)}</span>
+                  <span className="text-xl font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatCurrency(payableTotal)}</span>
                 </div>
               </div>
             </>
@@ -1121,11 +1269,11 @@ export default function PosTab({
             {/* Transaksi Gratis */}
             <div className="card p-4">
               <label className="flex items-start gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={isFreeTx} onChange={e => setIsFreeTx(e.target.checked)} className="mt-1" />
+                <input type="checkbox" checked={isFreeTx} onChange={e => setIsFreeTx(e.target.checked)} disabled={consignLines.length > 0} className="mt-1" />
                 <span>
                   <strong>Transaksi Gratis</strong>
                   <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    Barang diberikan tanpa bayar (sample, kompensasi, dll). Total Rp0, stok tetap berkurang, dan dicatat terpisah dari diskon.
+                    Barang diberikan tanpa bayar (sample, kompensasi, dll). Total Rp0, stok tetap berkurang, dan dicatat terpisah dari diskon.{consignLines.length > 0 ? ' Tidak tersedia kalau keranjang berisi barang titipan.' : ''}
                   </span>
                 </span>
               </label>
@@ -1233,19 +1381,22 @@ export default function PosTab({
                     </div>
                   </div>
                   <div className="mt-3">
-                    <label className="field-label">DP / Bayar di Muka (opsional)</label>
-                    <NumberInput value={dpRaw} onChange={setDpRaw} className="input" placeholder="0 = tanpa DP" />
+                    <label className="field-label">{consignTotal > 0 ? `DP / Bayar di Muka (minimal ${formatCurrency(consignTotal)} untuk barang titipan)` : 'DP / Bayar di Muka (opsional)'}</label>
+                    <NumberInput value={dpRaw} onChange={setDpRaw} className="input" placeholder={consignTotal > 0 ? formatCurrency(consignTotal) : '0 = tanpa DP'} />
+                    {consignTotal > 0 && dpNum < consignTotal && (
+                      <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger)' }}>Barang titipan wajib lunas sekarang. DP minimal {formatCurrency(consignTotal)}; kelebihannya jadi DP produk toko.</p>
+                    )}
                     {dpNum > 0 && (
                       <>
                         <div className="mt-2">
                           <SearchSelect value={dpWalletId} onChange={setDpWalletId}
                             options={walletOptions} placeholder="– Dompet Tujuan DP –" searchPlaceholder="Cari dompet…" />
                         </div>
-                        {dpNum >= cartTotal ? (
+                        {dpNum - consignTotal >= cartTotal ? (
                           <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger)' }}>DP harus lebih kecil dari total. Untuk bayar penuh pilih Tunai/Transfer/QRIS.</p>
                         ) : (
                           <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                            DP {formatCurrency(dpNum)} masuk dompet sekarang · sisa tagihan <strong>{formatCurrency(cartTotal - dpNum)}</strong>
+                            DP {formatCurrency(dpNum)} masuk dompet sekarang · sisa tagihan <strong>{formatCurrency(payableTotal - dpNum)}</strong>
                           </p>
                         )}
                       </>
@@ -1267,11 +1418,11 @@ export default function PosTab({
               {paymentMethod === 'cash' && (
                 <div className="mt-3 space-y-2">
                   <div className="flex flex-wrap gap-1.5">
-                    {quickCashAmounts(cartTotal).map(v => (
+                    {quickCashAmounts(payableTotal).map(v => (
                       <button key={v} type="button" onClick={() => setAmountPaidRaw(String(v))}
                         className="px-2.5 py-1.5 rounded-lg text-xs font-semibold"
                         style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-                        {v === cartTotal ? 'Uang Pas' : formatCurrency(v)}
+                        {v === payableTotal ? 'Uang Pas' : formatCurrency(v)}
                       </button>
                     ))}
                   </div>

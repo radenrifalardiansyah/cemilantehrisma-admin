@@ -53,10 +53,15 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `Awalan invoice "${prefix}" sudah dipakai lapak lain.` }, { status: 400 });
   }
 
+  const isStore = data.isStore === true;
+  if (isStore) {
+    const [other] = await sql<{ name: string }[]>`select name from stalls where is_store`;
+    if (other) return Response.json({ error: `Sudah ada lapak bertanda Toko ("${other.name}"). Hanya boleh satu.` }, { status: 400 });
+  }
   await sql.begin(async tx => {
     await tx`
-      insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, created_at, updated_at)
-      values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, now(), now())
+      insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, is_store, created_at, updated_at)
+      values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, ${isStore}, now(), now())
     `;
     if (openingBalance > 0) {
       await tx`
