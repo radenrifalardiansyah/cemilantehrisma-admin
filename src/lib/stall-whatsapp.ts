@@ -24,7 +24,7 @@ const SEP = '───────────────';
 export interface WaSettlement {
   docNumber: string; consignorName: string; stallName: string; periodFrom: string; periodTo: string;
   totalAmount: number; status: 'unpaid' | 'paid'; items: { productName: string; qty: number; amount: number }[];
-  payDate?: string; payMethod?: string; payReference?: string; payFrom?: string;
+  payDate?: string; payMethod?: string; payReference?: string; payFrom?: string; payProofUrl?: string;
 }
 
 // Baris rincian pembayaran (hanya bila sudah dibayar): tanggal, metode, dan no. referensi.
@@ -35,6 +35,7 @@ function payInfo(s: WaSettlement): string {
     s.payDate ? `\nDibayar: ${s.payDate}` : '',
     method ? `\nMetode: ${method}` : '',
     s.payReference ? `\nNo. referensi: ${s.payReference}` : '',
+    s.payProofUrl ? `\nBukti transfer: ${s.payProofUrl}` : '',
   ].join('');
 }
 
@@ -83,4 +84,35 @@ Subtotal: ${rp(s.subtotal)}${s.discount > 0 ? `\nDiskon: -${rp(s.discount)}` : '
 ${PAY[s.paymentMethod] ?? s.paymentMethod}: ${rp(s.amountPaid)}${s.paymentMethod === 'cash' ? `\nKembali: ${rp(s.changeAmount)}` : ''}
 
 Terima kasih telah berbelanja! 🙏`;
+}
+
+export interface StockUpdateData {
+  stallName: string; generatedAtText: string; lastUpdateText: string | null;
+  consignors: { name: string; products: { name: string; unit: string; stock: number; sold: number; received: number }[] }[];
+}
+
+// Update stok titipan untuk grup WhatsApp penitip: per penitip daftar produk + stok saat ini. Bila ada update
+// sebelumnya, tiap produk juga menampilkan terjual & masuk sejak saat itu. `includeEmpty` = ikutkan produk stok 0.
+export function stockUpdateMessage(d: StockUpdateData, includeEmpty: boolean): string {
+  const sections: string[] = [];
+  let productCount = 0; let totalQty = 0;
+  for (const c of d.consignors) {
+    const list = c.products.filter(p => includeEmpty || p.stock > 0 || p.sold > 0);
+    if (list.length === 0) continue;
+    const rows = list.map((p, i) => {
+      const extra = [p.sold > 0 ? `terjual ${qty(p.sold)}` : '', p.received > 0 ? `masuk ${qty(p.received)}` : ''].filter(Boolean).join(', ');
+      productCount++; totalQty += p.stock;
+      return `${i + 1}. ${p.name} — stok *${qty(p.stock)}*${p.stock <= 0 ? ' (habis)' : ''}${extra ? ` _(${extra})_` : ''}`;
+    });
+    sections.push(`*${c.name}*\n${rows.join('\n')}`);
+  }
+  const since = d.lastUpdateText ? `Sejak update terakhir: ${d.lastUpdateText}` : 'Update pertama (belum ada pembanding)';
+  return `*UPDATE STOK TITIPAN*
+Lapak: ${d.stallName}
+Per: ${d.generatedAtText}
+${since}
+
+${sections.length > 0 ? sections.join(`\n\n${SEP}\n`) : '(tidak ada produk titipan)'}
+
+Total: ${productCount} produk, ${qty(totalQty)} stok saat ini.`;
 }

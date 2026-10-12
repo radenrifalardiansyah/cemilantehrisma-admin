@@ -20,6 +20,7 @@ import ShiftModal from './kasir-lapak/ShiftModal';
 import HistoryModal from './kasir-lapak/HistoryModal';
 import ReceiveModal from './kasir-lapak/ReceiveModal';
 import RekapModal from './kasir-lapak/RekapModal';
+import StockUpdateModal from './kasir-lapak/StockUpdateModal';
 import { downloadSettlementPdf, type Settlement } from './titip-jual/settlementPdf';
 import { toDataUri } from '@/lib/pdf/logo';
 import Receipt from './kasir-lapak/Receipt';
@@ -82,6 +83,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [rekapOpen, setRekapOpen] = useState(false);
+  const [stockUpdateOpen, setStockUpdateOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -398,6 +400,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
                 <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-white text-[10px] font-black flex items-center justify-center" style={{ background: 'var(--accent)' }}>{held.length}</span>
               </button>
             )}
+            <button onClick={() => setStockUpdateOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><Package size={13} /> <span className="hidden sm:inline">Update Stok</span></button>
             <button onClick={() => setRekapOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><ClipboardList size={13} /> <span className="hidden sm:inline">Rekap</span></button>
             <button onClick={() => setHistoryOpen(true)} className="btn-ghost text-xs" style={{ height: 34 }}><History size={13} /> <span className="hidden sm:inline">Riwayat</span></button>
             {stall?.shift ? (
@@ -495,6 +498,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
       {receiveOpen && stall && (
         <ReceiveModal creds={creds} stall={stall} items={items ?? []} onClose={() => setReceiveOpen(false)} onDone={reloadAll} />
       )}
+      {stockUpdateOpen && stall && <StockUpdateModal creds={creds} stall={stall} onClose={() => setStockUpdateOpen(false)} />}
       {rekapOpen && stall && (
         <RekapModal creds={creds} stall={stall} canCreate={can('create')} ownerPhone={store.whatsapp} storeName={store.name} onClose={() => setRekapOpen(false)}
           onPdf={async (s: Settlement) => downloadSettlementPdf(s, { name: store.name, address: store.address, logo: await toDataUri(store.logo) })} />
