@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ExcelJS from 'exceljs';
 import { cellText, cellNumber } from '@/lib/excel-cell';
 import {
@@ -860,7 +861,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       )}
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {selected.size > 0 && createPortal(
         <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
           <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
@@ -876,7 +877,8 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
               Batal
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
 

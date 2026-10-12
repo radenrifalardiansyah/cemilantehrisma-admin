@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Boxes, ShoppingBag, ShoppingCart, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
   ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle, ClipboardList,
@@ -1442,7 +1443,7 @@ ${pdfUrl}`.trim();
             )}
 
             {/* Bulk action bar */}
-            {selectedMaterials.size > 0 && (
+            {selectedMaterials.size > 0 && createPortal(
               <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
                 <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
                   style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
@@ -1458,7 +1459,8 @@ ${pdfUrl}`.trim();
                     Batal
                   </button>
                 </div>
-              </div>
+              </div>,
+              document.body,
             )}
           </div>
         )}
@@ -1785,7 +1787,7 @@ ${pdfUrl}`.trim();
               )}
 
               {/* Bulk action bar */}
-              {selectedPurchases.size > 0 && (
+              {selectedPurchases.size > 0 && createPortal(
                 <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
                   <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
                     style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
@@ -1801,7 +1803,8 @@ ${pdfUrl}`.trim();
                       Batal
                     </button>
                   </div>
-                </div>
+                </div>,
+                document.body,
               )}
             </div>
           </div>

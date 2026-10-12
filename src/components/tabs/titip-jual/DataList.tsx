@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Pencil, Trash2, Loader2, Search, Check, Upload, ChevronRight } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
@@ -312,7 +313,7 @@ export default function DataList<T>(p: Props<T>) {
       <Pager total={filtered.length} noun={p.noun} page={safePage} totalPages={totalPages} pageSize={pageSize}
         onPage={goPage} onPageSize={n => { setPageSize(n); goPage(1); }} />
 
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && createPortal(
         <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
           <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
@@ -335,7 +336,8 @@ export default function DataList<T>(p: Props<T>) {
             )}
             <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">Batal</button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
