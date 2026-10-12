@@ -119,7 +119,7 @@ function Panel({ icon, title, hint, children }: { icon: React.ReactNode; title: 
   );
 }
 
-const Empty = ({ text }: { text: string }) => <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>{text}</p>;
+const Empty = ({ text }: { text: string }) => <p className="text-xs text-center py-5" style={{ color: 'var(--text-muted)' }}>{text}</p>;
 
 function StockList({ rows, empty, sub }: { rows: StockRow[]; empty: string; sub: (r: StockRow) => string }) {
   if (rows.length === 0) return <Empty text={empty} />;
@@ -244,8 +244,8 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
           )}
         </Panel>
 
-        {/* Peringkat */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Peringkat — panel terakhir melebar penuh kalau jumlahnya ganjil, supaya tidak ada ruang kosong di kanan */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:[&>:last-child:nth-child(odd)]:col-span-2">
           {!stallId && data.stalls.length > 1 && (
             <Panel icon={<Store size={15} />} title="Omzet per Lapak" hint="Perbandingan lapak pada periode ini">
               <TopListChart color={ACCENT} formatValue={formatRp} items={data.stalls.slice(0, 8).map(x => ({ label: x.name, value: x.revenue, sub: `· ${x.count} transaksi` }))} />
