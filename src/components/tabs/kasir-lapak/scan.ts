@@ -6,7 +6,8 @@ export function resolveStallScan(text: string, items: CatalogItem[]): CatalogIte
   const t = text.trim();
   if (!t) return null;
   const m = t.match(/\/products\/([^/?#]+)/);
-  const candidate = m ? decodeURIComponent(m[1]) : t;
+  let candidate = t;
+  if (m) { try { candidate = decodeURIComponent(m[1]); } catch { return null; } }
   const lower = candidate.toLowerCase();
   return items.find(i => i.productId === candidate)
     ?? items.find(i => !!i.code && i.code.toLowerCase() === lower)

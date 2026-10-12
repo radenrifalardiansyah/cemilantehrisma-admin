@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     // Penjualan & retur penjualan per transaksi (baris bagi hasil dikelompokkan per sale/retur).
     sql<{ sale_id: string | null; return_id: string | null; invoice_no: string | null; stall_name: string | null; at: Date; products: string; qty: string; amount: string }[]>`
       select l.sale_id, l.return_id, s.invoice_no, st.name as stall_name, max(l.created_at) as at,
-             string_agg(l.product_name || ' ×' || trim(trailing '.' from trim(trailing '0' from abs(l.qty)::text)), ', ') as products,
+             string_agg(l.product_name || ' ×' || case when position('.' in abs(l.qty)::text) > 0 then trim(trailing '.' from trim(trailing '0' from abs(l.qty)::text)) else abs(l.qty)::text end, ', ') as products,
              sum(l.qty) as qty, sum(l.consignor_amount) as amount
       from consign_sale_lines l
       left join stall_sales s on s.id = l.sale_id

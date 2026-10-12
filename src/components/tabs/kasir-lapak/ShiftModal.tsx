@@ -20,6 +20,7 @@ export default function ShiftModal({ creds, stall, mode, onClose, onDone }: {
 
   const submit = async () => {
     setSaving(true); setError('');
+    try {
     const r = mode === 'open'
       ? await fetch('/api/stall-pos/shifts', { method: 'POST', headers, body: JSON.stringify({ stallId: stall.id, openingBalance: Number(amount || 0), note }) })
       : await fetch(`/api/stall-pos/shifts/${stall.shift!.id}`, { method: 'PUT', headers, body: JSON.stringify({ actualBalance: Number(amount || 0), note }) });
@@ -35,7 +36,12 @@ export default function ShiftModal({ creds, stall, mode, onClose, onDone }: {
       const msg = d.error ?? 'Gagal memproses shift.';
       setError(msg); toast.error(msg);
     }
-    setSaving(false);
+    } catch {
+      const msg = 'Koneksi terputus. Cek dulu hasilnya sebelum mengulang — permintaan mungkin sudah tersimpan.';
+      setError(msg); toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

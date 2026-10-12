@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const payDate = typeof body.payDate === 'string' && DATE_RE.test(body.payDate) ? body.payDate : wibDateKey(new Date());
   const payMethod = body.method === 'tunai' ? 'tunai' : 'transfer';
   const text = (v: unknown, max: number) => typeof v === 'string' ? v.trim().slice(0, max) : '';
-  const payFrom = text(body.from, 120); const payReference = text(body.reference, 80); const payNote = text(body.note, 200);
+  const payReference = text(body.reference, 80); const payNote = text(body.note, 200);
   const payProofUrl = /^https?:\/\//.test(text(body.proofUrl, 500)) ? text(body.proofUrl, 500) : '';
   const sql = getSql();
   try {
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const [{ balance }] = await tx<{ balance: string | null }[]>`select sum(amount) as balance from stall_wallet_entries where stall_id = ${st.stall_id}`;
       const current = Number(balance ?? 0);
       const total = Number(st.total_amount);
+      if (!(total > 0)) throw new PayError('Total rekap nol atau negatif — tidak bisa dibayar. Hapus rekap ini lalu buat ulang setelah ada penjualan baru.');
       if (current < total) {
         throw new PayError(`Saldo dompet ${st.stall_name} tidak cukup (saldo Rp${current.toLocaleString('id-ID')}, perlu Rp${total.toLocaleString('id-ID')}).`);
       }
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         insert into stall_wallet_entries (id, stall_id, kind, amount, ref_id, note, created_by, created_at)
         values (${randomUUID()}, ${st.stall_id}, 'payout', ${-total}, ${id}, ${`Bayar ${st.consignor_name} · ${st.doc_number}`}, ${guard.username}, now())
       `;
+      const payFrom = `Dompet Lapak ${st.stall_name}`;
       const [row] = await tx<SettlementRow[]>`
         update consign_settlements set status = 'paid', paid_at = now(), paid_by = ${guard.username},
           pay_date = ${payDate}, pay_method = ${payMethod}, pay_from = ${payFrom}, pay_reference = ${payReference}, pay_note = ${payNote}, pay_proof_url = ${payProofUrl}
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       `;
       return row;
     });
-    await auditConsign(guard, 'update', 'settlements', id, `Bayar rekap ${paid.doc_number}`, { status: 'unpaid' }, { status: 'paid', total: Number(paid.total_amount), payDate, payMethod, payFrom, payReference, payProofUrl });
+    await auditConsign(guard, 'update', 'settlements', id, `Bayar rekap ${paid.doc_number}`, { status: 'unpaid' }, { status: 'paid', total: Number(paid.total_amount), payDate, payMethod, payFrom: paid.pay_from, payReference, payProofUrl });
     return Response.json({ settlement: rowToSettlement(paid) });
   } catch (err) {
     if (err instanceof PayError) {

@@ -78,8 +78,9 @@ export async function POST(req: NextRequest) {
           if ((Number(ws?.stock_qty) || 0) < i.qty) throw new OwnError(`Stok ${i.name} di gudang lapak hanya ${Number(ws?.stock_qty) || 0}, tidak bisa dicatat ${i.qty}.`);
         }
       }
-      // Harga di dokumen = harga jual produk itu di lapak (berlaku untuk penjualan berikutnya).
-      for (const i of items) {
+      // Harga di dokumen = harga jual produk itu di lapak (berlaku untuk penjualan berikutnya). Retur ke gudang
+      // tidak mengubah harga lapak (harga yang diketik di retur bisa saja asal).
+      for (const i of kind === 'return' ? [] : items) {
         await tx`
           insert into stall_product_prices (stall_id, product_id, price, updated_at) values (${stall.id}, ${i.productId}, ${i.price}, now())
           on conflict (stall_id, product_id) do update set price = excluded.price, updated_at = now()
@@ -89,8 +90,8 @@ export async function POST(req: NextRequest) {
       const totalQty = items.reduce((a, i) => a + i.qty, 0);
       const totalValue = items.reduce((a, i) => a + i.qty * i.price, 0);
       const [r] = await tx<ShipmentRow[]>`
-        insert into stall_shipments (id, doc_number, kind, stall_id, stall_name, from_warehouse_id, from_warehouse_name, doc_date, items, total_qty, total_value, note, created_by, created_at)
-        values (${id}, ${docNumber}, ${kind}, ${stall.id}, ${stall.name}, ${otherWarehouseId || null}, ${other?.name ?? ''}, ${docDate}, ${tx.json(items as never)}, ${totalQty}, ${totalValue}, ${note}, ${guard.username}, now())
+        insert into stall_shipments (id, doc_number, kind, stall_id, stall_name, stall_warehouse_id, from_warehouse_id, from_warehouse_name, doc_date, items, total_qty, total_value, note, created_by, created_at)
+        values (${id}, ${docNumber}, ${kind}, ${stall.id}, ${stall.name}, ${stall.warehouse_id}, ${otherWarehouseId || null}, ${other?.name ?? ''}, ${docDate}, ${tx.json(items as never)}, ${totalQty}, ${totalValue}, ${note}, ${guard.username}, now())
         returning *
       `;
       return r;

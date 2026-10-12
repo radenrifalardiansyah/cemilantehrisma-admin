@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   let code = '';
   const err = await sql.begin(async tx => {
+    // Kunci supaya dua pembuatan bersamaan tidak mendapat kode yang sama.
+    await tx`select pg_advisory_xact_lock(hashtext('consign-code-products'))`;
     const existing = await tx<{ code: string | null }[]>`select code from consign_products`;
     code = nextCode('TJP', existing.map(r => r.code));
     await tx`

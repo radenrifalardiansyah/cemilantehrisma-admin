@@ -29,6 +29,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!st) throw new PayError('NOT_FOUND');
       if (st.status !== 'unpaid') throw new PayError('Setoran ini sudah dibayar.');
       const total = Number(st.total_amount);
+      if (!(total > 0)) throw new PayError('Total setoran nol atau negatif — tidak bisa dibayar. Hapus setoran ini lalu buat ulang.');
       await tx`select id from stalls where id = ${st.stall_id} for update`;
       const [{ balance }] = await tx<{ balance: string | null }[]>`select sum(amount) as balance from stall_wallet_entries where stall_id = ${st.stall_id}`;
       const current = Number(balance ?? 0);

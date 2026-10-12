@@ -39,6 +39,7 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
   const doVoid = async () => {
     if (!voiding) return;
     setBusy(true); setError('');
+    try {
     const r = await fetch(`/api/stall-pos/sales/${voiding.id}/void`, {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
     });
@@ -50,7 +51,12 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
       const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan.';
       setError(msg); toast.error(msg);
     }
-    setBusy(false);
+    } catch {
+      const msg = 'Koneksi terputus. Cek dulu hasilnya sebelum mengulang — permintaan mungkin sudah tersimpan.';
+      setError(msg); toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const paid = (sales ?? []).filter(s => s.status === 'paid');

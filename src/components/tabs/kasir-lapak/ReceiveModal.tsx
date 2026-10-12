@@ -53,6 +53,7 @@ export default function ReceiveModal({ creds, stall, items, onClose, onDone }: {
 
   const save = async () => {
     setSaving(true); setError('');
+    try {
     const r = await fetch('/api/stall-pos/receipts', {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
       body: JSON.stringify({ stallId: stall.id, consignorId, note, items: lines.filter(l => l.productId).map(l => ({ productId: l.productId, qty: Number(l.qty) })) }),
@@ -67,7 +68,12 @@ export default function ReceiveModal({ creds, stall, items, onClose, onDone }: {
       const msg = d.error ?? 'Gagal menyimpan penerimaan.';
       setError(msg); toast.error(msg);
     }
-    setSaving(false);
+    } catch {
+      const msg = 'Koneksi terputus. Cek dulu hasilnya sebelum mengulang — permintaan mungkin sudah tersimpan.';
+      setError(msg); toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

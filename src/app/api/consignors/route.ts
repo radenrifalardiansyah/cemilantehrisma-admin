@@ -31,14 +31,19 @@ export async function POST(req: NextRequest) {
 
   const sql = getSql();
   const id = randomUUID();
-  const existing = await sql<{ code: string | null }[]>`select code from consignors`;
-  const code = nextCode('PNT', existing.map(r => r.code));
-  await sql`
+  let code = '';
+  await sql.begin(async tx => {
+    // Kunci supaya dua pembuatan bersamaan tidak mendapat kode yang sama.
+    await tx`select pg_advisory_xact_lock(hashtext('consign-code-consignors'))`;
+    const existing = await tx<{ code: string | null }[]>`select code from consignors`;
+    code = nextCode('PNT', existing.map(r => r.code));
+  await tx`
     insert into consignors (id, code, name, phone, address, bank_name, bank_account, bank_holder, note, logo_url, scheme, scheme_value, is_active, created_at, updated_at)
     values (${id}, ${code}, ${name}, ${(data.phone as string) ?? ''}, ${(data.address as string) ?? ''},
       ${(data.bankName as string) ?? ''}, ${(data.bankAccount as string) ?? ''}, ${(data.bankHolder as string) ?? ''},
       ${(data.note as string) ?? ''}, ${(data.logoUrl as string) || null}, ${parsed.scheme}, ${parsed.scheme ? (parsed.value ?? 0) : 0}, ${data.isActive !== false}, now(), now())
   `;
+  });
   await auditConsign(guard, 'create', 'consignors', id, `Penitip ${name}`, null, { code, name, scheme: parsed.scheme, schemeValue: parsed.value });
   return Response.json({ id, code });
 }

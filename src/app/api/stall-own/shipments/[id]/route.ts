@@ -18,7 +18,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const [d] = await tx<ShipmentRow[]>`select * from stall_shipments where id = ${id} for update`;
       if (!d) throw new OwnError('NOT_FOUND');
       if (d.status === 'void') throw new OwnError('Dokumen ini sudah dibatalkan.');
-      const [stall] = await tx<{ warehouse_id: string | null }[]>`select warehouse_id from stalls where id = ${d.stall_id}`;
+      // Gudang lapak SAAT dokumen dibuat (bukan gudang terkait lapak sekarang, yang bisa sudah diganti).
+      const [stall] = await tx<{ warehouse_id: string | null }[]>`select coalesce(${d.stall_warehouse_id ?? null}::text, warehouse_id) as warehouse_id from stalls where id = ${d.stall_id}`;
       const shipment = rowToShipment(d);
       if (d.kind !== 'opening') {
         if (!stall?.warehouse_id || !d.from_warehouse_id) throw new OwnError('Gudang dokumen ini sudah tidak tersedia.');

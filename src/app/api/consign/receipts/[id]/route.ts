@@ -62,9 +62,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
   try {
     await sql.begin(async tx => {
-      const [locked] = await tx`select id from consign_receipts where id = ${id} for update`;
+      // Baca ulang SETELAH dikunci: isi dokumen bisa berubah sejak dibaca di atas (edit/hapus bersamaan).
+      const [locked] = await tx<ReceiptRow[]>`select * from consign_receipts where id = ${id} for update`;
       if (!locked) throw new ConsignStockError('Dokumen sudah dihapus.');
-      await updateReceipt(tx, { id: old.id, docNumber: old.docNumber, kind: old.kind, stallId: old.stallId, stallName: old.stallName, toStallId: old.toStallId, toStallName: old.toStallName, items: old.items },
+      const cur = rowToReceipt(locked);
+      await updateReceipt(tx, { id: cur.id, docNumber: cur.docNumber, kind: cur.kind, stallId: cur.stallId, stallName: cur.stallName, toStallId: cur.toStallId, toStallName: cur.toStallName, items: cur.items },
         { consignorId, consignorName: consignor.name, stallId, stallName: stall.name, toStallId: toStall?.id, toStallName: toStall?.name, docDate, note, items });
     });
   } catch (err) {
@@ -89,9 +91,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     await sql.begin(async tx => {
       // Kunci dokumen supaya dua pembatalan bersamaan tidak membalik stok dua kali.
-      const [locked] = await tx`select id from consign_receipts where id = ${id} for update`;
+      const [locked] = await tx<ReceiptRow[]>`select * from consign_receipts where id = ${id} for update`;
       if (!locked) throw new ConsignStockError('Dokumen sudah dibatalkan.');
-      await voidReceipt(tx, { id: r.id, docNumber: r.docNumber, kind: r.kind, stallId: r.stallId, stallName: r.stallName, toStallId: r.toStallId, toStallName: r.toStallName, items: r.items });
+      const cur = rowToReceipt(locked);   // baca ulang setelah dikunci
+      await voidReceipt(tx, { id: cur.id, docNumber: cur.docNumber, kind: cur.kind, stallId: cur.stallId, stallName: cur.stallName, toStallId: cur.toStallId, toStallName: cur.toStallName, items: cur.items });
     });
   } catch (err) {
     if (err instanceof ConsignStockError) return Response.json({ error: err.message }, { status: 400 });

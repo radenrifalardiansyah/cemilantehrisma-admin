@@ -120,7 +120,7 @@ export async function createAdjustment(
 // kalau kompensasinya sudah masuk rekap (batalkan rekapnya dulu) atau stok sekarang tidak cukup untuk
 // membalik selisih plus.
 export async function voidAdjustment(tx: TransactionSql, a: ReturnType<typeof rowToAdjustment>): Promise<void> {
-  const [settled] = await tx`select 1 from consign_sale_lines where adjustment_id = ${a.id} and settlement_id is not null limit 1`;
+  const [settled] = await tx`select 1 from (select settlement_id from consign_sale_lines where adjustment_id = ${a.id} for update) x where settlement_id is not null limit 1`;
   if (settled) throw new ConsignStockError('Kompensasi kerugian dokumen ini sudah masuk rekap — batalkan rekapnya dulu.');
   const ordered = [...a.items].sort((x, y) => x.productId.localeCompare(y.productId));
   for (const i of ordered) {

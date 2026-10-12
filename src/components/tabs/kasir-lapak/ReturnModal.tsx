@@ -26,13 +26,19 @@ export default function ReturnModal({ creds, sale, onClose, onDone }: {
 
   const save = async () => {
     setSaving(true); setError('');
+    try {
     const r = await fetch(`/api/stall-pos/sales/${sale.id}/return`, {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ reason, items: selections }),
     });
     const d = await r.json().catch(() => ({})) as { docNumber?: string; refund?: number; error?: string };
     if (r.ok && d.docNumber) { toast.success(`Retur dicatat (${d.docNumber}). Kembalikan ${rupiah(d.refund ?? 0)} ke pelanggan.`); await onDone(); }
     else { const msg = d.error ?? 'Gagal mencatat retur.'; setError(msg); toast.error(msg); }
-    setSaving(false);
+    } catch {
+      const msg = 'Koneksi terputus. Cek dulu hasilnya sebelum mengulang — permintaan mungkin sudah tersimpan.';
+      setError(msg); toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

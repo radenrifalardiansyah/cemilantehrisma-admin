@@ -29,11 +29,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const [sale] = await tx<SaleRow[]>`select * from stall_sales where id = ${id} for update`;
       if (sale.status !== 'paid') throw new SaleError('Penjualan ini sudah dibatalkan.');
       if (Number(sale.refund_total) > 0) throw new SaleError('Penjualan ini sudah punya retur sebagian — tidak bisa dibatalkan seluruhnya.');
-      const [shift] = sale.shift_id ? await tx<{ status: string }[]>`select status from stall_shifts where id = ${sale.shift_id}` : [];
+      const [shift] = sale.shift_id ? await tx<{ status: string }[]>`select status from stall_shifts where id = ${sale.shift_id} for share` : [];
       if (!shift || shift.status !== 'open') throw new SaleError('Shift penjualan ini sudah ditutup — pembatalan hanya bisa selama shift masih terbuka.');
 
       // Penjualan yang bagi hasilnya sudah masuk rekap tidak boleh dibatalkan (angka rekap sudah dikunci).
-      const [inSettlement] = await tx`select 1 from consign_sale_lines where sale_id = ${id} and settlement_id is not null limit 1`;
+      // Baris dikunci dulu supaya rekap yang dibuat bersamaan tidak lolos di antara cek dan pembatalan.
+      const [inSettlement] = await tx`select 1 from (select settlement_id from consign_sale_lines where sale_id = ${id} for update) x where settlement_id is not null limit 1`;
       if (inSettlement) throw new SaleError('Penjualan ini sudah masuk rekap bagi hasil penitip — batalkan rekapnya dulu.');
 
       const [ownSettled] = await tx`select 1 from stall_own_lines where sale_id = ${id} and settlement_id is not null limit 1`;

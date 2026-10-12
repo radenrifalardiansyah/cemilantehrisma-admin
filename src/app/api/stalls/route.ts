@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
   });
 }
 
+class CreateError extends Error {}
+
 export async function POST(req: NextRequest) {
   const guard = await requirePermission(req, 'consign', 'create');
   if (guard instanceof Response) return guard;
@@ -45,34 +47,43 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(openingBalance) || openingBalance < 0) return Response.json({ error: 'Saldo awal dompet tidak valid.' }, { status: 400 });
 
   const id = randomUUID();
-  const existing = await sql<{ code: string | null; invoice_prefix: string | null }[]>`select code, invoice_prefix from stalls`;
-  const code = nextCode('LPK', existing.map(r => r.code));
-  const prefix = data.invoicePrefix ? normalizeInvoicePrefix(data.invoicePrefix) : code;
-  if (!prefix) return Response.json({ error: 'Awalan invoice hanya huruf/angka/tanda hubung, 2–12 karakter.' }, { status: 400 });
-  if (existing.some(r => (r.invoice_prefix ?? r.code ?? '').toUpperCase() === prefix)) {
-    return Response.json({ error: `Awalan invoice "${prefix}" sudah dipakai lapak lain.` }, { status: 400 });
-  }
-
   const isStore = data.isStore === true;
-  if (isStore) {
-    const [other] = await sql<{ name: string }[]>`select name from stalls where is_store`;
-    if (other) return Response.json({ error: `Sudah ada lapak bertanda Toko ("${other.name}"). Hanya boleh satu.` }, { status: 400 });
-  }
-  await sql.begin(async tx => {
-    await tx`
-      insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, is_store, created_at, updated_at)
-      values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, ${isStore}, now(), now())
-    `;
-    if (openingBalance > 0) {
+  let code = '';
+  let prefix = '';
+  try {
+    await sql.begin(async tx => {
+      // Kunci supaya dua pembuatan lapak bersamaan tidak mendapat kode/awalan invoice yang sama.
+      await tx`select pg_advisory_xact_lock(hashtext('stall-codes'))`;
+      const existing = await tx<{ code: string | null; invoice_prefix: string | null }[]>`select code, invoice_prefix from stalls`;
+      code = nextCode('LPK', existing.map(r => r.code));
+      const normalized = data.invoicePrefix ? normalizeInvoicePrefix(data.invoicePrefix) : code;
+      if (!normalized) throw new CreateError('Awalan invoice hanya huruf/angka/tanda hubung, 2–12 karakter.');
+      prefix = normalized;
+      if (existing.some(r => (r.invoice_prefix ?? r.code ?? '').toUpperCase() === prefix)) {
+        throw new CreateError(`Awalan invoice "${prefix}" sudah dipakai lapak lain.`);
+      }
+      if (isStore) {
+        const [other] = await tx<{ name: string }[]>`select name from stalls where is_store`;
+        if (other) throw new CreateError(`Sudah ada lapak bertanda Toko ("${other.name}"). Hanya boleh satu.`);
+      }
       await tx`
-        insert into stall_wallet_entries (id, stall_id, kind, amount, note, created_by, created_at)
-        values (${randomUUID()}, ${id}, 'opening', ${openingBalance}, 'Saldo awal', ${guard.username}, now())
+        insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, is_store, created_at, updated_at)
+        values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, ${isStore}, now(), now())
       `;
-    }
-    for (const username of staff.usernames) {
-      await tx`insert into stall_users (stall_id, username, created_at) values (${id}, ${username}, now())`;
-    }
-  });
+      if (openingBalance > 0) {
+        await tx`
+          insert into stall_wallet_entries (id, stall_id, kind, amount, note, created_by, created_at)
+          values (${randomUUID()}, ${id}, 'opening', ${openingBalance}, 'Saldo awal', ${guard.username}, now())
+        `;
+      }
+      for (const username of staff.usernames) {
+        await tx`insert into stall_users (stall_id, username, created_at) values (${id}, ${username}, now())`;
+      }
+    });
+  } catch (err) {
+    if (err instanceof CreateError) return Response.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
   await auditConsign(guard, 'create', 'stalls', id, `Lapak ${name}`, null, { code, name, warehouseId, invoicePrefix: prefix, usernames: staff.usernames, openingBalance });
   return Response.json({ id, code });
 }

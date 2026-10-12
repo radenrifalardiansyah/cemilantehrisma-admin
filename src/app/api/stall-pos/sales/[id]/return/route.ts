@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const outcome = await withDeadlockRetry(() => sql.begin(async tx => {
       const [sale] = await tx<SaleRow[]>`select * from stall_sales where id = ${id} for update`;
       if (sale.status !== 'paid') throw new SaleError('Penjualan ini sudah dibatalkan.');
-      const [shift] = sale.shift_id ? await tx<{ status: string }[]>`select status from stall_shifts where id = ${sale.shift_id}` : [];
+      const [shift] = sale.shift_id ? await tx<{ status: string }[]>`select status from stall_shifts where id = ${sale.shift_id} for share` : [];
       if (!shift || shift.status !== 'open') throw new SaleError('Shift penjualan ini sudah ditutup — retur hanya bisa selama shift masih terbuka.');
 
       const items = rowToSale(sale).items;
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       for (const l of consignLines) {
         const it = items[l.index];
         // Bagi hasil barang ini sudah direkap → tidak boleh dikoreksi diam-diam (angka rekap sudah dikunci).
-        const [settled] = await tx`select 1 from consign_sale_lines where sale_id = ${id} and product_id = ${it.productId} and settlement_id is not null limit 1`;
+        const [settled] = await tx`select 1 from (select settlement_id from consign_sale_lines where sale_id = ${id} and product_id = ${it.productId} for update) x where settlement_id is not null limit 1`;
         if (settled) throw new SaleError(`${it.name}: bagi hasil penjualan ini sudah masuk rekap — batalkan rekapnya dulu.`);
         await moveConsignStock(tx, { productId: it.productId, productName: it.name, stallId: stall.id, stallName: stall.name, delta: l.qty, type: 'sale_return', receiptId: returnId, note: docNumber });
         await tx`

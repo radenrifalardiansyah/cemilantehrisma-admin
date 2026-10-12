@@ -28,6 +28,7 @@ export async function sellConsignLines(
     if (!r) throw new SaleError('Ada produk titipan yang tidak tersedia di lapak ini.');
     const pricing = pricingFromRow(r);
     if (!pricing.spec || !pricing.share) throw new SaleError(`${r.name}: skema bagi hasil belum ditentukan — tidak bisa dijual.`);
+    if (pricing.share.ours < 0 || pricing.share.consignor < 0) throw new SaleError(`${r.name}: harga setor penitip lebih tinggi dari harga jual — perbaiki skema/harga produk ini dulu.`);
     await moveConsignStock(tx, {
       productId: l.productId, productName: r.name, stallId: p.stall.id, stallName: p.stall.name,
       delta: -l.qty, type: 'sale', receiptId: p.saleId, note: p.invoiceNo,
@@ -96,7 +97,7 @@ export async function createStoreConsignSale(tx: Tx, p: {
 export async function voidStoreConsignSaleForOrder(tx: Tx, p: { orderId: string; username: string; reason: string }): Promise<boolean> {
   const [sale] = await tx<SaleRow[]>`select * from stall_sales where order_id = ${p.orderId} and status = 'paid' for update`;
   if (!sale) return false;
-  const [settled] = await tx`select 1 from consign_sale_lines where sale_id = ${sale.id} and settlement_id is not null limit 1`;
+  const [settled] = await tx`select 1 from (select settlement_id from consign_sale_lines where sale_id = ${sale.id} for update) x where settlement_id is not null limit 1`;
   if (settled) throw new SaleError('Bagian titipan pesanan ini sudah masuk rekap penitip — batalkan rekapnya dulu.');
   const items = rowToSale(sale).items.filter(i => i.kind === 'consign');
   for (const i of [...items].sort((a, b) => a.productId.localeCompare(b.productId))) {

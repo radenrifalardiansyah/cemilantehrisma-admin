@@ -9,7 +9,6 @@ import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
-import { useWallets } from '@/lib/useWallets';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
@@ -408,7 +407,6 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
   const toast = useToast();
   const [payDate, setPayDate] = useState(todayKey());
   const [method, setMethod] = useState<'transfer' | 'tunai'>('transfer');
-  const [from, setFrom] = useState('');
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
   const [proofUrl, setProofUrl] = useState('');
@@ -422,7 +420,7 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
   const pay = async () => {
     setSaving(true); setError('');
     const r = await fetch(`${API}/api/consign/settlements/${settlement.id}/pay`, {
-      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, reference, note, proofUrl }),
+      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, reference, note, proofUrl }),
     });
     const d = await r.json().catch(() => ({})) as { settlement?: Settlement; error?: string };
     if (r.ok && d.settlement) { setDone(d.settlement); await onPaid(); }
@@ -471,9 +469,6 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
           {consignor?.bankName || consignor?.bankAccount ? (
             <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{[consignor.bankName, consignor.bankAccount, consignor.bankHolder ? `a.n. ${consignor.bankHolder}` : ''].filter(Boolean).join(' · ')}</p>
           ) : <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rekening penitip belum diisi di data Penitip.</p>}
-          <p className="text-xs mt-1.5 tabular" style={{ color: short ? 'var(--danger)' : 'var(--text-muted)' }}>
-            Saldo dompet {settlement.stallName}: {rupiah(balance)} → {rupiah(balance - settlement.totalAmount)}{short ? ' (tidak cukup)' : ''}
-          </p>
         </div>
         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Ini hanya mencatat pembayaran. Transfer/penyerahan uang ke penitip Anda lakukan sendiri, lalu isi rinciannya di bawah untuk bukti pembayaran.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -489,7 +484,12 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
             </div>
           </Field>
         </div>
-        <PayFromField creds={creds} method={method} value={from} onChange={setFrom} />
+        <Field label="Sumber dana">
+          <div className="input" style={{ background: 'var(--surface-2)' }}>Dompet Lapak {settlement.stallName}</div>
+          <p className="text-xs mt-1.5 tabular" style={{ color: short ? 'var(--danger)' : 'var(--text-muted)' }}>
+            Saldo saat ini {rupiah(balance)} → setelah dibayar {rupiah(balance - settlement.totalAmount)}{short ? ' (saldo tidak cukup)' : ''}
+          </p>
+        </Field>
         <Field label="No. referensi / bukti transfer (opsional)">
           <input className="input" value={reference} maxLength={80} onChange={e => setReference(e.target.value)} placeholder="cth: 2610120012345" />
         </Field>
@@ -511,7 +511,6 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
 }) {
   const [payDate, setPayDate] = useState(todayKey());
   const [method, setMethod] = useState<'transfer' | 'tunai'>('transfer');
-  const [from, setFrom] = useState('');
   const [note, setNote] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -532,7 +531,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
     const ok: string[] = []; const failed: { doc: string; error: string }[] = [];
     for (const s of list) {
       const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, {
-        method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, note, proofUrl }),
+        method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, note, proofUrl }),
       });
       if (r.ok) ok.push(s.docNumber);
       else failed.push({ doc: s.docNumber, error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membayar.' });
@@ -609,35 +608,12 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
             </div>
           </Field>
         </div>
-        <PayFromField creds={creds} method={method} value={from} onChange={setFrom} />
         <ProofField creds={creds} url={proofUrl} uploading={uploading} setUploading={setUploading} onChange={setProofUrl} hint="Foto yang sama dipakai untuk semua rekap ini." />
         <Field label="Catatan pembayaran (opsional)">
           <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
         </Field>
       </div>
     </ModalShell>
-  );
-}
-
-// Pilih sumber dana pembayaran dari dompet toko (tunai → dompet Tunai, transfer → Bank/E-Wallet), atau ketik manual.
-// Hanya untuk keterangan di bukti pembayaran — saldo yang berkurang tetap dompet lapak.
-function PayFromField({ creds, method, value, onChange }: { creds: string; method: 'transfer' | 'tunai'; value: string; onChange: (v: string) => void }) {
-  const wallets = useWallets(creds);
-  const MANUAL = '__manual';
-  const names = wallets.filter(w => w.isActive && (method === 'tunai' ? w.type === 'cash' : w.type !== 'cash')).map(w => w.name);
-  const [manual, setManual] = useState(false);
-  const isManual = manual || (!!value && !names.includes(value));
-  return (
-    <Field label={method === 'transfer' ? 'Dari rekening / dompet (opsional)' : 'Dari kas (opsional)'}>
-      <SearchSelect value={isManual ? MANUAL : value}
-        onChange={v => { if (v === MANUAL) { setManual(true); onChange(''); } else { setManual(false); onChange(v); } }}
-        placeholder={method === 'transfer' ? '– Pilih rekening / dompet –' : '– Pilih kas –'} searchPlaceholder="Cari dompet…"
-        options={[{ value: '', label: '– Tidak diisi –' }, ...names.map(n => ({ value: n, label: n })), { value: MANUAL, label: 'Lainnya (ketik manual)' }]} />
-      {isManual && (
-        <input className="input mt-2" value={value} maxLength={120} onChange={e => onChange(e.target.value)}
-          placeholder={method === 'transfer' ? 'cth: BCA 1234567890 a.n. Toko' : 'cth: Kas toko'} />
-      )}
-    </Field>
   );
 }
 

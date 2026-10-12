@@ -60,7 +60,7 @@ export async function moveWarehouseStock(
 
 export interface ShipmentRow {
   id: string; doc_number: string; kind: 'send' | 'return' | 'opening'; stall_id: string; stall_name: string;
-  from_warehouse_id: string | null; from_warehouse_name: string; doc_date: string; items: unknown;
+  stall_warehouse_id?: string | null; from_warehouse_id: string | null; from_warehouse_name: string; doc_date: string; items: unknown;
   total_qty: string; total_value: string; note: string; status: 'active' | 'void';
   created_by: string | null; created_at: Date; voided_by: string | null; voided_at: Date | null;
 }

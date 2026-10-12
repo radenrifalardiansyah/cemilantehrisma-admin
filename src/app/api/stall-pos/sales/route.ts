@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const sale = await withDeadlockRetry(() => sql.begin(async tx => {
-      const [shift] = await tx<{ id: string }[]>`select id from stall_shifts where stall_id = ${stall.id} and status = 'open'`;
+      const [shift] = await tx<{ id: string }[]>`select id from stall_shifts where stall_id = ${stall.id} and status = 'open' for share`;
       if (!shift) throw new SaleError('Kasir lapak belum dibuka. Buka kasir (shift) terlebih dahulu.');
 
       const invoiceNo = await nextDocNumber(tx, prefix, periodOf(dateKey));

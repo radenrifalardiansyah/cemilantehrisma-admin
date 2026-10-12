@@ -156,6 +156,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const pay = async () => {
     if (!stall) return;
     setProcessing(true); setError('');
+    try {
     const r = await fetch('/api/stall-pos/sales', {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -171,7 +172,13 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
       const msg = d.error ?? 'Gagal menyimpan transaksi.';
       setError(msg); toast.error(msg);
     }
-    setProcessing(false);
+    } catch {
+      // Jaringan putus: transaksi mungkin sudah tersimpan di server — cek Riwayat sebelum mengulang agar tidak dobel.
+      const msg = 'Koneksi terputus. Cek Riwayat penjualan dulu sebelum mengulang — transaksi mungkin sudah tersimpan.';
+      setError(msg); toast.error(msg);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const saveHeld = (list: Held[]) => {
