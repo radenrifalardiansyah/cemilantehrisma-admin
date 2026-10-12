@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet, CheckCircle2 } from 'lucide-react';
+import { Camera, ImagePlus, X, ExternalLink, Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet, CheckCircle2 } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
@@ -9,13 +9,14 @@ import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { useWallets } from '@/lib/useWallets';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import PeriodBar from './PeriodBar';
 import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
 import { downloadSettlementPdf, type Settlement, type SettlementItem, type SettlementConsignor } from './settlementPdf';
-import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText, type SectionProps } from './shared';
+import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText, uploadImage, type SectionProps } from './shared';
 
 interface Payable { stallId: string; consignorId: string; consignorName: string; amount: number; lines: number; firstDate: string; lastDate: string }
 interface Result { settlements: Settlement[]; payables: Payable[] }
@@ -348,8 +349,8 @@ function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
   return (
     <ModalShell title={editing ? `Ubah Rekap ${editing.docNumber}` : 'Buat Rekap Bagi Hasil'} subtitle="Bagian penitip dari penjualan lapak" icon={<HandCoins size={17} />} onClose={onClose} size="modal-md"
       footer={<ModalFooter onClose={onClose} onSave={create} saving={saving} disabled={!shown || shown.count === 0} label={editing ? 'Simpan Perubahan' : 'Buat Rekap'} />}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <Field label="Lapak" required>
             {editing ? <div className="input" style={{ background: 'var(--surface-2)' }}>{editing.stallName}</div> : (
               <SearchSelect value={stallId} onChange={setStallId} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
@@ -410,6 +411,8 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
   const [from, setFrom] = useState('');
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
+  const [proofUrl, setProofUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState<Settlement | null>(null);
@@ -419,7 +422,7 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
   const pay = async () => {
     setSaving(true); setError('');
     const r = await fetch(`${API}/api/consign/settlements/${settlement.id}/pay`, {
-      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, reference, note }),
+      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, reference, note, proofUrl }),
     });
     const d = await r.json().catch(() => ({})) as { settlement?: Settlement; error?: string };
     if (r.ok && d.settlement) { setDone(d.settlement); await onPaid(); }
@@ -460,7 +463,7 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
 
   return (
     <ModalShell title="Bayar Rekap ke Penitip" subtitle={`${settlement.docNumber} · ${settlement.stallName}`} icon={<Banknote size={17} />} onClose={onClose}
-      footer={<ModalFooter onClose={onClose} onSave={pay} saving={saving} disabled={!payDate} label={`Catat Pembayaran ${rupiah(settlement.totalAmount)}`} />}>
+      footer={<ModalFooter onClose={onClose} onSave={pay} saving={saving} disabled={!payDate || uploading} label={`Catat Pembayaran ${rupiah(settlement.totalAmount)}`} />}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="card p-3" style={{ background: 'var(--surface-2)' }}>
           <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Bayar kepada</p>
@@ -486,12 +489,11 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
             </div>
           </Field>
         </div>
-        <Field label={method === 'transfer' ? 'Dari rekening (opsional)' : 'Dari kas (opsional)'}>
-          <input className="input" value={from} maxLength={120} onChange={e => setFrom(e.target.value)} placeholder={method === 'transfer' ? 'cth: BCA 1234567890 a.n. Toko' : 'cth: Kas toko'} />
-        </Field>
+        <PayFromField creds={creds} method={method} value={from} onChange={setFrom} />
         <Field label="No. referensi / bukti transfer (opsional)">
           <input className="input" value={reference} maxLength={80} onChange={e => setReference(e.target.value)} placeholder="cth: 2610120012345" />
         </Field>
+        <ProofField creds={creds} url={proofUrl} uploading={uploading} setUploading={setUploading} onChange={setProofUrl} />
         <Field label="Catatan pembayaran (opsional)">
           <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
         </Field>
@@ -511,6 +513,8 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
   const [method, setMethod] = useState<'transfer' | 'tunai'>('transfer');
   const [from, setFrom] = useState('');
   const [note, setNote] = useState('');
+  const [proofUrl, setProofUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: string[]; failed: { doc: string; error: string }[] } | null>(null);
 
@@ -528,7 +532,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
     const ok: string[] = []; const failed: { doc: string; error: string }[] = [];
     for (const s of list) {
       const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, {
-        method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, note }),
+        method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, note, proofUrl }),
       });
       if (r.ok) ok.push(s.docNumber);
       else failed.push({ doc: s.docNumber, error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membayar.' });
@@ -554,7 +558,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
 
   return (
     <ModalShell title={`Bayar ${list.length} Rekap ke Penitip`} subtitle={`Total ${rupiah(total)}`} icon={<Banknote size={17} />} onClose={onClose} size="modal-md"
-      footer={<ModalFooter onClose={onClose} onSave={run} saving={saving} disabled={!payDate} label={`Catat Pembayaran ${rupiah(total)}`} />}>
+      footer={<ModalFooter onClose={onClose} onSave={run} saving={saving} disabled={!payDate || uploading} label={`Catat Pembayaran ${rupiah(total)}`} />}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
           {list.map((s, idx) => {
@@ -605,13 +609,73 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
             </div>
           </Field>
         </div>
-        <Field label={method === 'transfer' ? 'Dari rekening (opsional)' : 'Dari kas (opsional)'}>
-          <input className="input" value={from} maxLength={120} onChange={e => setFrom(e.target.value)} placeholder={method === 'transfer' ? 'cth: BCA 1234567890 a.n. Toko' : 'cth: Kas toko'} />
-        </Field>
+        <PayFromField creds={creds} method={method} value={from} onChange={setFrom} />
+        <ProofField creds={creds} url={proofUrl} uploading={uploading} setUploading={setUploading} onChange={setProofUrl} hint="Foto yang sama dipakai untuk semua rekap ini." />
         <Field label="Catatan pembayaran (opsional)">
           <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
         </Field>
       </div>
     </ModalShell>
+  );
+}
+
+// Pilih sumber dana pembayaran dari dompet toko (tunai → dompet Tunai, transfer → Bank/E-Wallet), atau ketik manual.
+// Hanya untuk keterangan di bukti pembayaran — saldo yang berkurang tetap dompet lapak.
+function PayFromField({ creds, method, value, onChange }: { creds: string; method: 'transfer' | 'tunai'; value: string; onChange: (v: string) => void }) {
+  const wallets = useWallets(creds);
+  const MANUAL = '__manual';
+  const names = wallets.filter(w => w.isActive && (method === 'tunai' ? w.type === 'cash' : w.type !== 'cash')).map(w => w.name);
+  const [manual, setManual] = useState(false);
+  const isManual = manual || (!!value && !names.includes(value));
+  return (
+    <Field label={method === 'transfer' ? 'Dari rekening / dompet (opsional)' : 'Dari kas (opsional)'}>
+      <SearchSelect value={isManual ? MANUAL : value}
+        onChange={v => { if (v === MANUAL) { setManual(true); onChange(''); } else { setManual(false); onChange(v); } }}
+        placeholder={method === 'transfer' ? '– Pilih rekening / dompet –' : '– Pilih kas –'} searchPlaceholder="Cari dompet…"
+        options={[{ value: '', label: '– Tidak diisi –' }, ...names.map(n => ({ value: n, label: n })), { value: MANUAL, label: 'Lainnya (ketik manual)' }]} />
+      {isManual && (
+        <input className="input mt-2" value={value} maxLength={120} onChange={e => onChange(e.target.value)}
+          placeholder={method === 'transfer' ? 'cth: BCA 1234567890 a.n. Toko' : 'cth: Kas toko'} />
+      )}
+    </Field>
+  );
+}
+
+// Foto bukti transfer/pembayaran: pilih dari galeri atau langsung ambil gambar dengan kamera (HP).
+function ProofField({ creds, url, uploading, setUploading, onChange, hint }: {
+  creds: string; url: string; uploading: boolean; setUploading: (b: boolean) => void; onChange: (u: string) => void; hint?: string;
+}) {
+  const toast = useToast();
+  const pick = async (f: File | undefined) => {
+    if (!f) return;
+    setUploading(true);
+    try { onChange(await uploadImage(f, creds, 1400)); }
+    catch { toast.error('Upload foto bukti gagal, coba lagi.'); }
+    setUploading(false);
+  };
+  const btn = 'btn-ghost text-xs flex-1 justify-center cursor-pointer';
+  return (
+    <Field label="Foto bukti transfer (opsional)">
+      {url ? (
+        <div className="flex items-center gap-3 p-2 rounded-xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt="Bukti pembayaran" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+          <a href={url} target="_blank" rel="noopener noreferrer" className="btn-ghost text-xs"><ExternalLink size={12} /> Lihat</a>
+          <button type="button" onClick={() => onChange('')} className="btn-ghost text-xs ml-auto" style={{ color: 'var(--danger)' }}><X size={12} /> Hapus</button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <label className={btn} style={{ height: 40, opacity: uploading ? 0.6 : 1 }}>
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} Pilih foto
+            <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          <label className={btn} style={{ height: 40, opacity: uploading ? 0.6 : 1 }}>
+            <Camera size={14} /> Ambil gambar
+            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+        </div>
+      )}
+      {hint && <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+    </Field>
   );
 }

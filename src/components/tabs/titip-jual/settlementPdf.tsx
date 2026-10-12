@@ -1,6 +1,7 @@
 import { pdf } from '@react-pdf/renderer';
 import SettlementNotePDF from '@/lib/pdf/SettlementNotePDF';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
+import { toDataUri } from '@/lib/pdf/logo';
 import { qtyText } from './shared';
 
 export interface SettlementItem { productId: string; productName: string; qty: number; amount: number }
@@ -8,7 +9,7 @@ export interface Settlement {
   id: string; docNumber: string; stallId: string; stallName: string; consignorId: string; consignorName: string;
   periodFrom: string; periodTo: string; totalAmount: number; linesCount: number; items: SettlementItem[]; status: 'unpaid' | 'paid';
   note: string; createdBy: string; createdAt: { seconds: number } | null; paidAt: { seconds: number } | null; paidBy: string;
-  payDate?: string; payMethod?: 'transfer' | 'tunai' | ''; payFrom?: string; payReference?: string; payNote?: string;
+  payDate?: string; payMethod?: 'transfer' | 'tunai' | ''; payFrom?: string; payReference?: string; payNote?: string; payProofUrl?: string;
 }
 // Data penitip untuk blok "Penerima" di nota (opsional — kasir lapak tidak punya akses data penitip).
 export interface SettlementConsignor { name: string; phone?: string; address?: string; bankName?: string; bankAccount?: string; bankHolder?: string }
@@ -23,6 +24,7 @@ const tsDate = (t: { seconds: number } | null) => t ? new Date(t.seconds * 1000)
 // bila sudah — dipakai admin (Rekap & Bayar) dan kasir lapak (laporan ke owner).
 export async function downloadSettlementPdf(s: Settlement, store: StoreHeader, consignor?: SettlementConsignor): Promise<void> {
   const paid = s.status === 'paid';
+  const proofImage = paid && s.payProofUrl ? await toDataUri(s.payProofUrl) : undefined;
   const blob = await pdf(
     <SettlementNotePDF store={store} data={{
       docNumber: s.docNumber, status: s.status, createdAtText: tsDate(s.createdAt) || '-',
@@ -34,7 +36,7 @@ export async function downloadSettlementPdf(s: Settlement, store: StoreHeader, c
       paid: paid ? {
         dateText: s.payDate ? dateText(s.payDate) : tsDate(s.paidAt),
         method: s.payMethod === 'tunai' ? 'Tunai' : 'Transfer', from: s.payFrom || undefined, reference: s.payReference || undefined,
-        note: s.payNote || undefined, paidBy: s.paidBy || undefined,
+        note: s.payNote || undefined, paidBy: s.paidBy || undefined, proofImage,
       } : undefined,
     }} />,
   ).toBlob();

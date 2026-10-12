@@ -11,7 +11,7 @@ export interface SettlementNoteData {
   consignor: { name: string; phone?: string; address?: string; bankName?: string; bankAccount?: string; bankHolder?: string };
   items: { name: string; qty: string; amount: number }[];
   totalQty: string; total: number; note?: string; createdBy?: string; printedAt: string;
-  paid?: { dateText: string; method: string; from?: string; reference?: string; note?: string; paidBy?: string };
+  paid?: { dateText: string; method: string; from?: string; reference?: string; note?: string; paidBy?: string; proofImage?: string };
 }
 
 const rp = (n: number) => `Rp${Math.round(n).toLocaleString('id-ID')}`;
@@ -178,6 +178,12 @@ export default function SettlementNotePDF({ data, store }: { data: SettlementNot
             {data.paid.reference ? <View style={s.payRow}><Text style={s.payLabel}>No. referensi</Text><Text style={s.payValue}>{data.paid.reference}</Text></View> : null}
             {data.paid.paidBy ? <View style={s.payRow}><Text style={s.payLabel}>Dicatat oleh</Text><Text style={s.payValue}>{data.paid.paidBy}</Text></View> : null}
             {data.paid.note ? <View style={s.payRow}><Text style={s.payLabel}>Catatan bayar</Text><Text style={s.payValue}>{data.paid.note}</Text></View> : null}
+            {data.paid.proofImage ? (
+              <View style={{ marginTop: 6 }}>
+                <Text style={s.payLabel}>Bukti transfer</Text>
+                <Image src={data.paid.proofImage} style={{ marginTop: 3, maxHeight: 220, objectFit: 'contain', objectPosition: 'left' }} />
+              </View>
+            ) : null}
           </View>
         )}
 

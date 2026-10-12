@@ -22,6 +22,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const payMethod = body.method === 'tunai' ? 'tunai' : 'transfer';
   const text = (v: unknown, max: number) => typeof v === 'string' ? v.trim().slice(0, max) : '';
   const payFrom = text(body.from, 120); const payReference = text(body.reference, 80); const payNote = text(body.note, 200);
+  const payProofUrl = /^https?:\/\//.test(text(body.proofUrl, 500)) ? text(body.proofUrl, 500) : '';
   const sql = getSql();
   try {
     const paid = await sql.begin(async tx => {
@@ -42,12 +43,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       `;
       const [row] = await tx<SettlementRow[]>`
         update consign_settlements set status = 'paid', paid_at = now(), paid_by = ${guard.username},
-          pay_date = ${payDate}, pay_method = ${payMethod}, pay_from = ${payFrom}, pay_reference = ${payReference}, pay_note = ${payNote}
+          pay_date = ${payDate}, pay_method = ${payMethod}, pay_from = ${payFrom}, pay_reference = ${payReference}, pay_note = ${payNote}, pay_proof_url = ${payProofUrl}
         where id = ${id} returning *
       `;
       return row;
     });
-    await auditConsign(guard, 'update', 'settlements', id, `Bayar rekap ${paid.doc_number}`, { status: 'unpaid' }, { status: 'paid', total: Number(paid.total_amount), payDate, payMethod, payFrom, payReference });
+    await auditConsign(guard, 'update', 'settlements', id, `Bayar rekap ${paid.doc_number}`, { status: 'unpaid' }, { status: 'paid', total: Number(paid.total_amount), payDate, payMethod, payFrom, payReference, payProofUrl });
     return Response.json({ settlement: rowToSettlement(paid) });
   } catch (err) {
     if (err instanceof PayError) {

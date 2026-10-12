@@ -14,7 +14,7 @@ export interface SettlementRow {
   id: string; doc_number: string; stall_id: string; stall_name: string; consignor_id: string; consignor_name: string;
   period_from: string; period_to: string; total_amount: string; lines_count: number; items: unknown; status: 'unpaid' | 'paid';
   note: string; created_by: string | null; created_at: Date; paid_at: Date | null; paid_by: string | null;
-  pay_date: string | null; pay_method: string | null; pay_from: string; pay_reference: string; pay_note: string;
+  pay_date: string | null; pay_method: string | null; pay_from: string; pay_reference: string; pay_note: string; pay_proof_url: string;
 }
 export function rowToSettlement(r: SettlementRow) {
   return {
@@ -23,7 +23,7 @@ export function rowToSettlement(r: SettlementRow) {
     items: parseJsonb<SettlementItem[]>(r.items as SettlementItem[] | string | null) ?? [], status: r.status, note: r.note,
     createdBy: r.created_by ?? '', createdAt: toTimestamp(r.created_at), paidAt: toTimestamp(r.paid_at), paidBy: r.paid_by ?? '',
     payDate: r.pay_date ?? '', payMethod: (r.pay_method === 'tunai' ? 'tunai' : r.pay_method === 'transfer' ? 'transfer' : '') as 'transfer' | 'tunai' | '',
-    payFrom: r.pay_from ?? '', payReference: r.pay_reference ?? '', payNote: r.pay_note ?? '',
+    payFrom: r.pay_from ?? '', payReference: r.pay_reference ?? '', payNote: r.pay_note ?? '', payProofUrl: r.pay_proof_url ?? '',
   };
 }
 

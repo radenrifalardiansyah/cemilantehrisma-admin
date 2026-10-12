@@ -24,7 +24,7 @@ const SEP = '───────────────';
 export interface WaSettlement {
   docNumber: string; consignorName: string; stallName: string; periodFrom: string; periodTo: string;
   totalAmount: number; status: 'unpaid' | 'paid'; items: { productName: string; qty: number; amount: number }[];
-  payDate?: string; payMethod?: string; payReference?: string; payFrom?: string; payProofUrl?: string;
+  payDate?: string; payMethod?: string; payReference?: string; payFrom?: string; payProofUrl?: string; payProofUrl?: string;
 }
 
 // Baris rincian pembayaran (hanya bila sudah dibayar): tanggal, metode, dan no. referensi.
@@ -35,6 +35,7 @@ function payInfo(s: WaSettlement): string {
     s.payDate ? `\nDibayar: ${s.payDate}` : '',
     method ? `\nMetode: ${method}` : '',
     s.payReference ? `\nNo. referensi: ${s.payReference}` : '',
+    s.payProofUrl ? `\nBukti transfer: ${s.payProofUrl}` : '',
     s.payProofUrl ? `\nBukti transfer: ${s.payProofUrl}` : '',
   ].join('');
 }
