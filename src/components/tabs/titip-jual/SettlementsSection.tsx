@@ -44,6 +44,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
   const [payingDoc, setPayingDoc] = useState<Settlement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState<'pdf' | 'pay' | null>(null);
+  const [bulkPaying, setBulkPaying] = useState<{ list: Settlement[]; skipped: number; clear: () => void } | null>(null);
 
   const load = useCallback(async () => { setResult(await fetchSettlements(creds)); }, [creds]);
   useEffect(() => {
@@ -95,27 +96,10 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
     setBulkBusy(null);
   };
 
-  const bulkPay = async (list: Settlement[], clear: () => void) => {
+  const bulkPay = (list: Settlement[], clear: () => void) => {
     const unpaid = list.filter(s => s.status === 'unpaid');
     if (unpaid.length === 0) { toast.error('Tidak ada rekap belum dibayar di antara yang dipilih.'); return; }
-    const perStall = new Map<string, number>();
-    for (const s of unpaid) perStall.set(s.stallId, (perStall.get(s.stallId) ?? 0) + s.totalAmount);
-    const short = [...perStall].filter(([id, amt]) => amt > (data.stalls.find(x => x.id === id)?.balance ?? 0)).map(([id]) => stallName(id));
-    const total = unpaid.reduce((a, s) => a + s.totalAmount, 0);
-    if (!await confirm({
-      message: `Bayar ${unpaid.length} rekap senilai ${rupiah(total)} dari dompet lapak masing-masing?${list.length > unpaid.length ? ` (${list.length - unpaid.length} rekap yang sudah dibayar dilewati)` : ''}${short.length ? ` Saldo dompet ${short.join(', ')} tidak cukup untuk semua — rekap yang melebihi saldo akan gagal.` : ''} Ini hanya mencatat pembayaran — transfer ke rekening penitip tetap Anda lakukan sendiri.`,
-    })) return;
-    setBulkBusy('pay');
-    let ok = 0; const failed: string[] = [];
-    for (const s of unpaid) {
-      const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, { method: 'POST', headers });
-      if (r.ok) ok++; else failed.push(s.docNumber);
-    }
-    await Promise.all([load(), reload()]);
-    if (ok > 0) toast.success(`${ok} rekap dibayar.`);
-    if (failed.length > 0) toast.error(`Gagal membayar: ${failed.join(', ')} (cek saldo dompet lapak).`);
-    clear();
-    setBulkBusy(null);
+    setBulkPaying({ list: unpaid, skipped: list.length - unpaid.length, clear });
   };
 
   const downloadPdf = async (s: Settlement) => {
@@ -301,6 +285,10 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
       {creating && (
         <CreateModal creds={creds} data={data} initial={creating} onClose={() => setCreating(null)}
           onCreated={async (doc) => { setCreating(null); await Promise.all([load(), reload()]); toast.success(`Rekap ${doc} dibuat. Lanjutkan dengan membayar dari dompet lapak.`); }} />
+      )}
+      {bulkPaying && (
+        <BulkPayModal creds={creds} list={bulkPaying.list} skipped={bulkPaying.skipped} stalls={data.stalls} consignors={data.consignors}
+          onClose={() => setBulkPaying(null)} onDone={async () => { bulkPaying.clear(); await Promise.all([load(), reload()]); }} />
       )}
       {payingDoc && (
         <PayModal creds={creds} settlement={payingDoc} consignor={consignorFor(payingDoc)} phone={data.consignors.find(c => c.id === payingDoc.consignorId)?.phone ?? ''}
@@ -508,6 +496,121 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
           <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
         </Field>
         <ErrorBox message={error} />
+      </div>
+    </ModalShell>
+  );
+}
+
+// Bayar beberapa rekap sekaligus: tiap rekap menampilkan penerima (rekening, no. rekening, atas nama) dan
+// nominalnya supaya jelas siapa yang harus ditransfer. Rincian pembayaran (tanggal, metode, dst) berlaku untuk semua.
+function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDone }: {
+  creds: string; list: Settlement[]; skipped: number; stalls: SectionProps['data']['stalls']; consignors: SectionProps['data']['consignors'];
+  onClose: () => void; onDone: () => Promise<void>;
+}) {
+  const [payDate, setPayDate] = useState(todayKey());
+  const [method, setMethod] = useState<'transfer' | 'tunai'>('transfer');
+  const [from, setFrom] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ ok: string[]; failed: { doc: string; error: string }[] } | null>(null);
+
+  const total = list.reduce((a, s) => a + s.totalAmount, 0);
+  const perStall = new Map<string, number>();
+  for (const s of list) perStall.set(s.stallId, (perStall.get(s.stallId) ?? 0) + s.totalAmount);
+  const walletRows = [...perStall].map(([id, need]) => {
+    const st = stalls.find(x => x.id === id);
+    return { id, name: st?.name ?? '?', balance: st?.balance ?? 0, need };
+  });
+  const anyShort = walletRows.some(w => w.balance < w.need);
+
+  const run = async () => {
+    setSaving(true);
+    const ok: string[] = []; const failed: { doc: string; error: string }[] = [];
+    for (const s of list) {
+      const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, {
+        method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, note }),
+      });
+      if (r.ok) ok.push(s.docNumber);
+      else failed.push({ doc: s.docNumber, error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membayar.' });
+    }
+    if (ok.length > 0) await onDone();
+    setResult({ ok, failed });
+    setSaving(false);
+  };
+
+  if (result) {
+    return (
+      <ModalShell title="Hasil Pembayaran" subtitle={`${result.ok.length} berhasil · ${result.failed.length} gagal`} icon={<CheckCircle2 size={17} />} onClose={onClose}
+        footer={<button onClick={onClose} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Selesai</button>}>
+        <div className="space-y-2">
+          {result.ok.length > 0 && <p className="text-sm" style={{ color: '#059669' }}>Tercatat dibayar: {result.ok.join(', ')}</p>}
+          {result.failed.map(f => (
+            <p key={f.doc} className="text-sm" style={{ color: 'var(--danger)' }}><strong>{f.doc}</strong> — {f.error}</p>
+          ))}
+        </div>
+      </ModalShell>
+    );
+  }
+
+  return (
+    <ModalShell title={`Bayar ${list.length} Rekap ke Penitip`} subtitle={`Total ${rupiah(total)}`} icon={<Banknote size={17} />} onClose={onClose} size="modal-md"
+      footer={<ModalFooter onClose={onClose} onSave={run} saving={saving} disabled={!payDate} label={`Catat Pembayaran ${rupiah(total)}`} />}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+          {list.map((s, idx) => {
+            const c = consignors.find(x => x.id === s.consignorId);
+            const hasBank = !!(c?.bankName || c?.bankAccount);
+            return (
+              <div key={s.id} className="px-3 py-2.5" style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.consignorName}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{s.docNumber} · {s.stallName}</p>
+                  </div>
+                  <p className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--accent)' }}>{rupiah(s.totalAmount)}</p>
+                </div>
+                {hasBank ? (
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    {[c?.bankName, c?.bankAccount, c?.bankHolder ? `a.n. ${c.bankHolder}` : ''].filter(Boolean).join(' · ')}
+                  </p>
+                ) : <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>Rekening penitip belum diisi di data Penitip.</p>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="card p-3 space-y-1" style={{ background: 'var(--surface-2)' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Saldo dompet lapak</p>
+          {walletRows.map(w => (
+            <p key={w.id} className="text-xs tabular" style={{ color: w.balance < w.need ? 'var(--danger)' : 'var(--text-secondary)' }}>
+              {w.name}: {rupiah(w.balance)} → {rupiah(w.balance - w.need)}{w.balance < w.need ? ' (tidak cukup — sebagian rekap akan gagal)' : ''}
+            </p>
+          ))}
+        </div>
+        {skipped > 0 && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{skipped} rekap yang sudah dibayar dilewati.</p>}
+        <p className="text-[11px]" style={{ color: anyShort ? 'var(--danger)' : 'var(--text-muted)' }}>
+          Ini hanya mencatat pembayaran. Transfer/penyerahan uang ke tiap penitip Anda lakukan sendiri; rincian di bawah berlaku untuk semua rekap ini.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Tanggal bayar" required><input className="input" type="date" value={payDate} max={todayKey()} onChange={e => setPayDate(e.target.value)} /></Field>
+          <Field label="Metode">
+            <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
+              {(['transfer', 'tunai'] as const).map(m => (
+                <button key={m} type="button" onClick={() => setMethod(m)} className="flex-1 px-3 py-2.5"
+                  style={method === m ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                  {m === 'transfer' ? 'Transfer' : 'Tunai'}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
+        <Field label={method === 'transfer' ? 'Dari rekening (opsional)' : 'Dari kas (opsional)'}>
+          <input className="input" value={from} maxLength={120} onChange={e => setFrom(e.target.value)} placeholder={method === 'transfer' ? 'cth: BCA 1234567890 a.n. Toko' : 'cth: Kas toko'} />
+        </Field>
+        <Field label="Catatan pembayaran (opsional)">
+          <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
+        </Field>
       </div>
     </ModalShell>
   );
