@@ -21,7 +21,7 @@ await sql.begin(async tx => {
   if (!main) throw new Error('menu consign tidak ada');
   const [folder] = await tx`select "order" from menus where id = 'consign-folder'`;
   await tx`update menus set parent_id = null, label = 'Titip Jual', icon = 'Handshake', "order" = ${folder ? folder.order : main.order}, updated_at = now() where id = 'consign'`;
-  for (const [id, label, icon, order] of [['consign-opname', 'Opname Titipan', 'ClipboardList', 0], ['consign-journal', 'Jurnal Kas Lapak', 'Wallet', 1]]) {
+  for (const [id, label, icon, order] of [['consign-opname', 'Opname Titipan', 'ClipboardList', 0], ['consign-journal', 'Dompet Lapak', 'Wallet', 1]]) {
     await tx`
       insert into menus (id, module_id, parent_id, feature_key, label, icon, "order", is_active, created_at, updated_at)
       values (${id}, ${main.module_id}, 'consign', ${id}, ${label}, ${icon}, ${order}, true, now(), now())

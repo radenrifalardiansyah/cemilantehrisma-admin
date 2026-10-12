@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Banknote, Undo2, FileDown, Loader2, HandCoins, MessageCircle, Pencil, Trash2 } from 'lucide-react';
+import { Banknote, Undo2, FileDown, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
@@ -29,7 +29,7 @@ async function fetchSettlements(creds: string): Promise<Result> {
 
 // Rekap bagi hasil & pembayaran ke penitip. Alur: Buat Rekap (kunci penjualan periode itu) →
 // Bayar (dari dompet lapak). Rekap yang belum dibayar bisa dibatalkan; yang sudah dibayar tidak.
-export default function SettlementsSection({ creds, data, reload, can }: SectionProps) {
+export default function SettlementsSection({ creds, data, reload, can, openJournal }: SectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const store = useStoreHeader(creds);
@@ -52,7 +52,8 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
   const stallName = (id: string) => data.stalls.find(s => s.id === id)?.name ?? '?';
 
   const pay = async (s: Settlement) => {
-    if (!await confirm({ message: `Bayar ${rupiah(s.totalAmount)} ke ${s.consignorName} dari dompet ${s.stallName}? Saldo dompet lapak akan berkurang.` })) return;
+    const balance = data.stalls.find(x => x.id === s.stallId)?.balance ?? 0;
+    if (!await confirm({ message: `Bayar ${rupiah(s.totalAmount)} ke ${s.consignorName} dari dompet ${s.stallName}? Saldo dompet ${rupiah(balance)} → ${rupiah(balance - s.totalAmount)}. Ini hanya mencatat pembayaran — transfer ke rekening penitip tetap Anda lakukan sendiri.` })) return;
     setBusyId(s.id);
     const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, { method: 'POST', headers });
     if (r.ok) { await Promise.all([load(), reload()]); toast.success(`${s.docNumber} dibayar.`); }
@@ -113,6 +114,30 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
 
   return (
     <div className="space-y-4">
+      {/* Saldo dompet tiap lapak — uang penjualan terkumpul di sini dan berkurang saat rekap dibayar. */}
+      <div className="card p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Wallet size={14} style={{ color: 'var(--accent)' }} />
+          <p className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>Dompet Lapak</p>
+          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>— bertambah dari penjualan, berkurang saat rekap dibayar</p>
+        </div>
+        {data.stalls.length === 0 ? (
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada lapak.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {data.stalls.map(st => (
+              <div key={st.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{st.name}</p>
+                  <p className="text-sm font-bold tabular" style={{ color: st.balance > 0 ? '#059669' : 'var(--text-muted)' }}>{rupiah(st.balance)}</p>
+                </div>
+                {openJournal && <button onClick={() => openJournal(st.id)} className="btn-ghost text-[11px] flex-shrink-0" style={{ height: 28 }}>Jurnal</button>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Belum direkap', val: rupiah(owedUnsettled), tone: owedUnsettled > 0 ? 'var(--accent)' : undefined },

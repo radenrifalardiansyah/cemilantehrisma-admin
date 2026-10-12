@@ -25,7 +25,7 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'consign',          label: 'Titip Jual',         actions: CRUD },
   // Opname & Jurnal Kas Lapak = menu sendiri di bawah folder Titip Jual (data & API-nya tetap dijaga 'consign').
   { key: 'consign-opname',   label: 'Opname Titipan',     actions: ['view', 'create', 'delete'] },
-  { key: 'consign-journal',  label: 'Jurnal Kas Lapak',   actions: ['view', 'edit'] },
+  { key: 'consign-journal',  label: 'Dompet Lapak',   actions: ['view', 'edit'] },
   // Produk toko di lapak: view; create = kirim/retur/rekap setoran; edit = harga & bayar setoran; delete = batalkan dokumen.
   { key: 'stall-own',       label: 'Produk Toko di Lapak', actions: CRUD },
   // `delete` = membatalkan (void) penjualan lapak.
