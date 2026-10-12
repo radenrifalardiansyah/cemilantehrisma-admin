@@ -24,6 +24,18 @@ const SEP = '───────────────';
 export interface WaSettlement {
   docNumber: string; consignorName: string; stallName: string; periodFrom: string; periodTo: string;
   totalAmount: number; status: 'unpaid' | 'paid'; items: { productName: string; qty: number; amount: number }[];
+  payDate?: string; payMethod?: string; payReference?: string; payFrom?: string;
+}
+
+// Baris rincian pembayaran (hanya bila sudah dibayar): tanggal, metode, dan no. referensi.
+function payInfo(s: WaSettlement): string {
+  if (s.status !== 'paid') return '';
+  const method = s.payMethod === 'tunai' ? 'Tunai' : s.payMethod === 'transfer' ? 'Transfer' : '';
+  return [
+    s.payDate ? `\nDibayar: ${s.payDate}` : '',
+    method ? `\nMetode: ${method}` : '',
+    s.payReference ? `\nNo. referensi: ${s.payReference}` : '',
+  ].join('');
 }
 
 // Rekap bagi hasil: ke penitip (admin) atau ke owner (kasir lapak).
@@ -38,7 +50,7 @@ ${head}
 No: ${s.docNumber}
 Lapak: ${s.stallName}
 Periode: ${s.periodFrom === s.periodTo ? s.periodFrom : `${s.periodFrom} s/d ${s.periodTo}`}
-Status: ${s.status === 'paid' ? 'SUDAH DIBAYAR' : 'Belum dibayar'}
+Status: ${s.status === 'paid' ? 'SUDAH DIBAYAR' : 'Belum dibayar'}${payInfo(s)}
 ${SEP}
 ${lines}
 ${SEP}

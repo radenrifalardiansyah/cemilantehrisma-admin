@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         insert into stall_wallet_entries (id, stall_id, kind, amount, ref_id, note, created_by, created_at)
         values (${randomUUID()}, ${st.stall_id}, 'payout', ${Number(st.total_amount)}, ${id}, ${`Batal bayar ${st.consignor_name} · ${st.doc_number}`}, ${guard.username}, now())
       `;
-      const [updated] = await tx<SettlementRow[]>`update consign_settlements set status = 'unpaid', paid_at = null, paid_by = null where id = ${id} returning *`;
+      const [updated] = await tx<SettlementRow[]>`update consign_settlements set status = 'unpaid', paid_at = null, paid_by = null, pay_date = null, pay_method = null, pay_from = '', pay_reference = '', pay_note = '' where id = ${id} returning *`;
       return updated;
     });
     await auditConsign(guard, 'update', 'settlements', id, `Batal bayar rekap ${row.doc_number}`, { status: 'paid' }, { status: 'unpaid', total: Number(row.total_amount) });

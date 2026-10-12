@@ -93,6 +93,7 @@ export async function exportPdf<T>(cols: ExportCol<T>[], rows: T[], title: strin
   const blob = await pdf(
     <GenericTablePDF
       store={store}
+      orientation="portrait"
       data={{
         title, label,
         generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),

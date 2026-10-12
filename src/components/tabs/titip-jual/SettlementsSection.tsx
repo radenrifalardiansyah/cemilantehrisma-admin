@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet } from 'lucide-react';
+import { Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet, CheckCircle2 } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
@@ -14,7 +14,7 @@ import { periodRange, type PeriodKey } from '@/lib/period';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import PeriodBar from './PeriodBar';
 import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
-import { downloadSettlementPdf, type Settlement, type SettlementItem } from './settlementPdf';
+import { downloadSettlementPdf, type Settlement, type SettlementItem, type SettlementConsignor } from './settlementPdf';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText, type SectionProps } from './shared';
 
 interface Payable { stallId: string; consignorId: string; consignorName: string; amount: number; lines: number; firstDate: string; lastDate: string }
@@ -41,6 +41,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
   const [consignorFilter, setConsignorFilter] = useState('');
   const [creating, setCreating] = useState<{ stallId: string; consignorId: string } | null>(null);
   const [editingDoc, setEditingDoc] = useState<Settlement | null>(null);
+  const [payingDoc, setPayingDoc] = useState<Settlement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState<'pdf' | 'pay' | null>(null);
 
@@ -53,14 +54,10 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
 
   const stallName = (id: string) => data.stalls.find(s => s.id === id)?.name ?? '?';
 
-  const pay = async (s: Settlement) => {
-    const balance = data.stalls.find(x => x.id === s.stallId)?.balance ?? 0;
-    if (!await confirm({ message: `Bayar ${rupiah(s.totalAmount)} ke ${s.consignorName} dari dompet ${s.stallName}? Saldo dompet ${rupiah(balance)} → ${rupiah(balance - s.totalAmount)}. Ini hanya mencatat pembayaran — transfer ke rekening penitip tetap Anda lakukan sendiri.` })) return;
-    setBusyId(s.id);
-    const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, { method: 'POST', headers });
-    if (r.ok) { await Promise.all([load(), reload()]); toast.success(`${s.docNumber} dibayar.`); }
-    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membayar rekap.');
-    setBusyId(null);
+  // Data penitip untuk blok "Penerima" di nota PDF (rekening, alamat, telepon).
+  const consignorFor = (s: Settlement): SettlementConsignor | undefined => {
+    const c = data.consignors.find(x => x.id === s.consignorId);
+    return c ? { name: c.name, phone: c.phone || undefined, address: c.address || undefined, bankName: c.bankName || undefined, bankAccount: c.bankAccount || undefined, bankHolder: c.bankHolder || undefined } : undefined;
   };
 
   const unpay = async (s: Settlement) => {
@@ -81,17 +78,19 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
     setBusyId(null);
   };
 
+  const waData = (s: Settlement) => ({ ...s, payDate: s.payDate ? s.payDate.split('-').reverse().join('/') : undefined });
+
   // Kirim rekap ke penitip lewat WhatsApp (tautan wa.me — pengguna menekan kirim sendiri).
   const sendWa = (s: Settlement) => {
     const phone = data.consignors.find(c => c.id === s.consignorId)?.phone;
     if (!phone) toast.error('Nomor WhatsApp penitip belum diisi — pilih kontaknya manual di WhatsApp.');
-    window.open(waLink(phone, settlementMessage(s, store.name, 'penitip')), '_blank', 'noopener');
+    window.open(waLink(phone, settlementMessage(waData(s), store.name, 'penitip')), '_blank', 'noopener');
   };
 
   // Aksi massal pada rekap yang dicentang: unduh PDF masing-masing & bayar dari dompet lapak masing-masing.
   const bulkPdf = async (list: Settlement[]) => {
     setBulkBusy('pdf');
-    try { for (const s of list) await downloadSettlementPdf(s, store); toast.success(`${list.length} PDF rekap diunduh.`); }
+    try { for (const s of list) await downloadSettlementPdf(s, store, consignorFor(s)); toast.success(`${list.length} PDF rekap diunduh.`); }
     catch { toast.error('Gagal membuat PDF.'); }
     setBulkBusy(null);
   };
@@ -121,7 +120,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
 
   const downloadPdf = async (s: Settlement) => {
     setBusyId(s.id);
-    try { await downloadSettlementPdf(s, store); }
+    try { await downloadSettlementPdf(s, store, consignorFor(s)); }
     catch { toast.error('Gagal membuat PDF.'); }
     setBusyId(null);
   };
@@ -262,7 +261,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
             </Tooltip>
             {s.status === 'unpaid' && can('edit') && (
               <Tooltip label="Bayar dari dompet lapak">
-                <button onClick={() => pay(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
+                <button onClick={() => setPayingDoc(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
               </Tooltip>
             )}
             {s.status === 'unpaid' && can('edit') && (
@@ -302,6 +301,12 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
       {creating && (
         <CreateModal creds={creds} data={data} initial={creating} onClose={() => setCreating(null)}
           onCreated={async (doc) => { setCreating(null); await Promise.all([load(), reload()]); toast.success(`Rekap ${doc} dibuat. Lanjutkan dengan membayar dari dompet lapak.`); }} />
+      )}
+      {payingDoc && (
+        <PayModal creds={creds} settlement={payingDoc} consignor={consignorFor(payingDoc)} phone={data.consignors.find(c => c.id === payingDoc.consignorId)?.phone ?? ''}
+          balance={data.stalls.find(x => x.id === payingDoc.stallId)?.balance ?? 0} storeName={store.name}
+          onClose={() => setPayingDoc(null)} onPaid={async () => { await Promise.all([load(), reload()]); }}
+          onPdf={async paid => downloadSettlementPdf(paid, store, consignorFor(paid))} />
       )}
       {editingDoc && (
         <CreateModal creds={creds} data={data} initial={{ stallId: editingDoc.stallId, consignorId: editingDoc.consignorId }} editing={editingDoc} onClose={() => setEditingDoc(null)}
@@ -399,6 +404,109 @@ function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
           </div>
         )}
         <Field label="Catatan (opsional)"><input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} /></Field>
+        <ErrorBox message={error} />
+      </div>
+    </ModalShell>
+  );
+}
+
+// Bayar rekap: catat rincian pembayaran (tanggal, metode, rekening asal, no. referensi) — menjadi isi Bukti
+// Pembayaran PDF dan pesan WhatsApp. Aplikasi hanya MENCATAT; transfer ke rekening penitip dilakukan sendiri.
+function PayModal({ creds, settlement, consignor, phone, balance, storeName, onClose, onPaid, onPdf }: {
+  creds: string; settlement: Settlement; consignor?: SettlementConsignor; phone: string; balance: number; storeName: string;
+  onClose: () => void; onPaid: () => Promise<void>; onPdf: (s: Settlement) => Promise<void>;
+}) {
+  const toast = useToast();
+  const [payDate, setPayDate] = useState(todayKey());
+  const [method, setMethod] = useState<'transfer' | 'tunai'>('transfer');
+  const [from, setFrom] = useState('');
+  const [reference, setReference] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState<Settlement | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const short = balance < settlement.totalAmount;
+
+  const pay = async () => {
+    setSaving(true); setError('');
+    const r = await fetch(`${API}/api/consign/settlements/${settlement.id}/pay`, {
+      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ payDate, method, from, reference, note }),
+    });
+    const d = await r.json().catch(() => ({})) as { settlement?: Settlement; error?: string };
+    if (r.ok && d.settlement) { setDone(d.settlement); await onPaid(); }
+    else setError(d.error ?? 'Gagal membayar rekap.');
+    setSaving(false);
+  };
+
+  const sendWa = () => {
+    if (!done) return;
+    if (!phone) toast.error('Nomor WhatsApp penitip belum diisi — pilih kontaknya manual di WhatsApp.');
+    window.open(waLink(phone, settlementMessage({ ...done, payDate: done.payDate ? done.payDate.split('-').reverse().join('/') : undefined }, storeName, 'penitip')), '_blank', 'noopener');
+  };
+  const pdf = async () => {
+    if (!done) return;
+    setPdfBusy(true);
+    try { await onPdf(done); } catch { toast.error('Gagal membuat PDF.'); }
+    setPdfBusy(false);
+  };
+
+  if (done) {
+    return (
+      <ModalShell title="Pembayaran Tercatat" subtitle={`${done.docNumber} · ${done.consignorName}`} icon={<CheckCircle2 size={17} />} onClose={onClose}
+        footer={<button onClick={onClose} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Selesai</button>}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Pembayaran <strong>{rupiah(done.totalAmount)}</strong> ke {done.consignorName} sudah dicatat. Kirim nota ke penitip sekarang?
+          </p>
+          <button onClick={sendWa} className="btn-ghost text-sm" style={{ justifyContent: 'center', padding: '10px 0', color: '#059669' }}>
+            <MessageCircle size={15} /> Kirim Nota lewat WhatsApp
+          </button>
+          <button onClick={pdf} disabled={pdfBusy} className="btn-ghost text-sm" style={{ justifyContent: 'center', padding: '10px 0' }}>
+            {pdfBusy ? <Loader2 size={15} className="animate-spin" /> : <PdfIcon size={15} />} Unduh Bukti Pembayaran (PDF)
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  return (
+    <ModalShell title="Bayar Rekap ke Penitip" subtitle={`${settlement.docNumber} · ${settlement.stallName}`} icon={<Banknote size={17} />} onClose={onClose}
+      footer={<ModalFooter onClose={onClose} onSave={pay} saving={saving} disabled={!payDate} label={`Catat Pembayaran ${rupiah(settlement.totalAmount)}`} />}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="card p-3" style={{ background: 'var(--surface-2)' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Bayar kepada</p>
+          <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{settlement.consignorName}</p>
+          {consignor?.bankName || consignor?.bankAccount ? (
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{[consignor.bankName, consignor.bankAccount, consignor.bankHolder ? `a.n. ${consignor.bankHolder}` : ''].filter(Boolean).join(' · ')}</p>
+          ) : <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Rekening penitip belum diisi di data Penitip.</p>}
+          <p className="text-xs mt-1.5 tabular" style={{ color: short ? 'var(--danger)' : 'var(--text-muted)' }}>
+            Saldo dompet {settlement.stallName}: {rupiah(balance)} → {rupiah(balance - settlement.totalAmount)}{short ? ' (tidak cukup)' : ''}
+          </p>
+        </div>
+        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Ini hanya mencatat pembayaran. Transfer/penyerahan uang ke penitip Anda lakukan sendiri, lalu isi rinciannya di bawah untuk bukti pembayaran.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Tanggal bayar" required><input className="input" type="date" value={payDate} max={todayKey()} onChange={e => setPayDate(e.target.value)} /></Field>
+          <Field label="Metode">
+            <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
+              {(['transfer', 'tunai'] as const).map(m => (
+                <button key={m} type="button" onClick={() => setMethod(m)} className="flex-1 px-3 py-2.5"
+                  style={method === m ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                  {m === 'transfer' ? 'Transfer' : 'Tunai'}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
+        <Field label={method === 'transfer' ? 'Dari rekening (opsional)' : 'Dari kas (opsional)'}>
+          <input className="input" value={from} maxLength={120} onChange={e => setFrom(e.target.value)} placeholder={method === 'transfer' ? 'cth: BCA 1234567890 a.n. Toko' : 'cth: Kas toko'} />
+        </Field>
+        <Field label="No. referensi / bukti transfer (opsional)">
+          <input className="input" value={reference} maxLength={80} onChange={e => setReference(e.target.value)} placeholder="cth: 2610120012345" />
+        </Field>
+        <Field label="Catatan pembayaran (opsional)">
+          <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
+        </Field>
         <ErrorBox message={error} />
       </div>
     </ModalShell>

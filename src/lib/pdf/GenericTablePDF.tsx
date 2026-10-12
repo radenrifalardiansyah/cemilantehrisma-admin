@@ -66,10 +66,11 @@ function cellText(v: string | number | undefined | null): string {
   return v === undefined || v === null || v === '' ? '–' : String(v);
 }
 
-export default function GenericTablePDF({ data, store }: { data: GenericTablePDFData; store: StoreHeader }) {
+// orientation: default 'landscape' (tab lain); Titip Jual memakai 'portrait'.
+export default function GenericTablePDF({ data, store, orientation = 'landscape' }: { data: GenericTablePDFData; store: StoreHeader; orientation?: 'landscape' | 'portrait' }) {
   return (
     <Document>
-      <Page size="A4" orientation="landscape" style={s.page}>
+      <Page size="A4" orientation={orientation} style={s.page}>
         <View style={s.topBar} />
 
         <View style={s.headerRow}>
