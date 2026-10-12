@@ -7,8 +7,8 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
   ShoppingCart, Plus, Minus, ChevronLeft, CheckCircle2, Loader2, User, Phone,
-  Trash2, Tag, Send, Search, Wallet, X, Banknote, Printer,
-  MessageCircle, Receipt, ArrowRight, Camera, PauseCircle, BarChart2, TrendingUp, Award, CalendarClock,
+  Trash2, Tag, Search, Wallet, X, Banknote, Printer,
+  MessageCircle, Receipt, Camera, PauseCircle, BarChart2, TrendingUp, Award, CalendarClock,
   RefreshCw, ScanLine,
 } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
@@ -28,6 +28,7 @@ import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { resolveScannedProductId } from '@/lib/scan';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
+import { ModalShell } from './titip-jual/shared';
 import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
@@ -1553,57 +1554,39 @@ export default function PosTab({
     </div>
   );
 
-  // ─── Success panel ─────────────────────────────────────────────────────────
-  const successContent = (
-    <div className="h-full overflow-y-auto thin-scrollbar flex flex-col items-center px-6 py-10 gap-5" style={{ maxWidth: 480, margin: '0 auto' }}>
-      <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'var(--success-bg)' }}>
-        <CheckCircle2 size={44} style={{ color: 'var(--success)' }} />
-      </div>
-      <div className="text-center">
-        <p className="text-xl font-extrabold mb-2" style={{ color: 'var(--text-primary)' }}>Transaksi Berhasil!</p>
-        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          Pesanan <strong>{lastReceipt?.customerName}</strong> senilai{' '}
-          <strong className="tabular">{lastReceipt ? formatCurrency(lastReceipt.total) : ''}</strong> sudah diproses & masuk ke Pesanan.
+  // ─── Modal sukses (muncul di atas kasir setelah transaksi diproses) ─────────
+  const successModal = posView === 'done' && lastReceipt && (
+    <ModalShell title="Transaksi Berhasil" subtitle={invoiceNo} icon={<CheckCircle2 size={17} />} onClose={handleNewTransaction}
+      footer={(
+        <>
+          <button onClick={printReceipt} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}><Printer size={14} /> Cetak</button>
+          <button onClick={sendWhatsApp} disabled={!waPhoneDraft.trim()} className="btn-ghost disabled:opacity-40" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', color: '#059669' }}><MessageCircle size={14} /> WhatsApp</button>
+          <button onClick={handleNewTransaction} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Transaksi Baru</button>
+        </>
+      )}>
+      <div className="text-center space-y-1 py-2">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Total</p>
+        <p className="text-2xl font-bold tabular" style={{ color: 'var(--accent)' }}>{formatCurrency(lastReceipt.total)}</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {lastReceipt.isFree ? 'Transaksi gratis'
+            : lastReceipt.paymentMethod === 'cash' ? `Tunai · diterima ${formatCurrency(lastReceipt.amountPaid ?? 0)}`
+            : lastReceipt.paymentMethod === 'kredit' ? `Kredit · belum lunas${lastReceipt.downPayment ? ` · DP ${formatCurrency(lastReceipt.downPayment)}` : ''}`
+            : `Transfer${lastReceipt.transferBank ? ` ${lastReceipt.transferBank}` : ''}`}
         </p>
-        {invoiceNo && <p className="text-xs mt-1.5 badge badge-amber mx-auto inline-block">{invoiceNo}</p>}
+        {!lastReceipt.isFree && lastReceipt.paymentMethod === 'cash' && (
+          <p className="text-lg font-bold tabular" style={{ color: '#059669' }}>Kembalian {formatCurrency(lastReceipt.changeAmount ?? 0)}</p>
+        )}
       </div>
-
-      <div className="w-full grid grid-cols-2 gap-2.5">
-        <button onClick={printReceipt} className="btn-ghost justify-center gap-2 py-3 text-sm font-semibold">
-          <Printer size={15} /> Cetak Struk
-        </button>
-        {lastReceipt?.pdfUrl ? (
-          <a href={lastReceipt.pdfUrl} target="_blank" rel="noopener noreferrer"
-            className="btn-ghost justify-center gap-2 py-3 text-sm font-semibold">
-            <PdfIcon size={15} /> Lihat Invoice
-          </a>
-        ) : <span />}
-      </div>
-
-      <div className="w-full card p-3.5 space-y-2.5">
-        <p className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
-          <MessageCircle size={13} /> Kirim ke WhatsApp (opsional)
-        </p>
+      <div className="space-y-2.5 mt-2">
+        <input type="tel" value={waPhoneDraft} onChange={e => setWaPhoneDraft(e.target.value)} className="input" placeholder="Nomor WhatsApp pelanggan (08xxx) untuk kirim struk" />
         <div className="flex gap-2">
-          <input type="tel" value={waPhoneDraft} onChange={e => setWaPhoneDraft(e.target.value)}
-            className="input flex-1" placeholder="Nomor WhatsApp (08xxx)" />
-          <Tooltip label="Kirim WhatsApp">
-            <button onClick={sendWhatsApp} disabled={!waPhoneDraft.trim()} className="btn-primary px-4 disabled:opacity-40">
-              <Send size={14} />
-            </button>
-          </Tooltip>
+          {lastReceipt.pdfUrl && (
+            <a href={lastReceipt.pdfUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost flex-1 justify-center gap-2 py-2 text-xs font-semibold"><PdfIcon size={13} /> Lihat Invoice</a>
+          )}
+          <button onClick={() => { handleNewTransaction(); onGoToOrders(); }} className="btn-ghost flex-1 justify-center gap-2 py-2 text-xs font-semibold"><Receipt size={13} /> Lihat di Pesanan</button>
         </div>
       </div>
-
-      <div className="w-full flex gap-2.5">
-        <button onClick={onGoToOrders} className="btn-ghost flex-1 justify-center gap-2 py-3 text-sm font-semibold">
-          <Receipt size={15} /> Lihat di Pesanan
-        </button>
-        <button onClick={handleNewTransaction} className="btn-primary flex-1 justify-center gap-2 py-3 text-sm">
-          Transaksi Baru <ArrowRight size={14} />
-        </button>
-      </div>
-    </div>
+    </ModalShell>
   );
 
   // ─── Shift bar (topbar) & modal ────────────────────────────────────────────
@@ -1923,21 +1906,21 @@ export default function PosTab({
       {/* Desktop: catalog + order panel selalu berdampingan */}
       <div className="hidden lg:grid flex-1 min-h-0" style={{ gridTemplateColumns: '1fr 400px' }}>
         <div className="min-w-0 h-full" style={{ borderRight: '1px solid var(--border)' }}>{catalogContent}</div>
-        <div className="h-full overflow-hidden">{posView === 'done' ? successContent : orderPanelContent}</div>
+        <div className="h-full overflow-hidden">{orderPanelContent}</div>
       </div>
 
       {/* Mobile/tablet: alur bertahap (katalog → checkout → selesai) */}
       <div className="lg:hidden flex-1 min-h-0 relative overflow-hidden">
-        {posView === 'products' && catalogContent}
+        {(posView === 'products' || posView === 'done') && catalogContent}
         {posView === 'cart' && (
           <div className="h-full flex flex-col">
             {mobileCartHeader}
             <div className="flex-1 overflow-hidden">{orderPanelContent}</div>
           </div>
         )}
-        {posView === 'done' && successContent}
       </div>
 
+      {successModal}
       {shiftModalContent}
       {heldModalContent}
       {reportModalContent}
