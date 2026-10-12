@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package, PackagePlus, ClipboardList, ScanLine, PauseCircle, MessageCircle } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package, PackagePlus, ClipboardList, ScanLine, PauseCircle, MessageCircle, Tag, Banknote, User, Phone } from 'lucide-react';
 import Image from 'next/image';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -15,7 +15,7 @@ import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import { useToast } from '@/components/Toast';
 import type { Action } from '@/types/rbac';
-import { Badge, Field, ModalShell, ErrorBox, rupiah, qtyText } from './titip-jual/shared';
+import { Badge, ModalShell, ErrorBox, rupiah, qtyText } from './titip-jual/shared';
 import ShiftModal from './kasir-lapak/ShiftModal';
 import HistoryModal from './kasir-lapak/HistoryModal';
 import ReceiveModal from './kasir-lapak/ReceiveModal';
@@ -233,79 +233,123 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const shown = (items ?? []).filter(i => (kind === 'all' || i.kind === kind) && (!cat || i.category === cat) && (!q || `${i.name} ${i.code} ${i.consignorName ?? ''}`.toLowerCase().includes(q)));
 
   const checkout = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {lines.length === 0 ? (
-        <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>Keranjang kosong. Ketuk barang untuk menambah.</p>
-      ) : lines.map(l => (
-        <div key={l.key} className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 relative" style={{ background: 'var(--surface-2)' }}>
-            {l.item.imageUrl
-              ? <Image src={l.item.imageUrl} alt={l.item.name} fill className="object-contain" sizes="40px" unoptimized />
-              : <div className="w-full h-full flex items-center justify-center text-lg">{itemEmoji(l.item)}</div>}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{l.item.name}</p>
-            <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{rupiah(l.item.price)} / {l.item.unit}</p>
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <button className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-              onClick={() => setQty(l.key, l.qty - 1, l.item.stock)}><Minus size={11} strokeWidth={2.5} /></button>
-            <span className="w-6 text-center text-sm font-black tabular">{qtyText(l.qty)}</span>
-            <button className="w-7 h-7 rounded-full text-white flex items-center justify-center disabled:opacity-40" style={{ background: 'var(--accent)' }}
-              onClick={() => setQty(l.key, l.qty + 1, l.item.stock)} disabled={l.qty >= l.item.stock}><Plus size={11} strokeWidth={2.5} /></button>
-          </div>
-          <span className="text-sm font-bold tabular w-20 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>{rupiah(l.item.price * l.qty)}</span>
-          <button className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}
-            onClick={() => setQty(l.key, 0, l.item.stock)}><Trash2 size={13} /></button>
+    <div className="space-y-3">
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-2)' }}>
+          <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            Pesanan {lines.length > 0 && <span style={{ color: 'var(--accent)' }}>({qtyText(count)} pcs)</span>}
+          </span>
+          {lines.length > 0 && (
+            <div className="flex items-center gap-3">
+              <button onClick={holdCurrent} className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--accent)' }}><PauseCircle size={12} /> Tahan</button>
+              <button onClick={resetCart} className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--danger)' }}><Trash2 size={12} /> Kosongkan</button>
+            </div>
+          )}
         </div>
-      ))}
+        {lines.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <ShoppingCart size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada item. Ketuk barang untuk menambah.</p>
+          </div>
+        ) : (
+          <>
+            <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+              {lines.map(l => (
+                <div key={l.key} className="flex items-center gap-3 px-4 py-3">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 relative" style={{ background: 'var(--surface-2)' }}>
+                    {l.item.imageUrl
+                      ? <Image src={l.item.imageUrl} alt={l.item.name} fill className="object-contain" sizes="40px" unoptimized />
+                      : <div className="w-full h-full flex items-center justify-center text-lg">{itemEmoji(l.item)}</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{l.item.name}</p>
+                    <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{rupiah(l.item.price)} / {l.item.unit}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                      onClick={() => setQty(l.key, l.qty - 1, l.item.stock)}><Minus size={11} strokeWidth={2.5} /></button>
+                    <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{qtyText(l.qty)}</span>
+                    <button className="w-7 h-7 rounded-full text-white flex items-center justify-center disabled:opacity-40" style={{ background: 'var(--accent)' }}
+                      onClick={() => setQty(l.key, l.qty + 1, l.item.stock)} disabled={l.qty >= l.item.stock}><Plus size={11} strokeWidth={2.5} /></button>
+                  </div>
+                  <span className="text-sm font-bold tabular w-16 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>{rupiah(l.item.price * l.qty)}</span>
+                  <button className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}
+                    onClick={() => setQty(l.key, 0, l.item.stock)}><Trash2 size={12} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)', borderTop: '1px solid var(--border-2)' }}>
+              {discountNum > 0 && (
+                <>
+                  <div className="px-4 py-2.5 flex justify-between">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Subtotal ({qtyText(count)} barang)</span>
+                    <span className="text-sm font-semibold tabular" style={{ color: 'var(--text-secondary)' }}>{rupiah(subtotal)}</span>
+                  </div>
+                  <div className="px-4 py-2.5 flex justify-between" style={{ background: 'var(--success-bg)' }}>
+                    <span className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--success)' }}><Tag size={11} /> Diskon</span>
+                    <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>− {rupiah(discountNum)}</span>
+                  </div>
+                </>
+              )}
+              <div className="px-4 py-3.5 flex justify-between" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Bayar</span>
+                <span className="text-xl font-extrabold tabular" style={{ color: 'var(--accent)' }}>{rupiah(total)}</span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       {lines.length > 0 && (
         <>
-          <div className="flex items-center justify-between">
-            <button onClick={holdCurrent} className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--accent)' }}><PauseCircle size={13} /> Tahan transaksi</button>
-            <button onClick={resetCart} className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--danger)' }}><Trash2 size={12} /> Kosongkan</button>
-          </div>
-          <Field label="Diskon (Rp, ditanggung toko)">
+          <div className="card p-4">
+            <p className="section-label mb-3 flex items-center gap-1.5"><Tag size={11} /> Diskon (Rp, ditanggung toko)</p>
             <NumberInput value={discount} placeholder="0" onChange={setDiscount} />
-          </Field>
-          <div className="flex gap-2">
-            {(Object.keys(PAY_LABEL) as PaymentMethod[]).map(m => (
-              <button key={m} onClick={() => setMethod(m)} className="flex-1 px-3 py-2 rounded-xl text-xs font-bold"
-                style={method === m ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                {PAY_LABEL[m]}
-              </button>
-            ))}
           </div>
-          {method === 'cash' && (
-            <Field label="Uang diterima (Rp)">
-              <NumberInput value={paid} placeholder="0" onChange={setPaid} />
-              <div className="flex gap-1.5 mt-2 flex-wrap">
-                {[total, 20000, 50000, 100000].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map((v, i) => (
-                  <button key={v} onClick={() => setPaid(String(v))} className="btn-ghost text-[11px] px-2.5 py-1">{i === 0 ? 'Uang pas' : rupiah(v)}</button>
-                ))}
+
+          <div className="card p-4">
+            <p className="section-label mb-3 flex items-center gap-1.5"><Banknote size={11} /> Metode Pembayaran</p>
+            <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
+              {(Object.keys(PAY_LABEL) as PaymentMethod[]).map(m => (
+                <button key={m} onClick={() => setMethod(m)} className="flex-1 px-3.5 py-2.5 transition-all"
+                  style={method === m ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                  {PAY_LABEL[m]}
+                </button>
+              ))}
+            </div>
+            {method === 'cash' && (
+              <div className="mt-3 space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {[total, 20000, 50000, 100000].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map((v, i) => (
+                    <button key={v} type="button" onClick={() => setPaid(String(v))} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{i === 0 ? 'Uang Pas' : rupiah(v)}</button>
+                  ))}
+                </div>
+                <NumberInput value={paid} placeholder="Jumlah dibayar (Rp)" onChange={setPaid} />
+                {paidNum > 0 && (
+                  <p className="text-xs font-semibold" style={{ color: change >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                    {change >= 0 ? `Kembalian: ${rupiah(change)}` : `Kurang ${rupiah(-change)}`}
+                  </p>
+                )}
               </div>
-            </Field>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Nama pelanggan">
-              <input className="input" value={customerName} maxLength={80} placeholder="opsional" onChange={e => setCustomerName(e.target.value)} />
-            </Field>
-            <Field label="WhatsApp pelanggan">
-              <input className="input" value={customerPhone} maxLength={20} inputMode="tel" placeholder="untuk kirim struk" onChange={e => setCustomerPhone(e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Catatan (opsional)">
-            <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
-          </Field>
-          <div className="card p-3 space-y-1" style={{ background: 'var(--surface-2)' }}>
-            <div className="flex justify-between text-xs"><span style={{ color: 'var(--text-muted)' }}>Subtotal ({qtyText(count)} barang)</span><span>{rupiah(subtotal)}</span></div>
-            {discountNum > 0 && <div className="flex justify-between text-xs"><span style={{ color: 'var(--text-muted)' }}>Diskon</span><span>-{rupiah(discountNum)}</span></div>}
-            <div className="flex justify-between text-base font-bold"><span>Total</span><span style={{ color: 'var(--accent)' }}>{rupiah(total)}</span></div>
-            {method === 'cash' && paidNum > 0 && (
-              <div className="flex justify-between text-xs"><span style={{ color: 'var(--text-muted)' }}>{change >= 0 ? 'Kembalian' : 'Kurang'}</span>
-                <b style={{ color: change >= 0 ? '#059669' : 'var(--danger)' }}>{rupiah(Math.abs(change))}</b></div>
             )}
+          </div>
+
+          <div className="card p-4 space-y-3">
+            <p className="section-label">Data Customer (opsional)</p>
+            <div className="relative">
+              <User size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input className="input" style={{ paddingLeft: 38 }} value={customerName} maxLength={80} placeholder="Nama customer (kosongkan = Pelanggan Umum)" onChange={e => setCustomerName(e.target.value)} />
+            </div>
+            <div className="relative">
+              <Phone size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input className="input" style={{ paddingLeft: 38 }} value={customerPhone} maxLength={20} inputMode="tel" placeholder="Nomor WhatsApp (untuk kirim struk)" onChange={e => setCustomerPhone(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <p className="section-label mb-3">Catatan (opsional)</p>
+            <input className="input" value={note} maxLength={200} placeholder="Catatan tambahan" onChange={e => setNote(e.target.value)} />
           </div>
           <ErrorBox message={error} />
         </>
@@ -314,8 +358,10 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   );
 
   const payButton = (
-    <button onClick={pay} disabled={!canPay || processing} className="btn-primary w-full" style={{ justifyContent: 'center', padding: '12px 0' }}>
-      {processing ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} Bayar {total > 0 ? rupiah(total) : ''}
+    <button onClick={pay} disabled={!canPay || processing}
+      className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl text-white font-bold text-sm shadow-xl disabled:opacity-40"
+      style={{ background: 'linear-gradient(135deg,#16A34A,#22C55E)' }}>
+      {processing ? <><Loader2 size={17} className="animate-spin" /> Memproses…</> : <><CheckCircle2 size={17} /> Proses Transaksi</>}
     </button>
   );
 
@@ -423,9 +469,8 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
 
         {/* Keranjang (desktop) */}
         <div className="hidden lg:flex flex-col h-full overflow-hidden">
-          <div className="px-5 pt-5 pb-2 flex items-center gap-2"><ShoppingCart size={16} /><p className="text-sm font-bold">Keranjang</p></div>
-          <div className="flex-1 overflow-y-auto thin-scrollbar px-5 pb-4">{checkout}</div>
-          <div className="p-4" style={{ borderTop: '1px solid var(--border)' }}>{payButton}</div>
+          <div className="flex-1 overflow-y-auto thin-scrollbar px-4 py-4">{checkout}</div>
+          <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>{payButton}</div>
         </div>
       </div>
 
