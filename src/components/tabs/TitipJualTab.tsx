@@ -16,7 +16,7 @@ import StockSection from './titip-jual/StockSection';
 import ReceiptsSection from './titip-jual/ReceiptsSection';
 import SettlementsSection from './titip-jual/SettlementsSection';
 import AdjustmentsSection from './titip-jual/AdjustmentsSection';
-import JournalSection from './titip-jual/JournalSection';
+import WalletOverview from './titip-jual/WalletOverview';
 
 type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements';
 // 'main' = halaman Titip Jual bertab; 'opname' & 'journal' = menu sendiri di sidebar (satu layar penuh).
@@ -95,7 +95,7 @@ export default function TitipJualTab({ creds, can, mode, journalStallId = '', on
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up">
           {mode === 'opname' && <AdjustmentsSection {...props} />}
-          {mode === 'journal' && <JournalSection key={journalStallId} {...props} />}
+          {mode === 'journal' && <WalletOverview key={journalStallId} {...props} />}
           {mode === 'main' && sub === 'products' && <ProductsSection {...props} />}
           {mode === 'main' && sub === 'consignors' && <ConsignorsSection {...props} />}
           {mode === 'main' && sub === 'stalls' && <StallsSection {...props} />}

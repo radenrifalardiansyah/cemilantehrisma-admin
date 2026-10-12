@@ -129,7 +129,7 @@ export default function JournalSection({ creds, data, reload, can, journalStallI
   );
 }
 
-function EntryModal({ creds, data, initialStallId, onClose, onDone }: {
+export function EntryModal({ creds, data, initialStallId, onClose, onDone }: {
   creds: string; data: SectionProps['data']; initialStallId: string; onClose: () => void; onDone: () => Promise<void>;
 }) {
   const toast = useToast();
