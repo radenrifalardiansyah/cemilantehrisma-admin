@@ -67,6 +67,22 @@ export function effectiveFor(product: CProduct, consignor: Consignor | undefined
   return { price, spec, share: spec ? calcShare(price, spec) : null };
 }
 
+// Kartu ringkasan: ikon di kotak berwarna + nilai tebal + label — gaya sama dengan "Rincian Saldo per Dompet".
+export function StatCard({ icon, label, value, sub, color = 'var(--accent)', bg = 'var(--accent-bg)', valueColor }: {
+  icon: React.ReactNode; label: string; value: string; sub?: string; color?: string; bg?: string; valueColor?: string;
+}) {
+  return (
+    <div className="card p-3.5 flex items-center gap-2.5 min-w-0">
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: bg, color }}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-sm font-bold tabular truncate" style={{ color: valueColor ?? 'var(--text-primary)' }}>{value}</p>
+        <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{label}</p>
+        {sub && <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function Badge({ children, tone = 'muted' }: { children: React.ReactNode; tone?: 'muted' | 'accent' | 'danger' | 'ok' }) {
   const colors = {
     muted: { background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' },

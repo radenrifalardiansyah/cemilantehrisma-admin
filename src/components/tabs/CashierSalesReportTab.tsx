@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Receipt, ShoppingBag, Calculator } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
@@ -11,7 +11,7 @@ import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import PeriodBar from './titip-jual/PeriodBar';
 import { exportExcel, exportPdf, type ExportCol } from './titip-jual/exporters';
-import { HEADER_BTN_H, Badge, rupiah } from './titip-jual/shared';
+import { HEADER_BTN_H, Badge, rupiah, StatCard } from './titip-jual/shared';
 
 interface Ts { seconds: number }
 interface Report {
@@ -109,17 +109,10 @@ export default function CashierSalesReportTab({ creds }: { creds: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        {[
-          { label: 'Omzet lapak', val: rupiah(s.revenue) },
-          { label: 'Transaksi', val: String(s.count) },
-          { label: 'Rata-rata/transaksi', val: s.count > 0 ? rupiah(s.revenue / s.count) : '-' },
-        ].map(c => (
-          <div key={c.label} className="card p-2.5 sm:p-3 min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <p className="text-xs sm:text-sm font-bold mt-0.5 break-words" style={{ color: 'var(--text-primary)' }}>{c.val}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard icon={<Receipt size={16} />} label="Omzet lapak" value={rupiah(s.revenue)} color="var(--accent)" bg="var(--accent-bg)" />
+        <StatCard icon={<ShoppingBag size={16} />} label="Transaksi" value={String(s.count)} color="#2563EB" bg="#E0E7FF" />
+        <StatCard icon={<Calculator size={16} />} label="Rata-rata/transaksi" value={s.count > 0 ? rupiah(s.revenue / s.count) : '-'} color="#059669" bg="rgba(5,150,105,0.12)" />
       </div>
 
       <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>

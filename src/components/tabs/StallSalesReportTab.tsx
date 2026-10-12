@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Receipt, Store, HandCoins, TrendingUp } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
@@ -11,7 +11,7 @@ import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import PeriodBar from './titip-jual/PeriodBar';
 import { exportExcel, exportPdf, type ExportCol } from './titip-jual/exporters';
-import { HEADER_BTN_H, Badge, rupiah, qtyText } from './titip-jual/shared';
+import { HEADER_BTN_H, Badge, StatCard, rupiah, qtyText } from './titip-jual/shared';
 
 interface Report {
   stallOptions: { id: string; name: string }[];
@@ -79,10 +79,10 @@ export default function StallSalesReportTab({ creds }: { creds: string }) {
   const maxDaily = Math.max(1, ...report.daily.map(d => d.revenue));
 
   const cards = [
-    { label: 'Omzet lapak', val: rupiah(s.revenue), sub: `${s.count} transaksi` },
-    { label: 'Bagian toko', val: rupiah(s.storeShare), sub: 'produk toko + bagian toko dari titipan − diskon' },
-    { label: 'Bagian penitip', val: rupiah(s.consignorShare), sub: s.lossCompensation > 0 ? `termasuk kompensasi kerugian ${rupiah(s.lossCompensation)}` : 'hutang ke penitip dari penjualan' },
-    { label: 'Laba kotor lapak', val: rupiah(s.grossProfit), sub: 'bagian toko dikurangi HPP produk toko' },
+    { icon: <Receipt size={16} />, color: 'var(--accent)', bg: 'var(--accent-bg)', label: 'Omzet lapak', val: rupiah(s.revenue), sub: `${s.count} transaksi` },
+    { icon: <Store size={16} />, color: '#2563EB', bg: '#E0E7FF', label: 'Bagian toko', val: rupiah(s.storeShare), sub: 'produk toko + bagian toko dari titipan − diskon' },
+    { icon: <HandCoins size={16} />, color: '#A84F10', bg: '#FDE9D2', label: 'Bagian penitip', val: rupiah(s.consignorShare), sub: s.lossCompensation > 0 ? `termasuk kompensasi kerugian ${rupiah(s.lossCompensation)}` : 'hutang ke penitip dari penjualan' },
+    { icon: <TrendingUp size={16} />, color: '#059669', bg: 'rgba(5,150,105,0.12)', label: 'Laba kotor lapak', val: rupiah(s.grossProfit), sub: 'bagian toko dikurangi HPP produk toko' },
   ];
 
   const exportBar = (rows: unknown[], onExcel: () => Promise<void>, onPdf: () => Promise<void>, key: string) => rows.length > 0 && (
@@ -110,14 +110,8 @@ export default function StallSalesReportTab({ creds }: { creds: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-        {cards.map(c => (
-          <div key={c.label} className="card p-3 min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <p className="text-sm sm:text-base font-bold mt-0.5 break-words" style={{ color: 'var(--text-primary)' }}>{c.val}</p>
-            <p className="text-[10px] mt-0.5 leading-tight" style={{ color: 'var(--text-muted)' }}>{c.sub}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map(c => <StatCard key={c.label} icon={c.icon} label={c.label} value={c.val} sub={c.sub} color={c.color} bg={c.bg} />)}
       </div>
 
       {s.count === 0 ? (

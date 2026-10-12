@@ -15,7 +15,7 @@ import DataList, { DetailPanel, type ExportCol } from './DataList';
 import PeriodBar from './PeriodBar';
 import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
 import { downloadSettlementPdf, type Settlement, type SettlementItem, type SettlementConsignor } from './settlementPdf';
-import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText, uploadImage, type SectionProps } from './shared';
+import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, qtyText, uploadImage, type SectionProps } from './shared';
 
 interface Payable { stallId: string; consignorId: string; consignorName: string; amount: number; lines: number; firstDate: string; lastDate: string }
 interface Result { settlements: Settlement[]; payables: Payable[] }
@@ -154,17 +154,10 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        {[
-          { label: 'Belum direkap', val: rupiah(owedUnsettled), tone: owedUnsettled > 0 ? 'var(--accent)' : undefined },
-          { label: 'Rekap belum dibayar', val: rupiah(sum(s => s.status === 'unpaid')) },
-          { label: 'Sudah dibayar', val: rupiah(sum(s => s.status === 'paid')) },
-        ].map(c => (
-          <div key={c.label} className="card p-2.5 sm:p-3 min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <p className="text-xs sm:text-sm font-bold mt-0.5 break-words" style={{ color: c.tone ?? 'var(--text-primary)' }}>{c.val}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard icon={<HandCoins size={16} />} label="Belum direkap" value={rupiah(owedUnsettled)} color="var(--accent)" bg="var(--accent-bg)" valueColor={owedUnsettled > 0 ? 'var(--accent)' : undefined} />
+        <StatCard icon={<Undo2 size={16} />} label="Rekap belum dibayar" value={rupiah(sum(s => s.status === 'unpaid'))} color="var(--danger)" bg="var(--danger-bg)" />
+        <StatCard icon={<Banknote size={16} />} label="Sudah dibayar" value={rupiah(sum(s => s.status === 'paid'))} color="#059669" bg="rgba(5,150,105,0.12)" />
       </div>
 
       {result.payables.length > 0 && (

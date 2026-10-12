@@ -11,7 +11,7 @@ import { useConfirm } from '@/components/Confirm';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import DataList, { DetailPanel, type ExportCol } from '../titip-jual/DataList';
 import PeriodBar from '../titip-jual/PeriodBar';
-import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, qtyText } from '../titip-jual/shared';
+import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, qtyText } from '../titip-jual/shared';
 import { dt, todayKey, type OwnSectionProps, type OwnSettlement, type OwnSettlementItem, type Wallet } from './types';
 
 interface Payable { stallId: string; amount: number; lines: number; firstDate: string; lastDate: string }
@@ -69,17 +69,10 @@ export default function SettlementsSection({ creds, stalls, can }: OwnSectionPro
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        {[
-          { label: 'Belum direkap', val: rupiah(owedUnsettled), tone: owedUnsettled > 0 ? 'var(--accent)' : undefined },
-          { label: 'Setoran belum dibayar', val: rupiah(sum(s => s.status === 'unpaid')) },
-          { label: 'Sudah disetor', val: rupiah(sum(s => s.status === 'paid')) },
-        ].map(c => (
-          <div key={c.label} className="card p-2.5 sm:p-3 min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <p className="text-xs sm:text-sm font-bold mt-0.5 break-words" style={{ color: c.tone ?? 'var(--text-primary)' }}>{c.val}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard icon={<HandCoins size={16} />} label="Belum direkap" value={rupiah(owedUnsettled)} color="var(--accent)" bg="var(--accent-bg)" valueColor={owedUnsettled > 0 ? 'var(--accent)' : undefined} />
+        <StatCard icon={<Undo2 size={16} />} label="Setoran belum dibayar" value={rupiah(sum(s => s.status === 'unpaid'))} color="var(--danger)" bg="var(--danger-bg)" />
+        <StatCard icon={<Banknote size={16} />} label="Sudah disetor" value={rupiah(sum(s => s.status === 'paid'))} color="#059669" bg="rgba(5,150,105,0.12)" />
       </div>
 
       {result.payables.length > 0 && (

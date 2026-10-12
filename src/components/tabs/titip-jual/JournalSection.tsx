@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { BookOpen, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { BookOpen, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
 import FilterSelect from '@/components/FilterSelect';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
@@ -11,7 +11,7 @@ import { periodRange, type PeriodKey } from '@/lib/period';
 import { WALLET_CATEGORIES, WALLET_CATEGORY_LABEL, WALLET_KIND_LABEL } from '@/lib/stall-wallet';
 import PeriodBar from './PeriodBar';
 import DataList, { type ExportCol } from './DataList';
-import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, rupiah, type SectionProps } from './shared';
+import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, type SectionProps } from './shared';
 
 interface Entry {
   id: string; stallId: string; stallName: string; kind: string; amount: number; note: string; category: string;
@@ -71,18 +71,11 @@ export default function JournalSection({ creds, data, reload, can, journalStallI
     <div className="space-y-4">
       <PeriodBar period={period} onPeriod={setPeriod} from={customFrom} to={customTo} onFrom={setCustomFrom} onTo={setCustomTo} />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-        {[
-          { label: 'Saldo awal periode', val: rupiah(s.openingBalance) },
-          { label: 'Total masuk', val: rupiah(s.inflow), color: '#059669' },
-          { label: 'Total keluar', val: rupiah(s.outflow), color: 'var(--danger)' },
-          { label: stallName ? `Saldo ${stallName} sekarang` : 'Saldo semua lapak sekarang', val: rupiah(s.currentBalance), color: 'var(--accent)' },
-        ].map(c => (
-          <div key={c.label} className="card p-2.5 sm:p-3 min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide leading-tight" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
-            <p className="text-xs sm:text-sm font-bold mt-0.5 break-words" style={{ color: c.color ?? 'var(--text-primary)' }}>{c.val}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={<BookOpen size={16} />} label="Saldo awal periode" value={rupiah(s.openingBalance)} color="var(--text-secondary)" bg="var(--surface-2)" />
+        <StatCard icon={<ArrowDownLeft size={16} />} label="Total masuk" value={rupiah(s.inflow)} color="#059669" bg="rgba(5,150,105,0.12)" />
+        <StatCard icon={<ArrowUpRight size={16} />} label="Total keluar" value={rupiah(s.outflow)} color="var(--danger)" bg="var(--danger-bg)" />
+        <StatCard icon={<Wallet size={16} />} label={stallName ? `Saldo ${stallName} sekarang` : 'Saldo semua lapak sekarang'} value={rupiah(s.currentBalance)} color="var(--accent)" bg="var(--accent-bg)" />
       </div>
 
       <DataList<Entry>
