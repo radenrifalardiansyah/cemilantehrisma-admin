@@ -87,6 +87,8 @@ interface Props<T> {
   actions?: (t: T) => React.ReactNode;
   renderDetail?: (t: T) => React.ReactNode; // isi panel detail; kalau ada, muncul tombol panah "Lihat detail"
   onBulkDelete?: (ids: string[]) => Promise<void>;
+  // Tombol tambahan di bar aksi massal (mis. Bayar). `clear` mengosongkan centang setelah aksi selesai.
+  bulkActions?: (selected: T[], clear: () => void) => React.ReactNode;
   // Impor Excel (opsional): unduh template + unggah file. `onFile` menangani baca file & kirim ke server.
   importer?: { onTemplate: () => void; onFile: (file: File) => Promise<void> };
   exportCols: ExportCol<T>[]; exportTitle: string; exportFile: string;
@@ -324,6 +326,7 @@ export default function DataList<T>(p: Props<T>) {
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />} PDF
             </button>
+            {p.bulkActions?.(selectedItems, () => setSelected(new Set()))}
             {p.onBulkDelete && (
               <button onClick={bulkDelete} disabled={bulkDeleting}
                 className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl flex-shrink-0 whitespace-nowrap" style={{ background: 'var(--danger)', color: '#fff' }}>

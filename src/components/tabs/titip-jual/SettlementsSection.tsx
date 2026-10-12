@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Banknote, Undo2, FileDown, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet } from 'lucide-react';
+import { Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet } from 'lucide-react';
+import { PdfIcon } from '@/components/FileTypeIcons';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
@@ -41,6 +42,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
   const [creating, setCreating] = useState<{ stallId: string; consignorId: string } | null>(null);
   const [editingDoc, setEditingDoc] = useState<Settlement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState<'pdf' | 'pay' | null>(null);
 
   const load = useCallback(async () => { setResult(await fetchSettlements(creds)); }, [creds]);
   useEffect(() => {
@@ -84,6 +86,37 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
     const phone = data.consignors.find(c => c.id === s.consignorId)?.phone;
     if (!phone) toast.error('Nomor WhatsApp penitip belum diisi — pilih kontaknya manual di WhatsApp.');
     window.open(waLink(phone, settlementMessage(s, store.name, 'penitip')), '_blank', 'noopener');
+  };
+
+  // Aksi massal pada rekap yang dicentang: unduh PDF masing-masing & bayar dari dompet lapak masing-masing.
+  const bulkPdf = async (list: Settlement[]) => {
+    setBulkBusy('pdf');
+    try { for (const s of list) await downloadSettlementPdf(s, store); toast.success(`${list.length} PDF rekap diunduh.`); }
+    catch { toast.error('Gagal membuat PDF.'); }
+    setBulkBusy(null);
+  };
+
+  const bulkPay = async (list: Settlement[], clear: () => void) => {
+    const unpaid = list.filter(s => s.status === 'unpaid');
+    if (unpaid.length === 0) { toast.error('Tidak ada rekap belum dibayar di antara yang dipilih.'); return; }
+    const perStall = new Map<string, number>();
+    for (const s of unpaid) perStall.set(s.stallId, (perStall.get(s.stallId) ?? 0) + s.totalAmount);
+    const short = [...perStall].filter(([id, amt]) => amt > (data.stalls.find(x => x.id === id)?.balance ?? 0)).map(([id]) => stallName(id));
+    const total = unpaid.reduce((a, s) => a + s.totalAmount, 0);
+    if (!await confirm({
+      message: `Bayar ${unpaid.length} rekap senilai ${rupiah(total)} dari dompet lapak masing-masing?${list.length > unpaid.length ? ` (${list.length - unpaid.length} rekap yang sudah dibayar dilewati)` : ''}${short.length ? ` Saldo dompet ${short.join(', ')} tidak cukup untuk semua — rekap yang melebihi saldo akan gagal.` : ''} Ini hanya mencatat pembayaran — transfer ke rekening penitip tetap Anda lakukan sendiri.`,
+    })) return;
+    setBulkBusy('pay');
+    let ok = 0; const failed: string[] = [];
+    for (const s of unpaid) {
+      const r = await fetch(`${API}/api/consign/settlements/${s.id}/pay`, { method: 'POST', headers });
+      if (r.ok) ok++; else failed.push(s.docNumber);
+    }
+    await Promise.all([load(), reload()]);
+    if (ok > 0) toast.success(`${ok} rekap dibayar.`);
+    if (failed.length > 0) toast.error(`Gagal membayar: ${failed.join(', ')} (cek saldo dompet lapak).`);
+    clear();
+    setBulkBusy(null);
   };
 
   const downloadPdf = async (s: Settlement) => {
@@ -221,7 +254,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
           <>
             <Tooltip label="Unduh PDF">
               <button onClick={() => downloadPdf(s)} disabled={busyId === s.id} className="btn-ghost p-2">
-                {busyId === s.id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+                {busyId === s.id ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
               </button>
             </Tooltip>
             <Tooltip label="Kirim rekap ke penitip lewat WhatsApp">
@@ -246,6 +279,20 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
               <Tooltip label="Batalkan pembayaran (uang kembali ke dompet lapak)">
                 <button onClick={() => unpay(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
               </Tooltip>
+            )}
+          </>
+        )}
+        bulkActions={(sel, clear) => (
+          <>
+            <button onClick={() => bulkPdf(sel)} disabled={!!bulkBusy}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              {bulkBusy === 'pdf' ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />} PDF Rekap
+            </button>
+            {can('edit') && sel.some(s => s.status === 'unpaid') && (
+              <button onClick={() => bulkPay(sel, clear)} disabled={!!bulkBusy}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl flex-shrink-0 whitespace-nowrap" style={{ background: '#059669', color: '#fff' }}>
+                {bulkBusy === 'pay' ? <Loader2 size={13} className="animate-spin" /> : <Banknote size={13} />} Bayar ({sel.filter(s => s.status === 'unpaid').length})
+              </button>
             )}
           </>
         )}

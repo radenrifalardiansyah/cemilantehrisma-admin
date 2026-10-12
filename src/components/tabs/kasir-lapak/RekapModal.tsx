@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, FileDown, Loader2, MessageCircle } from 'lucide-react';
+import { ClipboardList, Loader2, MessageCircle } from 'lucide-react';
+import { PdfIcon } from '@/components/FileTypeIcons';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
@@ -113,7 +114,7 @@ export default function RekapModal({ creds, stall, canCreate, ownerPhone, storeN
                 </Tooltip>
                 <Tooltip label="Unduh PDF untuk owner">
                   <button onClick={() => pdf(s)} disabled={busy === s.id} className="btn-ghost p-2 flex-shrink-0">
-                    {busy === s.id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={14} />}
+                    {busy === s.id ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={14} />}
                   </button>
                 </Tooltip>
               </div>
