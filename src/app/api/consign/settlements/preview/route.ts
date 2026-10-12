@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Lapak, penitip, dan periode wajib diisi.' }, { status: 400 });
   }
   const sql = getSql();
-  const found = await sql.begin(tx => loadUnsettledLines(tx, { stallId, consignorId, from, to }));
+  // settlementId: saat mengubah rekap, baris milik rekap itu sendiri ikut dihitung.
+  const found = await sql.begin(tx => loadUnsettledLines(tx, { stallId, consignorId, from, to, includeSettlementId: sp.get('settlementId') ?? undefined }));
   return Response.json({ items: found.items, total: found.total, count: found.count });
 }

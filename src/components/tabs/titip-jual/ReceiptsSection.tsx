@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PackagePlus, PackageMinus, ArrowRightLeft, X, Loader2, Undo2, Plus } from 'lucide-react';
+import { PackagePlus, PackageMinus, ArrowRightLeft, X, Loader2, Trash2, Plus, Pencil } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import FilterSelect from '@/components/FilterSelect';
@@ -18,7 +18,7 @@ import {
 
 interface Line { productId: string; qty: string }
 type Kind = 'in' | 'return' | 'transfer';
-interface Form { kind: Kind; consignorId: string; stallId: string; toStallId: string; docDate: string; note: string; lines: Line[] }
+interface Form { id?: string; orig?: Receipt; kind: Kind; consignorId: string; stallId: string; toStallId: string; docDate: string; note: string; lines: Line[] }
 const KIND_LABEL: Record<Kind, string> = { in: 'Terima', return: 'Retur', transfer: 'Pindah' };
 const stallText = (r: Receipt) => r.kind === 'transfer' ? `${r.stallName} → ${r.toStallName}` : r.stallName;
 
@@ -63,9 +63,14 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     setEditing({ kind, consignorId: consignorFilter, stallId: stallFilter, toStallId: '', docDate: todayKey(), note: '', lines: [{ productId: '', qty: '' }] });
   };
 
-  const consignorProducts = editing ? data.products.filter(p => p.consignorId === editing.consignorId && (p.isActive || editing.kind !== 'in')) : [];
-  const stockOf = (productId: string, stallId: string) =>
-    data.stallItems.find(i => i.productId === productId && i.stallId === stallId)?.stockQty ?? 0;
+  const consignorProducts = editing ? data.products.filter(p => p.consignorId === editing.consignorId && (p.isActive || editing.kind !== 'in' || !!editing.orig?.items.some(i => i.productId === p.id))) : [];
+  // Saat mengubah dokumen Retur/Pindah, jumlah lama di lapak yang sama dihitung sebagai stok yang masih tersedia.
+  const stockOf = (productId: string, stallId: string) => {
+    const current = data.stallItems.find(i => i.productId === productId && i.stallId === stallId)?.stockQty ?? 0;
+    const o = editing?.orig;
+    const back = o && o.kind !== 'in' && o.stallId === stallId ? (o.items.find(i => i.productId === productId)?.qty ?? 0) : 0;
+    return current + back;
+  };
 
   // Info tiap baris (produk, stok di lapak terpilih, bagian penitip per unit) untuk tampilan & validasi.
   const consignorOf = editing ? data.consignors.find(c => c.id === editing.consignorId) : undefined;
@@ -74,8 +79,9 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     if (!p || !editing) return null;
     const item = data.stallItems.find(i => i.productId === p.id && i.stallId === editing.stallId);
     const share = effectiveFor(p, consignorOf, item).share;
+    const stockNow = stockOf(p.id, editing.stallId);
     const toStock = editing.toStallId ? (data.stallItems.find(i => i.productId === p.id && i.stallId === editing.toStallId)?.stockQty ?? 0) : null;
-    return { unit: p.unit, stock: item?.stockQty ?? 0, toStock, qty: Number(l.qty) || 0, consignorShare: share ? share.consignor : null };
+    return { unit: p.unit, stock: stockNow, toStock, qty: Number(l.qty) || 0, consignorShare: share ? share.consignor : null };
   };
   const infos = editing ? editing.lines.map(lineInfo) : [];
   const totalQty = infos.reduce((a, i) => a + (i?.qty ?? 0), 0);
@@ -91,12 +97,14 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
       kind: editing.kind, consignorId: editing.consignorId, stallId: editing.stallId, toStallId: editing.kind === 'transfer' ? editing.toStallId : undefined, docDate: editing.docDate, note: editing.note,
       items: editing.lines.filter(l => l.productId).map(l => ({ productId: l.productId, qty: Number(l.qty) })),
     };
-    const r = await fetch(`${API}/api/consign/receipts`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const r = editing.id
+      ? await fetch(`${API}/api/consign/receipts/${editing.id}`, { method: 'PUT', headers, body: JSON.stringify(body) })
+      : await fetch(`${API}/api/consign/receipts`, { method: 'POST', headers, body: JSON.stringify(body) });
     if (r.ok) {
       const { docNumber } = await r.json() as { docNumber: string };
       await Promise.all([reload(), loadReceipts()]);
       setEditing(null);
-      toast.success(`${editing.kind === 'in' ? 'Barang berhasil diterima' : editing.kind === 'transfer' ? 'Stok berhasil dipindah' : 'Retur berhasil dicatat'}: ${docNumber}`);
+      toast.success(editing.id ? `${docNumber} berhasil diubah.` : `${editing.kind === 'in' ? 'Barang berhasil diterima' : editing.kind === 'transfer' ? 'Stok berhasil dipindah' : 'Retur berhasil dicatat'}: ${docNumber}`);
     } else {
       const msg = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan dokumen.';
       setError(msg); toast.error(msg);
@@ -104,12 +112,20 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
     setSaving(false);
   };
 
+  const openEdit = (rc: Receipt) => {
+    setError('');
+    setEditing({
+      id: rc.id, orig: rc, kind: rc.kind, consignorId: rc.consignorId, stallId: rc.stallId, toStallId: rc.toStallId, docDate: rc.docDate, note: rc.note,
+      lines: rc.items.map(i => ({ productId: i.productId, qty: String(i.qty) })),
+    });
+  };
+
   const voidDoc = async (rc: Receipt) => {
-    if (!await confirm({ message: `Batalkan ${rc.docNumber}? Stok akan dikembalikan seperti sebelum dokumen ini.`, danger: true })) return;
+    if (!await confirm({ message: `Hapus ${rc.docNumber}? Stok akan dikembalikan seperti sebelum dokumen ini.`, danger: true })) return;
     setVoidingId(rc.id);
     const r = await fetch(`${API}/api/consign/receipts/${rc.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await Promise.all([reload(), loadReceipts()]); toast.success(`${rc.docNumber} berhasil dibatalkan.`); }
-    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan dokumen.');
+    if (r.ok) { await Promise.all([reload(), loadReceipts()]); toast.success(`${rc.docNumber} berhasil dihapus.`); }
+    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menghapus dokumen.');
     setVoidingId(null);
   };
 
@@ -202,25 +218,35 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
             </div>
           </DetailPanel>
         )}
-        actions={r => can('delete') ? (
-          <Tooltip label="Batalkan dokumen">
-            <button onClick={() => voidDoc(r)} disabled={voidingId === r.id} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
-              {voidingId === r.id ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-            </button>
-          </Tooltip>
-        ) : null}
+        actions={r => (
+          <>
+            {can('edit') && (
+              <Tooltip label="Ubah dokumen">
+                <button onClick={() => openEdit(r)} className="btn-ghost p-2"><Pencil size={13} /></button>
+              </Tooltip>
+            )}
+            {can('delete') && (
+              <Tooltip label="Hapus dokumen (stok dikembalikan)">
+                <button onClick={() => voidDoc(r)} disabled={voidingId === r.id} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
+                  {voidingId === r.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                </button>
+              </Tooltip>
+            )}
+          </>
+        )}
         exportCols={cols} exportTitle="DOKUMEN TITIP JUAL (TERIMA & RETUR)" exportFile="dokumen-titip-jual"
       />
 
       {editing && (
-        <ModalShell title={editing.kind === 'in' ? 'Terima Barang Titipan' : editing.kind === 'transfer' ? 'Pindah Stok Antar Lapak' : 'Retur ke Penitip'}
+        <ModalShell title={editing.id ? `Ubah ${editing.orig?.docNumber ?? 'Dokumen'}` : editing.kind === 'in' ? 'Terima Barang Titipan' : editing.kind === 'transfer' ? 'Pindah Stok Antar Lapak' : 'Retur ke Penitip'}
           subtitle={editing.kind === 'in' ? 'Menambah stok titipan di lapak' : editing.kind === 'transfer' ? 'Memindahkan stok titipan dari satu lapak ke lapak lain' : 'Mengurangi stok titipan di lapak'}
           icon={editing.kind === 'in' ? <PackagePlus size={17} /> : editing.kind === 'transfer' ? <ArrowRightLeft size={17} /> : <PackageMinus size={17} />} onClose={() => setEditing(null)} size="modal-md"
           footer={<ModalFooter onClose={() => setEditing(null)} onSave={save} saving={saving} disabled={!valid}
-            label={editing.kind === 'in' ? 'Simpan Penerimaan' : editing.kind === 'transfer' ? 'Simpan Pindah Stok' : 'Simpan Retur'} />}>
+            label={editing.id ? 'Simpan Perubahan' : editing.kind === 'in' ? 'Simpan Penerimaan' : editing.kind === 'transfer' ? 'Simpan Pindah Stok' : 'Simpan Retur'} />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Jenis dokumen: Terima (stok bertambah) atau Retur (stok berkurang) */}
             <div>
+              {!editing.id && (
               <div className="grid grid-cols-3 gap-2">
                 {([['in', 'Terima', PackagePlus], ['transfer', 'Pindah Lapak', ArrowRightLeft], ['return', 'Retur', PackageMinus]] as const).map(([k, label, Icon]) => (
                   <button key={k} type="button" onClick={() => setEditing({ ...editing, kind: k })}
@@ -232,6 +258,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                   </button>
                 ))}
               </div>
+              )}
               <p className="text-[11px] mt-2 px-3 py-2 rounded-lg" style={{ background: editing.kind === 'in' ? 'var(--success-bg)' : 'var(--accent-bg)', color: editing.kind === 'in' ? 'var(--success)' : 'var(--accent)' }}>
                 {editing.kind === 'in'
                   ? 'Stok titipan di lapak BERTAMBAH. Catat saat barang diterima dari penitip.'

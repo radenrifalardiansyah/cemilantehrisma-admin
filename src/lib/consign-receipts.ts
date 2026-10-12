@@ -125,3 +125,46 @@ export async function voidReceipt(
   }
   await tx`delete from consign_receipts where id = ${r.id}`;
 }
+
+// Efek stok satu dokumen per (lapak, produk): Terima + di lapak, Retur − di lapak, Pindah − asal + tujuan.
+function receiptEffects(r: { kind: 'in' | 'return' | 'transfer'; stallId: string; stallName: string; toStallId?: string; toStallName?: string; items: ReceiptItem[] }) {
+  const out: { stallId: string; stallName: string; productId: string; productName: string; delta: number }[] = [];
+  for (const i of r.items) {
+    if (r.kind === 'transfer') {
+      out.push({ stallId: r.stallId, stallName: r.stallName, productId: i.productId, productName: i.productName, delta: -i.qty });
+      out.push({ stallId: r.toStallId!, stallName: r.toStallName ?? '', productId: i.productId, productName: i.productName, delta: i.qty });
+    } else {
+      out.push({ stallId: r.stallId, stallName: r.stallName, productId: i.productId, productName: i.productName, delta: r.kind === 'in' ? i.qty : -i.qty });
+    }
+  }
+  return out;
+}
+
+// Ubah dokumen (jenisnya tetap, nomor dokumen tetap): stok dihitung ulang sebagai SELISIH antara isi lama dan
+// baru, jadi mengubah catatan/tanggal tidak menyentuh stok, dan menambah qty Terima tidak butuh stok sisa.
+// Gagal (dan seluruhnya dibatalkan) kalau selisihnya membuat stok negatif, mis. barang sudah terjual.
+export async function updateReceipt(
+  tx: TransactionSql,
+  oldDoc: { id: string; docNumber: string; kind: 'in' | 'return' | 'transfer'; stallId: string; stallName: string; toStallId?: string; toStallName?: string; items: ReceiptItem[] },
+  p: { consignorId: string; consignorName: string; stallId: string; stallName: string; toStallId?: string; toStallName?: string; docDate: string; note: string; items: ReceiptItem[] },
+): Promise<void> {
+  const net = new Map<string, { stallId: string; stallName: string; productId: string; productName: string; delta: number }>();
+  const add = (e: { stallId: string; stallName: string; productId: string; productName: string; delta: number }) => {
+    const key = `${e.productId}|${e.stallId}`;
+    const cur = net.get(key);
+    if (cur) cur.delta += e.delta; else net.set(key, { ...e });
+  };
+  for (const e of receiptEffects(oldDoc)) add({ ...e, delta: -e.delta });   // balik isi lama
+  for (const e of receiptEffects({ kind: oldDoc.kind, ...p })) add(e);       // terapkan isi baru
+  const moves = [...net.values()].filter(m => m.delta !== 0)
+    .sort((a, b) => a.productId.localeCompare(b.productId) || a.stallId.localeCompare(b.stallId));
+  for (const m of moves) {
+    await moveConsignStock(tx, { productId: m.productId, productName: m.productName, stallId: m.stallId, stallName: m.stallName, delta: m.delta, type: 'edit', receiptId: oldDoc.id, note: `Edit ${oldDoc.docNumber}` });
+  }
+  const totalQty = p.items.reduce((a, i) => a + i.qty, 0);
+  await tx`
+    update consign_receipts set consignor_id = ${p.consignorId}, consignor_name = ${p.consignorName}, stall_id = ${p.stallId}, stall_name = ${p.stallName},
+      to_stall_id = ${p.toStallId ?? null}, to_stall_name = ${p.toStallName ?? null}, doc_date = ${p.docDate}, items = ${tx.json(p.items as never)}, total_qty = ${totalQty}, note = ${p.note}
+    where id = ${oldDoc.id}
+  `;
+}

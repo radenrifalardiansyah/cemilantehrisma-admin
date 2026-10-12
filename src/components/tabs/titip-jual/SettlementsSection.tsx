@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Banknote, Undo2, FileDown, Loader2, HandCoins, MessageCircle } from 'lucide-react';
+import { Banknote, Undo2, FileDown, Loader2, HandCoins, MessageCircle, Pencil, Trash2 } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
@@ -39,6 +39,7 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
   const [stallFilter, setStallFilter] = useState('');
   const [consignorFilter, setConsignorFilter] = useState('');
   const [creating, setCreating] = useState<{ stallId: string; consignorId: string } | null>(null);
+  const [editingDoc, setEditingDoc] = useState<Settlement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => { setResult(await fetchSettlements(creds)); }, [creds]);
@@ -59,12 +60,21 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
     setBusyId(null);
   };
 
+  const unpay = async (s: Settlement) => {
+    if (!await confirm({ message: `Batalkan pembayaran ${s.docNumber}? ${rupiah(s.totalAmount)} dikembalikan ke dompet ${s.stallName} dan rekap kembali "Belum dibayar" (lalu bisa diubah atau dihapus).`, danger: true })) return;
+    setBusyId(s.id);
+    const r = await fetch(`${API}/api/consign/settlements/${s.id}/unpay`, { method: 'POST', headers });
+    if (r.ok) { await Promise.all([load(), reload()]); toast.success(`Pembayaran ${s.docNumber} dibatalkan.`); }
+    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan pembayaran.');
+    setBusyId(null);
+  };
+
   const cancel = async (s: Settlement) => {
-    if (!await confirm({ message: `Batalkan rekap ${s.docNumber}? Penjualannya bisa direkap ulang.`, danger: true })) return;
+    if (!await confirm({ message: `Hapus rekap ${s.docNumber}? Penjualannya bisa direkap ulang.`, danger: true })) return;
     setBusyId(s.id);
     const r = await fetch(`${API}/api/consign/settlements/${s.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await load(); toast.success(`${s.docNumber} dibatalkan.`); }
-    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan rekap.');
+    if (r.ok) { await load(); toast.success(`${s.docNumber} dihapus.`); }
+    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menghapus rekap.');
     setBusyId(null);
   };
 
@@ -197,9 +207,19 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
                 <button onClick={() => pay(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
               </Tooltip>
             )}
+            {s.status === 'unpaid' && can('edit') && (
+              <Tooltip label="Ubah rekap (periode/catatan)">
+                <button onClick={() => setEditingDoc(s)} disabled={busyId === s.id} className="btn-ghost p-2"><Pencil size={13} /></button>
+              </Tooltip>
+            )}
             {s.status === 'unpaid' && can('delete') && (
-              <Tooltip label="Batalkan rekap">
-                <button onClick={() => cancel(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
+              <Tooltip label="Hapus rekap (penjualan bisa direkap ulang)">
+                <button onClick={() => cancel(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
+              </Tooltip>
+            )}
+            {s.status === 'paid' && can('edit') && (
+              <Tooltip label="Batalkan pembayaran (uang kembali ke dompet lapak)">
+                <button onClick={() => unpay(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
               </Tooltip>
             )}
           </>
@@ -211,22 +231,26 @@ export default function SettlementsSection({ creds, data, reload, can }: Section
         <CreateModal creds={creds} data={data} initial={creating} onClose={() => setCreating(null)}
           onCreated={async (doc) => { setCreating(null); await Promise.all([load(), reload()]); toast.success(`Rekap ${doc} dibuat. Lanjutkan dengan membayar dari dompet lapak.`); }} />
       )}
+      {editingDoc && (
+        <CreateModal creds={creds} data={data} initial={{ stallId: editingDoc.stallId, consignorId: editingDoc.consignorId }} editing={editingDoc} onClose={() => setEditingDoc(null)}
+          onCreated={async (doc) => { setEditingDoc(null); await Promise.all([load(), reload()]); toast.success(`Rekap ${doc} diubah.`); }} />
+      )}
     </div>
   );
 }
 
 interface Preview { items: SettlementItem[]; total: number; count: number }
 
-function CreateModal({ creds, data, initial, onClose, onCreated }: {
-  creds: string; data: SectionProps['data']; initial: { stallId: string; consignorId: string }; onClose: () => void; onCreated: (docNumber: string) => Promise<void>;
+function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
+  creds: string; data: SectionProps['data']; initial: { stallId: string; consignorId: string }; editing?: Settlement; onClose: () => void; onCreated: (docNumber: string) => Promise<void>;
 }) {
   const [stallId, setStallId] = useState(initial.stallId);
   const [consignorId, setConsignorId] = useState(initial.consignorId);
-  const [period, setPeriod] = useState<PeriodKey>('month');
-  const [all, setAll] = useState(!!initial.stallId);   // dari "Belum direkap": ambil semua yang tersisa
-  const [customFrom, setCustomFrom] = useState(todayKey());
-  const [customTo, setCustomTo] = useState(todayKey());
-  const [note, setNote] = useState('');
+  const [period, setPeriod] = useState<PeriodKey>(editing ? 'custom' : 'month');
+  const [all, setAll] = useState(!editing && !!initial.stallId);   // dari "Belum direkap": ambil semua yang tersisa
+  const [customFrom, setCustomFrom] = useState(editing?.periodFrom ?? todayKey());
+  const [customTo, setCustomTo] = useState(editing?.periodTo ?? todayKey());
+  const [note, setNote] = useState(editing?.note ?? '');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -237,37 +261,41 @@ function CreateModal({ creds, data, initial, onClose, onCreated }: {
   useEffect(() => {
     if (!ready) return;
     let alive = true;
-    fetch(`${API}/api/consign/settlements/preview?stallId=${stallId}&consignorId=${consignorId}&from=${range.from}&to=${range.to}`, { headers: { 'x-admin-auth': creds } })
+    fetch(`${API}/api/consign/settlements/preview?stallId=${stallId}&consignorId=${consignorId}&from=${range.from}&to=${range.to}${editing ? `&settlementId=${editing.id}` : ''}`, { headers: { 'x-admin-auth': creds } })
       .then(r => r.ok ? r.json() as Promise<Preview> : null)
       .then(d => { if (alive) setPreview(d); });
     return () => { alive = false; };
-  }, [creds, ready, stallId, consignorId, range.from, range.to]);
+  }, [creds, ready, stallId, consignorId, range.from, range.to, editing]);
 
   const create = async () => {
     setSaving(true); setError('');
-    const r = await fetch(`${API}/api/consign/settlements`, {
-      method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stallId, consignorId, from: range.from, to: range.to, note }),
-    });
-    const d = await r.json().catch(() => ({})) as { docNumber?: string; error?: string };
-    if (r.ok && d.docNumber) await onCreated(d.docNumber);
-    else setError(d.error ?? 'Gagal membuat rekap.');
+    const r = editing
+      ? await fetch(`${API}/api/consign/settlements/${editing.id}`, { method: 'PUT', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: range.from, to: range.to, note }) })
+      : await fetch(`${API}/api/consign/settlements`, { method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ stallId, consignorId, from: range.from, to: range.to, note }) });
+    const d = await r.json().catch(() => ({})) as { docNumber?: string; settlement?: { docNumber: string }; error?: string };
+    const doc = d.docNumber ?? d.settlement?.docNumber;
+    if (r.ok && doc) await onCreated(doc);
+    else setError(d.error ?? (editing ? 'Gagal mengubah rekap.' : 'Gagal membuat rekap.'));
     setSaving(false);
   };
 
   const shown = ready ? preview : null;
   return (
-    <ModalShell title="Buat Rekap Bagi Hasil" subtitle="Bagian penitip dari penjualan lapak" icon={<HandCoins size={17} />} onClose={onClose} size="modal-md"
-      footer={<ModalFooter onClose={onClose} onSave={create} saving={saving} disabled={!shown || shown.count === 0} label="Buat Rekap" />}>
+    <ModalShell title={editing ? `Ubah Rekap ${editing.docNumber}` : 'Buat Rekap Bagi Hasil'} subtitle="Bagian penitip dari penjualan lapak" icon={<HandCoins size={17} />} onClose={onClose} size="modal-md"
+      footer={<ModalFooter onClose={onClose} onSave={create} saving={saving} disabled={!shown || shown.count === 0} label={editing ? 'Simpan Perubahan' : 'Buat Rekap'} />}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Lapak" required>
-            <SearchSelect value={stallId} onChange={setStallId} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
-              options={data.stalls.map(s => ({ value: s.id, label: s.name, sublabel: s.code }))} />
+            {editing ? <div className="input" style={{ background: 'var(--surface-2)' }}>{editing.stallName}</div> : (
+              <SearchSelect value={stallId} onChange={setStallId} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
+                options={data.stalls.map(s => ({ value: s.id, label: s.name, sublabel: s.code }))} />
+            )}
           </Field>
           <Field label="Penitip" required>
-            <SearchSelect value={consignorId} onChange={setConsignorId} placeholder="– Pilih penitip –" searchPlaceholder="Cari penitip…"
-              options={data.consignors.map(c => ({ value: c.id, label: c.name, sublabel: c.code, imageUrl: c.logoUrl || undefined }))} />
+            {editing ? <div className="input" style={{ background: 'var(--surface-2)' }}>{editing.consignorName}</div> : (
+              <SearchSelect value={consignorId} onChange={setConsignorId} placeholder="– Pilih penitip –" searchPlaceholder="Cari penitip…"
+                options={data.consignors.map(c => ({ value: c.id, label: c.name, sublabel: c.code, imageUrl: c.logoUrl || undefined }))} />
+            )}
           </Field>
         </div>
 

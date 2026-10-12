@@ -30,7 +30,7 @@ interface LineRow { id: string; product_id: string; product_name: string; qty: s
 // tanggal WIB. `lock` = kunci baris (dipakai saat membuat rekap supaya dua rekap bersamaan tidak
 // mengambil baris yang sama).
 export async function loadUnsettledLines(
-  tx: TransactionSql, p: { stallId: string; consignorId: string; from: string; to: string; lock?: boolean },
+  tx: TransactionSql, p: { stallId: string; consignorId: string; from: string; to: string; lock?: boolean; includeSettlementId?: string },
 ): Promise<{ ids: string[]; items: SettlementItem[]; total: number; count: number }> {
   const start = wibDayStart(p.from).toDate();
   const end = wibDayEnd(p.to).toDate();
@@ -38,7 +38,7 @@ export async function loadUnsettledLines(
     select l.id, l.product_id, l.product_name, l.qty, l.consignor_amount, l.source
     from consign_sale_lines l left join stall_sales s on s.id = l.sale_id
     where l.stall_id = ${p.stallId} and l.consignor_id = ${p.consignorId}
-      and not l.voided and l.settlement_id is null and (l.sale_id is null or s.status = 'paid')
+      and not l.voided and (l.settlement_id is null${p.includeSettlementId ? tx` or l.settlement_id = ${p.includeSettlementId}` : tx``}) and (l.sale_id is null or s.status = 'paid')
       and l.created_at >= ${start} and l.created_at <= ${end}
     order by l.product_name, l.id
     ${p.lock ? tx`for update of l` : tx``}
