@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { History, PackageCheck, Store, Package, Wallet, TrendingUp, TrendingDown, MapPin, ChevronRight, ArrowLeft, Search, Plus, ImageIcon, Loader2, FileSpreadsheet, FileText } from 'lucide-react';
+import { History, PackageCheck, Store, Package, Wallet, TrendingUp, TrendingDown, MapPin, ChevronRight, ArrowLeft, Search, Plus, ImageIcon, Loader2 } from 'lucide-react';
+import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import ScrollChips from '@/components/ScrollChips';
@@ -169,12 +170,12 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
         </div>
         <Tooltip label="Export Excel">
           <button onClick={() => doExport('xlsx')} disabled={!!exporting} className="btn-ghost p-2 flex-shrink-0">
-            {exporting === 'xlsx' ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+            {exporting === 'xlsx' ? <Loader2 size={15} className="animate-spin" /> : <ExcelIcon size={16} />}
           </button>
         </Tooltip>
         <Tooltip label="Export PDF">
           <button onClick={() => doExport('pdf')} disabled={!!exporting} className="btn-ghost p-2 flex-shrink-0">
-            {exporting === 'pdf' ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+            {exporting === 'pdf' ? <Loader2 size={15} className="animate-spin" /> : <PdfIcon size={16} />}
           </button>
         </Tooltip>
         {canReceive && <button onClick={() => goTo!('receipts')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}><Plus size={13} /> <span className="hidden sm:inline">Terima Barang</span></button>}
