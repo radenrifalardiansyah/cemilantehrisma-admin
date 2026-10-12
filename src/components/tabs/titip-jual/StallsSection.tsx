@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Store, Wallet } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
+import ImageUploadBox from '@/components/ImageUploadBox';
 import NumberInput from '@/components/NumberInput';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -10,13 +11,13 @@ import { periodRange, type PeriodKey } from '@/lib/period';
 import PeriodBar from './PeriodBar';
 import DataList, { RowActions, DetailPanel, initials, type ExportCol } from './DataList';
 import {
-  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, deleteMany, rupiah, qtyText, effectiveFor,
+  API, Badge, Field, ModalShell, ModalFooter, ErrorBox, deleteMany, uploadImage, rupiah, qtyText, effectiveFor,
   type SectionProps, type Stall,
 } from './shared';
 
 type StallForm = Omit<Stall, 'id' | 'code' | 'balance'> & { id?: string; openingBalance: string };
 
-const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], showOwnProducts: false, isStore: false, showInStorefront: true, openingBalance: '' };
+const EMPTY: StallForm = { name: '', address: '', warehouseId: '', note: '', isActive: true, invoicePrefix: '', usernames: [], showOwnProducts: false, isStore: false, showInStorefront: true, logoUrl: '', openingBalance: '' };
 
 
 interface StallStats { count: number; revenue: number; discount: number; itemsSold: number; ownRevenue: number; consignorShare: number; ourConsign: number; storeShare: number }
@@ -67,8 +68,22 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
   const [editing, setEditing] = useState<StallForm | null>(null);
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  // Logo diperkecil (maks 400px) dan dikompres sebelum diunggah ke Cloudinary — sama seperti logo Penitip.
+  const uploadLogo = async (file: File) => {
+    setLogoUploading(true);
+    try {
+      const url = await uploadImage(file, creds, 400);
+      setEditing(e => e && ({ ...e, logoUrl: url }));
+    } catch {
+      toast.error('Gagal mengunggah logo lapak.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
   const [staffSearch, setStaffSearch] = useState('');
   const [period, setPeriod] = useState<PeriodKey>('month');
   const [customFrom, setCustomFrom] = useState(() => new Date().toLocaleDateString('en-CA'));
@@ -151,7 +166,7 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
   const openNew = () => { setError(''); setStaffSearch(''); setEditing({ ...EMPTY }); };
   const openEdit = (s: Stall) => {
     setError(''); setStaffSearch('');
-    setEditing({ id: s.id, name: s.name, address: s.address, warehouseId: s.warehouseId, note: s.note, isActive: s.isActive, invoicePrefix: s.invoicePrefix, usernames: s.usernames, showOwnProducts: s.showOwnProducts, isStore: s.isStore, showInStorefront: s.showInStorefront, openingBalance: '' });
+    setEditing({ id: s.id, name: s.name, address: s.address, warehouseId: s.warehouseId, note: s.note, isActive: s.isActive, invoicePrefix: s.invoicePrefix, usernames: s.usernames, showOwnProducts: s.showOwnProducts, isStore: s.isStore, showInStorefront: s.showInStorefront, logoUrl: s.logoUrl, openingBalance: '' });
   };
 
   const q = staffSearch.trim().toLowerCase();
@@ -165,7 +180,7 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
         searchText={s => `${s.name} ${s.code} ${s.address} ${s.usernames.join(' ')}`} searchPlaceholder="Cari nama, kode, alamat, atau petugas…" viewKey="consign-stalls"
         addLabel={can('create') ? 'Tambah Lapak' : undefined} onAdd={can('create') ? openNew : undefined}
         emptyHint="Lapak = tempat barang titipan dijual (lapak 1, 2, 3, dst)."
-        avatar={s => initials(s.name)}
+        avatar={s => initials(s.name)} avatarImage={s => s.logoUrl || undefined}
         renderBody={(s, view) => {
           const info = stockInfo(s.id);
           return (
@@ -220,10 +235,17 @@ export default function StallsSection({ creds, data, reload, can, openJournal }:
           icon={<Store size={17} />} onClose={() => setEditing(null)}
           footer={<ModalFooter onClose={() => setEditing(null)} onSave={save} saving={saving} disabled={!editing.name.trim()} label="Simpan Lapak" />}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Field label="Nama Lapak" required>
-              <input className="input" value={editing.name} autoFocus placeholder="cth: Lapak 1"
-                onChange={e => setEditing({ ...editing, name: e.target.value })} />
-            </Field>
+            <div className="flex items-center gap-3">
+              <ImageUploadBox src={editing.logoUrl} alt={editing.name || 'Logo lapak'} uploading={logoUploading}
+                onSelect={f => uploadLogo(f)} onRemove={() => setEditing({ ...editing, logoUrl: '' })}
+                icon={<Store size={18} />} fit="contain" size={56} emptyText="Logo" />
+              <div style={{ flex: 1 }}>
+                <Field label="Nama Lapak" required>
+                  <input className="input" value={editing.name} autoFocus placeholder="cth: Lapak 1"
+                    onChange={e => setEditing({ ...editing, name: e.target.value })} />
+                </Field>
+              </div>
+            </div>
             <Field label="Alamat (opsional)">
               <input className="input" value={editing.address} onChange={e => setEditing({ ...editing, address: e.target.value })} />
             </Field>

@@ -76,6 +76,7 @@ export default function WalletOverview(props: SectionProps) {
       <DataList<Stall>
         creds={creds} items={data.stalls} totalCount={data.stalls.length} getId={s => s.id} noun="dompet"
         searchText={s => `${s.name} ${s.code}`} searchPlaceholder="Cari nama lapak…" viewKey="stall-wallets"
+        avatar={s => s.name.slice(0, 2).toUpperCase()} avatarImage={s => s.logoUrl || undefined}
         emptyHint="Dompet dibuat otomatis untuk setiap lapak. Tambahkan lapak di Titip Jual → Lapak."
         renderBody={(s, view) => (
           <div className={view === 'card' ? 'flex flex-col items-center text-center gap-1' : undefined}>

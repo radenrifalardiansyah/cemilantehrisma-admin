@@ -12,7 +12,7 @@ export const HEADER_BTN_H = 34;
 
 export interface Stall {
   id: string; code: string; name: string; address: string; warehouseId: string; note: string; isActive: boolean;
-  invoicePrefix: string; usernames: string[]; balance: number; showOwnProducts: boolean; isStore: boolean; showInStorefront: boolean;
+  invoicePrefix: string; usernames: string[]; balance: number; showOwnProducts: boolean; isStore: boolean; showInStorefront: boolean; logoUrl: string;
 }
 export interface StaffUser { username: string; fullName: string; role: string }
 export interface Consignor {
