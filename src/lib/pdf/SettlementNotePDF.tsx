@@ -53,8 +53,8 @@ const s = StyleSheet.create({
   colName: { width: '52%' },
   colQty: { width: '15%', textAlign: 'right' },
   colAmt: { width: '25%', textAlign: 'right' },
-  totalTableRow: { flexDirection: 'row', backgroundColor: C.dark, borderTopWidth: 1, borderTopColor: C.border },
-  totalCell: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', color: C.white, paddingVertical: 7, paddingHorizontal: 8 },
+  totalTableRow: { flexDirection: 'row', backgroundColor: '#F5D9BF', borderTopWidth: 1.5, borderTopColor: C.accent },
+  totalCell: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', color: C.dark, paddingVertical: 7, paddingHorizontal: 8 },
 
   terbilang: { marginTop: 10, padding: 9, borderWidth: 1, borderColor: C.border, borderRadius: 6 },
   terbilangLabel: { fontSize: 7.5, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
