@@ -200,19 +200,19 @@ export default function DataList<T>(p: Props<T>) {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar: di HP bertumpuk (cari → filter → aksi) seperti Mitra; di layar lebar satu baris. */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        <div className="relative flex-1 min-w-0">
+      {/* Toolbar: HP bertumpuk (cari → filter → aksi); layar lebar dua baris: [cari | aksi] lalu filter. */}
+      <div className="grid gap-2 sm:gap-x-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="relative min-w-0 order-1">
           <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-full"
             style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder={p.searchPlaceholder} />
         </div>
         {p.filters && (
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto [&>button]:flex-[1_1_140px] [&>button]:min-w-0 sm:[&>button]:flex-none">
+          <div className="order-2 sm:order-3 sm:col-span-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center [&>:last-child:nth-child(odd)]:col-span-2 sm:[&>:last-child:nth-child(odd)]:col-span-1 sm:[&>button]:!w-auto sm:[&>button]:min-w-[180px]">
             {p.filters}
           </div>
         )}
-        <div className="flex items-center justify-end gap-2 w-full sm:w-auto flex-shrink-0">
+        <div className="order-3 sm:order-2 flex items-center justify-end gap-2 flex-wrap">
           {importButtons}
           <Tooltip label="Export Excel">
             <button onClick={() => doExcel(filtered, 'sesuai filter')} disabled={exporting} aria-label="Export Excel" className="btn-ghost p-0 flex items-center justify-center" style={btn}>
