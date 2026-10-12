@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
   });
 
   // Produk toko hanya tampil kalau lapak diatur menampilkannya DAN punya gudang terkait.
+  const ownPrices = new Map((await sql<{ product_id: string; price: string }[]>`select product_id, price from stall_product_prices where stall_id = ${stall.id}`).map(r => [r.product_id, Number(r.price)]));
   const own = stall.warehouse_id && stall.show_own_products
     ? (await sql<OwnRow[]>`
         select p.id, p.name, p.code, p.price, p.weight, p.emoji, p.image_urls, ws.stock_qty, cat.name as category_name, p.description
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
         where ws.warehouse_id = ${stall.warehouse_id} and ws.stock_qty > 0
         order by p.name
       `).map(r => ({
-        kind: 'own' as const, productId: r.id, name: r.name ?? '', code: r.code ?? '', unit: 'pcs', weight: r.weight ?? '', description: r.description ?? '', category: r.category_name ?? '', price: Number(r.price ?? 0),
+        kind: 'own' as const, productId: r.id, name: r.name ?? '', code: r.code ?? '', unit: 'pcs', weight: r.weight ?? '', description: r.description ?? '', category: r.category_name ?? '', price: ownPrices.get(r.id) ?? Number(r.price ?? 0),
         stock: Number(r.stock_qty), emoji: r.emoji ?? '', imageUrl: (parseJsonb<string[]>(r.image_urls as string[] | string | null) ?? [])[0] ?? '',
       }))
     : [];

@@ -63,6 +63,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const ownLines = calc.lines.filter(l => items[l.index].kind === 'own');
       if (ownLines.length > 0) {
         if (!stall.warehouse_id) throw new SaleError('Lapak ini tidak punya gudang terkait — stok produk toko tidak bisa dikembalikan.');
+        for (const l of ownLines) {
+          const it = items[l.index];
+          const [settled] = await tx`select 1 from stall_own_lines where sale_id = ${id} and product_id = ${it.productId} and settlement_id is not null limit 1`;
+          if (settled) throw new SaleError(`${it.name}: penjualan ini sudah masuk setoran produk toko — batalkan setorannya dulu.`);
+          await tx`
+            insert into stall_own_lines (id, sale_id, stall_id, product_id, product_name, qty, price, amount, return_id, created_at)
+            values (${randomUUID()}, ${id}, ${stall.id}, ${it.productId}, ${it.name}, ${-l.qty}, ${it.price}, ${-it.price * l.qty}, ${returnId}, now())
+          `;
+        }
         const deltas = new Map<string, number>();
         for (const l of ownLines) deltas.set(items[l.index].productId, (deltas.get(items[l.index].productId) ?? 0) + l.qty);
         const { products } = await readProductsForDeltasPg(tx, deltas);

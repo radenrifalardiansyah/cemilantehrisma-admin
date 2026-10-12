@@ -12,6 +12,7 @@ import { auditConsign } from '@/lib/consign-audit';
 import { getDb } from '@/lib/firebase-admin';
 import { notifyProductLowStock } from '@/lib/low-stock';
 import { notifyConsignLowStock } from '@/lib/low-stock-consign';
+import { ownPriceMap } from '@/lib/stall-own';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -102,8 +103,9 @@ export async function POST(req: NextRequest) {
         const wsShort = await readWarehouseShortagesPg(tx, stall.warehouse_id, deltas, names);
         if (wsShort.length > 0) throw new SaleError(`Stok gudang lapak tidak cukup: ${wsShort.join(', ')}`);
 
-        const priceRows = await tx<{ id: string; price: string | null; weight: string | null }[]>`select id, price, weight from products where id in ${tx([...deltas.keys()])}`;
+        const priceRows = await tx<{ id: string; weight: string | null }[]>`select id, weight from products where id in ${tx([...deltas.keys()])}`;
         const priceById = new Map(priceRows.map(r => [r.id, r]));
+        const ownPrices = await ownPriceMap(tx, stall.id, [...deltas.keys()]);
         const [wh] = await tx<{ name: string }[]>`select name from warehouses where id = ${stall.warehouse_id}`;
         for (const [productId, delta] of [...deltas].sort(([a], [b]) => a.localeCompare(b))) {
           const product = products.get(productId)!;
@@ -112,7 +114,7 @@ export async function POST(req: NextRequest) {
             productId, productName: product.name, warehouseId: stall.warehouse_id, warehouseName: wh?.name,
             type: 'out', qty: delta, note: `Penjualan Lapak ${stall.name} - ${invoiceNo}`,
           });
-          const price = Number(priceById.get(productId)?.price ?? 0);
+          const price = ownPrices.get(productId) ?? 0;
           const qty = -delta;
           items.push({ kind: 'own', productId, name: product.name, unit: priceById.get(productId)?.weight || 'pcs', qty, price, subtotal: price * qty, costPrice: product.costPrice });
         }
@@ -138,6 +140,13 @@ export async function POST(req: NextRequest) {
           insert into consign_sale_lines (id, sale_id, stall_id, consignor_id, consignor_name, product_id, product_name, qty, price, scheme, scheme_value, consignor_amount, our_amount, created_at)
           values (${randomUUID()}, ${saleId}, ${stall.id}, ${i.consignorId!}, ${i.consignorName!}, ${i.productId}, ${i.name}, ${i.qty}, ${i.price},
             ${i.scheme!}, ${i.schemeValue ?? 0}, ${(i.consignorShare ?? 0) * i.qty}, ${(i.ourShare ?? 0) * i.qty}, now())
+        `;
+      }
+      // Produk toko: baris tagihan lapak ke toko (dasar setoran/rekap), harga = harga di lapak ini.
+      for (const i of items.filter(x => x.kind === 'own')) {
+        await tx`
+          insert into stall_own_lines (id, sale_id, stall_id, product_id, product_name, qty, price, amount, created_at)
+          values (${randomUUID()}, ${saleId}, ${stall.id}, ${i.productId}, ${i.name}, ${i.qty}, ${i.price}, ${i.price * i.qty}, now())
         `;
       }
       // Uang masuk dompet lapak (semua metode bayar masuk ke satu dompet per lapak).

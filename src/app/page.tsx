@@ -29,6 +29,7 @@ import StockTab     from '@/components/tabs/StockTab';
 import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
 import TitipJualTab  from '@/components/tabs/TitipJualTab';
+import StallOwnTab   from '@/components/tabs/StallOwnTab';
 import KasirLapakTab from '@/components/tabs/KasirLapakTab';
 import CashierSalesReportTab from '@/components/tabs/CashierSalesReportTab';
 import StallSalesReportTab from '@/components/tabs/StallSalesReportTab';
@@ -1524,6 +1525,7 @@ export default function AdminPage() {
       {activeTab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
       {activeTab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}
       {activeTab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} />}
+      {activeTab === 'stall-own'  && <StallOwnTab   creds={creds} can={(a: Action) => can('stall-own', a)} />}
       {activeTab === 'stall-pos'  && <KasirLapakTab creds={creds} can={(a: Action) => can('stall-pos', a)} />}
       {activeTab === 'stall-sales-report' && <CashierSalesReportTab creds={creds} />}
       {activeTab === 'stall-report' && <StallSalesReportTab creds={creds} />}

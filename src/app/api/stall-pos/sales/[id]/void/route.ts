@@ -36,6 +36,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const [inSettlement] = await tx`select 1 from consign_sale_lines where sale_id = ${id} and settlement_id is not null limit 1`;
       if (inSettlement) throw new SaleError('Penjualan ini sudah masuk rekap bagi hasil penitip — batalkan rekapnya dulu.');
 
+      const [ownSettled] = await tx`select 1 from stall_own_lines where sale_id = ${id} and settlement_id is not null limit 1`;
+      if (ownSettled) throw new SaleError('Penjualan ini sudah masuk setoran produk toko — batalkan setorannya dulu.');
+
       const items = rowToSale(sale).items;
       for (const i of [...items].filter(x => x.kind === 'consign').sort((a, b) => a.productId.localeCompare(b.productId))) {
         await moveConsignStock(tx, {
@@ -59,6 +62,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }
 
       await tx`update consign_sale_lines set voided = true where sale_id = ${id}`;
+      await tx`update stall_own_lines set voided = true where sale_id = ${id}`;
       if (Number(sale.total) > 0) {
         await tx`
           insert into stall_wallet_entries (id, stall_id, kind, amount, ref_id, note, created_by, created_at)
