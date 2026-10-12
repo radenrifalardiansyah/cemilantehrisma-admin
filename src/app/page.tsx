@@ -59,6 +59,7 @@ import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 import TopListChart from '@/components/dashboard/TopListChart';
 import BusinessAnalyticsSection, { type BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
+import LapakAnalyticsSection from '@/components/dashboard/LapakAnalyticsSection';
 import { type PeriodKey, periodRange } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
 
@@ -335,7 +336,7 @@ export default function AdminPage() {
   // ── Analytics ────────────────────────────────────────────
   // Sub-view di dalam tab Analitik — dipisah supaya tidak jadi satu halaman yang kepanjangan ke
   // bawah (pola sama seperti subView di FinanceReportTab / stokView di StockTab).
-  const [dashSubView, setDashSubView] = useState<'ringkasan' | 'analitik-bisnis' | 'analitik-mitra' | 'analitik-web'>('ringkasan');
+  const [dashSubView, setDashSubView] = useState<'ringkasan' | 'analitik-bisnis' | 'analitik-mitra' | 'analitik-lapak' | 'analitik-web'>('ringkasan');
   const [dashData, setDashData] = useState<DashData | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
@@ -1012,6 +1013,7 @@ export default function AdminPage() {
           { id: 'ringkasan' as const, label: 'Ringkasan', Icon: LayoutDashboard },
           { id: 'analitik-bisnis' as const, label: 'Analitik Bisnis', Icon: PieChart },
           { id: 'analitik-mitra' as const, label: 'Analitik Mitra', Icon: Store },
+          ...(superAdmin || permissions['consign']?.view === true || permissions['stall-report']?.view === true ? [{ id: 'analitik-lapak' as const, label: 'Analitik Lapak', Icon: Store }] : []),
           { id: 'analitik-web' as const, label: 'Analitik Web', Icon: Globe },
         ]).map(t => (
           <button key={t.id} onClick={() => setDashSubView(t.id)}
@@ -1432,6 +1434,8 @@ export default function AdminPage() {
           onNavigateFinance={() => setActiveTab('finance-report')}
         />
       )}
+
+      {dashSubView === 'analitik-lapak' && <LapakAnalyticsSection creds={creds} />}
 
       {dashSubView === 'analitik-mitra' && (
         <ConsignmentAnalyticsSection
