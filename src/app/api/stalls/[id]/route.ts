@@ -43,7 +43,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   await sql.begin(async tx => {
     await tx`
       update stalls set name = ${name}, address = ${(data.address as string) ?? ''}, warehouse_id = ${warehouseId},
-        note = ${(data.note as string) ?? ''}, is_active = ${isActive}, invoice_prefix = ${prefix}, show_own_products = ${data.showOwnProducts === true && !!warehouseId}, is_store = ${isStore}, updated_at = now()
+        note = ${(data.note as string) ?? ''}, is_active = ${isActive}, invoice_prefix = ${prefix}, show_own_products = ${data.showOwnProducts === true && !!warehouseId}, is_store = ${isStore}, show_in_storefront = ${data.showInStorefront !== false}, updated_at = now()
       where id = ${id}
     `;
     // Petugas diganti sebagai satu set: yang tidak ada di daftar baru dilepas.

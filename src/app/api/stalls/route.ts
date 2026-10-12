@@ -67,8 +67,8 @@ export async function POST(req: NextRequest) {
         if (other) throw new CreateError(`Sudah ada lapak bertanda Toko ("${other.name}"). Hanya boleh satu.`);
       }
       await tx`
-        insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, is_store, created_at, updated_at)
-        values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, ${isStore}, now(), now())
+        insert into stalls (id, code, name, address, warehouse_id, note, is_active, invoice_prefix, show_own_products, is_store, show_in_storefront, created_at, updated_at)
+        values (${id}, ${code}, ${name}, ${(data.address as string) ?? ''}, ${warehouseId}, ${(data.note as string) ?? ''}, ${data.isActive !== false}, ${prefix}, ${data.showOwnProducts === true && !!warehouseId}, ${isStore}, ${data.showInStorefront !== false}, now(), now())
       `;
       if (openingBalance > 0) {
         await tx`
