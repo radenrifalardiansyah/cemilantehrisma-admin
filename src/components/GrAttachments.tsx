@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Camera, ImagePlus, Loader2, X } from 'lucide-react';
+import { ImagePlus, Loader2, X } from 'lucide-react';
+import CameraButton from '@/components/CameraButton';
 import { useToast } from '@/components/Toast';
 import { uploadImage } from '@/components/tabs/titip-jual/shared';
 
@@ -13,8 +14,7 @@ export default function GrAttachments({ creds, urls, onChange, max = 10 }: {
   const toast = useToast();
   const [uploading, setUploading] = useState(0);
 
-  const pick = async (list: FileList | null) => {
-    const files = Array.from(list ?? []);
+  const pickFiles = async (files: File[]) => {
     if (files.length === 0) return;
     const room = max - urls.length;
     if (room <= 0) { toast.error(`Maksimal ${max} lampiran.`); return; }
@@ -53,12 +53,9 @@ export default function GrAttachments({ creds, urls, onChange, max = 10 }: {
       <div className="flex gap-2">
         <label className={btn} style={{ height: 40, opacity: busy ? 0.6 : 1 }}>
           {busy ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} {busy ? `Mengunggah (${uploading})…` : 'Pilih foto'}
-          <input type="file" accept="image/*" multiple className="hidden" disabled={busy || urls.length >= max} onChange={e => { void pick(e.target.files); e.target.value = ''; }} />
+          <input type="file" accept="image/*" multiple className="hidden" disabled={busy || urls.length >= max} onChange={e => { void pickFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
         </label>
-        <label className={btn} style={{ height: 40, opacity: busy ? 0.6 : 1 }}>
-          <Camera size={14} /> Ambil foto
-          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={busy || urls.length >= max} onChange={e => { void pick(e.target.files); e.target.value = ''; }} />
-        </label>
+        <CameraButton className={btn} style={{ height: 40, opacity: busy ? 0.6 : 1 }} disabled={busy || urls.length >= max} onFiles={f => { void pickFiles(f); }} />
       </div>
       <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{urls.length}/{max} foto · ikut tercetak sebagai halaman Lampiran di GR & DO.</p>
     </div>

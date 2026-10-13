@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Camera, ImagePlus, X, ExternalLink, Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet, CheckCircle2 } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import SearchSelect from '@/components/SearchSelect';
+import CameraButton from '@/components/CameraButton';
 import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
@@ -638,10 +639,9 @@ function ProofField({ creds, url, uploading, setUploading, onChange, hint }: {
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} Pilih foto
             <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
           </label>
-          <label className={btn} style={{ height: 40, opacity: uploading ? 0.6 : 1 }}>
+          <CameraButton className={btn} style={{ height: 40, opacity: uploading ? 0.6 : 1 }} disabled={uploading} onFiles={fs => { void pick(fs[0]); }}>
             <Camera size={14} /> Ambil gambar
-            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={e => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
-          </label>
+          </CameraButton>
         </div>
       )}
       {hint && <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{hint}</p>}

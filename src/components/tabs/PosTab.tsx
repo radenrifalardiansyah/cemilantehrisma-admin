@@ -1,5 +1,6 @@
 'use client';
 
+import CameraButton from '@/components/CameraButton';
 import { addDaysWib, formatDueDate } from '@/lib/receivable';
 import EmptyAddCard from '../EmptyAddCard';
 import { computeVoucherDiscount, voucherDiscountLabel, type VoucherRule } from '@/lib/voucher';
@@ -1462,6 +1463,9 @@ export default function PosTab({
                     <span className="flex-1 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
                       {transferProofUrl ? 'Bukti transfer terlampir' : 'Upload / foto bukti transfer'}
                     </span>
+                    {!transferProofUrl && !transferProofUploading && (
+                      <CameraButton desktopOnly className="btn-ghost p-2" title="Ambil foto dengan kamera" onFiles={fs => { void handleTransferProofSelect(fs[0]); }}><Camera size={14} /></CameraButton>
+                    )}
                   </div>
                   {ocrStatus === 'reading' && (
                     <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
