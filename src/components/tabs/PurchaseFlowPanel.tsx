@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toDataUri } from '@/lib/pdf/logo';
-import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, Upload, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
+import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, Upload, ChevronLeft, ChevronRight, Printer, Undo2 } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -125,6 +125,7 @@ export default function PurchaseFlowPanel({
   const [loaded, setLoaded] = useState({ po: false, gr: false });
   const [search, setSearch] = useState('');
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadPos = useCallback(async () => {
     const r = await fetch('/api/purchase-orders', { headers: { 'x-admin-auth': creds } });
@@ -402,6 +403,34 @@ ${pdfUrl}`.trim();
     } finally { setCancelling(false); }
   };
 
+  // ── Rollback (approved/terkirim → draft); hanya yang punya hak approve ──────
+  const [rbTarget, setRbTarget] = useState<{ kind: 'po' | 'gr'; id: string; label: string; warn: string } | null>(null);
+  const [rbNote, setRbNote] = useState('');
+  const [rollingBack, setRollingBack] = useState(false);
+  const askRollbackPo = (p: Po) => {
+    setRbNote('');
+    setRbTarget({ kind: 'po', id: p.id, label: p.poNumber, warn: 'PO kembali ke Draft sehingga isinya bisa diedit lagi, lalu dikirim ulang ke supplier. Hanya bisa kalau PO belum punya GR.' });
+  };
+  const askRollbackGr = (g: Gr) => {
+    setRbNote('');
+    setRbTarget({ kind: 'gr', id: g.id, label: `${g.grNumber} / ${g.doNumber}`, warn: 'GR & DO kembali ke Draft sehingga qty, harga, kondisi, dan lampiran bisa diedit lagi lalu di-approve ulang. Pembelian hasil GR dibatalkan: stok & harga rata-rata dikembalikan dan pengeluaran dihapus. Kalau bahan sudah dipakai produksi / dibeli lagi, rollback ditolak.' });
+  };
+  const doRollback = async () => {
+    if (!rbTarget) return;
+    if (!rbNote.trim()) { toast.error('Alasan rollback wajib diisi.'); return; }
+    setRollingBack(true);
+    try {
+      const url = rbTarget.kind === 'po' ? `/api/purchase-orders/${rbTarget.id}/rollback` : `/api/goods-receipts/${rbTarget.id}/rollback`;
+      const r = await fetch(url, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ note: rbNote.trim() }) });
+      const d = await r.json().catch(() => ({})) as { error?: string };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal rollback.'); return; }
+      toast.success(`${rbTarget.label} dikembalikan ke Draft.`);
+      setRbTarget(null);
+      await Promise.all([loadPos(), loadGrs()]);
+      if (rbTarget.kind === 'gr') onStockChanged();
+    } finally { setRollingBack(false); }
+  };
+
   // ── Daftar: cari, halaman, tampilan Tabel/Kartu ────────────────────────────
   const q = search.trim().toLowerCase();
   const filteredPos = pos.filter(p => !q || p.poNumber.toLowerCase().includes(q) || p.supplierName.toLowerCase().includes(q));
@@ -590,7 +619,17 @@ ${pdfUrl}`.trim();
             <button onClick={() => askCancelPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
           </Tooltip>
         )}
+        {p.status === 'terkirim' && canApprove && (
+          <Tooltip label="Rollback ke Draft (bisa diedit lagi)">
+            <button onClick={() => askRollbackPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
+          </Tooltip>
+        )}
         <RecordHistoryButton open={historyId === p.id} onToggle={() => setHistoryId(c => c === p.id ? null : p.id)} />
+        <Tooltip label="Lihat detail">
+          <button onClick={() => setExpandedId(c => c === p.id ? null : p.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+            <ChevronRight size={12} style={{ transform: expandedId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+          </button>
+        </Tooltip>
       </>
     );
   };
@@ -628,7 +667,17 @@ ${pdfUrl}`.trim();
           <button onClick={() => askCancelGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
         </Tooltip>
       )}
+      {g.status === 'approved' && canApprove && (
+        <Tooltip label="Rollback ke Draft (bisa diedit lagi)">
+          <button onClick={() => askRollbackGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
+        </Tooltip>
+      )}
       <RecordHistoryButton open={historyId === g.id} onToggle={() => setHistoryId(c => c === g.id ? null : g.id)} />
+        <Tooltip label="Lihat detail">
+          <button onClick={() => setExpandedId(c => c === g.id ? null : g.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+            <ChevronRight size={12} style={{ transform: expandedId === g.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+          </button>
+        </Tooltip>
     </>
   );
   const poItemsText = (p: Po) => p.items.map(it => {
@@ -748,6 +797,7 @@ ${pdfUrl}`.trim();
                   </div>
                 </div>
               </div>
+              {expandedId === p.id && <PoDetail p={p} />}
               {historyId === p.id && <RecordHistoryPanel creds={creds} entity="purchase-orders" entityId={p.id} />}
             </div>
           )) : pagedGrs.map((g, idx) => (
@@ -778,6 +828,7 @@ ${pdfUrl}`.trim();
                   </div>
                 </div>
               </div>
+              {expandedId === g.id && <GrDetail g={g} walletLabel={walletOptions.find(w => w.value === g.walletId)?.label} />}
               {historyId === g.id && <RecordHistoryPanel creds={creds} entity="goods-receipts" entityId={g.id} />}
             </div>
           ))}
@@ -799,6 +850,7 @@ ${pdfUrl}`.trim();
                 <div className="flex items-center justify-center gap-1 flex-wrap px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>{poActions(p)}</div>
                 {p.status === 'batal' && p.cancelNote && <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.cancelNote}</p>}
               </div>
+              {expandedId === p.id && <PoDetail p={p} />}
               {historyId === p.id && <RecordHistoryPanel creds={creds} entity="purchase-orders" entityId={p.id} />}
             </div>
           )) : pagedGrs.map(g => (
@@ -816,6 +868,7 @@ ${pdfUrl}`.trim();
                 <div className="flex items-center justify-center gap-1 flex-wrap px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>{grActions(g)}</div>
                 {g.status === 'dibatalkan' && g.cancelNote && <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {g.cancelNote}</p>}
               </div>
+              {expandedId === g.id && <GrDetail g={g} walletLabel={walletOptions.find(w => w.value === g.walletId)?.label} />}
               {historyId === g.id && <RecordHistoryPanel creds={creds} entity="goods-receipts" entityId={g.id} />}
             </div>
           ))}
@@ -1182,6 +1235,34 @@ ${pdfUrl}`.trim();
         </div>
       )}
 
+      {/* ════ MODAL: ROLLBACK ════ */}
+      {rbTarget && (
+        <div className="modal-overlay" onClick={() => !rollingBack && setRbTarget(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><Undo2 size={17} /></div>
+                <div><p className="modal-title">Rollback {rbTarget.label}?</p></div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setRbTarget(null)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>{rbTarget.warn}</p>
+              <label style={fieldLabel}>Alasan <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <textarea value={rbNote} onChange={e => setRbNote(e.target.value)} rows={3} className="input" placeholder="Mengapa perlu dikembalikan ke Draft?" />
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setRbTarget(null)} disabled={rollingBack} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Kembali</button>
+              <button onClick={doRollback} disabled={rollingBack} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {rollingBack ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />} Ya, Rollback
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ════ MODAL: BATAL ════ */}
       {cancelTarget && (
         <div className="modal-overlay" onClick={() => !cancelling && setCancelTarget(null)}>
@@ -1210,5 +1291,99 @@ ${pdfUrl}`.trim();
         </div>
       )}
     </>
+  );
+}
+
+// ── Detail transaksi (dibuka dengan ikon ›, seperti di menu lain) ─────────────
+function DField({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={`min-w-0${wide ? ' col-span-2 sm:col-span-4' : ''}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <div className="text-xs font-medium break-words" style={{ color: 'var(--text-secondary)' }}>{children || '–'}</div>
+    </div>
+  );
+}
+
+function DetailTable({ heads, rows, foot }: { heads: { label: string; right?: boolean }[]; rows: (string | number)[][]; foot?: (string | number)[] }) {
+  const cell = (c: string | number, i: number, bold?: boolean) => (
+    <td key={i} className={`px-2.5 py-1.5 text-xs tabular ${heads[i]?.right ? 'text-right' : ''}`} style={{ color: 'var(--text-secondary)', fontWeight: bold ? 700 : 500 }}>{c === '' ? '–' : c}</td>
+  );
+  return (
+    <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-2)', background: 'var(--surface)' }}>
+      <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)' }}>
+            {heads.map((h, i) => <th key={i} className={`px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide ${h.right ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h.label}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => <tr key={ri} style={{ borderTop: '1px solid var(--border-2)' }}>{r.map((c, ci) => cell(c, ci))}</tr>)}
+          {foot && <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--accent-bg)' }}>{foot.map((c, ci) => cell(c, ci, true))}</tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PoDetail({ p }: { p: Po }) {
+  const rows = p.items.map((it, i) => [i + 1, it.materialName, it.unit, formatQty(it.qty), formatQty(p.received?.[it.materialId] ?? 0), formatRp(it.price), formatRp(it.subtotal)]);
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+        <DField label="No. PO">{p.poNumber}</DField>
+        <DField label="Status">{PO_BADGE[p.status].label}</DField>
+        <DField label="Tanggal PO">{formatDateDisplay(p.date)}</DField>
+        <DField label="Estimasi Tiba">{p.expectedDate ? formatDateDisplay(p.expectedDate) : ''}</DField>
+        <DField label="Supplier">{p.supplierName}</DField>
+        <DField label="Telp/WA">{p.supplierPhone}</DField>
+        <DField label="Dibuat oleh">{p.createdByName || p.createdBy || ''}</DField>
+        <DField label="Total">{formatRp(p.total)}</DField>
+        {p.note && <DField label="Catatan" wide>{p.note}</DField>}
+        {p.status === 'batal' && p.cancelNote && <DField label="Alasan Batal" wide>{p.cancelNote}</DField>}
+      </div>
+      <DetailTable
+        heads={[{ label: 'No' }, { label: 'Bahan Baku' }, { label: 'Sat.' }, { label: 'Dipesan', right: true }, { label: 'Diterima', right: true }, { label: 'Harga', right: true }, { label: 'Jumlah', right: true }]}
+        rows={rows} foot={['', 'Total', '', '', '', '', formatRp(p.total)]} />
+    </div>
+  );
+}
+
+function GrDetail({ g, walletLabel }: { g: Gr; walletLabel?: string }) {
+  const rows = g.items.map((it, i) => [i + 1, it.materialName, it.unit, formatQty(it.orderedQty), formatQty(it.qty), it.condition ?? '', it.itemNote ?? '', formatRp(it.price), formatRp(it.subtotal)]);
+  const pay = [walletLabel, g.paymentStatus ? (g.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas') : ''].filter(Boolean).join(' · ');
+  const approvedAt = g.approvedAt ? new Date(g.approvedAt.seconds * 1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+        <DField label="No. GR">{g.grNumber}</DField>
+        <DField label="No. DO">{g.doNumber}</DField>
+        <DField label="Status">{GR_BADGE[g.status].label}</DField>
+        <DField label="Ref. PO">{g.poNumber ?? ''}</DField>
+        <DField label="Supplier">{g.supplierName ?? ''}</DField>
+        <DField label="Tanggal Terima">{formatDateDisplay(g.receivedDate)}</DField>
+        <DField label="Dibuat oleh">{g.createdByName || g.createdBy || ''}</DField>
+        <DField label="Disetujui oleh">{g.status === 'approved' ? [g.approvedByName || g.approvedBy, approvedAt].filter(Boolean).join(' · ') : ''}</DField>
+        <DField label="Pembayaran">{pay}</DField>
+        <DField label="Total">{formatRp(g.total)}</DField>
+        {g.note && <DField label="Catatan" wide>{g.note}</DField>}
+        {g.status === 'dibatalkan' && g.cancelNote && <DField label="Alasan Batal" wide>{g.cancelNote}</DField>}
+      </div>
+      <DetailTable
+        heads={[{ label: 'No' }, { label: 'Bahan Baku' }, { label: 'Sat.' }, { label: 'Dipesan', right: true }, { label: 'Diterima', right: true }, { label: 'Kondisi' }, { label: 'Keterangan' }, { label: 'Harga', right: true }, { label: 'Jumlah', right: true }]}
+        rows={rows} foot={['', 'Total', '', '', '', '', '', '', formatRp(g.total)]} />
+      {(g.attachments ?? []).length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>Lampiran Foto ({g.attachments!.length})</p>
+          <div className="flex flex-wrap gap-2">
+            {g.attachments!.map((u, i) => (
+              <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="w-16 h-16 rounded-lg overflow-hidden block" style={{ border: '1px solid var(--border-2)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u} alt={`Lampiran ${i + 1}`} className="w-full h-full object-cover" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
