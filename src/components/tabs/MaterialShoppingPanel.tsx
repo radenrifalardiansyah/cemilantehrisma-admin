@@ -703,7 +703,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                       const doneCount = g.items.length - g.pending.length;
                       return (
                         <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: selected.has(g.key) ? 'var(--accent)' : 'var(--border-2)', background: selected.has(g.key) ? 'var(--accent-bg)' : undefined }}>
-                          <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center justify-between gap-2">
                             <SelectBox label="Pilih daftar ini" checked={selected.has(g.key)} onChange={() => toggleKey(g.key)} />
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}><span style={{ color: STATUS_DOT[g.status] }}>•</span> {supplierLabel(g)}</p>
