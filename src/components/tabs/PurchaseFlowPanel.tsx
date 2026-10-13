@@ -13,7 +13,7 @@ import { exportSheet, downloadPoTemplate, parsePoExcel } from '@/components/tabs
 import PurchaseDocPDF, { PurchaseDocBundle } from '@/lib/pdf/PurchaseDocPDF';
 import { poToDocData, grToDocData } from '@/lib/pdf/purchase-doc-data';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
-import type { PoStatus, GrStatus, PoItem, GrItem } from '@/lib/purchase-orders-pg';
+import { GR_CONDITIONS, type PoStatus, type GrStatus, type PoItem, type GrItem } from '@/lib/purchase-orders-pg';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
@@ -93,7 +93,7 @@ const GR_BADGE: Record<GrStatus, { label: string; cls: string }> = {
 };
 
 interface PoRowInput { materialId: string; qty: string; price: string }
-interface GrRowInput { materialId: string; name: string; unit: string; orderedQty: number; qty: string; price: string }
+interface GrRowInput { materialId: string; name: string; unit: string; orderedQty: number; qty: string; price: string; condition: string; itemNote: string }
 
 interface Props {
   creds: string;
@@ -167,7 +167,7 @@ export default function PurchaseFlowPanel({
   };
   const poDoc = async (p: Po) => poToDocData({ ...p, supplierPic: supplierOf(p.supplierId)?.pic }, supplierOf(p.supplierId)?.address, { created: await sigUri(p.createdBySignature) });
   const grDoc = async (g: Gr, kind: 'gr' | 'do') =>
-    grToDocData(g, kind, supplierInfoOf(g), { created: await sigUri(g.createdBySignature), approved: await sigUri(g.approvedBySignature) });
+    grToDocData(g, kind, supplierInfoOf(g), { created: await sigUri(g.createdBySignature), approved: await sigUri(g.approvedBySignature) }, walletOptions.find(w => w.value === g.walletId)?.label);
   const poPdf = async (p: Po) => {
     setBusyId(`po-${p.id}`);
     await downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={await poDoc(p)} store={storeHeader} />, p.poNumber);
@@ -294,7 +294,7 @@ ${pdfUrl}`.trim();
 
   function openEditGr(g: Gr) {
     setEditingGr(g);
-    setGRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, orderedQty: it.orderedQty, qty: String(it.qty), price: String(Math.round(it.price)) })));
+    setGRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, orderedQty: it.orderedQty, qty: String(it.qty), price: String(Math.round(it.price)), condition: it.condition ?? '', itemNote: it.itemNote ?? '' })));
     setGDate(g.receivedDate); setGNote(g.note);
     setGWallet(g.walletId ?? ''); setGPayment(g.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
   }
@@ -306,7 +306,7 @@ ${pdfUrl}`.trim();
     setSavingGr(true);
     try {
       const body = {
-        items: gRows.map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0 })),
+        items: gRows.map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0, condition: r.condition, itemNote: r.itemNote })),
         receivedDate: gDate, note: gNote, walletId: gWallet || null, paymentStatus: gPayment,
       };
       const res = await fetch(`/api/goods-receipts/${editingGr.id}`, { method: 'PUT', headers: jsonHeaders, body: JSON.stringify(body) });
@@ -1019,6 +1019,19 @@ ${pdfUrl}`.trim();
                           <div>
                             <label style={fieldLabel}>Harga/satuan (sesuai nota)</label>
                             <NumberInput value={row.price} onChange={raw => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, price: raw } : r))} placeholder="0" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <div>
+                            <label style={fieldLabel}>Kondisi</label>
+                            <select value={row.condition} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, condition: e.target.value } : r))} className="input">
+                              <option value="">– Pilih –</option>
+                              {GR_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={fieldLabel}>Keterangan</label>
+                            <input type="text" maxLength={200} value={row.itemNote} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, itemNote: e.target.value } : r))} placeholder="mis. 2 ikat sobek" className="input" />
                           </div>
                         </div>
                       </div>

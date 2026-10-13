@@ -32,7 +32,7 @@ export interface PurchaseDocData {
   approvedBy?: string;         // GR/DO
   approvedBySignature?: string;
   approvedAt?: string;         // GR/DO (sudah terformat)
-  paymentLabel?: string;       // GR approved: 'Lunas' / 'Belum Lunas'
+  paymentLabel?: string;       // GR/DO: metode (dompet) + status, mis. 'Kas Toko · Lunas'
   items: (PoItem | GrItem)[];
   total: number;
   note?: string;
@@ -124,6 +124,9 @@ const s = StyleSheet.create({
   sigRole: { fontSize: 8.5, color: C.muted },
   sigSpace: { height: 52, justifyContent: 'flex-end', alignItems: 'center' },
   sigImg: { height: 48, maxWidth: 150, objectFit: 'contain' },
+  sysSig: { borderWidth: 1.2, borderColor: C.green, borderRadius: 4, paddingVertical: 3, paddingHorizontal: 7, alignItems: 'center', transform: 'rotate(-4deg)' },
+  sysSigTitle: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.green, letterSpacing: 0.4 },
+  sysSigSub: { fontSize: 6.5, color: C.green, marginTop: 1 },
   sigLine: { width: '86%', borderBottomWidth: 1, borderBottomColor: C.dark },
   sigName: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', marginTop: 4, textAlign: 'center' },
   sigMeta: { fontSize: 7.5, color: C.muted, marginTop: 1.5, textAlign: 'center' },
@@ -220,7 +223,7 @@ function Parties({ data, store }: { data: PurchaseDocData; store: StoreHeader })
           {k !== 'po' && <Field k="Ref. PO" v={data.refPoNumber} />}
           {k === 'gr' && <Field k="No. DO" v={data.refDoNumber} />}
           {k === 'do' && <Field k="Ref. GR" v={data.refGrNumber} />}
-          {k === 'gr' && <Field k="Pembayaran" v={data.paymentLabel} />}
+          {k !== 'po' && <Field k="Pembayaran" v={data.paymentLabel} />}
           <Field k="Dibuat oleh" v={data.createdBy} />
         </View>
       </View>
@@ -255,8 +258,8 @@ function columnsFor(kind: PurchaseDocKind): Col[] {
     { head: 'Nama Bahan Baku', w: '34%', cell: nameOf },
     { head: 'Satuan', w: '10%', align: 'center', cell: it => it.unit },
     { head: 'Qty Diterima', w: '14%', align: 'right', cell: it => qty(it.qty) },
-    { head: 'Kondisi', w: '14%', align: 'center', cell: () => '' },
-    { head: 'Keterangan', w: '22%', cell: () => '' },
+    { head: 'Kondisi', w: '14%', align: 'center', cell: it => ('condition' in it && it.condition) || '' },
+    { head: 'Keterangan', w: '22%', cell: it => ('itemNote' in it && it.itemNote) || '' },
   ];
 }
 
@@ -299,19 +302,28 @@ function Totals({ data }: { data: PurchaseDocData }) {
 
 function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
   const k = data.kind;
-  const sigs: { role: string; name?: string; meta?: string; image?: string }[] = k === 'po'
+  // Dokumen GR/DO yang sudah di-approve tanpa gambar tanda tangan → cap "ditandatangani sistem" (bukan ruang kosong).
+  const approved = k !== 'po' && data.statusTone === 'ok';
+  const sigs: { role: string; name?: string; meta?: string; image?: string; sys?: { title: string; sub: string } }[] = k === 'po'
     ? [{ role: 'Dibuat oleh', name: data.createdBy, image: data.createdBySignature }, { role: 'Disetujui', name: store.ownerName }, { role: 'Supplier', name: data.supplierName }]
     : [
       { role: 'Pengirim (Supplier)', name: data.supplierName },
-      { role: 'Penerima', name: data.createdBy, image: data.createdBySignature },
-      { role: k === 'gr' ? 'Disetujui' : 'Mengetahui', name: store.ownerName, image: store.ownerSignature, meta: data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined },
+      { role: 'Penerima', name: data.createdBy, image: data.createdBySignature, sys: approved ? { title: 'DITERIMA & DICATAT SISTEM', sub: data.date } : undefined },
+      { role: k === 'gr' ? 'Disetujui' : 'Mengetahui', name: store.ownerName, image: store.ownerSignature, sys: approved ? { title: 'DISETUJUI SECARA SISTEM', sub: [data.approvedBy ? `oleh ${data.approvedBy}` : '', data.approvedAt].filter(Boolean).join(' · ') } : undefined, meta: data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined },
     ];
   return (
     <View style={s.sigRow} wrap={false}>
       {sigs.map(g => (
         <View key={g.role} style={s.sigBox}>
           <Text style={s.sigRole}>{g.role}</Text>
-          <View style={s.sigSpace}>{g.image && <Image src={g.image} style={s.sigImg} />}</View>
+          <View style={s.sigSpace}>
+            {g.image ? <Image src={g.image} style={s.sigImg} /> : g.sys && (
+              <View style={s.sysSig}>
+                <Text style={s.sysSigTitle}>{g.sys.title}</Text>
+                {g.sys.sub ? <Text style={s.sysSigSub}>{g.sys.sub}</Text> : null}
+              </View>
+            )}
+          </View>
           <View style={s.sigLine} />
           <Text style={s.sigName}>{g.name ? `( ${g.name} )` : '(                                  )'}</Text>
           {g.meta && <Text style={s.sigMeta}>{g.meta}</Text>}

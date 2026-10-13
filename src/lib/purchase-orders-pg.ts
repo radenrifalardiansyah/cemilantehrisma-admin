@@ -10,7 +10,10 @@ export type PoStatus = 'draft' | 'terkirim' | 'diterima_sebagian' | 'diterima' |
 export type GrStatus = 'draft' | 'approved' | 'dibatalkan';
 
 export interface PoItem { materialId: string; materialName: string; unit: string; qty: number; price: number; subtotal: number }
-export interface GrItem extends PoItem { orderedQty: number }
+// Kondisi barang saat diterima + keterangan per item (tercetak di kolom Kondisi/Keterangan pada DO).
+export const GR_CONDITIONS = ['Baik', 'Rusak', 'Kurang', 'Lainnya'] as const;
+export type GrCondition = typeof GR_CONDITIONS[number];
+export interface GrItem extends PoItem { orderedQty: number; condition?: GrCondition; itemNote?: string }
 
 export interface PoRow {
   id: string; po_number: string; supplier_id: string | null; supplier_name: string; supplier_phone: string;
@@ -114,7 +117,7 @@ export function remainingItems(poItems: PoItem[], received: Map<string, number>)
   return out;
 }
 
-export interface GrItemInput { materialId: string; qty: number; price?: number }
+export interface GrItemInput { materialId: string; qty: number; price?: number; condition?: string; itemNote?: string }
 
 // Susun item GR dari isian user: qty 0 dibuang, qty tidak boleh melebihi sisa PO, nama/satuan
 // diambil dari PO (bukan dari klien), harga boleh beda dari PO (harga di nota supplier).
@@ -134,7 +137,12 @@ export function buildGrItems(poItems: PoItem[], received: Map<string, number>, i
     const sum = (sums.get(row.materialId) ?? 0) + qty;
     if (sum > rem.qty + 1e-9) throw new Error(`Jumlah "${rem.materialName}" melebihi sisa PO (${rem.qty} ${rem.unit}).`);
     sums.set(row.materialId, sum);
-    out.push({ materialId: rem.materialId, materialName: rem.materialName, unit: rem.unit, orderedQty: rem.orderedQty, qty, price, subtotal: qty * price });
+    const condition = (GR_CONDITIONS as readonly string[]).includes(row.condition ?? '') ? row.condition as GrCondition : undefined;
+    const itemNote = typeof row.itemNote === 'string' ? row.itemNote.trim().slice(0, 200) : '';
+    out.push({
+      materialId: rem.materialId, materialName: rem.materialName, unit: rem.unit, orderedQty: rem.orderedQty, qty, price, subtotal: qty * price,
+      ...(condition ? { condition } : {}), ...(itemNote ? { itemNote } : {}),
+    });
   }
   if (out.length === 0) throw new Error('Isi jumlah diterima minimal untuk 1 bahan.');
   return out;
