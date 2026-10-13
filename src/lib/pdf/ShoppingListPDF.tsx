@@ -28,13 +28,14 @@ const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', color: C.dark, padding: 32, paddingBottom: 48, fontSize: 9 },
   topBar: { height: 7, backgroundColor: C.accent, marginTop: -32, marginHorizontal: -32, marginBottom: 18 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  logo: { width: 44, height: 44, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  logo: { width: 44, height: 44, borderRadius: 8, objectFit: 'contain', borderWidth: 1, borderColor: C.border, backgroundColor: C.white, flexShrink: 0 },
   storeName: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.dark },
   storeTagline: { fontSize: 8, color: C.accent, marginTop: 1 },
   storeMeta: { fontSize: 8, color: C.muted, marginTop: 1 },
-  headerRight: { alignItems: 'flex-end' },
+  storeInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  headerRight: { alignItems: 'flex-end', width: '40%', flexShrink: 0 },
   docTitle: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.accent, letterSpacing: 0.5 },
   docSub: { fontSize: 7.5, color: C.muted, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
   docMetaRow: { flexDirection: 'row', gap: 4, marginTop: 3 },
@@ -92,7 +93,7 @@ export default function ShoppingListPDF({ data, store }: { data: ShoppingListPDF
         <View style={s.headerRow}>
           <View style={s.headerLeft}>
             {store.logo && <Image src={store.logo} style={s.logo} />}
-            <View>
+            <View style={s.storeInfo}>
               <Text style={s.storeName}>{store.name}</Text>
               {store.tagline && <Text style={s.storeTagline}>{store.tagline}</Text>}
               {store.address && <Text style={s.storeMeta}>{store.address}</Text>}
