@@ -2,6 +2,7 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import { terbilangRupiah } from '@/lib/terbilang';
 import type { StoreHeader } from './ShipmentNotePDF';
+import SystemSeal from './SystemSeal';
 import type { PoItem, GrItem } from '@/lib/purchase-orders-pg';
 
 // Tiga dokumen Bahan Baku dengan tata letak dokumen bisnis (kop surat, para pihak, tabel rinci,
@@ -124,9 +125,6 @@ const s = StyleSheet.create({
   sigRole: { fontSize: 8.5, color: C.muted },
   sigSpace: { height: 52, justifyContent: 'flex-end', alignItems: 'center' },
   sigImg: { height: 48, maxWidth: 150, objectFit: 'contain' },
-  sysSig: { borderWidth: 1.2, borderColor: C.green, borderRadius: 4, paddingVertical: 3, paddingHorizontal: 7, alignItems: 'center', transform: 'rotate(-4deg)' },
-  sysSigTitle: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.green, letterSpacing: 0.4 },
-  sysSigSub: { fontSize: 6.5, color: C.green, marginTop: 1 },
   sigLine: { width: '86%', borderBottomWidth: 1, borderBottomColor: C.dark },
   sigName: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', marginTop: 4, textAlign: 'center' },
   sigMeta: { fontSize: 7.5, color: C.muted, marginTop: 1.5, textAlign: 'center' },
@@ -304,8 +302,14 @@ function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader
   const k = data.kind;
   // Dokumen GR/DO yang sudah di-approve tanpa gambar tanda tangan → cap "ditandatangani sistem" (bukan ruang kosong).
   const approved = k !== 'po' && data.statusTone === 'ok';
+  // PO: sah di sistem begitu diterbitkan (bukan draft / dibatalkan).
+  const issued = k === 'po' && !data.statusTone;
   const sigs: { role: string; name?: string; meta?: string; image?: string; sys?: { title: string; sub: string } }[] = k === 'po'
-    ? [{ role: 'Dibuat oleh', name: data.createdBy, image: data.createdBySignature }, { role: 'Disetujui', name: store.ownerName }, { role: 'Supplier', name: data.supplierName }]
+    ? [
+      { role: 'Dibuat oleh', name: data.createdBy, image: data.createdBySignature, sys: issued ? { title: 'DIBUAT DI SISTEM', sub: data.date } : undefined },
+      { role: 'Disetujui', name: store.ownerName, image: store.ownerSignature, sys: issued ? { title: 'DISETUJUI SECARA SISTEM', sub: data.date } : undefined },
+      { role: 'Supplier', name: data.supplierName },
+    ]
     : [
       { role: 'Pengirim (Supplier)', name: data.supplierName },
       { role: 'Penerima', name: data.createdBy, image: data.createdBySignature, sys: approved ? { title: 'DITERIMA & DICATAT SISTEM', sub: data.date } : undefined },
@@ -317,12 +321,7 @@ function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader
         <View key={g.role} style={s.sigBox}>
           <Text style={s.sigRole}>{g.role}</Text>
           <View style={s.sigSpace}>
-            {g.image ? <Image src={g.image} style={s.sigImg} /> : g.sys && (
-              <View style={s.sysSig}>
-                <Text style={s.sysSigTitle}>{g.sys.title}</Text>
-                {g.sys.sub ? <Text style={s.sysSigSub}>{g.sys.sub}</Text> : null}
-              </View>
-            )}
+            {g.image ? <Image src={g.image} style={s.sigImg} /> : g.sys && <SystemSeal title={g.sys.title} sub={g.sys.sub} />}
           </View>
           <View style={s.sigLine} />
           <Text style={s.sigName}>{g.name ? `( ${g.name} )` : '(                                  )'}</Text>

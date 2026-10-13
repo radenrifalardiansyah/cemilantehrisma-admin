@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
+import SystemSeal from './SystemSeal';
 import { terbilangRupiah } from '@/lib/terbilang';
 import type { StoreHeader } from './ShipmentNotePDF';
 
@@ -197,7 +198,10 @@ export default function SettlementNotePDF({ data, store }: { data: SettlementNot
         <View style={s.signRow} wrap={false}>
           <View style={s.signBox}>
             <Text style={s.signLabel}>Dibuat oleh</Text>
-            <View style={s.signArea}><View style={s.signLine} /></View>
+            <View style={s.signArea}>
+              {data.createdBy ? <SystemSeal title="DIBUAT DI SISTEM" sub={data.createdAtText} /> : null}
+              <View style={s.signLine} />
+            </View>
             <Text style={s.signName}>{data.createdBy || 'Petugas'}</Text>
             <Text style={s.signRole}>{data.stallName}</Text>
           </View>
@@ -206,6 +210,7 @@ export default function SettlementNotePDF({ data, store }: { data: SettlementNot
             <View style={s.signArea}>
               {store.ownerStamp && <Image src={store.ownerStamp} style={s.signStamp} />}
               {store.ownerSignature && <Image src={store.ownerSignature} style={s.signImage} />}
+              {!store.ownerStamp && !store.ownerSignature && <SystemSeal title="DISETUJUI SECARA SISTEM" sub={(paid ? data.paid?.dateText : data.createdAtText)} />}
               <View style={s.signLine} />
             </View>
             <Text style={s.signName}>{store.ownerName || store.name}</Text>

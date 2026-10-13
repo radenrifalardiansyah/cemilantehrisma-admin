@@ -299,6 +299,29 @@ ${pdfUrl}`.trim();
     setGDate(g.receivedDate); setGNote(g.note);
     setGWallet(g.walletId ?? ''); setGPayment(g.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
   }
+  // Koreksi kondisi & keterangan untuk GR yang sudah approved (qty/harga tetap terkunci).
+  const [condGr, setCondGr] = useState<Gr | null>(null);
+  const [cRows, setCRows] = useState<{ materialId: string; name: string; unit: string; qty: number; condition: string; itemNote: string }[]>([]);
+  const [savingCond, setSavingCond] = useState(false);
+  const openCondGr = (g: Gr) => {
+    setCondGr(g);
+    setCRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, qty: it.qty, condition: it.condition ?? '', itemNote: it.itemNote ?? '' })));
+  };
+  const saveCond = async () => {
+    if (!condGr) return;
+    setSavingCond(true);
+    try {
+      const res = await fetch(`/api/goods-receipts/${condGr.id}`, {
+        method: 'PATCH', headers: jsonHeaders,
+        body: JSON.stringify({ items: cRows.map(r => ({ materialId: r.materialId, condition: r.condition, itemNote: r.itemNote })) }),
+      });
+      const d = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) { toast.error(d.error ?? 'Gagal menyimpan koreksi.'); return; }
+      toast.success('Kondisi & keterangan diperbarui.');
+      setCondGr(null);
+      await loadGrs();
+    } finally { setSavingCond(false); }
+  };
   const grTotal = gRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
 
   const saveGr = async (approve: boolean) => {
@@ -571,6 +594,11 @@ ${pdfUrl}`.trim();
         <button onClick={() => openEditGr(g)} className="btn-ghost px-2.5 py-1 text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
           <Pencil size={12} /> {canApprove ? 'Periksa & Approve' : 'Edit'}
         </button>
+      )}
+      {g.status === 'approved' && (
+        <Tooltip label="Koreksi kondisi & keterangan barang">
+          <button onClick={() => openCondGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Pencil size={12} /></button>
+        </Tooltip>
       )}
       <Tooltip label="Download PDF GR">
         <button onClick={() => grPdf(g, 'gr')} disabled={busyId === `gr-${g.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
@@ -1084,6 +1112,56 @@ ${pdfUrl}`.trim();
                   {savingGr ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Simpan & Approve
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ MODAL: KOREKSI KONDISI & KETERANGAN (GR approved) ════ */}
+      {condGr && (
+        <div className="modal-overlay" onClick={() => !savingCond && setCondGr(null)}>
+          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><PackageCheck size={17} /></div>
+                <div>
+                  <p className="modal-title">Koreksi Kondisi & Keterangan</p>
+                  <p className="modal-subtitle">{condGr.grNumber} / {condGr.doNumber} · {condGr.supplierName}</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup"><button onClick={() => setCondGr(null)} className="modal-close"><X size={14} /></button></Tooltip>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {cRows.map((row, i) => (
+                  <div key={`${row.materialId}-${i}`} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                    <p className="text-sm font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                      {row.name} <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>· diterima {formatQty(row.qty)} {row.unit}</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label style={fieldLabel}>Kondisi</label>
+                        <select value={row.condition} onChange={e => setCRows(prev => prev.map((r, idx) => idx === i ? { ...r, condition: e.target.value } : r))} className="input">
+                          <option value="">– Pilih –</option>
+                          {GR_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={fieldLabel}>Keterangan</label>
+                        <input type="text" maxLength={200} value={row.itemNote} onChange={e => setCRows(prev => prev.map((r, idx) => idx === i ? { ...r, itemNote: e.target.value } : r))} placeholder="mis. 2 ikat sobek" className="input" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>Qty, harga, dompet, dan status bayar tidak bisa diubah karena GR sudah di-approve (stok & keuangan sudah tercatat).</p>
+            </div>
+            <div className="modal-footer">
+              <button onClick={saveCond} disabled={savingCond} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+                {savingCond ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Simpan
+              </button>
             </div>
           </div>
         </div>

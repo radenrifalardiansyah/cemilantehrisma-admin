@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
+import SystemSeal from './SystemSeal';
 
 export interface ShipmentNoteItem { productName: string; qty: number; hargaTitip: number; subtotal: number }
 
@@ -235,6 +236,7 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
             <View style={s.signArea}>
               {store.ownerStamp && <Image src={store.ownerStamp} style={s.signStamp} />}
               {store.ownerSignature && <Image src={store.ownerSignature} style={s.signImage} />}
+              {!store.ownerStamp && !store.ownerSignature && <SystemSeal title="DIKIRIM & DICATAT SISTEM" sub={data.date} />}
               <View style={s.signLine} />
             </View>
             <Text style={s.signName}>{store.ownerName || store.name}</Text>
