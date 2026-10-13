@@ -3,7 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { rowToGr, receivedByMaterial, buildGrItems, type GrRow, type GrItem, type GrItemInput, type PoItem } from '@/lib/purchase-orders-pg';
+import { rowToGr, receivedByMaterial, buildGrItems, parseAttachments, type GrRow, type GrItem, type GrItemInput, type PoItem } from '@/lib/purchase-orders-pg';
 import { GR_CONDITIONS, type GrCondition } from '@/lib/gr-conditions';
 import { parseJsonb } from '@/lib/db';
 
@@ -36,7 +36,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
-    items: GrItemInput[]; receivedDate?: string; note?: string;
+    items: GrItemInput[]; receivedDate?: string; note?: string; attachments?: string[];
     walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas';
   };
   const sql = getSql();
@@ -60,6 +60,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           wallet_id = ${data.walletId ?? null}, payment_status = ${data.paymentStatus ?? null}, updated_at = now()
         where id = ${id}
       `;
+      // Lampiran hanya disentuh kalau dikirim klien (kolom opsional, tidak mengganggu GR tanpa lampiran).
+      if (data.attachments !== undefined) {
+        await pgTx`update goods_receipts set attachments = ${JSON.stringify(parseAttachments(data.attachments))}::jsonb where id = ${id}`;
+      }
       return rowToGr(row);
     });
   } catch (err) {
@@ -111,7 +115,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'materials', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const data = await req.json() as { items?: { materialId: string; condition?: string; itemNote?: string }[] };
+  const data = await req.json() as { items?: { materialId: string; condition?: string; itemNote?: string }[]; attachments?: string[] };
   const input = data.items ?? [];
   const sql = getSql();
   let before: ReturnType<typeof rowToGr>;
@@ -134,6 +138,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         return { ...rest, ...(condition ? { condition } : {}), ...(itemNote ? { itemNote } : {}) };
       });
       await pgTx`update goods_receipts set items = ${JSON.stringify(after)}, updated_at = now() where id = ${id}`;
+      if (data.attachments !== undefined) {
+        await pgTx`update goods_receipts set attachments = ${JSON.stringify(parseAttachments(data.attachments))}::jsonb where id = ${id}`;
+      }
       return rowToGr(row);
     });
   } catch (err) {
@@ -141,7 +148,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   }
   try {
     await logHistory(getDb(), {
-      entity: 'goods-receipts', entityId: id, entityLabel: `${before.grNumber} - koreksi kondisi/keterangan`,
+      entity: 'goods-receipts', entityId: id, entityLabel: `${before.grNumber} - koreksi kondisi/keterangan/lampiran`,
       action: 'update', actor: guard, before, after: { ...before, items: after },
     });
   } catch (err) {

@@ -40,16 +40,24 @@ export interface GrRow {
   created_by: string | null; approved_by: string | null; approved_at: Date | null;
   cancelled_at: Date | null; cancel_note: string | null;
   created_at: Date; updated_at: Date | null;
+  attachments?: unknown;
   po_number?: string | null; supplier_name?: string | null; supplier_id?: string | null;
   supplier_phone?: string | null; supplier_address?: string | null;
   created_by_name?: string | null; created_by_signature?: string | null;
   approved_by_name?: string | null; approved_by_signature?: string | null;
+}
+// Lampiran foto GR/DO: array URL gambar (kolom `attachments`, jsonb).
+export const MAX_GR_ATTACHMENTS = 10;
+export function parseAttachments(raw: unknown): string[] {
+  const v = parseJsonb(raw as string | string[] | null) as unknown;
+  return Array.isArray(v) ? v.filter((u): u is string => typeof u === 'string' && /^https:\/\//.test(u)).slice(0, MAX_GR_ATTACHMENTS) : [];
 }
 export function rowToGr(r: GrRow, opts?: { includeToken?: boolean }) {
   return {
     id: r.id, grNumber: r.gr_number, doNumber: r.do_number, poId: r.po_id,
     poNumber: r.po_number ?? null, supplierName: r.supplier_name ?? null, supplierId: r.supplier_id ?? null, supplierPhone: r.supplier_phone ?? '', supplierAddress: r.supplier_address ?? '',
     items: (parseJsonb(r.items as string | GrItem[] | null) as GrItem[] | null) ?? [],
+    attachments: parseAttachments(r.attachments),
     total: Number(r.total), receivedDate: r.received_date, note: r.note, status: r.status as GrStatus,
     walletId: r.wallet_id, paymentStatus: r.payment_status, purchaseId: r.purchase_id,
     createdBy: r.created_by, approvedBy: r.approved_by, approvedAt: toTimestamp(r.approved_at),

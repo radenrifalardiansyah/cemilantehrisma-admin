@@ -13,6 +13,7 @@ export interface GrLike {
   grNumber: string; doNumber: string; poNumber: string | null; supplierName: string | null;
   items: GrItem[]; total: number; receivedDate: string; note: string; status: GrStatus; cancelNote: string | null;
   createdBy?: string | null; createdByName?: string | null; approvedBy?: string | null; approvedByName?: string | null;
+  attachments?: string[];
   approvedAt?: { seconds: number } | null; paymentStatus?: string | null;
 }
 
@@ -33,7 +34,7 @@ export function poToDocData(po: PoLike, supplierAddress?: string, sigs?: { creat
   };
 }
 
-export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, supplier?: { phone?: string; address?: string; pic?: string }, sigs?: { created?: string; approved?: string }, walletLabel?: string): PurchaseDocData {
+export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, supplier?: { phone?: string; address?: string; pic?: string }, sigs?: { created?: string; approved?: string; attachments?: string[] }, walletLabel?: string): PurchaseDocData {
   const status = gr.status === 'approved'
     ? { statusLabel: 'APPROVED', statusTone: 'ok' as const }
     : gr.status === 'dibatalkan'
@@ -47,6 +48,7 @@ export function grToDocData(gr: GrLike, kind: Exclude<PurchaseDocKind, 'po'>, su
     approvedBy: gr.approvedByName || gr.approvedBy || undefined, approvedBySignature: sigs?.approved,
     approvedAt: gr.approvedAt ? new Date(gr.approvedAt.seconds * 1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' }) : undefined,
     paymentLabel: [walletLabel, gr.paymentStatus ? (gr.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas') : undefined].filter(Boolean).join(' · ') || undefined,
+    attachments: sigs?.attachments?.length ? sigs.attachments : undefined,
     items: gr.items, total: gr.total, note: gr.note || undefined, ...status,
   };
 }

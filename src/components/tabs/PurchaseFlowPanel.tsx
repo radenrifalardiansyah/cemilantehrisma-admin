@@ -15,6 +15,7 @@ import { poToDocData, grToDocData } from '@/lib/pdf/purchase-doc-data';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 import type { PoStatus, GrStatus, PoItem, GrItem } from '@/lib/purchase-orders-pg';
 import { GR_CONDITIONS } from '@/lib/gr-conditions';
+import GrAttachments from '@/components/GrAttachments';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
@@ -47,6 +48,7 @@ interface Gr {
   purchaseId: string | null; cancelNote: string | null;
   createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
   createdByName?: string | null; createdBySignature?: string | null; approvedByName?: string | null; approvedBySignature?: string | null;
+  attachments?: string[];
 }
 
 const formatRp = (n: number) =>
@@ -168,7 +170,7 @@ export default function PurchaseFlowPanel({
   };
   const poDoc = async (p: Po) => poToDocData({ ...p, supplierPic: supplierOf(p.supplierId)?.pic }, supplierOf(p.supplierId)?.address, { created: await sigUri(p.createdBySignature) });
   const grDoc = async (g: Gr, kind: 'gr' | 'do') =>
-    grToDocData(g, kind, supplierInfoOf(g), { created: await sigUri(g.createdBySignature), approved: await sigUri(g.approvedBySignature) }, walletOptions.find(w => w.value === g.walletId)?.label);
+    grToDocData(g, kind, supplierInfoOf(g), { created: await sigUri(g.createdBySignature), approved: await sigUri(g.approvedBySignature), attachments: (await Promise.all((g.attachments ?? []).map(u => toDataUri(u)))).filter((u): u is string => !!u) }, walletOptions.find(w => w.value === g.walletId)?.label);
   const poPdf = async (p: Po) => {
     setBusyId(`po-${p.id}`);
     await downloadPdf(`po-${p.id}`, <PurchaseDocPDF data={await poDoc(p)} store={storeHeader} />, p.poNumber);
@@ -289,6 +291,7 @@ ${pdfUrl}`.trim();
   const [gRows, setGRows] = useState<GrRowInput[]>([]);
   const [gDate, setGDate] = useState(todayISO());
   const [gNote, setGNote] = useState('');
+  const [gAtt, setGAtt] = useState<string[]>([]);
   const [gWallet, setGWallet] = useState('');
   const [gPayment, setGPayment] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [savingGr, setSavingGr] = useState(false);
@@ -296,15 +299,16 @@ ${pdfUrl}`.trim();
   function openEditGr(g: Gr) {
     setEditingGr(g);
     setGRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, orderedQty: it.orderedQty, qty: String(it.qty), price: String(Math.round(it.price)), condition: it.condition ?? '', itemNote: it.itemNote ?? '' })));
-    setGDate(g.receivedDate); setGNote(g.note);
+    setGDate(g.receivedDate); setGNote(g.note); setGAtt(g.attachments ?? []);
     setGWallet(g.walletId ?? ''); setGPayment(g.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
   }
   // Koreksi kondisi & keterangan untuk GR yang sudah approved (qty/harga tetap terkunci).
   const [condGr, setCondGr] = useState<Gr | null>(null);
   const [cRows, setCRows] = useState<{ materialId: string; name: string; unit: string; qty: number; condition: string; itemNote: string }[]>([]);
+  const [cAtt, setCAtt] = useState<string[]>([]);
   const [savingCond, setSavingCond] = useState(false);
   const openCondGr = (g: Gr) => {
-    setCondGr(g);
+    setCondGr(g); setCAtt(g.attachments ?? []);
     setCRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, qty: it.qty, condition: it.condition ?? '', itemNote: it.itemNote ?? '' })));
   };
   const saveCond = async () => {
@@ -313,11 +317,11 @@ ${pdfUrl}`.trim();
     try {
       const res = await fetch(`/api/goods-receipts/${condGr.id}`, {
         method: 'PATCH', headers: jsonHeaders,
-        body: JSON.stringify({ items: cRows.map(r => ({ materialId: r.materialId, condition: r.condition, itemNote: r.itemNote })) }),
+        body: JSON.stringify({ items: cRows.map(r => ({ materialId: r.materialId, condition: r.condition, itemNote: r.itemNote })), attachments: cAtt }),
       });
       const d = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) { toast.error(d.error ?? 'Gagal menyimpan koreksi.'); return; }
-      toast.success('Kondisi & keterangan diperbarui.');
+      toast.success('Kondisi, keterangan & lampiran diperbarui.');
       setCondGr(null);
       await loadGrs();
     } finally { setSavingCond(false); }
@@ -332,6 +336,8 @@ ${pdfUrl}`.trim();
       const body = {
         items: gRows.map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0, condition: r.condition, itemNote: r.itemNote })),
         receivedDate: gDate, note: gNote, walletId: gWallet || null, paymentStatus: gPayment,
+        // Dikirim hanya kalau ada/berubah, supaya GR tanpa lampiran tidak menyentuh kolom `attachments`.
+        ...(gAtt.length > 0 || (editingGr.attachments ?? []).length > 0 ? { attachments: gAtt } : {}),
       };
       const res = await fetch(`/api/goods-receipts/${editingGr.id}`, { method: 'PUT', headers: jsonHeaders, body: JSON.stringify(body) });
       const d = await res.json().catch(() => ({})) as { error?: string };
@@ -1075,6 +1081,11 @@ ${pdfUrl}`.trim();
                 </div>
 
                 <div>
+                  <label style={fieldLabel}>Lampiran Foto (opsional)</label>
+                  <GrAttachments creds={creds} urls={gAtt} onChange={setGAtt} />
+                </div>
+
+                <div>
                   <label style={fieldLabel}>Dompet Sumber {canApprove && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
                   <SearchSelect value={gWallet} onChange={setGWallet} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
                   {gWallet && <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Saldo saat ini: {formatRp(walletBalances[gWallet] ?? 0)}</p>}
@@ -1127,7 +1138,7 @@ ${pdfUrl}`.trim();
               <div className="modal-header-left">
                 <div className="modal-icon"><PackageCheck size={17} /></div>
                 <div>
-                  <p className="modal-title">Koreksi Kondisi & Keterangan</p>
+                  <p className="modal-title">Koreksi Kondisi, Keterangan & Lampiran</p>
                   <p className="modal-subtitle">{condGr.grNumber} / {condGr.doNumber} · {condGr.supplierName}</p>
                 </div>
               </div>
@@ -1155,6 +1166,10 @@ ${pdfUrl}`.trim();
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-3">
+                <label style={fieldLabel}>Lampiran Foto</label>
+                <GrAttachments creds={creds} urls={cAtt} onChange={setCAtt} />
               </div>
               <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>Qty, harga, dompet, dan status bayar tidak bisa diubah karena GR sudah di-approve (stok & keuangan sudah tercatat).</p>
             </div>

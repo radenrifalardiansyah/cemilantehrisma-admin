@@ -15,6 +15,9 @@ const gr = { grNumber: 'GR-202610-0001', doNumber: 'DO-SUP001-202610-0001', poNu
 // Tanda tangan contoh (opsional, hanya kalau SIG_FILE diset) agar bisa diperiksa secara visual.
 const SIG = process.env.SIG_FILE && existsSync(process.env.SIG_FILE) ? readFileSync(process.env.SIG_FILE, 'utf8') : undefined;
 
+// PNG 80x60 oranye (data-URI) untuk menguji halaman Lampiran.
+const PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAA8CAIAAAB+RarbAAAAYElEQVR4nO3PAQkAIBDAQOMY0YjGMoawP1iA3bpnj2p9PwAGBgYGBgYeE3A94HrA9YDrAdcDrgdcD7gecD3gesD1gOsB1wOuB1wPuB5wPeB6wPWA6wHXA64HXA+4HnC9B1m6X4ehNgcuAAAAAElFTkSuQmCC';
+
 describe('PurchaseDocPDF', () => {
   it('merender PO, GR, dan DO menjadi PDF valid', async () => {
     const poBase = { poNumber: 'PO-202610-0001', supplierName: 'PT. FKS Food Sejahtera Tbk', supplierPhone: '081200000000', items, total: 525000, date: '2026-10-06', expectedDate: '2026-10-10', note: 'Kirim pagi hari', status: 'draft' as const, cancelNote: null, createdBy: 'rifal', createdByName: 'Rifal Ardiansyah' };
@@ -23,6 +26,8 @@ describe('PurchaseDocPDF', () => {
       po_batal: poToDocData({ ...poBase, status: 'batal', cancelNote: 'Salah supplier' }),
       gr: grToDocData(gr, 'gr', { address: 'Jl. Industri Raya Blok C-12, Cikarang', phone: '081200000000' }, { created: SIG, approved: SIG }),
       do: grToDocData(gr, 'do'),
+      do_lampiran: grToDocData(gr, 'do', undefined, { attachments: [PX, PX, PX] }),
+      po_terbit: poToDocData({ ...poBase, status: 'terkirim' }),
       gr_draft: grToDocData({ ...gr, status: 'draft', approvedBy: null, approvedAt: null }, 'gr'),
     };
     for (const [name, data] of Object.entries(docs)) {

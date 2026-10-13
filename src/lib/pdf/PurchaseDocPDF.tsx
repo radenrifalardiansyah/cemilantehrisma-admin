@@ -33,6 +33,7 @@ export interface PurchaseDocData {
   approvedBy?: string;         // GR/DO
   approvedBySignature?: string;
   approvedAt?: string;         // GR/DO (sudah terformat)
+  attachments?: string[];      // GR/DO: foto lampiran (data-URI) → halaman "Lampiran" setelah dokumen
   paymentLabel?: string;       // GR/DO: metode (dompet) + status, mis. 'Kas Toko · Lunas'
   items: (PoItem | GrItem)[];
   total: number;
@@ -128,6 +129,12 @@ const s = StyleSheet.create({
   sigLine: { width: '86%', borderBottomWidth: 1, borderBottomColor: C.dark },
   sigName: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', marginTop: 4, textAlign: 'center' },
   sigMeta: { fontSize: 7.5, color: C.muted, marginTop: 1.5, textAlign: 'center' },
+
+  // Halaman lampiran
+  attGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 },
+  attItem: { width: '48.5%', borderWidth: 1, borderColor: C.border, borderRadius: 4, padding: 6 },
+  attImg: { width: '100%', height: 250, objectFit: 'contain' },
+  attCap: { fontSize: 7.5, color: C.muted, marginTop: 4, textAlign: 'center' },
 
   // Cap status & footer
   stamp: { position: 'absolute', top: 330, left: 90, width: 420, textAlign: 'center', fontSize: 64, fontFamily: 'Helvetica-Bold', opacity: 0.07, transform: 'rotate(-28deg)' },
@@ -332,6 +339,31 @@ function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader
   );
 }
 
+function AttachmentPages({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
+  const t = TITLE[data.kind];
+  const imgs = data.attachments ?? [];
+  return (
+    <Page size="A4" style={s.page}>
+      <View style={s.topBar} fixed />
+      <Text style={{ fontSize: 14, fontFamily: 'Helvetica-Bold', color: C.accent }}>LAMPIRAN</Text>
+      <Text style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>{t.main} {data.number}{data.supplierName ? ` · ${data.supplierName}` : ''}</Text>
+      <View style={s.rule} />
+      <View style={s.attGrid}>
+        {imgs.map((src, i) => (
+          <View key={i} style={s.attItem} wrap={false}>
+            <Image src={src} style={s.attImg} />
+            <Text style={s.attCap}>Lampiran {i + 1} dari {imgs.length}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={s.footer} fixed>
+        <Text style={s.footText}>{data.number} · {store.name} · {SITE_URL}</Text>
+        <Text style={s.footText} render={({ pageNumber, totalPages }) => `Lampiran · Halaman ${pageNumber} / ${totalPages}`} />
+      </View>
+    </Page>
+  );
+}
+
 export function PurchaseDocPage({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
   const k = data.kind;
   const stamp = data.statusTone === 'void' ? 'DIBATALKAN' : data.statusLabel?.startsWith('DRAFT') || (k === 'po' && data.statusLabel === 'DRAFT') ? 'DRAFT' : '';
@@ -373,12 +405,22 @@ export function PurchaseDocPage({ data, store }: { data: PurchaseDocData; store:
   );
 }
 
+// Dokumen + (kalau ada) halaman lampiran foto. Dipakai Document tunggal maupun bundel.
+function PurchaseDocPages({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
+  return (
+    <>
+      <PurchaseDocPage data={data} store={store} />
+      {data.kind !== 'po' && data.attachments && data.attachments.length > 0 && <AttachmentPages data={data} store={store} />}
+    </>
+  );
+}
+
 // Beberapa dokumen dalam satu PDF (cetak dari daftar yang dicentang): satu dokumen per halaman,
 // nomor halaman dihitung per dokumen (subPage), bukan berlanjut antar dokumen.
 export function PurchaseDocBundle({ docs, store, title }: { docs: PurchaseDocData[]; store: StoreHeader; title: string }) {
   return (
     <Document title={title} author={store.name}>
-      {docs.map((d, i) => <PurchaseDocPage key={i} data={d} store={store} />)}
+      {docs.map((d, i) => <PurchaseDocPages key={i} data={d} store={store} />)}
     </Document>
   );
 }
@@ -386,7 +428,7 @@ export function PurchaseDocBundle({ docs, store, title }: { docs: PurchaseDocDat
 export default function PurchaseDocPDF({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
   return (
     <Document title={`${TITLE[data.kind].main} ${data.number}`} author={store.name}>
-      <PurchaseDocPage data={data} store={store} />
+      <PurchaseDocPages data={data} store={store} />
     </Document>
   );
 }
