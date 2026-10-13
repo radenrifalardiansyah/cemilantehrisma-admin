@@ -1,6 +1,7 @@
 import { parseJsonb } from '@/lib/db';
 import { toTimestamp } from '@/lib/orders-pg';
 import type { PgTx } from '@/lib/doc-number';
+import { GR_CONDITIONS, type GrCondition } from '@/lib/gr-conditions';
 
 // Purchase Order (PO) & Penerimaan Barang (GR/DO) untuk Bahan Baku. Shape JSON ke frontend
 // camelCase seperti materials-pg.ts. PO tidak menyentuh stok/keuangan; baru saat GR di-approve
@@ -10,9 +11,7 @@ export type PoStatus = 'draft' | 'terkirim' | 'diterima_sebagian' | 'diterima' |
 export type GrStatus = 'draft' | 'approved' | 'dibatalkan';
 
 export interface PoItem { materialId: string; materialName: string; unit: string; qty: number; price: number; subtotal: number }
-// Kondisi barang saat diterima + keterangan per item (tercetak di kolom Kondisi/Keterangan pada DO).
-export const GR_CONDITIONS = ['Baik', 'Rusak', 'Kurang', 'Lainnya'] as const;
-export type GrCondition = typeof GR_CONDITIONS[number];
+// Kondisi + keterangan per item tercetak di kolom Kondisi/Keterangan pada DO.
 export interface GrItem extends PoItem { orderedQty: number; condition?: GrCondition; itemNote?: string }
 
 export interface PoRow {

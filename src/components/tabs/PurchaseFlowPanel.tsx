@@ -13,7 +13,8 @@ import { exportSheet, downloadPoTemplate, parsePoExcel } from '@/components/tabs
 import PurchaseDocPDF, { PurchaseDocBundle } from '@/lib/pdf/PurchaseDocPDF';
 import { poToDocData, grToDocData } from '@/lib/pdf/purchase-doc-data';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
-import { GR_CONDITIONS, type PoStatus, type GrStatus, type PoItem, type GrItem } from '@/lib/purchase-orders-pg';
+import type { PoStatus, GrStatus, PoItem, GrItem } from '@/lib/purchase-orders-pg';
+import { GR_CONDITIONS } from '@/lib/gr-conditions';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
