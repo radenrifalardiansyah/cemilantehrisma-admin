@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toDataUri } from '@/lib/pdf/logo';
-import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, FileText, Upload, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
+import { ClipboardList, PackageCheck, Plus, Pencil, Trash2, X, Check, Loader2, Ban, MessageCircle, Search, Upload, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -578,7 +578,7 @@ ${pdfUrl}`.trim();
       </Tooltip>
       <Tooltip label="Download PDF DO (surat penerimaan)">
         <button onClick={() => grPdf(g, 'do')} disabled={busyId === `do-${g.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-          {busyId === `do-${g.id}` ? <Spin /> : <FileText size={12} />}
+          {busyId === `do-${g.id}` ? <Spin /> : <PdfIcon size={12} />}
         </button>
       </Tooltip>
       {g.status === 'draft' && (
@@ -836,7 +836,7 @@ ${pdfUrl}`.trim();
                 </button>
                 <button onClick={() => printSelected('do')} disabled={busyId === 'bulk-do'}
                   className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-                  {busyId === 'bulk-do' ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Cetak DO
+                  {busyId === 'bulk-do' ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Cetak DO
                 </button>
               </>
             )}
