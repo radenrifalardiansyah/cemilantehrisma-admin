@@ -339,12 +339,13 @@ function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader
   );
 }
 
-function AttachmentPages({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
+// Lampiran foto: bagian di Page dokumen yang sama (mulai halaman baru lewat `break`) supaya nomor
+// halaman "n / total" menghitung dokumen + lampiran sebagai satu kesatuan, juga di PDF gabungan.
+function AttachmentSection({ data }: { data: PurchaseDocData }) {
   const t = TITLE[data.kind];
   const imgs = data.attachments ?? [];
   return (
-    <Page size="A4" style={s.page}>
-      <View style={s.topBar} fixed />
+    <View break>
       <Text style={{ fontSize: 14, fontFamily: 'Helvetica-Bold', color: C.accent }}>LAMPIRAN</Text>
       <Text style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>{t.main} {data.number}{data.supplierName ? ` · ${data.supplierName}` : ''}</Text>
       <View style={s.rule} />
@@ -356,11 +357,7 @@ function AttachmentPages({ data, store }: { data: PurchaseDocData; store: StoreH
           </View>
         ))}
       </View>
-      <View style={s.footer} fixed>
-        <Text style={s.footText}>{data.number} · {store.name} · {SITE_URL}</Text>
-        <Text style={s.footText} render={({ pageNumber, totalPages }) => `Lampiran · Halaman ${pageNumber} / ${totalPages}`} />
-      </View>
-    </Page>
+    </View>
   );
 }
 
@@ -397,6 +394,8 @@ export function PurchaseDocPage({ data, store }: { data: PurchaseDocData; store:
 
       <Signatures data={data} store={store} />
 
+      {k !== 'po' && data.attachments && data.attachments.length > 0 && <AttachmentSection data={data} />}
+
       <View style={s.footer} fixed>
         <Text style={s.footText}>{data.number} · {store.name} · {SITE_URL}</Text>
         <Text style={s.footText} render={({ pageNumber, totalPages, subPageNumber, subPageTotalPages }) => `${data.printedAt ? `Dicetak ${data.printedAt} · ` : ''}Halaman ${subPageNumber ?? pageNumber} / ${subPageTotalPages ?? totalPages}`} />
@@ -405,22 +404,12 @@ export function PurchaseDocPage({ data, store }: { data: PurchaseDocData; store:
   );
 }
 
-// Dokumen + (kalau ada) halaman lampiran foto. Dipakai Document tunggal maupun bundel.
-function PurchaseDocPages({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
-  return (
-    <>
-      <PurchaseDocPage data={data} store={store} />
-      {data.kind !== 'po' && data.attachments && data.attachments.length > 0 && <AttachmentPages data={data} store={store} />}
-    </>
-  );
-}
-
 // Beberapa dokumen dalam satu PDF (cetak dari daftar yang dicentang): satu dokumen per halaman,
 // nomor halaman dihitung per dokumen (subPage), bukan berlanjut antar dokumen.
 export function PurchaseDocBundle({ docs, store, title }: { docs: PurchaseDocData[]; store: StoreHeader; title: string }) {
   return (
     <Document title={title} author={store.name}>
-      {docs.map((d, i) => <PurchaseDocPages key={i} data={d} store={store} />)}
+      {docs.map((d, i) => <PurchaseDocPage key={i} data={d} store={store} />)}
     </Document>
   );
 }
@@ -428,7 +417,7 @@ export function PurchaseDocBundle({ docs, store, title }: { docs: PurchaseDocDat
 export default function PurchaseDocPDF({ data, store }: { data: PurchaseDocData; store: StoreHeader }) {
   return (
     <Document title={`${TITLE[data.kind].main} ${data.number}`} author={store.name}>
-      <PurchaseDocPages data={data} store={store} />
+      <PurchaseDocPage data={data} store={store} />
     </Document>
   );
 }

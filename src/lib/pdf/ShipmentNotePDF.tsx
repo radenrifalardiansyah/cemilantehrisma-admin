@@ -251,7 +251,7 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
         </View>
 
         <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
-        <Text style={s.pageNo} render={({ pageNumber, totalPages }) => totalPages > 1 ? `${pageNumber} / ${totalPages}` : ''} fixed />
+        <Text style={s.pageNo} render={({ pageNumber, totalPages, subPageNumber, subPageTotalPages }) => (subPageTotalPages ?? totalPages) > 1 ? `${subPageNumber ?? pageNumber} / ${subPageTotalPages ?? totalPages}` : ''} fixed />
     </Page>
   );
 }
