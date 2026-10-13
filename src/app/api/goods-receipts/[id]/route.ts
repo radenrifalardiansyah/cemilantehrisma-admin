@@ -3,8 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
-import { rowToGr, receivedByMaterial, buildGrItems, parseAttachments, type GrRow, type GrItem, type GrItemInput, type PoItem } from '@/lib/purchase-orders-pg';
-import { GR_CONDITIONS, type GrCondition } from '@/lib/gr-conditions';
+import { rowToGr, receivedByMaterial, buildGrItems, parseAttachments, type GrRow, type GrItemInput, type PoItem } from '@/lib/purchase-orders-pg';
 import { parseJsonb } from '@/lib/db';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -104,55 +103,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     });
   } catch (err) {
     console.error('Failed to write history for GR delete', err);
-  }
-  return Response.json({ ok: true });
-}
-
-// Koreksi Kondisi & Keterangan per item pada GR yang SUDAH di-approve. Hanya dua field teks itu yang
-// disentuh — qty/harga/dompet/status tetap terkunci (sudah menjadi pembelian & mutasi stok).
-// Item dicocokkan per urutan + materialId dengan yang tersimpan.
-export async function PATCH(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'edit');
-  if (guard instanceof Response) return guard;
-  const { id } = await ctx.params;
-  const data = await req.json() as { items?: { materialId: string; condition?: string; itemNote?: string }[]; attachments?: string[] };
-  const input = data.items ?? [];
-  const sql = getSql();
-  let before: ReturnType<typeof rowToGr>;
-  let after: GrItem[] = [];
-  try {
-    before = await sql.begin(async pgTx => {
-      const [row] = await pgTx<GrRow[]>`select * from goods_receipts where id = ${id} for update`;
-      if (!row) throw new Error('GR tidak ditemukan.');
-      if (row.status !== 'approved') throw new Error('Hanya GR yang sudah di-approve yang bisa dikoreksi di sini.');
-      const stored = (parseJsonb(row.items as string | GrItem[] | null) as GrItem[] | null) ?? [];
-      if (input.length !== stored.length || input.some((r, i) => r.materialId !== stored[i].materialId)) {
-        throw new Error('Daftar item tidak cocok dengan GR. Muat ulang lalu coba lagi.');
-      }
-      after = stored.map((it, i) => {
-        const rest: GrItem = { ...it };
-        delete rest.condition; delete rest.itemNote;
-        const c = input[i].condition ?? '';
-        const condition = (GR_CONDITIONS as readonly string[]).includes(c) ? c as GrCondition : undefined;
-        const itemNote = typeof input[i].itemNote === 'string' ? input[i].itemNote!.trim().slice(0, 200) : '';
-        return { ...rest, ...(condition ? { condition } : {}), ...(itemNote ? { itemNote } : {}) };
-      });
-      await pgTx`update goods_receipts set items = ${JSON.stringify(after)}, updated_at = now() where id = ${id}`;
-      if (data.attachments !== undefined) {
-        await pgTx`update goods_receipts set attachments = ${JSON.stringify(parseAttachments(data.attachments))}::jsonb where id = ${id}`;
-      }
-      return rowToGr(row);
-    });
-  } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menyimpan koreksi.' }, { status: 400 });
-  }
-  try {
-    await logHistory(getDb(), {
-      entity: 'goods-receipts', entityId: id, entityLabel: `${before.grNumber} - koreksi kondisi/keterangan/lampiran`,
-      action: 'update', actor: guard, before, after: { ...before, items: after },
-    });
-  } catch (err) {
-    console.error('Failed to write history for GR condition update', err);
   }
   return Response.json({ ok: true });
 }
