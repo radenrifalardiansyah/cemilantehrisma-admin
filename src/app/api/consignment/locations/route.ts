@@ -11,11 +11,12 @@ const LOCATION_CODE_PREFIX = 'MTR';
 interface LocationRow {
   id: string; name: string; code: string | null; contact_name: string | null; contact_phone: string | null;
   address: string | null; note: string | null; logo_url: string | null; created_at: Date; updated_at: Date | null;
+  wa_group: string | null; // nama grup WA yang dipasangkan (Teruskan Stok WA); null = mitra tanpa grup
 }
 function rowToLocation(r: LocationRow) {
   return {
     id: r.id, name: r.name, code: r.code ?? '', contactName: r.contact_name ?? '', contactPhone: r.contact_phone ?? '',
-    address: r.address ?? '', note: r.note ?? '', logoUrl: r.logo_url ?? '',
+    address: r.address ?? '', note: r.note ?? '', logoUrl: r.logo_url ?? '', waGroup: r.wa_group,
     createdAt: r.created_at.toISOString(), updatedAt: r.updated_at ? r.updated_at.toISOString() : null,
   };
 }
@@ -23,7 +24,12 @@ function rowToLocation(r: LocationRow) {
 const getCachedLocations = unstable_cache(
   async () => {
     const sql = getSql();
-    const rows = await sql<LocationRow[]>`select * from consignment_locations order by created_at asc`;
+    const rows = await sql<LocationRow[]>`
+      select c.*, case when k.jid is null then null else coalesce(nullif(g.subject, ''), k.jid) end as wa_group
+      from consignment_locations c
+      left join wa_group_links k on k.location_id = c.id and k.is_active
+      left join wa_groups g on g.jid = k.jid
+      order by c.created_at asc`;
     const locations = rows.map(rowToLocation);
 
     let maxCode = 0;

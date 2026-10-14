@@ -107,6 +107,7 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
 
 interface ConsignmentLocation {
   id: string; name: string; contactName: string; contactPhone: string; address: string; note: string; code?: string; logoUrl?: string;
+  waGroup?: string | null; // grup WA yang dipasangkan di Teruskan Stok WA
 }
 
 function LocationLogo({ location, size }: { location: { name: string; logoUrl?: string }; size: number }) {
@@ -2518,6 +2519,11 @@ _${storeHeader.name}_`.trim();
                                   {l.code}
                                 </span>
                               )}
+                              {l.waGroup && (
+                                <span className="badge badge-green" title={`Grup WA: ${l.waGroup}`} style={{ fontSize: 10, padding: '1px 6px', gap: 3 }}>
+                                  <MessageCircle size={10} /> Grup WA
+                                </span>
+                              )}
                               {l.contactName && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {l.contactName}</span>}
                             </div>
                             <div className="flex items-center gap-3 mt-0.5 flex-wrap">
@@ -2618,6 +2624,11 @@ _${storeHeader.name}_`.trim();
                               <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
                                 style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
                                 {l.code}
+                              </span>
+                            )}
+                            {l.waGroup && (
+                              <span className="badge badge-green" title={`Grup WA: ${l.waGroup}`} style={{ fontSize: 10, padding: '1px 6px', gap: 3 }}>
+                                <MessageCircle size={10} /> Grup WA
                               </span>
                             )}
                           </div>

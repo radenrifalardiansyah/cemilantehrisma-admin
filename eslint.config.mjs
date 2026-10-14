@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Worker WhatsApp = paket Node terpisah (bukan bagian aplikasi Next).
+    "wa-worker/**",
   ]),
 ]);
 

@@ -25,6 +25,7 @@ import ResellersTab from '@/components/tabs/ResellersTab';
 import CustomersTab from '@/components/tabs/CustomersTab';
 import StorefrontCustomersTab from '@/components/tabs/StorefrontCustomersTab';
 import ReviewsTab from '@/components/tabs/ReviewsTab';
+import WaForwardTab from '@/components/tabs/WaForwardTab';
 import StockTab     from '@/components/tabs/StockTab';
 import StockReportTab from '@/components/tabs/StockReportTab';
 import SuppliersTab  from '@/components/tabs/SuppliersTab';
@@ -1533,6 +1534,7 @@ export default function AdminPage() {
           highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
           onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
       )}
+      {activeTab === 'wa-forward' && <WaForwardTab creds={creds} can={(a: Action) => can('wa-forward', a)} />}
       {activeTab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
       {activeTab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}
       {activeTab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} />}
