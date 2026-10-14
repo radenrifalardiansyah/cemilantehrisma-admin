@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Boxes, ShoppingBag, ShoppingCart, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle, ClipboardList,
+  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -25,7 +25,6 @@ import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
-import PurchaseFlowPanel from '@/components/tabs/PurchaseFlowPanel';
 import MaterialShoppingPanel from '@/components/tabs/MaterialShoppingPanel';
 import EmptyAddCard from '@/components/EmptyAddCard';
 
@@ -85,12 +84,10 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
-type SubTab = 'stok' | 'belanja' | 'po' | 'gr' | 'pembelian';
+type SubTab = 'stok' | 'belanja' | 'pembelian';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stok',      label: 'Stok',      Icon: Boxes },
   { id: 'belanja',   label: 'Daftar Belanja', Icon: ShoppingCart },
-  { id: 'po',        label: 'Purchase Order', Icon: ClipboardList },
-  { id: 'gr',        label: 'Penerimaan (GR)', Icon: PackageCheck },
   { id: 'pembelian', label: 'Pembelian', Icon: ShoppingBag },
 ];
 
@@ -151,10 +148,8 @@ function detectPurchaseColumn(header: string): PurchaseTemplateKey | null {
   return null;
 }
 
-export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled, canApprove = false }: {
+export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled }: {
   creds: string; highlightMaterialId?: string | null; onHighlightHandled?: () => void;
-  /** Hak `approve` di menu Bahan Baku — boleh meng-approve / membatalkan GR yang sudah di-approve. */
-  canApprove?: boolean;
 }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -1478,21 +1473,6 @@ ${pdfUrl}`.trim();
         )}
 
         {/* ════ PEMBELIAN ══════════════════════════════════════ */}
-        {/* ════ PURCHASE ORDER & PENERIMAAN (GR) ═══════════════ */}
-        {(subTab === 'po' || subTab === 'gr') && (
-          <PurchaseFlowPanel
-            creds={creds}
-            view={subTab}
-            onSwitchView={setSubTab}
-            materials={materials}
-            suppliers={suppliers}
-            walletOptions={walletOptions}
-            walletBalances={walletBalances}
-            storeHeader={storeHeader}
-            canApprove={canApprove}
-            onStockChanged={() => { loadMaterials(); loadPurchases(); refetchBalances(); }}
-          />
-        )}
 
         {subTab === 'pembelian' && (purchasesLoading && purchases.length === 0) && <PageLoader />}
         {subTab === 'pembelian' && !(purchasesLoading && purchases.length === 0) && (

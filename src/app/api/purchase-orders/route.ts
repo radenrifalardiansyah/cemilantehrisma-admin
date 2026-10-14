@@ -9,7 +9,7 @@ import { rowToPo, type PoRow, type GrItem } from '@/lib/purchase-orders-pg';
 import { wibDateKey } from '@/lib/date';
 
 export async function GET(req: NextRequest) {
-  const guard = await requirePermission(req, 'materials', 'view');
+  const guard = await requirePermission(req, 'purchasing', 'view');
   if (guard instanceof Response) return guard;
   const sql = getSql();
   const [rows, grRows] = await Promise.all([
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission(req, 'materials', 'create');
+  const guard = await requirePermission(req, 'purchasing', 'create');
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     supplierId?: string | null; supplierName?: string; supplierPhone?: string;

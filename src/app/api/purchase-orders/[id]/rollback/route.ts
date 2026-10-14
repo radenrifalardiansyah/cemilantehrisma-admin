@@ -10,9 +10,9 @@ type Ctx = { params: Promise<{ id: string }> };
 // Rollback PO terkirim → draft supaya isinya bisa diedit lagi. Butuh hak `approve`; alasan wajib.
 // Ditolak kalau PO sudah punya GR (rollback/hapus GR-nya dulu) atau sudah dibatalkan (final).
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'edit');
+  const guard = await requirePermission(req, 'purchasing', 'edit');
   if (guard instanceof Response) return guard;
-  if (!(await hasPermission(guard, 'materials', 'approve'))) return forbidden();
+  if (!(await hasPermission(guard, 'purchasing', 'approve'))) return forbidden();
   const { id } = await ctx.params;
   const { note } = await req.json().catch(() => ({})) as { note?: string };
   const reason = note?.trim() ?? '';

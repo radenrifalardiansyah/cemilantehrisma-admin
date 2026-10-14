@@ -11,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // kembalikan token untuk link PDF publik. Aman dipanggil berulang (kirim ulang WA) — PO yang sudah
 // terkirim/diterima cuma dikembalikan tokennya tanpa mengubah status.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'edit');
+  const guard = await requirePermission(req, 'purchasing', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const sql = getSql();

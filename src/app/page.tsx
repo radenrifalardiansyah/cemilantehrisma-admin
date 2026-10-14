@@ -34,6 +34,7 @@ import KasirLapakTab from '@/components/tabs/KasirLapakTab';
 import CashierSalesReportTab from '@/components/tabs/CashierSalesReportTab';
 import StallSalesReportTab from '@/components/tabs/StallSalesReportTab';
 import ProcurementReportTab from '@/components/tabs/ProcurementReportTab';
+import PurchasingTab from '@/components/tabs/PurchasingTab';
 import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
 import ConsignmentTab from '@/components/tabs/ConsignmentTab';
@@ -1518,8 +1519,9 @@ export default function AdminPage() {
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
       {activeTab === 'materials'  && (
         <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
-          onHighlightHandled={() => setHighlightMaterialId(null)} canApprove={can('materials', 'approve')} />
+          onHighlightHandled={() => setHighlightMaterialId(null)} />
       )}
+      {activeTab === 'purchasing' && <PurchasingTab creds={creds} canApprove={can('purchasing', 'approve')} />}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {activeTab === 'consignment' && (
         <ConsignmentTab creds={creds} products={posProducts}

@@ -14,9 +14,9 @@ type Ctx = { params: Promise<{ id: string }> };
 // Beda dengan batal: kalau stok tidak bisa dikembalikan dengan aman (bahan sudah dipakai/dibeli lagi
 // setelah GR ini) rollback DITOLAK seluruhnya — kalau lanjut, approve ulang akan menggandakan stok.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'edit');
+  const guard = await requirePermission(req, 'purchasing', 'edit');
   if (guard instanceof Response) return guard;
-  if (!(await hasPermission(guard, 'materials', 'approve'))) return forbidden();
+  if (!(await hasPermission(guard, 'purchasing', 'approve'))) return forbidden();
   const { id } = await ctx.params;
   const { note } = await req.json().catch(() => ({})) as { note?: string };
   const reason = note?.trim() ?? '';

@@ -9,7 +9,7 @@ import { parseJsonb } from '@/lib/db';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'view');
+  const guard = await requirePermission(req, 'purchasing', 'view');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const sql = getSql();
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 // Edit GR hanya saat draft: qty yang benar-benar datang, harga di nota supplier,
 // tanggal terima, catatan, serta dompet/status bayar (boleh diisi dulu, final saat approve).
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'edit');
+  const guard = await requirePermission(req, 'purchasing', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
@@ -81,7 +81,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
 // Hapus permanen cuma untuk GR draft; GR yang sudah approve/dibatalkan tetap ada sebagai jejak audit.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'delete');
+  const guard = await requirePermission(req, 'purchasing', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const sql = getSql();

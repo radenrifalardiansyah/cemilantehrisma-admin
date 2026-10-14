@@ -15,7 +15,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // yang sama dengan Pembelian manual), GR ditandai approved, dan status PO dihitung ulang.
 // Dompet & status bayar ditentukan di sini. Butuh aksi `approve` di menu Bahan Baku.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'materials', 'approve');
+  const guard = await requirePermission(req, 'purchasing', 'approve');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const body = await req.json().catch(() => ({})) as { walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas' };
