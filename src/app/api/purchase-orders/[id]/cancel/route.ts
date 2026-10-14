@@ -10,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // Batalkan PO. Ditolak kalau sudah ada GR yang approved (batalkan GR-nya dulu — itu yang
 // mengembalikan stok & pengeluaran). GR draft yang masih menggantung ikut dibatalkan.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'purchasing', 'edit');
+  const guard = await requirePermission(req, 'purchase-orders', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const { note } = await req.json().catch(() => ({})) as { note?: string };

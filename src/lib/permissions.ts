@@ -40,8 +40,9 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'product-report',   label: 'Laporan Produk',     actions: ['view'] },
   { key: 'stock',            label: 'Gudang',             actions: ['view', 'edit'] },
   { key: 'materials',        label: 'Bahan Baku',         actions: CRUD },
-  // `approve` = menyetujui/membatalkan Penerimaan Barang (GR) yang memasukkan pembelian ke stok.
-  { key: 'purchasing',       label: 'PO & GR',            actions: [...CRUD, 'approve'] },
+  { key: 'purchase-orders',  label: 'Purchase Order (PO)', actions: CRUD },
+  // `approve` = menyetujui/membatalkan Goods Receipt (GR) yang memasukkan pembelian ke stok.
+  { key: 'goods-receipts',   label: 'Goods Receipt (GR)', actions: [...CRUD, 'approve'] },
   { key: 'suppliers',        label: 'Supplier',           actions: CRUD },
   { key: 'production',       label: 'Produksi',           actions: CRUD },
   { key: 'stock-report',     label: 'Laporan Stok',       actions: ['view'] },

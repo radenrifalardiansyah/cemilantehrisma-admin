@@ -9,7 +9,7 @@ import { rowToPo, type PoRow } from '@/lib/purchase-orders-pg';
 // GR yang dihapus permanen; sisanya dilewati (PO yang sudah dikirim cukup dibatalkan satu per satu).
 // Tiap PO transaksi sendiri, jadi satu yang gagal tidak menggagalkan yang lain.
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission(req, 'purchasing', 'delete');
+  const guard = await requirePermission(req, 'purchase-orders', 'delete');
   if (guard instanceof Response) return guard;
   const { ids } = await req.json() as { ids: string[] };
   if (!Array.isArray(ids) || ids.length === 0) return Response.json({ error: 'ids required' }, { status: 400 });

@@ -9,7 +9,7 @@ import { rowToGr, receivedByMaterial, remainingItems, mergePoItems, type GrRow, 
 import { wibDateKey } from '@/lib/date';
 
 export async function GET(req: NextRequest) {
-  const guard = await requirePermission(req, 'purchasing', 'view');
+  const guard = await requirePermission(req, 'goods-receipts', 'view');
   if (guard instanceof Response) return guard;
   const sql = getSql();
   const rows = await sql<GrRow[]>`
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 // nomor GR & DO terbuat bersamaan. Nomor DO memuat kode supplier & berurut per supplier
 // (DO-SUP001-202610-0001). Qty/harga diedit setelahnya (PUT) sebelum approve.
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission(req, 'purchasing', 'create');
+  const guard = await requirePermission(req, 'goods-receipts', 'create');
   if (guard instanceof Response) return guard;
   const { poId, receivedDate, note } = await req.json() as {
     poId: string; receivedDate?: string; note?: string;

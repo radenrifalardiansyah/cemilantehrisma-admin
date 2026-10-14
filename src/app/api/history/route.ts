@@ -9,7 +9,7 @@ import { wibDayStart, wibDayEnd } from '@/lib/date';
 // izin 'history' terpisah. Izin 'history' tetap dipakai untuk mode jelajah lintas-modul (halaman Riwayat).
 const ENTITY_FEATURE_KEY: Record<string, string> = {
   orders: 'orders', production: 'production', 'material-purchases': 'materials',
-  'purchase-orders': 'purchasing', 'goods-receipts': 'purchasing',
+  'purchase-orders': 'purchase-orders', 'goods-receipts': 'goods-receipts',
   materials: 'materials', consignment: 'consignment', consign: 'consign', stock: 'stock',
   warehouses: 'settings', pos: 'pos', capital: 'capital', income: 'income', expenses: 'expenses',
 };

@@ -101,7 +101,11 @@ interface GrRowInput { materialId: string; name: string; unit: string; orderedQt
 interface Props {
   creds: string;
   view: 'po' | 'gr';
-  onSwitchView: (v: 'po' | 'gr') => void;
+  /** Pindah ke menu PO / GR (keduanya menu terpisah); `grId` = GR yang langsung dibuka form-nya. */
+  onGoto: (v: 'po' | 'gr', grId?: string) => void;
+  /** GR yang langsung dibuka form-nya begitu panel GR tampil (dari tombol “Buat GR” di PO). */
+  openGrId?: string | null;
+  onOpenGrHandled?: () => void;
   materials: FlowMaterial[];
   suppliers: FlowSupplier[];
   walletOptions: { value: string; label: string; sublabel?: string }[];
@@ -113,7 +117,7 @@ interface Props {
 }
 
 export default function PurchaseFlowPanel({
-  creds, view, onSwitchView, materials, suppliers, walletOptions, walletBalances, storeHeader, canApprove, onStockChanged,
+  creds, view, onGoto, openGrId, onOpenGrHandled, materials, suppliers, walletOptions, walletBalances, storeHeader, canApprove, onStockChanged,
 }: Props) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -281,9 +285,7 @@ ${pdfUrl}`.trim();
       const d = await r.json() as { error?: string; id?: string; grNumber?: string; doNumber?: string };
       if (!r.ok || !d.id) { toast.error(d.error ?? 'Gagal membuat GR.'); return; }
       toast.success(`${d.grNumber} & ${d.doNumber} dibuat. Cek qty yang datang lalu approve.`);
-      onSwitchView('gr');
-      const gr = await fetch(`/api/goods-receipts/${d.id}`, { headers });
-      if (gr.ok) openEditGr((await gr.json() as { goodsReceipt: Gr }).goodsReceipt);
+      onGoto('gr', d.id);
     } finally { setBusyId(null); }
   };
 
@@ -303,6 +305,15 @@ ${pdfUrl}`.trim();
     setGDate(g.receivedDate); setGNote(g.note); setGAtt(g.attachments ?? []);
     setGWallet(g.walletId ?? ''); setGPayment(g.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
   }
+  useEffect(() => {
+    if (!openGrId) return;
+    let cancelled = false;
+    fetch(`/api/goods-receipts/${openGrId}`, { headers: { 'x-admin-auth': creds } })
+      .then(r => r.ok ? r.json() as Promise<{ goodsReceipt: Gr }> : null)
+      .then(d => { if (!cancelled && d) openEditGr(d.goodsReceipt); })
+      .finally(() => { if (!cancelled) onOpenGrHandled?.(); });
+    return () => { cancelled = true; };
+  }, [openGrId]); // eslint-disable-line react-hooks/exhaustive-deps
   const grTotal = gRows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
 
   const saveGr = async (approve: boolean) => {
@@ -669,7 +680,7 @@ ${pdfUrl}`.trim();
       {isEmpty ? (
         view === 'po'
           ? <EmptyAddCard label="Buat Purchase Order" onClick={openCreatePo} />
-          : <EmptyAddCard label="Buat GR dari Purchase Order" hint="GR dibuat dari tombol “Buat GR” di PO" onClick={() => onSwitchView('po')} />
+          : <EmptyAddCard label="Buat GR dari Purchase Order" hint="GR dibuat dari tombol “Buat GR” di PO" onClick={() => onGoto('po')} />
       ) : (
       <>
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -714,7 +725,7 @@ ${pdfUrl}`.trim();
                   <Plus size={13} /> <span className="hidden sm:inline">Buat PO</span>
                 </button>
               ) : (
-                <button onClick={() => onSwitchView('po')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
+                <button onClick={() => onGoto('po')} className="btn-primary text-xs flex-shrink-0" style={{ height: HEADER_BTN_H }}>
                   <Plus size={13} /> <span className="hidden sm:inline">Buat GR dari PO</span>
                 </button>
               )}

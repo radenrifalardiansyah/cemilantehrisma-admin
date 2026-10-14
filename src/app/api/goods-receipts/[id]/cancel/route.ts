@@ -14,7 +14,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // voidPurchaseTx yang sama dengan void Pembelian manual — bahan yang sudah dipakai/dibeli lagi
 // dilewati dan dilaporkan), lalu status PO dihitung ulang sehingga PO bisa dibuatkan GR lagi.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'purchasing', 'edit');
+  const guard = await requirePermission(req, 'goods-receipts', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const { note } = await req.json().catch(() => ({})) as { note?: string };
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
       if (gr.status === 'approved') {
         wasApproved = true;
-        if (!(await hasPermission(guard, 'purchasing', 'approve'))) throw new ForbiddenError();
+        if (!(await hasPermission(guard, 'goods-receipts', 'approve'))) throw new ForbiddenError();
         if (!reason) throw new Error('Alasan pembatalan wajib diisi.');
         if (gr.purchase_id) {
           const [p] = await pgTx<{ voided: boolean }[]>`select voided from material_purchases where id = ${gr.purchase_id}`;

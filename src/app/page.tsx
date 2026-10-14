@@ -34,7 +34,7 @@ import KasirLapakTab from '@/components/tabs/KasirLapakTab';
 import CashierSalesReportTab from '@/components/tabs/CashierSalesReportTab';
 import StallSalesReportTab from '@/components/tabs/StallSalesReportTab';
 import ProcurementReportTab from '@/components/tabs/ProcurementReportTab';
-import PurchasingTab from '@/components/tabs/PurchasingTab';
+import PurchaseFlowTab from '@/components/tabs/PurchaseFlowTab';
 import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
 import ProductionTab from '@/components/tabs/ProductionTab';
 import ConsignmentTab from '@/components/tabs/ConsignmentTab';
@@ -317,6 +317,7 @@ export default function AdminPage() {
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(null);
+  const [openGrId, setOpenGrId] = useState<string | null>(null);
   const [highlightShipmentId, setHighlightShipmentId] = useState<string | null>(null);
   const [highlightRecapId, setHighlightRecapId] = useState<string | null>(null);
 
@@ -1521,7 +1522,11 @@ export default function AdminPage() {
         <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
           onHighlightHandled={() => setHighlightMaterialId(null)} />
       )}
-      {activeTab === 'purchasing' && <PurchasingTab creds={creds} canApprove={can('purchasing', 'approve')} />}
+      {(activeTab === 'purchase-orders' || activeTab === 'goods-receipts') && (
+        <PurchaseFlowTab creds={creds} view={activeTab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')}
+          onGoto={(v, grId) => { setOpenGrId(grId ?? null); setActiveTab(v === 'po' ? 'purchase-orders' : 'goods-receipts'); }}
+          openGrId={openGrId} onOpenGrHandled={() => setOpenGrId(null)} />
+      )}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {activeTab === 'consignment' && (
         <ConsignmentTab creds={creds} products={posProducts}

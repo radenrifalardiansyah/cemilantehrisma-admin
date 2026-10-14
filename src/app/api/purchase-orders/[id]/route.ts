@@ -9,7 +9,7 @@ import { rowToPo, rowToGr, receivedByMaterial, remainingItems, type PoRow, type 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'purchasing', 'view');
+  const guard = await requirePermission(req, 'purchase-orders', 'view');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const sql = getSql();
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 // Edit hanya boleh selama PO masih draft (belum dikirim ke supplier) — setelah itu isinya sudah
 // jadi dokumen yang dipegang supplier, jadi perubahan harus lewat batal + buat PO baru.
 export async function PUT(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'purchasing', 'edit');
+  const guard = await requirePermission(req, 'purchase-orders', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const data = await req.json() as {
@@ -92,7 +92,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
 // Hapus permanen hanya untuk PO draft yang belum punya GR apa pun. PO lain cukup dibatalkan.
 export async function DELETE(req: NextRequest, ctx: Ctx) {
-  const guard = await requirePermission(req, 'purchasing', 'delete');
+  const guard = await requirePermission(req, 'purchase-orders', 'delete');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
   const sql = getSql();

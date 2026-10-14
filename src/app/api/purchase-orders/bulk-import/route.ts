@@ -15,7 +15,7 @@ interface ImportPo {
 // Impor PO dari Excel — sudah dikelompokkan di klien (satu PO per supplier+tanggal). Semua PO
 // masuk sebagai draft (belum dikirim). Tiap PO transaksi sendiri; yang gagal dilewati & dihitung.
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission(req, 'purchasing', 'create');
+  const guard = await requirePermission(req, 'purchase-orders', 'create');
   if (guard instanceof Response) return guard;
   const { purchaseOrders } = await req.json() as { purchaseOrders: ImportPo[] };
   if (!Array.isArray(purchaseOrders) || purchaseOrders.length === 0) {

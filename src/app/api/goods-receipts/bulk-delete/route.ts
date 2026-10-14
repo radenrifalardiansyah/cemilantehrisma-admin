@@ -8,7 +8,7 @@ import { rowToGr, type GrRow } from '@/lib/purchase-orders-pg';
 // Hapus massal GR dari centang — hanya GR DRAFT (sama dengan hapus satuan). GR yang sudah approve
 // atau dibatalkan tetap ada sebagai jejak audit dan dilewati.
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission(req, 'purchasing', 'delete');
+  const guard = await requirePermission(req, 'goods-receipts', 'delete');
   if (guard instanceof Response) return guard;
   const { ids } = await req.json() as { ids: string[] };
   if (!Array.isArray(ids) || ids.length === 0) return Response.json({ error: 'ids required' }, { status: 400 });
