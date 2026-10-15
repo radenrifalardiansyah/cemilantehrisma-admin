@@ -6,6 +6,7 @@ import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import PageLoader from '@/components/PageLoader';
+import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
 import { suggestGroup } from '@/lib/wa-forward';
 import type { Action } from '@/types/rbac';
 
@@ -24,6 +25,7 @@ interface LogRow {
 const STATE_LABEL: Record<string, string> = {
   open: 'Terhubung', connecting: 'Menyambung…', qr: 'Perlu scan QR', close: 'Terputus', 'logged-out': 'Logout — perlu scan QR ulang', offline: 'Worker mati',
 };
+const groupOption = (g: { jid: string; subject: string }): SearchSelectOption => ({ value: g.jid, label: g.subject || g.jid });
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 // Teruskan Stok WA: worker WhatsApp (di luar Vercel) membaca grup mitra dan meneruskan pesan stok ke grup kita.
@@ -141,10 +143,8 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
             </label>
             <div>
               <label className="field-label">Grup tujuan (grup kita)</label>
-              <select className="input text-sm w-full" disabled={!canEdit} value={targetJid} onChange={e => setTargetJid(e.target.value)}>
-                <option value="">— pilih grup —</option>
-                {targetOptions.map(g => <option key={g.jid} value={g.jid}>{g.subject || g.jid}</option>)}
-              </select>
+              <SearchSelect value={targetJid} onChange={setTargetJid} disabled={!canEdit} placeholder="— pilih grup —" searchPlaceholder="Cari grup…"
+                options={[{ value: '', label: '— belum dipilih —' }, ...targetOptions.map(groupOption)]} />
             </div>
             <div className="space-y-3">
               <div>
@@ -189,10 +189,11 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
                           <Wand2 size={12} /> {groupName(suggestion)}
                         </button>
                       )}
-                      <select className="input text-sm w-full sm:w-[320px]" style={{ height: 34 }} disabled={!canEdit || busyLoc === l.id} value={current} onChange={e => setLink(l.id, e.target.value)}>
-                        <option value="">Tidak ada grup</option>
-                        {options.map(g => <option key={g.jid} value={g.jid}>{g.subject || g.jid}</option>)}
-                      </select>
+                      <div className="w-full sm:w-[340px]">
+                        <SearchSelect value={current} onChange={jid => setLink(l.id, jid)} disabled={!canEdit || busyLoc === l.id}
+                          placeholder="Tidak ada grup" searchPlaceholder="Cari grup…"
+                          options={[{ value: '', label: 'Tidak ada grup' }, ...options.map(groupOption)]} />
+                      </div>
                     </div>
                   );
                 })}
@@ -205,10 +206,10 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
           <div className="card overflow-hidden">
             <div className="p-4 pb-2 flex flex-wrap items-center gap-2">
               <p className="section-label flex-1">Riwayat diteruskan</p>
-              <select className="input text-xs" style={{ height: 30, width: 200 }} value={logFilter} onChange={e => setLogFilter(e.target.value)}>
-                <option value="">Semua mitra</option>
-                {data.locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              <div className="w-full sm:w-[240px]">
+                <SearchSelect value={logFilter} onChange={setLogFilter} placeholder="Semua mitra" searchPlaceholder="Cari mitra…"
+                  options={[{ value: '', label: 'Semua mitra' }, ...data.locations.map(l => ({ value: l.id, label: l.name, sublabel: l.code || undefined }))]} />
+              </div>
             </div>
             {logs.length === 0 ? (
               <p className="p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada pesan yang diteruskan.</p>
