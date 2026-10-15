@@ -116,7 +116,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
         <Tooltip label="Muat ulang"><button onClick={() => { load(); loadLogs(); }} className="btn-ghost p-2"><RefreshCw size={15} /></button></Tooltip>
       </TopbarPortal>
       <div className="flex-1 overflow-y-auto thin-scrollbar">
-        <div className="p-4 lg:p-6 animate-fade-up space-y-4 max-w-4xl">
+        <div className="p-4 lg:p-6 animate-fade-up space-y-4">
 
           <div className="card p-4 flex flex-wrap items-center gap-3">
             <MessageCircle size={18} style={{ color: 'var(--accent)' }} />
@@ -132,6 +132,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
             {canEdit && <button onClick={resync} className="btn-ghost text-xs" style={{ height: 32 }}><RefreshCw size={13} /> Sinkron grup</button>}
           </div>
 
+          <div className="grid gap-4 xl:grid-cols-[minmax(340px,420px)_1fr] items-start">
           <div className="card p-4 space-y-3">
             <p className="section-label">Pengaturan</p>
             <label className="flex items-center gap-2 text-sm">
@@ -145,7 +146,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
                 {targetOptions.map(g => <option key={g.jid} value={g.jid}>{g.subject || g.jid}</option>)}
               </select>
             </div>
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-3">
               <div>
                 <label className="field-label">Kata kunci (pisahkan koma)</label>
                 <textarea className="input text-sm w-full" rows={2} disabled={!canEdit} value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="stok, sisa, mie kremes" />
@@ -188,7 +189,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
                           <Wand2 size={12} /> {groupName(suggestion)}
                         </button>
                       )}
-                      <select className="input text-sm" style={{ width: 240, height: 34 }} disabled={!canEdit || busyLoc === l.id} value={current} onChange={e => setLink(l.id, e.target.value)}>
+                      <select className="input text-sm w-full sm:w-[320px]" style={{ height: 34 }} disabled={!canEdit || busyLoc === l.id} value={current} onChange={e => setLink(l.id, e.target.value)}>
                         <option value="">Tidak ada grup</option>
                         {options.map(g => <option key={g.jid} value={g.jid}>{g.subject || g.jid}</option>)}
                       </select>
@@ -197,6 +198,8 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
                 })}
               </div>
             )}
+          </div>
+
           </div>
 
           <div className="card overflow-hidden">
