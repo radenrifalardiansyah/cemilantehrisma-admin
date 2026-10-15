@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { RefreshCw, Loader2, Save, Wand2, MessageCircle } from 'lucide-react';
+import { RefreshCw, Loader2, Save, Wand2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -112,66 +112,82 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
   const groupName = (jid: string) => data.groups.find(g => g.jid === jid)?.subject || jid;
   const targetOptions = data.groups.filter(g => !taken.has(g.jid));
 
+  const linkedCount = data.locations.filter(l => linkByLoc.has(l.id)).length;
+  const workerOk = data.worker.online && data.worker.state === 'open';
+
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>
         <Tooltip label="Muat ulang"><button onClick={() => { load(); loadLogs(); }} className="btn-ghost p-2"><RefreshCw size={15} /></button></Tooltip>
       </TopbarPortal>
       <div className="flex-1 overflow-y-auto thin-scrollbar">
-        <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+        <div className="p-4 lg:p-6 animate-fade-up space-y-5">
 
-          <div className="card p-4 flex flex-wrap items-center gap-3">
-            <MessageCircle size={18} style={{ color: 'var(--accent)' }} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">Worker WhatsApp</p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {data.worker.lastSeen ? `Terakhir terlihat ${fmtTime(data.worker.lastSeen)}` : 'Belum pernah terhubung'} · {data.groups.length} grup terdeteksi
+          {/* 1. Status worker */}
+          <Section title="Status Worker" desc="Program WhatsApp yang membaca grup mitra. Harus menyala agar pesan bisa diteruskan."
+            action={canEdit && <button onClick={resync} className="btn-ghost text-xs" style={{ height: 32 }}><RefreshCw size={13} /> Sinkron grup</button>}>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
+              <span className={`badge ${workerOk ? 'badge-green' : data.worker.online ? 'badge-amber' : 'badge-red'}`}>
+                {STATE_LABEL[data.worker.state] ?? data.worker.state}
+              </span>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Terakhir terlihat: </span>{data.worker.lastSeen ? fmtTime(data.worker.lastSeen) : 'belum pernah'}
+              </p>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Grup terdeteksi: </span>{data.groups.length}
               </p>
             </div>
-            <span className={`badge ${data.worker.online && data.worker.state === 'open' ? 'badge-green' : data.worker.online ? 'badge-amber' : 'badge-red'}`}>
-              {STATE_LABEL[data.worker.state] ?? data.worker.state}
-            </span>
-            {canEdit && <button onClick={resync} className="btn-ghost text-xs" style={{ height: 32 }}><RefreshCw size={13} /> Sinkron grup</button>}
-          </div>
+          </Section>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(340px,420px)_1fr] items-start">
-          <div className="card p-4 space-y-3">
-            <p className="section-label">Pengaturan</p>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={enabled} disabled={!canEdit} onChange={e => setEnabled(e.target.checked)} />
-              Aktifkan penerusan pesan stok
-            </label>
-            <div>
-              <label className="field-label">Grup tujuan (grup kita)</label>
-              <SearchSelect value={targetJid} onChange={setTargetJid} disabled={!canEdit} placeholder="— pilih grup —" searchPlaceholder="Cari grup…"
-                options={[{ value: '', label: '— belum dipilih —' }, ...targetOptions.map(groupOption)]} />
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="field-label">Kata kunci (pisahkan koma)</label>
-                <textarea className="input text-sm w-full" rows={2} disabled={!canEdit} value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="stok, sisa, mie kremes" />
-              </div>
-              <div>
-                <label className="field-label">Kata pengecualian (opsional)</label>
-                <textarea className="input text-sm w-full" rows={2} disabled={!canEdit} value={excludeKeywords} onChange={e => setExcludeKeywords(e.target.value)} placeholder="tolong, tanya" />
-              </div>
-            </div>
-            <div className="w-40">
-              <label className="field-label">Maks. pesan per jam</label>
-              <input className="input text-sm w-full" type="number" min={1} max={600} disabled={!canEdit} value={maxPerHour} onChange={e => setMaxPerHour(e.target.value)} />
-            </div>
-            {canEdit && (
+          {/* 2. Pengaturan */}
+          <Section title="Pengaturan" desc="Pesan dari grup mitra yang memuat kata kunci akan diteruskan ke grup tujuan."
+            footer={canEdit && (
               <button onClick={saveSettings} disabled={saving} className="btn-primary text-sm">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan pengaturan
               </button>
-            )}
-          </div>
+            )}>
+            <div className="p-5 space-y-5">
+              <div className="flex items-center gap-3">
+                <button type="button" role="switch" aria-checked={enabled} disabled={!canEdit} onClick={() => setEnabled(v => !v)}
+                  className="relative flex-shrink-0 rounded-full transition-colors disabled:opacity-50"
+                  style={{ width: 40, height: 22, background: enabled ? 'var(--accent)' : 'var(--border)' }}>
+                  <span className="absolute top-[3px] rounded-full bg-white transition-all" style={{ width: 16, height: 16, left: enabled ? 21 : 3 }} />
+                </button>
+                <div>
+                  <p className="text-sm font-semibold">{enabled ? 'Penerusan pesan aktif' : 'Penerusan pesan nonaktif'}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Matikan kapan saja untuk menghentikan sementara tanpa mematikan worker.</p>
+                </div>
+              </div>
 
-          <div className="card overflow-hidden">
-            <div className="p-4 pb-2"><p className="section-label">Grup WA per mitra</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Mitra tanpa grup WA biarkan “Tidak ada grup”. Satu grup hanya untuk satu mitra.</p></div>
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <label className="field-label">Grup tujuan (grup kita)</label>
+                  <SearchSelect value={targetJid} onChange={setTargetJid} disabled={!canEdit} placeholder="— pilih grup —" searchPlaceholder="Cari grup…"
+                    options={[{ value: '', label: '— belum dipilih —' }, ...targetOptions.map(groupOption)]} />
+                </div>
+                <div>
+                  <label className="field-label">Maksimal pesan per jam</label>
+                  <input className="input text-sm w-full" type="number" min={1} max={600} disabled={!canEdit} value={maxPerHour} onChange={e => setMaxPerHour(e.target.value)} />
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Batas kirim ke grup tujuan; sisanya menunggu jam berikutnya.</p>
+                </div>
+                <div>
+                  <label className="field-label">Kata kunci (pisahkan dengan koma)</label>
+                  <textarea className="input text-sm w-full" rows={3} disabled={!canEdit} value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="stok, sisa, mie kremes" />
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Pesan diteruskan bila memuat salah satu kata ini.</p>
+                </div>
+                <div>
+                  <label className="field-label">Kata pengecualian (opsional)</label>
+                  <textarea className="input text-sm w-full" rows={3} disabled={!canEdit} value={excludeKeywords} onChange={e => setExcludeKeywords(e.target.value)} placeholder="tolong, tanya" />
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Pesan yang memuat kata ini tidak diteruskan.</p>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          {/* 3. Grup WA per mitra */}
+          <Section title="Grup WA per Mitra" desc={`${linkedCount} dari ${data.locations.length} mitra sudah dipasangkan. Mitra tanpa grup WA biarkan “Tidak ada grup”; satu grup hanya untuk satu mitra.`}>
             {data.locations.length === 0 ? (
-              <p className="p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada mitra.</p>
+              <p className="p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada mitra.</p>
             ) : (
               <div className="divide-y divide-[var(--border-2)]">
                 {data.locations.map(l => {
@@ -179,60 +195,80 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
                   const options = data.groups.filter(g => g.jid === current || (!taken.has(g.jid) && g.jid !== data.settings.targetJid));
                   const suggestion = current ? null : suggestGroup(l.name, options);
                   return (
-                    <div key={l.id} className="px-4 py-2.5 flex flex-wrap items-center gap-2">
-                      <div className="flex-1 min-w-[160px]">
-                        <p className="text-sm font-medium">{l.name}</p>
+                    <div key={l.id} className="px-5 py-3 grid gap-2 md:grid-cols-[1fr_minmax(0,420px)] md:items-center">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold">{l.name}</p>
+                          {current && <span className="badge badge-green" style={{ fontSize: 10, padding: '1px 6px' }}>Terpasang</span>}
+                        </div>
                         {l.code && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{l.code}</p>}
                       </div>
-                      {suggestion && canEdit && (
-                        <button className="btn-ghost text-xs" style={{ height: 30 }} disabled={busyLoc === l.id} onClick={() => setLink(l.id, suggestion)}>
-                          <Wand2 size={12} /> {groupName(suggestion)}
-                        </button>
-                      )}
-                      <div className="w-full sm:w-[340px]">
+                      <div className="space-y-1.5">
                         <SearchSelect value={current} onChange={jid => setLink(l.id, jid)} disabled={!canEdit || busyLoc === l.id}
                           placeholder="Tidak ada grup" searchPlaceholder="Cari grup…"
                           options={[{ value: '', label: 'Tidak ada grup' }, ...options.map(groupOption)]} />
+                        {suggestion && canEdit && (
+                          <button className="text-xs flex items-center gap-1.5 font-medium" style={{ color: 'var(--accent)' }} disabled={busyLoc === l.id} onClick={() => setLink(l.id, suggestion)}>
+                            <Wand2 size={12} /> Saran: pasang ke “{groupName(suggestion)}”
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
+          </Section>
 
-          </div>
-
-          <div className="card overflow-hidden">
-            <div className="p-4 pb-2 flex flex-wrap items-center gap-2">
-              <p className="section-label flex-1">Riwayat diteruskan</p>
-              <div className="w-full sm:w-[240px]">
+          {/* 4. Riwayat */}
+          <Section title="Riwayat Diteruskan" desc="Pesan terbaru yang lolos filter dan dikirim ke grup tujuan."
+            action={
+              <div className="w-[220px]">
                 <SearchSelect value={logFilter} onChange={setLogFilter} placeholder="Semua mitra" searchPlaceholder="Cari mitra…"
                   options={[{ value: '', label: 'Semua mitra' }, ...data.locations.map(l => ({ value: l.id, label: l.name, sublabel: l.code || undefined }))]} />
               </div>
-            </div>
+            }>
             {logs.length === 0 ? (
-              <p className="p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada pesan yang diteruskan.</p>
+              <p className="p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada pesan yang diteruskan.</p>
             ) : (
               <div className="divide-y divide-[var(--border-2)]">
                 {logs.map(r => (
-                  <div key={r.id} className="px-4 py-2.5">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-semibold">{r.locationName}</span>
+                  <div key={r.id} className="px-5 py-3">
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      <span className="font-semibold text-sm">{r.locationName}</span>
                       <span style={{ color: 'var(--text-muted)' }}>{r.senderName && `${r.senderName} · `}{fmtTime(r.receivedAt)}</span>
                       <span className={`badge ml-auto ${r.status === 'sent' ? 'badge-green' : r.status === 'failed' ? 'badge-red' : 'badge-gray'}`}>
                         {r.status === 'sent' ? 'Terkirim' : r.status === 'failed' ? 'Gagal' : 'Menunggu'}
                       </span>
                     </div>
-                    <p className="text-sm mt-1 whitespace-pre-wrap break-words">{r.body}</p>
+                    <p className="text-sm mt-1.5 whitespace-pre-wrap break-words" style={{ color: 'var(--text-secondary)' }}>{r.body}</p>
                     {r.error && <p className="text-xs mt-1" style={{ color: 'var(--danger, #DC2626)' }}>{r.error}</p>}
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </Section>
         </div>
       </div>
     </div>
+  );
+}
+
+// Kartu bagian: judul + keterangan di kepala (aksi opsional di kanan), isi, dan footer opsional untuk tombol simpan.
+function Section({ title, desc, action, footer, children }: {
+  title: string; desc?: string; action?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <section className="card">
+      <div className="px-5 py-4 flex flex-wrap items-center gap-3 border-b border-[var(--border-2)]">
+        <div className="flex-1 min-w-[220px]">
+          <h2 className="text-sm font-bold">{title}</h2>
+          {desc && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{desc}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+      {footer ? <div className="px-5 py-3 border-t border-[var(--border-2)] flex justify-end" style={{ background: 'var(--surface-2)' }}>{footer}</div> : null}
+    </section>
   );
 }
