@@ -3,8 +3,9 @@ import { getSql } from '@/lib/db';
 import { requireWorker } from '@/lib/wa-worker-auth';
 import { WA_GROUP_JID_RE } from '@/lib/wa-forward';
 
-// Worker mengirim daftar grup yang diikuti nomornya (id + nama). Hanya menambah/memperbarui nama; pemetaan ke mitra
-// dibuat admin secara manual.
+// Worker mengirim daftar LENGKAP grup yang diikuti nomornya (id + nama). Grup di daftar ditambah/diperbarui namanya; grup
+// yang sudah tidak ada di daftar (nomor keluar / ganti nomor) dibuang dari cache — kecuali yang sudah dipasangkan ke mitra
+// atau jadi grup tujuan (tidak dihapus diam-diam). Pemetaan ke mitra dibuat admin secara manual.
 export async function POST(req: NextRequest) {
   const denied = requireWorker(req);
   if (denied) return denied;
@@ -18,6 +19,13 @@ export async function POST(req: NextRequest) {
   await sql`
     insert into wa_groups ${sql(groups, 'jid', 'subject')}
     on conflict (jid) do update set subject = excluded.subject, last_seen_at = now()
+  `;
+  const jids = groups.map(g => g.jid);
+  await sql`
+    delete from wa_groups
+    where jid not in ${sql(jids)}
+      and jid not in (select jid from wa_group_links)
+      and jid is distinct from (select target_jid from wa_forward_settings where id = 1)
   `;
   return Response.json({ saved: groups.length });
 }

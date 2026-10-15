@@ -3,6 +3,8 @@
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, normalizeMessageContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
+import { createServer } from 'node:http';
 import { assertEnv, getConfig, postGroups, postLog, patchLog } from './api.mjs';
 import { shouldForward, buildForwardMessage } from './filter.mjs';
 
@@ -23,6 +25,9 @@ const seen = new Set(); // anti-dobel di memori (server juga menjaga lewat messa
 const queue = [];
 const sentAt = []; // waktu kirim sukses (ms) — untuk batas per jam
 let draining = false;
+
+let currentQr = null; // QR login terbaru — ditampilkan juga di halaman lokal agar mudah dipindai
+const QR_PORT = Number(process.env.QR_PORT ?? 3939);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -115,9 +120,9 @@ async function connect() {
   });
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) { state = 'qr'; log('Scan QR ini di WhatsApp nomor cadangan (Perangkat tertaut → Tautkan perangkat):'); qrcode.generate(qr, { small: true }); refreshConfig(); }
+    if (qr) { state = 'qr'; currentQr = qr; log('Scan QR ini di WhatsApp nomor cadangan (Perangkat tertaut → Tautkan perangkat):'); qrcode.generate(qr, { small: true }); refreshConfig(); }
     if (connection === 'connecting') state = 'connecting';
-    if (connection === 'open') { state = 'open'; log('WhatsApp terhubung.'); await refreshConfig(); if (!lastGroupsAt) await syncGroups(); }
+    if (connection === 'open') { state = 'open'; currentQr = null; log('WhatsApp terhubung.'); await refreshConfig(); if (!lastGroupsAt) await syncGroups(); }
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
@@ -137,6 +142,28 @@ async function connect() {
     for (const m of messages) onMessage(m).catch(e => log('error pesan:', e.message));
   });
 }
+
+// Halaman QR lokal (hanya 127.0.0.1): http://127.0.0.1:3939 — ikut berganti otomatis tiap QR baru.
+createServer(async (req, res) => {
+  if (req.url?.startsWith('/qr.png')) {
+    if (!currentQr) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+    res.end(await QRCode.toBuffer(currentQr, { width: 380, margin: 2 }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(`<!doctype html><meta charset="utf-8"><title>QR Teruskan Stok WA</title>
+<body style="font-family:sans-serif;text-align:center;padding:24px">
+<h2>Scan dengan WhatsApp</h2><p>Perangkat tertaut → Tautkan perangkat</p>
+<div id="box"></div>
+<script>
+async function tick(){
+  const ok=(await fetch('/qr.png',{cache:'no-store'})).ok;
+  document.getElementById('box').innerHTML = ok ? '<img src="/qr.png?t='+Date.now()+'" width="380">' : '<p><b>Tidak ada QR.</b> Worker sudah terhubung, atau sedang menyambung…</p>';
+}
+tick(); setInterval(tick, 3000);
+</script></body>`);
+}).on('error', e => log('halaman QR tidak aktif:', e.message)).listen(QR_PORT, '127.0.0.1');
 
 process.on('unhandledRejection', e => log('unhandledRejection:', e?.message ?? e));
 setInterval(() => {
