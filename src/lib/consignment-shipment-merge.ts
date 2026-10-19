@@ -88,7 +88,6 @@ export function groupAndMergeShipments(
     const notes = sorted.map(r => r.note).filter((n): n is string => !!n?.trim());
     const noteParts = [
       ...(notes.length ? [notes.join(' · ')] : []),
-      ...(merged ? [`Gabungan ${sorted.length} pengiriman: ${sourceDocs.join(', ')}`] : []),
     ];
 
     const data: ShipmentNoteData = {

@@ -211,7 +211,7 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
         </View>
 
         <View style={s.table}>
-          <View style={s.tHeadRow}>
+          <View style={s.tHeadRow} fixed>
             <Text style={[s.tHeadCell, s.colNo]}>No</Text>
             <Text style={[s.tHeadCell, s.colName]}>Produk</Text>
             <Text style={[s.tHeadCell, s.colSold]}>Terjual</Text>
@@ -222,12 +222,12 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
           </View>
           {sections ? sections.map((section, si) => (
             <Fragment key={si}>
-              <View style={s.sectionRow}>
+              <View style={s.sectionRow} wrap={false} minPresenceAhead={50}>
                 <Text style={s.sectionRowText}>{section.date}</Text>
                 <Text style={s.sectionRowDocNo}>No: {section.docNo}</Text>
               </View>
               {section.items.map((it, i) => (
-                <View key={i} style={s.tRow}>
+                <View key={i} style={s.tRow} wrap={false}>
                   <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
                   <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
                   <Text style={[s.tCell, s.colSold]}>{it.qtySold}</Text>
@@ -237,7 +237,7 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
                   <Text style={[s.tCell, s.colRev]}>{rp(it.revenue)}</Text>
                 </View>
               ))}
-              <View style={s.sectionSubtotalRow}>
+              <View style={s.sectionSubtotalRow} wrap={false}>
                 <Text style={s.sectionSubtotalText}>
                   Subtotal: jual {section.totalSold}
                   {section.totalRetur > 0 ? <Text style={{ color: C.retur, fontFamily: 'Helvetica-Bold' }}>, retur {section.totalRetur}</Text> : ''}
@@ -247,7 +247,7 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
               </View>
             </Fragment>
           )) : data.items.map((it, i) => (
-            <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]}>
+            <View key={i} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]} wrap={false}>
               <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
               <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
               <Text style={[s.tCell, s.colSold]}>{it.qtySold}</Text>

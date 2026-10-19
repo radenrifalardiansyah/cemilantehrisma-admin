@@ -87,7 +87,6 @@ export function groupAndMergeRecaps(
     const notes = sorted.map(r => r.note).filter((n): n is string => !!n?.trim());
     const noteParts = [
       ...(notes.length ? [notes.join(' · ')] : []),
-      ...(merged ? [`Gabungan ${sorted.length} rekap: ${sourceDocs.join(', ')}`] : []),
     ];
 
     const data: RecapNoteData = {
