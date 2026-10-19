@@ -11,6 +11,7 @@ import type { RecapNoteItem } from './RecapNotePDF';
 export interface MitraInvoiceRecap {
   date: string; docNo: string; items: RecapNoteItem[];
   totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number;
+  paid?: boolean; // rekap sudah lunas — tampil hanya karena memuat retur/reject, tidak ditagih lagi
 }
 
 export interface MitraInvoiceData {
@@ -19,7 +20,7 @@ export interface MitraInvoiceData {
   shipmentCount: number; shipmentQty: number; shipmentValue: number;
   recapCount: number; soldQty: number; returQty: number; rejectQty: number; revenueAll: number;
   paidValue: number; paidCount: number;
-  unpaid: MitraInvoiceRecap[]; // rekap belum lunas, urut tanggal
+  unpaid: MitraInvoiceRecap[]; // rekap belum lunas + rekap lunas yang memuat retur/reject, urut tanggal
   total: number;               // total tagihan = jumlah pendapatan rekap belum lunas
   bank?: { name: string; accountNumber: string; accountHolder?: string };
 }
@@ -112,11 +113,12 @@ const s = StyleSheet.create({
 export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceData; store: StoreHeader }) {
   const sisa = data.shipmentQty - data.soldQty - data.returQty - data.rejectQty;
   // Total khusus rekap yang ditagihkan (belum lunas): pcs dan nilai titip (qty x harga titip) per kategori.
-  const tally = (pick: (it: RecapNoteItem) => number) => data.unpaid.reduce(
+  const billed = data.unpaid.filter(r => !r.paid);
+  const tally = (rows: MitraInvoiceRecap[], pick: (it: RecapNoteItem) => number) => rows.reduce(
     (acc, r) => r.items.reduce((a, it) => ({ qty: a.qty + pick(it), val: a.val + pick(it) * it.hargaTitip }), acc), { qty: 0, val: 0 });
-  const uSold = tally(it => it.qtySold);
-  const uRetur = tally(it => it.qtyRetur);
-  const uReject = tally(it => it.qtyReject);
+  const uSold = tally(billed, it => it.qtySold);
+  const uRetur = tally(data.unpaid, it => it.qtyRetur);
+  const uReject = tally(data.unpaid, it => it.qtyReject);
   const isPaidOff = data.total <= 0;
   return (
     <Document title={`Invoice ${data.docNo} - ${data.locationName}`}>
@@ -152,7 +154,7 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
           <View style={s.infoBox}>
             <Text style={s.infoLabel}>Status Tagihan</Text>
             <Text style={[s.infoValue, { color: isPaidOff ? C.green : C.amber }]}>{isPaidOff ? 'LUNAS' : 'BELUM LUNAS'}</Text>
-            <Text style={s.infoSub}>{data.unpaid.length} rekap belum dibayar</Text>
+            <Text style={s.infoSub}>{billed.length} rekap belum dibayar</Text>
             <Text style={s.infoSub}>{data.paidCount} rekap sudah lunas</Text>
           </View>
         </View>
@@ -166,7 +168,7 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
           <View style={s.sumRow}><Text style={s.sumKey}>Sisa stok di mitra (kirim - jual - retur - reject)</Text><Text style={s.sumVal}>{sisa} pcs</Text></View>
         </View>
 
-        <Text style={s.secTitle}>RINCIAN YANG HARUS DIBAYAR ({data.unpaid.length} REKAP)</Text>
+        <Text style={s.secTitle}>RINCIAN REKAP ({billed.length} BELUM DIBAYAR{data.unpaid.length > billed.length ? `, ${data.unpaid.length - billed.length} LUNAS MEMUAT RETUR/REJECT` : ''})</Text>
         <View style={s.table}>
           <View style={s.tHeadRow} fixed>
             <Text style={[s.tHeadCell, s.colNo]}>No</Text>
@@ -177,11 +179,11 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
             <Text style={[s.tHeadCell, s.colPrice]}>Harga</Text>
             <Text style={[s.tHeadCell, s.colRev]}>Tagihan</Text>
           </View>
-          {data.unpaid.length === 0 && <Text style={s.empty}>Semua rekap sudah lunas. Tidak ada tagihan.</Text>}
+          {billed.length === 0 && <Text style={s.empty}>Semua rekap sudah lunas. Tidak ada tagihan.</Text>}
           {data.unpaid.map((r, ri) => (
             <Fragment key={ri}>
               <View style={s.groupRow} wrap={false} minPresenceAhead={50}>
-                <Text style={s.groupText}>{r.date}</Text>
+                <Text style={s.groupText}>{r.date}{r.paid ? '  ·  SUDAH LUNAS (info retur/reject)' : ''}</Text>
                 <Text style={s.groupDoc}>No: {r.docNo}</Text>
               </View>
               {r.items.map((it, i) => (
@@ -196,7 +198,7 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
                 </View>
               ))}
               <View style={s.subRow} wrap={false}>
-                <Text style={s.subText}>Subtotal: jual {r.totalSold}, retur {r.totalRetur}, reject {r.totalReject}  ·  {rp(r.totalRevenue)}</Text>
+                <Text style={s.subText}>Subtotal: jual {r.totalSold}, retur {r.totalRetur}, reject {r.totalReject}  ·  {r.paid ? 'sudah lunas, tidak ditagih' : rp(r.totalRevenue)}</Text>
               </View>
             </Fragment>
           ))}

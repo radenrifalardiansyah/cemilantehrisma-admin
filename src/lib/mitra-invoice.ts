@@ -35,9 +35,14 @@ export function buildMitraInvoiceData(input: {
   const secs = [...shipments, ...recaps].map(sec).filter(Boolean).sort((a, b) => a - b);
   const ymd = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
   const stamp = `${ymd.getFullYear()}${String(ymd.getMonth() + 1).padStart(2, '0')}${String(ymd.getDate()).padStart(2, '0')}`;
-  const unpaid: MitraInvoiceRecap[] = unpaidRecaps.map(r => ({
+  // Rekap lunas yang memuat retur/reject ikut dicantumkan (bertanda lunas) supaya transaksinya terlihat.
+  const listed = recaps
+    .filter(r => r.paymentStatus === 'belum_lunas' || r.totalRetur > 0 || (r.totalReject || 0) > 0)
+    .sort((a, b) => sec(a) - sec(b));
+  const unpaid: MitraInvoiceRecap[] = listed.map(r => ({
     date: fmtDateTime(sec(r)), docNo: `RKP-${r.id.slice(-6).toUpperCase()}`, items: r.items,
     totalSold: r.totalSold, totalRetur: r.totalRetur, totalReject: r.totalReject || 0, totalRevenue: r.totalRevenue,
+    paid: r.paymentStatus !== 'belum_lunas',
   }));
   return {
     docNo: `INV-${(location.code || location.id.slice(-4)).toUpperCase()}-${stamp}`,
