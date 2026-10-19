@@ -111,7 +111,12 @@ const s = StyleSheet.create({
 
 export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceData; store: StoreHeader }) {
   const sisa = data.shipmentQty - data.soldQty - data.returQty - data.rejectQty;
-  const unpaidQty = data.unpaid.reduce((q, r) => q + r.totalSold, 0);
+  // Total khusus rekap yang ditagihkan (belum lunas): pcs dan nilai titip (qty x harga titip) per kategori.
+  const tally = (pick: (it: RecapNoteItem) => number) => data.unpaid.reduce(
+    (acc, r) => r.items.reduce((a, it) => ({ qty: a.qty + pick(it), val: a.val + pick(it) * it.hargaTitip }), acc), { qty: 0, val: 0 });
+  const uSold = tally(it => it.qtySold);
+  const uRetur = tally(it => it.qtyRetur);
+  const uReject = tally(it => it.qtyReject);
   const isPaidOff = data.total <= 0;
   return (
     <Document title={`Invoice ${data.docNo} - ${data.locationName}`}>
@@ -202,7 +207,9 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
             <View style={s.totalsBox}>
               <View style={s.totalsLine}><Text style={s.totalsKey}>Total nilai penjualan (semua rekap)</Text><Text style={s.totalsVal}>{rp(data.revenueAll)}</Text></View>
               <View style={s.totalsLine}><Text style={s.totalsKey}>Sudah dibayar ({data.paidCount} rekap lunas)</Text><Text style={[s.totalsVal, { color: C.green }]}>- {rp(data.paidValue)}</Text></View>
-              <View style={s.totalsLine}><Text style={s.totalsKey}>Barang terjual belum dibayar</Text><Text style={s.totalsVal}>{unpaidQty} pcs</Text></View>
+              <View style={s.totalsLine}><Text style={s.totalsKey}>Terjual (belum dibayar)</Text><Text style={s.totalsVal}>{uSold.qty} pcs  ·  {rp(uSold.val)}</Text></View>
+              <View style={s.totalsLine}><Text style={[s.totalsKey, { color: C.retur }]}>Retur (tidak ditagih)</Text><Text style={[s.totalsVal, { color: C.retur }]}>{uRetur.qty} pcs  ·  {rp(uRetur.val)}</Text></View>
+              <View style={s.totalsLine}><Text style={[s.totalsKey, { color: C.reject }]}>Reject (tidak ditagih)</Text><Text style={[s.totalsVal, { color: C.reject }]}>{uReject.qty} pcs  ·  {rp(uReject.val)}</Text></View>
               <View style={s.totalsFinal}>
                 <Text style={s.totalsFinalKey}>TOTAL YANG HARUS DIBAYAR</Text>
                 <Text style={s.totalsFinalVal}>{rp(data.total)}</Text>
