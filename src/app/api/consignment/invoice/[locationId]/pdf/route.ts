@@ -26,9 +26,12 @@ async function resolveLogoDataUri(db: ReturnType<typeof getDb>, logoUrl?: string
   return `data:${contentType || 'image/jpeg'};base64,${Buffer.from(data).toString('base64')}`;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ locationId: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ locationId: string }> }) {
   try {
     const { locationId } = await params;
+    const dateParam = (k: string) => { const v = req.nextUrl.searchParams.get(k) ?? ''; return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined; };
+    const from = dateParam('from');
+    const to = dateParam('to');
     const db = getDb();
     const sql = getSql();
     const [loc] = await sql<{ id: string; name: string; code: string | null; contact_name: string | null; contact_phone: string | null; address: string | null }[]>`
@@ -59,6 +62,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ loc
     const bankNo = settings.storeBankAccountNumber?.trim();
 
     const data = buildMitraInvoiceData({
+      from, to,
       location: { id: loc.id, name: loc.name, code: loc.code, contactName: loc.contact_name, contactPhone: loc.contact_phone, address: loc.address },
       shipments: shipmentRows.map(rowToShipment),
       recaps: recapRows.map(row => {

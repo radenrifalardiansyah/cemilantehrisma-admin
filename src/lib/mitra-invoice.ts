@@ -20,8 +20,14 @@ const fmtDate = (d: Date) => d.toLocaleDateString('id-ID', { timeZone: TZ, day: 
 export function buildMitraInvoiceData(input: {
   location: InvoiceLocation; shipments: InvoiceShipment[]; recaps: InvoiceRecap[];
   bank?: MitraInvoiceData['bank']; now?: Date;
+  from?: string; to?: string; // YYYY-MM-DD (WIB), opsional — membatasi kirim & rekap pada periode ini
 }): MitraInvoiceData {
-  const { location, shipments, recaps, bank } = input;
+  const { location, bank } = input;
+  const fromSec = input.from ? new Date(`${input.from}T00:00:00+07:00`).getTime() / 1000 : -Infinity;
+  const toSec = input.to ? new Date(`${input.to}T23:59:59+07:00`).getTime() / 1000 : Infinity;
+  const inRange = (x: { createdAt?: { seconds: number } | null }) => { const s = x.createdAt?.seconds ?? 0; return s >= fromSec && s <= toSec; };
+  const shipments = input.shipments.filter(inRange);
+  const recaps = input.recaps.filter(inRange);
   const now = input.now ?? new Date();
   const sec = (x: { createdAt?: { seconds: number } | null }) => x.createdAt?.seconds ?? 0;
   const unpaidRecaps = recaps.filter(r => r.paymentStatus === 'belum_lunas').sort((a, b) => sec(a) - sec(b));
@@ -37,7 +43,9 @@ export function buildMitraInvoiceData(input: {
     docNo: `INV-${(location.code || location.id.slice(-4)).toUpperCase()}-${stamp}`,
     date: now.toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }),
     printedAt: now.toLocaleString('id-ID', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-    periodText: secs.length ? `${fmtDate(new Date(secs[0] * 1000))} - ${fmtDate(new Date(secs[secs.length - 1] * 1000))}` : '-',
+    periodText: (input.from || input.to)
+      ? `${input.from ? fmtDate(new Date(`${input.from}T12:00:00+07:00`)) : 'Awal'} - ${input.to ? fmtDate(new Date(`${input.to}T12:00:00+07:00`)) : 'Sekarang'}`
+      : secs.length ? `${fmtDate(new Date(secs[0] * 1000))} - ${fmtDate(new Date(secs[secs.length - 1] * 1000))}` : '-',
     locationName: location.name, locationCode: location.code || undefined,
     contactName: location.contactName || undefined, contactPhone: location.contactPhone || undefined, address: location.address || undefined,
     shipmentCount: shipments.length,

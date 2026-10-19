@@ -396,6 +396,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [historyRecaps,    setHistoryRecaps]    = useState<Recap[]>([]);
   const [exportingHistoryExcel, setExportingHistoryExcel] = useState(false);
   const [exportingInvoice,      setExportingInvoice]      = useState(false);
+  const [invoiceFrom, setInvoiceFrom] = useState('');
+  const [invoiceTo,   setInvoiceTo]   = useState('');
   const [exportingHistoryPdf,   setExportingHistoryPdf]   = useState(false);
 
   const openLocationHistory = async (l: ConsignmentLocation) => {
@@ -416,7 +418,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       setHistoryLoading(false);
     }
   };
-  const closeLocationHistory = () => { setHistoryLocation(null); setHistoryShipments([]); setHistoryRecaps([]); };
+  const closeLocationHistory = () => { setHistoryLocation(null); setHistoryShipments([]); setHistoryRecaps([]); setInvoiceFrom(''); setInvoiceTo(''); };
 
   // ── Lokasi ───────────────────────────────────────────────────
   const [locations,        setLocations]        = useState<ConsignmentLocation[]>([]);
@@ -2298,12 +2300,13 @@ _${storeHeader.name}_`.trim();
   const exportInvoicePdf = async () => {
     if (!historyLocation) return;
     if (historyRecaps.length === 0) { toast.error('Belum ada rekap untuk ditagihkan.'); return; }
+    if (invoiceFrom && invoiceTo && invoiceFrom > invoiceTo) { toast.error('Tanggal "dari" tidak boleh setelah "sampai".'); return; }
     setExportingInvoice(true);
     try {
       const bankNo = storeInfo.storeBankAccountNumber?.trim();
       const now = new Date();
       const data: MitraInvoiceData = buildMitraInvoiceData({
-        location: historyLocation, shipments: historyShipments, recaps: historyRecaps, now,
+        location: historyLocation, shipments: historyShipments, recaps: historyRecaps, now, from: invoiceFrom || undefined, to: invoiceTo || undefined,
         bank: bankNo ? { name: storeInfo.storeBankName?.trim() || 'Bank', accountNumber: bankNo, accountHolder: storeInfo.storeBankAccountHolder?.trim() || undefined } : undefined,
       });
       const blob = await pdf(<MitraInvoicePDF store={storeHeader} data={data} />).toBlob();
@@ -2328,17 +2331,21 @@ _${storeHeader.name}_`.trim();
     if (!historyLocation) return;
     const phone = historyLocation.contactPhone?.trim();
     if (!phone) { toast.error(`Nomor WhatsApp untuk "${historyLocation.name}" belum diisi di data lokasi.`); return; }
-    const unpaid = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas');
+    if (invoiceFrom && invoiceTo && invoiceFrom > invoiceTo) { toast.error('Tanggal "dari" tidak boleh setelah "sampai".'); return; }
+    const fromSec = invoiceFrom ? new Date(`${invoiceFrom}T00:00:00+07:00`).getTime() / 1000 : -Infinity;
+    const toSec = invoiceTo ? new Date(`${invoiceTo}T23:59:59+07:00`).getTime() / 1000 : Infinity;
+    const unpaid = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas' && (r.createdAt?.seconds ?? 0) >= fromSec && (r.createdAt?.seconds ?? 0) <= toSec);
     const total = unpaid.reduce((q, r) => q + r.totalRevenue, 0);
-    if (total <= 0) { toast.error('Tidak ada tagihan — semua rekap mitra ini sudah lunas.'); return; }
-    const pdfUrl = `${window.location.origin}/api/consignment/invoice/${historyLocation.id}/pdf`;
+    if (total <= 0) { toast.error(invoiceFrom || invoiceTo ? 'Tidak ada tagihan pada periode ini.' : 'Tidak ada tagihan — semua rekap mitra ini sudah lunas.'); return; }
+    const qs = new URLSearchParams({ ...(invoiceFrom ? { from: invoiceFrom } : {}), ...(invoiceTo ? { to: invoiceTo } : {}) }).toString();
+    const pdfUrl = `${window.location.origin}/api/consignment/invoice/${historyLocation.id}/pdf${qs ? `?${qs}` : ''}`;
     const SEP = '─────────────────────';
     const bankNo = storeInfo.storeBankAccountNumber?.trim();
     const message = `*${storeHeader.name.toUpperCase()}*
 ${SEP}
 
 Halo *${historyLocation.contactName || historyLocation.name}*!
-Berikut tagihan konsinyasi untuk *${historyLocation.name}*:
+Berikut tagihan konsinyasi untuk *${historyLocation.name}*${invoiceFrom || invoiceTo ? ` (periode ${invoiceFrom || 'awal'} s/d ${invoiceTo || 'sekarang'})` : ''}:
 
 Rekap belum dibayar : ${unpaid.length} rekap
 Barang terjual : ${unpaid.reduce((q, r) => q + r.totalSold, 0)} pcs
@@ -3767,6 +3774,16 @@ _${storeHeader.name}_`.trim();
               </div>
             </div>
             <div className="modal-body">
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode invoice:</span>
+                <input type="date" value={invoiceFrom} onChange={e => setInvoiceFrom(e.target.value)} className="input" style={{ height: 32, width: 140 }} />
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
+                <input type="date" value={invoiceTo} onChange={e => setInvoiceTo(e.target.value)} className="input" style={{ height: 32, width: 140 }} />
+                {(invoiceFrom || invoiceTo) && (
+                  <button onClick={() => { setInvoiceFrom(''); setInvoiceTo(''); }} style={{ fontSize: 11, color: 'var(--text-secondary)', textDecoration: 'underline' }}>Semua</button>
+                )}
+                <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>(kosong = seluruh riwayat)</span>
+              </div>
               {historyLoading ? (
                 <PageLoader compact />
               ) : (
