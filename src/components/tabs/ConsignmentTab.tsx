@@ -5,7 +5,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronLeft, ChevronRight, Upload,
-  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine,
+  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -29,6 +29,7 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import type { PosProduct } from '@/lib/pos-types';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import ShipmentNotePDF, { ShipmentNotePDFPage } from '@/lib/pdf/ShipmentNotePDF';
+import MitraInvoicePDF, { type MitraInvoiceData } from '@/lib/pdf/MitraInvoicePDF';
 import ShipmentHistoryPDF from '@/lib/pdf/ShipmentHistoryPDF';
 import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
@@ -364,7 +365,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   useEffect(() => { loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Info toko (nota/rekap PDF) ──────────────────────────────────
-  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; ownerName?: string; ownerSignature?: string; ownerStamp?: string; address?: string; city?: string; whatsapp?: string; logo?: string }>({});
+  const [storeInfo, setStoreInfo] = useState<{ storeName?: string; storeTagline?: string; ownerName?: string; ownerSignature?: string; ownerStamp?: string; address?: string; city?: string; whatsapp?: string; logo?: string; storeBankName?: string; storeBankAccountNumber?: string; storeBankAccountHolder?: string }>({});
   const [logoDataUri, setLogoDataUri] = useState<string | undefined>(undefined);
   const [signatureDataUri, setSignatureDataUri] = useState<string | undefined>(undefined);
   const [stampDataUri, setStampDataUri] = useState<string | undefined>(undefined);
@@ -393,6 +394,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [historyShipments, setHistoryShipments] = useState<Shipment[]>([]);
   const [historyRecaps,    setHistoryRecaps]    = useState<Recap[]>([]);
   const [exportingHistoryExcel, setExportingHistoryExcel] = useState(false);
+  const [exportingInvoice,      setExportingInvoice]      = useState(false);
   const [exportingHistoryPdf,   setExportingHistoryPdf]   = useState(false);
 
   const openLocationHistory = async (l: ConsignmentLocation) => {
@@ -2290,6 +2292,59 @@ _${storeHeader.name}_`.trim();
     }
   };
 
+  // Invoice tagihan ke mitra — ringkasan kirim & rekap + rincian rekap BELUM LUNAS; total tagihan
+  // = jumlah pendapatan rekap yang belum dibayar.
+  const exportInvoicePdf = async () => {
+    if (!historyLocation) return;
+    if (historyRecaps.length === 0) { toast.error('Belum ada rekap untuk ditagihkan.'); return; }
+    setExportingInvoice(true);
+    try {
+      const sum = <T,>(rows: T[], pick: (r: T) => number) => rows.reduce((q, r) => q + pick(r), 0);
+      const byDate = (a: Recap, b: Recap) => (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0);
+      const unpaidRecaps = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas').sort(byDate);
+      const paidRecaps = historyRecaps.filter(r => r.paymentStatus !== 'belum_lunas');
+      const secs = [...historyShipments, ...historyRecaps].map(x => x.createdAt?.seconds ?? 0).filter(Boolean).sort((a, b) => a - b);
+      const dOnly = (sec: number) => new Date(sec * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+      const now = new Date();
+      const bankNo = storeInfo.storeBankAccountNumber?.trim();
+      const data: MitraInvoiceData = {
+        docNo:     `INV-${(historyLocation.code || historyLocation.id.slice(-4)).toUpperCase()}-${toISODate(now).replace(/-/g, '')}`,
+        date:      now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+        printedAt: now.toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        periodText: secs.length ? `${dOnly(secs[0])} - ${dOnly(secs[secs.length - 1])}` : '-',
+        locationName: historyLocation.name, locationCode: historyLocation.code || undefined,
+        contactName: historyLocation.contactName || undefined, contactPhone: historyLocation.contactPhone || undefined,
+        address: historyLocation.address || undefined,
+        shipmentCount: historyShipments.length,
+        shipmentQty:   sum(historyShipments, sh => sum(sh.items, it => it.qty)),
+        shipmentValue: historyTotalKirim,
+        recapCount: historyRecaps.length,
+        soldQty: historyTotalSold, returQty: historyTotalRetur, rejectQty: historyTotalReject,
+        revenueAll: historyTotalRevenue,
+        paidValue: sum(paidRecaps, r => r.totalRevenue), paidCount: paidRecaps.length,
+        unpaid: unpaidRecaps.map(r => ({
+          date: formatDate(r.createdAt?.seconds), docNo: `RKP-${r.id.slice(-6).toUpperCase()}`,
+          items: r.items, totalSold: r.totalSold, totalRetur: r.totalRetur, totalReject: r.totalReject || 0, totalRevenue: r.totalRevenue,
+        })),
+        total: sum(unpaidRecaps, r => r.totalRevenue),
+        bank: bankNo ? { name: storeInfo.storeBankName?.trim() || 'Bank', accountNumber: bankNo, accountHolder: storeInfo.storeBankAccountHolder?.trim() || undefined } : undefined,
+      };
+      const blob = await pdf(<MitraInvoicePDF store={storeHeader} data={data} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${historyLocation.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${toISODate(now)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Gagal membuat invoice PDF.');
+    } finally {
+      setExportingInvoice(false);
+    }
+  };
+
   // PDF riwayat lokasi — satu dokumen berisi ringkasan + linimasa lengkap (kirim & rekap).
   const exportHistoryPdf = async () => {
     if (!historyLocation) return;
@@ -3681,6 +3736,11 @@ _${storeHeader.name}_`.trim();
                 <Tooltip label="Export Excel">
                   <button onClick={exportHistoryExcel} disabled={exportingHistoryExcel || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
                     {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="Invoice Tagihan">
+                  <button onClick={exportInvoicePdf} disabled={exportingInvoice || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                    {exportingInvoice ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                   </button>
                 </Tooltip>
                 <Tooltip label="Export PDF">
