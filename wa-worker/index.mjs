@@ -27,7 +27,12 @@ const sentAt = []; // waktu kirim sukses (ms) — untuk batas per jam
 let draining = false;
 
 let currentQr = null; // QR login terbaru — ditampilkan juga di halaman lokal agar mudah dipindai
+// Opsional (FORWARD_OWN=1 di .env): ikut meneruskan pesan yang diketik dari nomor ini sendiri (mis. untuk uji coba). Default mati.
+const FORWARD_OWN = process.env.FORWARD_OWN === '1';
 const QR_PORT = Number(process.env.QR_PORT ?? 3939);
+
+const DEBUG = process.env.DEBUG_MESSAGES === '1'; // catat alasan tiap pesan grup dilewati (untuk diagnosa)
+const dbg = (...a) => { if (DEBUG) log('[debug]', ...a); };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -63,14 +68,22 @@ function extractText(m) {
 
 async function onMessage(m) {
   const jid = m.key?.remoteJid;
-  if (!jid?.endsWith('@g.us') || m.key.fromMe || !config?.enabled || !config.targetJid) return;
+  if (!jid?.endsWith('@g.us')) return;
+  const preview = extractText(m).slice(0, 40).replace(/\s+/g, ' ');
+  if (m.key.fromMe && !FORWARD_OWN) { dbg(`lewati (dari nomor sendiri) ${jid} "${preview}"`); return; }
+  if (!config?.enabled || !config.targetJid) { dbg(`lewati (fitur nonaktif / tanpa grup tujuan) "${preview}"`); return; }
   if (jid === config.targetJid) return; // jangan pernah membaca grup tujuan (cegah loop)
   const link = config.links.get(jid);
-  if (!link) return;
+  if (!link) { dbg(`lewati (grup tidak terpasang ke mitra) ${jid} "${preview}"`); return; }
   const ts = Number(m.messageTimestamp) || Math.floor(Date.now() / 1000);
-  if (Date.now() / 1000 - ts > MAX_AGE_S) return;
+  if (Date.now() / 1000 - ts > MAX_AGE_S) { dbg(`lewati (terlalu lama) [${link.locationName}]`); return; }
   const body = extractText(m);
-  if (!body || !shouldForward(body, config.keywords, config.excludeKeywords)) return;
+  if (!body) {
+    const c = normalizeMessageContent(m.message);
+    dbg(`lewati (bukan teks/caption) [${link.locationName}] jenis=${c ? Object.keys(c).join(',') : 'KOSONG (gagal dibuka?)'} stub=${m.messageStubType ?? '-'} fromMe=${!!m.key.fromMe}`);
+    return;
+  }
+  if (!shouldForward(body, config.keywords, config.excludeKeywords)) { dbg(`lewati (tanpa kata kunci) [${link.locationName}] "${preview}"`); return; }
   const key = `${jid}:${m.key.id}`;
   if (seen.has(key)) return;
   seen.add(key);
@@ -138,6 +151,7 @@ async function connect() {
     }
   });
   sock.ev.on('messages.upsert', ({ messages, type }) => {
+    dbg(`messages.upsert type=${type} jumlah=${messages.length}`);
     if (type !== 'notify') return;
     for (const m of messages) onMessage(m).catch(e => log('error pesan:', e.message));
   });
