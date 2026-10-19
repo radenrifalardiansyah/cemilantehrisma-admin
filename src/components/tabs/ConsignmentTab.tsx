@@ -29,6 +29,7 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import type { PosProduct } from '@/lib/pos-types';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import ShipmentNotePDF, { ShipmentNotePDFPage } from '@/lib/pdf/ShipmentNotePDF';
+import ShipmentHistoryPDF from '@/lib/pdf/ShipmentHistoryPDF';
 import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
 import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
@@ -1146,25 +1147,19 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     setExportingShipmentsPdf(true);
     try {
       const blob = await pdf(
-        <GenericTablePDF
+        <ShipmentHistoryPDF
           store={storeHeader}
           data={{
-            title: 'RIWAYAT KIRIM STOK KONSINYASI',
             label,
             generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            columns: [
-              { header: 'Tanggal', width: '14%' },
-              { header: 'Lokasi', width: '16%' },
-              { header: 'Gudang', width: '12%' },
-              { header: 'Produk', width: '28%' },
-              { header: 'Total Nilai', width: '14%', align: 'right', bold: true },
-              { header: 'Catatan', width: '16%' },
-            ],
-            rows: rows.map(s => [
-              formatDate(s.createdAt?.seconds), s.locationName, s.warehouseName || '-',
-              s.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', '),
-              formatRp(s.items.reduce((sum, it) => sum + it.subtotal, 0)), s.note || '-',
-            ]),
+            groups: rows.map(s => ({
+              date: formatDate(s.createdAt?.seconds),
+              locationName: s.locationName,
+              warehouseName: s.warehouseName || undefined,
+              note: s.note || undefined,
+              items: s.items,
+              total: s.items.reduce((sum, it) => sum + it.subtotal, 0),
+            })),
           }}
         />
       ).toBlob();
@@ -1755,6 +1750,7 @@ _${storeHeader.name}_`.trim();
       const blob = await pdf(
         <GenericTablePDF
           store={storeHeader}
+          orientation="portrait"
           data={{
             title: 'RIWAYAT REKAP KONSINYASI',
             label,

@@ -86,7 +86,7 @@ const s = StyleSheet.create({
 export default function LocationsListPDF({ data, store }: { data: LocationsListPDFData; store: StoreHeader }) {
   return (
     <Document>
-      <Page size="A4" orientation="landscape" style={s.page}>
+      <Page size="A4" orientation="portrait" style={s.page}>
         <View style={s.topBar} />
 
         <View style={s.headerRow}>
