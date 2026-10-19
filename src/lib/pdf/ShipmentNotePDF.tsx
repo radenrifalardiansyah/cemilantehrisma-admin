@@ -97,6 +97,15 @@ const s = StyleSheet.create({
   grandTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
   grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
 
+  totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
+  totalsBox: { width: '62%', backgroundColor: C.accentBg, borderRadius: 6, padding: 10 },
+  totalsLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 },
+  totalsKey: { fontSize: 9, color: C.muted },
+  totalsVal: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: C.dark },
+  totalsFinalLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.border },
+  totalsFinalKey: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.dark },
+  totalsFinalVal: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.accent },
+
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, alignItems: 'center' },
   totalLabel: { fontSize: 10, color: C.muted, marginRight: 10 },
   totalValue: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.accent },
@@ -231,9 +240,21 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
         </View>
 
         <View wrap={false}>
-        <View style={s.totalRow}>
-          <Text style={s.totalLabel}>Total {sumQty(data.items)} pcs  ·  Nilai Titip</Text>
-          <Text style={s.totalValue}>{rp(data.total)}</Text>
+        <View style={s.totalsWrap}>
+          <View style={s.totalsBox}>
+            <View style={s.totalsLine}>
+              <Text style={s.totalsKey}>Jumlah Produk</Text>
+              <Text style={s.totalsVal}>{data.items.length} produk</Text>
+            </View>
+            <View style={s.totalsLine}>
+              <Text style={s.totalsKey}>Total Dikirim</Text>
+              <Text style={s.totalsVal}>{sumQty(data.items)} pcs</Text>
+            </View>
+            <View style={s.totalsFinalLine}>
+              <Text style={s.totalsFinalKey}>Total Nilai Titip</Text>
+              <Text style={s.totalsFinalVal}>{rp(data.total)}</Text>
+            </View>
+          </View>
         </View>
 
         {data.note && (
