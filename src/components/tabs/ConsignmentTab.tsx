@@ -29,6 +29,7 @@ import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHist
 import type { PosProduct } from '@/lib/pos-types';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import ShipmentNotePDF, { ShipmentNotePDFPage } from '@/lib/pdf/ShipmentNotePDF';
+import { buildMitraInvoiceData } from '@/lib/mitra-invoice';
 import MitraInvoicePDF, { type MitraInvoiceData } from '@/lib/pdf/MitraInvoicePDF';
 import ShipmentHistoryPDF from '@/lib/pdf/ShipmentHistoryPDF';
 import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
@@ -2299,36 +2300,12 @@ _${storeHeader.name}_`.trim();
     if (historyRecaps.length === 0) { toast.error('Belum ada rekap untuk ditagihkan.'); return; }
     setExportingInvoice(true);
     try {
-      const sum = <T,>(rows: T[], pick: (r: T) => number) => rows.reduce((q, r) => q + pick(r), 0);
-      const byDate = (a: Recap, b: Recap) => (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0);
-      const unpaidRecaps = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas').sort(byDate);
-      const paidRecaps = historyRecaps.filter(r => r.paymentStatus !== 'belum_lunas');
-      const secs = [...historyShipments, ...historyRecaps].map(x => x.createdAt?.seconds ?? 0).filter(Boolean).sort((a, b) => a - b);
-      const dOnly = (sec: number) => new Date(sec * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-      const now = new Date();
       const bankNo = storeInfo.storeBankAccountNumber?.trim();
-      const data: MitraInvoiceData = {
-        docNo:     `INV-${(historyLocation.code || historyLocation.id.slice(-4)).toUpperCase()}-${toISODate(now).replace(/-/g, '')}`,
-        date:      now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
-        printedAt: now.toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        periodText: secs.length ? `${dOnly(secs[0])} - ${dOnly(secs[secs.length - 1])}` : '-',
-        locationName: historyLocation.name, locationCode: historyLocation.code || undefined,
-        contactName: historyLocation.contactName || undefined, contactPhone: historyLocation.contactPhone || undefined,
-        address: historyLocation.address || undefined,
-        shipmentCount: historyShipments.length,
-        shipmentQty:   sum(historyShipments, sh => sum(sh.items, it => it.qty)),
-        shipmentValue: historyTotalKirim,
-        recapCount: historyRecaps.length,
-        soldQty: historyTotalSold, returQty: historyTotalRetur, rejectQty: historyTotalReject,
-        revenueAll: historyTotalRevenue,
-        paidValue: sum(paidRecaps, r => r.totalRevenue), paidCount: paidRecaps.length,
-        unpaid: unpaidRecaps.map(r => ({
-          date: formatDate(r.createdAt?.seconds), docNo: `RKP-${r.id.slice(-6).toUpperCase()}`,
-          items: r.items, totalSold: r.totalSold, totalRetur: r.totalRetur, totalReject: r.totalReject || 0, totalRevenue: r.totalRevenue,
-        })),
-        total: sum(unpaidRecaps, r => r.totalRevenue),
+      const now = new Date();
+      const data: MitraInvoiceData = buildMitraInvoiceData({
+        location: historyLocation, shipments: historyShipments, recaps: historyRecaps, now,
         bank: bankNo ? { name: storeInfo.storeBankName?.trim() || 'Bank', accountNumber: bankNo, accountHolder: storeInfo.storeBankAccountHolder?.trim() || undefined } : undefined,
-      };
+      });
       const blob = await pdf(<MitraInvoicePDF store={storeHeader} data={data} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -2343,6 +2320,37 @@ _${storeHeader.name}_`.trim();
     } finally {
       setExportingInvoice(false);
     }
+  };
+
+  // Kirim invoice tagihan ke mitra via WA: ringkasan angka + link PDF publik yang dihitung ulang
+  // server tiap dibuka (/api/consignment/invoice/[locationId]/pdf).
+  const sendInvoiceWhatsApp = () => {
+    if (!historyLocation) return;
+    const phone = historyLocation.contactPhone?.trim();
+    if (!phone) { toast.error(`Nomor WhatsApp untuk "${historyLocation.name}" belum diisi di data lokasi.`); return; }
+    const unpaid = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas');
+    const total = unpaid.reduce((q, r) => q + r.totalRevenue, 0);
+    if (total <= 0) { toast.error('Tidak ada tagihan — semua rekap mitra ini sudah lunas.'); return; }
+    const pdfUrl = `${window.location.origin}/api/consignment/invoice/${historyLocation.id}/pdf`;
+    const SEP = '─────────────────────';
+    const bankNo = storeInfo.storeBankAccountNumber?.trim();
+    const message = `*${storeHeader.name.toUpperCase()}*
+${SEP}
+
+Halo *${historyLocation.contactName || historyLocation.name}*!
+Berikut tagihan konsinyasi untuk *${historyLocation.name}*:
+
+Rekap belum dibayar : ${unpaid.length} rekap
+Barang terjual : ${unpaid.reduce((q, r) => q + r.totalSold, 0)} pcs
+${SEP}
+*Total Tagihan : ${formatRp(total)}*
+${SEP}
+${bankNo ? `Transfer ke:\n${storeInfo.storeBankName?.trim() || 'Bank'} ${bankNo}${storeInfo.storeBankAccountHolder?.trim() ? ` a.n. ${storeInfo.storeBankAccountHolder.trim()}` : ''}\n${SEP}\n` : ''}Rincian invoice (PDF):
+${pdfUrl}
+
+Terima kasih!
+_${storeHeader.name}_`.trim();
+    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   // PDF riwayat lokasi — satu dokumen berisi ringkasan + linimasa lengkap (kirim & rekap).
@@ -3736,6 +3744,11 @@ _${storeHeader.name}_`.trim();
                 <Tooltip label="Export Excel">
                   <button onClick={exportHistoryExcel} disabled={exportingHistoryExcel || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
                     {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="Kirim Invoice via WhatsApp">
+                  <button onClick={sendInvoiceWhatsApp} disabled={historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                    <MessageCircle size={14} />
                   </button>
                 </Tooltip>
                 <Tooltip label="Invoice Tagihan">
