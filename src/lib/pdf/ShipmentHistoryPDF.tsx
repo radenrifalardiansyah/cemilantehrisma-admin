@@ -125,13 +125,13 @@ export default function ShipmentHistoryPDF({ data, store }: { data: ShipmentHist
                 </View>
               ))}
               <View style={s.subtotalRow} wrap={false}>
-                <Text style={s.subtotalText}>Subtotal: {rp(g.total)}</Text>
+                <Text style={s.subtotalText}>Subtotal: {g.items.reduce((q, it) => q + it.qty, 0)} pcs  ·  {rp(g.total)}</Text>
               </View>
             </Fragment>
           ))}
           <View style={s.grandRow} wrap={false}>
-            <Text style={s.grandText}>TOTAL KESELURUHAN ({grandQty} pcs)</Text>
-            <Text style={s.grandText}>{rp(grandTotal)}</Text>
+            <Text style={s.grandText}>TOTAL KESELURUHAN ({data.groups.length} PENGIRIMAN)</Text>
+            <Text style={s.grandText}>{grandQty} pcs  ·  {rp(grandTotal)}</Text>
           </View>
         </View>
 

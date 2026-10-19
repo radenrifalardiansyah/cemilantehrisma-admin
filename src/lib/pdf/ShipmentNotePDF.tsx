@@ -94,7 +94,7 @@ const s = StyleSheet.create({
   sectionRowDocNo:     { fontSize: 7.5, color: C.muted },
   sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
   sectionSubtotalText: { fontSize: 8, color: C.muted },
-  grandTotalRow:       { flexDirection: 'row', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
+  grandTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
   grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, alignItems: 'center' },
@@ -105,7 +105,7 @@ const s = StyleSheet.create({
   noteLabel: { fontSize: 8, color: C.muted, textTransform: 'uppercase', marginBottom: 3 },
   noteText: { fontSize: 9.5, color: C.dark },
 
-  signRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 44 },
+  signRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 28 },
   signBox: { width: '42%', alignItems: 'center' },
   signLabel: { fontSize: 9, color: C.muted },
   signArea: { height: 54, width: '100%', position: 'relative', justifyContent: 'flex-end', alignItems: 'center' },
@@ -120,6 +120,8 @@ const s = StyleSheet.create({
 
 // Just the <Page> — reusable so several pengiriman bisa digabung ke satu multi-page Document
 // (satu halaman per mitra, tiap halaman tetap punya header lokasinya sendiri) untuk cetak gabungan.
+const sumQty = (items: ShipmentNoteItem[]) => items.reduce((q, it) => q + it.qty, 0);
+
 export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; store: StoreHeader }) {
   const sections = data.sections && data.sections.length > 1 ? data.sections : null;
   return (
@@ -199,7 +201,7 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
                 </View>
               ))}
               <View style={s.sectionSubtotalRow}>
-                <Text style={s.sectionSubtotalText}>Subtotal: {rp(section.total)}</Text>
+                <Text style={s.sectionSubtotalText}>Subtotal: {sumQty(section.items)} pcs  ·  {rp(section.total)}</Text>
               </View>
             </Fragment>
           )) : data.items.map((it, i) => (
@@ -214,12 +216,23 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
           {sections && (
             <View style={s.grandTotalRow}>
               <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} PENGIRIMAN)</Text>
+              <Text style={s.grandTotalText}>{sumQty(data.items)} pcs  ·  {rp(data.total)}</Text>
+            </View>
+          )}
+          {!sections && (
+            <View style={s.grandTotalRow}>
+              <Text style={[s.grandTotalText, s.colNo]} />
+              <Text style={[s.grandTotalText, s.colName]}>TOTAL ({data.items.length} PRODUK)</Text>
+              <Text style={[s.grandTotalText, s.colQty]}>{sumQty(data.items)} pcs</Text>
+              <Text style={[s.grandTotalText, s.colPrice]} />
+              <Text style={[s.grandTotalText, s.colSub]}>{rp(data.total)}</Text>
             </View>
           )}
         </View>
 
+        <View wrap={false}>
         <View style={s.totalRow}>
-          <Text style={s.totalLabel}>Total Nilai Titip</Text>
+          <Text style={s.totalLabel}>Total {sumQty(data.items)} pcs  ·  Nilai Titip</Text>
           <Text style={s.totalValue}>{rp(data.total)}</Text>
         </View>
 
@@ -248,6 +261,8 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
             </View>
             <Text style={s.signName}>{data.locationName}</Text>
           </View>
+        </View>
+
         </View>
 
         <Text style={s.footer}>Nota ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
