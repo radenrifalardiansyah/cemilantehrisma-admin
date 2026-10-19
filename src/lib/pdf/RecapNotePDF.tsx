@@ -54,6 +54,10 @@ const C = {
   greenBg:  '#DCFCE7',
   amber:    '#B45309',
   amberBg:  '#FEF3C7',
+  retur:    '#1D4ED8',
+  returBg:  '#DBEAFE',
+  reject:   '#B91C1C',
+  rejectBg: '#FEE2E2',
 };
 
 const s = StyleSheet.create({
@@ -99,16 +103,20 @@ const s = StyleSheet.create({
   colPrice:  { width: '13%', textAlign: 'right' },
   colRev:    { width: '14%', textAlign: 'right' },
 
+  returCell:  { color: C.retur, fontFamily: 'Helvetica-Bold', backgroundColor: C.returBg },
+  rejectCell: { color: C.reject, fontFamily: 'Helvetica-Bold', backgroundColor: C.rejectBg },
+  zeroCell:   { color: C.muted },
+
   sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 6 },
   sectionRowText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
   sectionRowDocNo:     { fontSize: 7.5, color: C.muted },
   sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
   sectionSubtotalText: { fontSize: 8, color: C.muted },
-  grandTotalRow:       { flexDirection: 'row', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
+  grandTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
   grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
-  totalsBox: { width: '48%', backgroundColor: C.accentBg, borderRadius: 6, padding: 10 },
+  totalsBox: { width: '62%', backgroundColor: C.accentBg, borderRadius: 6, padding: 10 },
   totalsLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 },
   totalsKey: { fontSize: 9, color: C.muted },
   totalsVal: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: C.dark },
@@ -138,6 +146,12 @@ const s = StyleSheet.create({
 export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: StoreHeader }) {
   const isLunas = (data.paymentStatus ?? 'lunas') === 'lunas';
   const sections = data.sections && data.sections.length > 1 ? data.sections : null;
+  // Nilai titip per kategori (qty × harga titip) — supaya pcs & rupiah terjual + retur + reject
+  // bisa dicocokkan dengan total nota kirim.
+  const valOf = (pick: (it: RecapNoteItem) => number) => data.items.reduce((sum, it) => sum + pick(it) * it.hargaTitip, 0);
+  const valSold = valOf(it => it.qtySold);
+  const valRetur = valOf(it => it.qtyRetur);
+  const valReject = valOf(it => it.qtyReject);
   return (
     <Page size="A4" style={s.page}>
         <View style={s.topBar} />
@@ -201,8 +215,8 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
             <Text style={[s.tHeadCell, s.colNo]}>No</Text>
             <Text style={[s.tHeadCell, s.colName]}>Produk</Text>
             <Text style={[s.tHeadCell, s.colSold]}>Terjual</Text>
-            <Text style={[s.tHeadCell, s.colRetur]}>Retur</Text>
-            <Text style={[s.tHeadCell, s.colReject]}>Reject</Text>
+            <Text style={[s.tHeadCell, s.colRetur, { backgroundColor: C.retur }]}>Retur</Text>
+            <Text style={[s.tHeadCell, s.colReject, { backgroundColor: C.reject }]}>Reject</Text>
             <Text style={[s.tHeadCell, s.colPrice]}>Harga Titip</Text>
             <Text style={[s.tHeadCell, s.colRev]}>Pendapatan</Text>
           </View>
@@ -217,15 +231,18 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
                   <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
                   <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
                   <Text style={[s.tCell, s.colSold]}>{it.qtySold}</Text>
-                  <Text style={[s.tCell, s.colRetur]}>{it.qtyRetur}</Text>
-                  <Text style={[s.tCell, s.colReject]}>{it.qtyReject}</Text>
+                  <Text style={[s.tCell, s.colRetur, ...(it.qtyRetur > 0 ? [s.returCell] : [s.zeroCell])]}>{it.qtyRetur}</Text>
+                  <Text style={[s.tCell, s.colReject, ...(it.qtyReject > 0 ? [s.rejectCell] : [s.zeroCell])]}>{it.qtyReject}</Text>
                   <Text style={[s.tCell, s.colPrice]}>{rp(it.hargaTitip)}</Text>
                   <Text style={[s.tCell, s.colRev]}>{rp(it.revenue)}</Text>
                 </View>
               ))}
               <View style={s.sectionSubtotalRow}>
                 <Text style={s.sectionSubtotalText}>
-                  Subtotal: jual {section.totalSold}{section.totalRetur > 0 ? `, retur ${section.totalRetur}` : ''}{section.totalReject > 0 ? `, reject ${section.totalReject}` : ''} · {rp(section.totalRevenue)}
+                  Subtotal: jual {section.totalSold}
+                  {section.totalRetur > 0 ? <Text style={{ color: C.retur, fontFamily: 'Helvetica-Bold' }}>, retur {section.totalRetur}</Text> : ''}
+                  {section.totalReject > 0 ? <Text style={{ color: C.reject, fontFamily: 'Helvetica-Bold' }}>, reject {section.totalReject}</Text> : ''}
+                  {' '}· {rp(section.totalRevenue)}
                 </Text>
               </View>
             </Fragment>
@@ -234,8 +251,8 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
               <Text style={[s.tCell, s.colNo]}>{i + 1}</Text>
               <Text style={[s.tCell, s.colName]}>{it.productName}</Text>
               <Text style={[s.tCell, s.colSold]}>{it.qtySold}</Text>
-              <Text style={[s.tCell, s.colRetur]}>{it.qtyRetur}</Text>
-              <Text style={[s.tCell, s.colReject]}>{it.qtyReject}</Text>
+              <Text style={[s.tCell, s.colRetur, ...(it.qtyRetur > 0 ? [s.returCell] : [s.zeroCell])]}>{it.qtyRetur}</Text>
+              <Text style={[s.tCell, s.colReject, ...(it.qtyReject > 0 ? [s.rejectCell] : [s.zeroCell])]}>{it.qtyReject}</Text>
               <Text style={[s.tCell, s.colPrice]}>{rp(it.hargaTitip)}</Text>
               <Text style={[s.tCell, s.colRev]}>{rp(it.revenue)}</Text>
             </View>
@@ -243,23 +260,29 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
           {sections && (
             <View style={s.grandTotalRow}>
               <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} REKAP)</Text>
+              <Text style={s.grandTotalText}>jual {data.totalSold} · retur {data.totalRetur} · reject {data.totalReject}</Text>
             </View>
           )}
         </View>
 
+        <View wrap={false}>
         <View style={s.totalsWrap}>
           <View style={s.totalsBox}>
             <View style={s.totalsLine}>
               <Text style={s.totalsKey}>Total Terjual</Text>
-              <Text style={s.totalsVal}>{data.totalSold} pcs</Text>
+              <Text style={s.totalsVal}>{data.totalSold} pcs  ·  {rp(valSold)}</Text>
             </View>
             <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Total Retur</Text>
-              <Text style={s.totalsVal}>{data.totalRetur} pcs</Text>
+              <Text style={[s.totalsKey, { color: C.retur }]}>Total Retur</Text>
+              <Text style={[s.totalsVal, { color: C.retur }]}>{data.totalRetur} pcs  ·  {rp(valRetur)}</Text>
             </View>
             <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Total Reject</Text>
-              <Text style={s.totalsVal}>{data.totalReject} pcs</Text>
+              <Text style={[s.totalsKey, { color: C.reject }]}>Total Reject</Text>
+              <Text style={[s.totalsVal, { color: C.reject }]}>{data.totalReject} pcs  ·  {rp(valReject)}</Text>
+            </View>
+            <View style={s.totalsLine}>
+              <Text style={s.totalsKey}>Total Dilaporkan (jual + retur + reject)</Text>
+              <Text style={s.totalsVal}>{data.totalSold + data.totalRetur + data.totalReject} pcs  ·  {rp(valSold + valRetur + valReject)}</Text>
             </View>
             <View style={s.totalsFinalLine}>
               <Text style={s.totalsFinalKey}>Total Pendapatan</Text>
@@ -286,6 +309,8 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
             </View>
             <Text style={s.signName}>{store.ownerName || store.name}</Text>
           </View>
+        </View>
+
         </View>
 
         <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
