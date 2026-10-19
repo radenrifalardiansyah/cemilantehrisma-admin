@@ -51,7 +51,7 @@ const C = {
 };
 
 const s = StyleSheet.create({
-  page: { fontFamily: 'Helvetica', color: C.dark, padding: 40, fontSize: 10 },
+  page: { fontFamily: 'Helvetica', color: C.dark, padding: 40, paddingBottom: 56, fontSize: 10 },
 
   topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
 
@@ -81,7 +81,7 @@ const s = StyleSheet.create({
   tHeadCell: { color: C.white, fontSize: 9, fontFamily: 'Helvetica-Bold', paddingVertical: 7, paddingHorizontal: 8 },
   tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
   tRowAlt: { backgroundColor: C.accentBg },
-  tCell: { fontSize: 9.5, paddingVertical: 6, paddingHorizontal: 8, color: C.dark },
+  tCell: { fontSize: 9.5, paddingVertical: 4, paddingHorizontal: 8, color: C.dark },
 
   colNo:    { width: '8%' },
   colName:  { width: '42%' },
@@ -89,12 +89,12 @@ const s = StyleSheet.create({
   colPrice: { width: '18%', textAlign: 'right' },
   colSub:   { width: '18%', textAlign: 'right' },
 
-  sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 8 },
+  sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 4, paddingHorizontal: 8 },
   sectionRowText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
   sectionRowDocNo:     { fontSize: 7.5, color: C.muted },
-  sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
+  sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 3, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
   sectionSubtotalText: { fontSize: 8, color: C.muted },
-  grandTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
+  grandTotalRow:       { flexDirection: 'row', marginTop: 10, borderRadius: 6, justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: C.border },
   grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
@@ -222,12 +222,6 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
               <Text style={[s.tCell, s.colSub]}>{rp(it.subtotal)}</Text>
             </View>
           ))}
-          {sections && (
-            <View style={s.grandTotalRow}>
-              <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} PENGIRIMAN)</Text>
-              <Text style={s.grandTotalText}>{sumQty(data.items)} pcs  ·  {rp(data.total)}</Text>
-            </View>
-          )}
           {!sections && (
             <View style={s.grandTotalRow}>
               <Text style={[s.grandTotalText, s.colNo]} />
@@ -240,6 +234,12 @@ export function ShipmentNotePDFPage({ data, store }: { data: ShipmentNoteData; s
         </View>
 
         <View wrap={false}>
+      {sections && (
+        <View style={s.grandTotalRow}>
+          <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} PENGIRIMAN)</Text>
+          <Text style={s.grandTotalText}>{sumQty(data.items)} pcs  ·  {rp(data.total)}</Text>
+        </View>
+      )}
         <View style={s.totalsWrap}>
           <View style={s.totalsBox}>
             <View style={s.totalsLine}>

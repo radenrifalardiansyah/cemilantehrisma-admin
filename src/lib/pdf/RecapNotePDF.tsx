@@ -61,7 +61,7 @@ const C = {
 };
 
 const s = StyleSheet.create({
-  page: { fontFamily: 'Helvetica', color: C.dark, padding: 40, fontSize: 10 },
+  page: { fontFamily: 'Helvetica', color: C.dark, padding: 40, paddingBottom: 56, fontSize: 10 },
 
   topBar: { height: 8, backgroundColor: C.accent, marginTop: -40, marginHorizontal: -40, marginBottom: 24 },
 
@@ -93,7 +93,7 @@ const s = StyleSheet.create({
   tHeadCell: { color: C.white, fontSize: 8.5, fontFamily: 'Helvetica-Bold', paddingVertical: 7, paddingHorizontal: 6 },
   tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
   tRowAlt: { backgroundColor: C.accentBg },
-  tCell: { fontSize: 9, paddingVertical: 6, paddingHorizontal: 6, color: C.dark },
+  tCell: { fontSize: 9, paddingVertical: 4, paddingHorizontal: 6, color: C.dark },
 
   colNo:     { width: '6%' },
   colName:   { width: '28%' },
@@ -107,12 +107,12 @@ const s = StyleSheet.create({
   rejectCell: { color: C.reject, fontFamily: 'Helvetica-Bold', backgroundColor: C.rejectBg },
   zeroCell:   { color: C.muted },
 
-  sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 5, paddingHorizontal: 6 },
+  sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 4, paddingHorizontal: 6 },
   sectionRowText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
   sectionRowDocNo:     { fontSize: 7.5, color: C.muted },
-  sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 4, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
+  sectionSubtotalRow:  { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 3, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
   sectionSubtotalText: { fontSize: 8, color: C.muted },
-  grandTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
+  grandTotalRow:       { flexDirection: 'row', marginTop: 10, borderRadius: 6, justifyContent: 'space-between', backgroundColor: C.dark, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1, borderTopColor: C.border },
   grandTotalText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.white, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
@@ -257,15 +257,15 @@ export function RecapNotePDFPage({ data, store }: { data: RecapNoteData; store: 
               <Text style={[s.tCell, s.colRev]}>{rp(it.revenue)}</Text>
             </View>
           ))}
-          {sections && (
-            <View style={s.grandTotalRow}>
-              <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} REKAP)</Text>
-              <Text style={s.grandTotalText}>jual {data.totalSold} · retur {data.totalRetur} · reject {data.totalReject}</Text>
-            </View>
-          )}
         </View>
 
         <View wrap={false}>
+      {sections && (
+        <View style={s.grandTotalRow}>
+          <Text style={s.grandTotalText}>TOTAL KESELURUHAN ({sections.length} REKAP)</Text>
+          <Text style={s.grandTotalText}>jual {data.totalSold} · retur {data.totalRetur} · reject {data.totalReject}</Text>
+        </View>
+      )}
         <View style={s.totalsWrap}>
           <View style={s.totalsBox}>
             <View style={s.totalsLine}>
