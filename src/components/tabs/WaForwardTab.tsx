@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, Loader2, Save, Wand2, Power } from 'lucide-react';
+import QRCode from 'qrcode';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -41,6 +42,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [events, setEvents] = useState<WorkerEvent[]>([]);
   const [togglingWorker, setTogglingWorker] = useState(false);
+  const [qrImage, setQrImage] = useState<string | null>(null);
   const [logFilter, setLogFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
@@ -94,6 +96,17 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
     } catch { /* gagal sesekali tidak mengganggu */ }
   }, [creds]);
   useVisiblePolling(() => { loadLive(); loadLogs(); }, 10_000, [loadLive, loadLogs]);
+
+  // Worker menunggu scan: QR login ditarik tiap 3 detik (QR berganti ±20 dtk) dan digambar di browser.
+  const qrActive = canEdit && !!data && data.worker.online && data.worker.state === 'qr';
+  const loadQr = useCallback(async () => {
+    try {
+      const res = await fetch('/api/wa-forward/qr', { headers: { 'x-admin-auth': creds }, cache: 'no-store' });
+      const d = await res.json() as { qr?: string | null };
+      setQrImage(res.ok && d.qr ? await QRCode.toDataURL(d.qr, { width: 280, margin: 1 }) : null);
+    } catch { /* coba lagi pada tarikan berikutnya */ }
+  }, [creds]);
+  useVisiblePolling(() => { if (qrActive) loadQr(); }, 3_000, [qrActive, loadQr]);
 
   const toggleWorker = async (on: boolean) => {
     setTogglingWorker(true);
@@ -191,6 +204,25 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
               <p className="px-5 pb-4 text-xs" style={{ color: 'var(--text-muted)' }}>Koneksi WhatsApp sedang dimatikan dari admin; worker standby dan tidak meneruskan pesan.</p>
             )}
           </Section>
+
+          {qrActive && (
+            <Section title="Tautkan WhatsApp" desc="Worker menunggu login. Scan QR ini dari HP nomor yang akan dipakai.">
+              <div className="p-5 flex flex-col md:flex-row items-center gap-6">
+                <div className="flex-shrink-0 rounded-xl bg-white p-3 border border-[var(--border)]" style={{ width: 304, height: 304 }}>
+                  {qrImage
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={qrImage} alt="QR login WhatsApp" width={280} height={280} />
+                    : <div className="w-full h-full flex items-center justify-center"><Loader2 size={22} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>}
+                </div>
+                <ol className="text-sm space-y-2 list-decimal pl-5" style={{ color: 'var(--text-secondary)' }}>
+                  <li>Di HP, buka <b>WhatsApp → Perangkat tertaut</b>.</li>
+                  <li>Keluarkan perangkat lama bernama “Teruskan Stok WA” atau “Chrome” bila ada.</li>
+                  <li>Tekan <b>Tautkan perangkat</b>, lalu arahkan kamera ke QR ini.</li>
+                  <li>QR berganti sendiri tiap ±20 detik. Setelah berhasil, status berubah menjadi <b>Terhubung</b>.</li>
+                </ol>
+              </div>
+            </Section>
+          )}
 
           {/* 2. Pengaturan */}
           <Section title="Pengaturan" desc="Pesan dari grup mitra yang memuat kata kunci akan diteruskan ke grup tujuan."

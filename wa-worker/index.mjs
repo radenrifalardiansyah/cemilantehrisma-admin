@@ -5,7 +5,7 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import QRCode from 'qrcode';
 import { createServer } from 'node:http';
-import { assertEnv, getConfig, postGroups, postLog, patchLog, postEvents } from './api.mjs';
+import { assertEnv, getConfig, postGroups, postLog, patchLog, postEvents, putQr } from './api.mjs';
 import { shouldForward, forwardBody, buildForwardMessage } from './filter.mjs';
 
 assertEnv();
@@ -63,7 +63,7 @@ async function refreshConfig() {
 async function applyDesired() {
   if (!desiredOn && sock) {
     const old = sock;
-    sock = null; currentQr = null; state = 'stopped';
+    sock = null; currentQr = null; state = 'stopped'; putQr(null).catch(() => {});
     log('Koneksi WhatsApp dimatikan dari admin (standby, sesi login tetap tersimpan).');
     try { old.end(undefined); } catch { /* sudah tertutup */ }
   } else if (desiredOn && state === 'stopped' && !sock) {
@@ -159,9 +159,9 @@ async function connect() {
   s.ev.on('creds.update', saveCreds);
   s.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (s !== sock) return; // socket lama (sudah dimatikan/diganti) diabaikan
-    if (qr) { state = 'qr'; currentQr = qr; log('Scan QR ini di WhatsApp nomor cadangan (Perangkat tertaut → Tautkan perangkat):'); qrcode.generate(qr, { small: true }); refreshConfig(); }
+    if (qr) { state = 'qr'; currentQr = qr; log('Scan QR ini di WhatsApp nomor cadangan (Perangkat tertaut → Tautkan perangkat):'); qrcode.generate(qr, { small: true }); putQr(qr).catch(() => {}); refreshConfig(); }
     if (connection === 'connecting') state = 'connecting';
-    if (connection === 'open') { state = 'open'; currentQr = null; log('WhatsApp terhubung.'); await refreshConfig(); if (!lastGroupsAt) await syncGroups(); }
+    if (connection === 'open') { state = 'open'; currentQr = null; putQr(null).catch(() => {}); log('WhatsApp terhubung.'); await refreshConfig(); if (!lastGroupsAt) await syncGroups(); }
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
