@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeText, shouldForward, parseKeywordList, messageKey, buildForwardMessage, WA_GROUP_JID_RE, suggestGroup } from './wa-forward';
+import { normalizeText, shouldForward, parseKeywordList, messageKey, buildForwardMessage, WA_GROUP_JID_RE, suggestGroup, extractMatchingLines, forwardBody } from './wa-forward';
 
 describe('shouldForward', () => {
   const kw = ['stok', 'sisa', 'mie kremes'];
@@ -62,4 +62,23 @@ describe('suggestGroup', () => {
     expect(suggestGroup('Kopi Nusantara', groups, new Set(['1@g.us']))).toBeNull();
   });
   it('nama terlalu pendek → null', () => { expect(suggestGroup('A B', groups)).toBeNull(); });
+});
+
+describe('hanya baris produk kita', () => {
+  const kw = ['Mie Kremes', 'Mi Kremes', 'Mie Kremez', 'Mi Kremezz'];
+  const update = `*UPDATE STOK BGM 2*\n\nsusu jely 5\nBuko 11\nMie kremes 4\nKacang 2\nUsus 2\n\n*Yang tidak ada di list berarti habis*🙏🙏`;
+  it('daftar panjang → hanya baris Mie kremes', () => {
+    expect(extractMatchingLines(update, kw)).toEqual(['Mie kremes 4']);
+    expect(forwardBody(update, kw)).toBe('Mie kremes 4');
+  });
+  it('beberapa baris cocok → semuanya, berurutan', () => {
+    expect(forwardBody('Mie Kremes 4\nBuko 1\nmi kremezz 2', kw)).toBe('Mie Kremes 4\nmi kremezz 2');
+  });
+  it('pesan satu baris tetap utuh; kata terbelah antar baris → pesan utuh', () => {
+    expect(forwardBody('stok mie kremes 12 pcs', kw)).toBe('stok mie kremes 12 pcs');
+    expect(forwardBody('mie\nkremes 3', kw)).toBe('mie\nkremes 3');
+  });
+  it('baris dengan kata pengecualian dibuang', () => {
+    expect(extractMatchingLines('Mie kremes 4\nmie kremes tolong kirim', kw, ['tolong'])).toEqual(['Mie kremes 4']);
+  });
 });

@@ -6,7 +6,7 @@ import qrcode from 'qrcode-terminal';
 import QRCode from 'qrcode';
 import { createServer } from 'node:http';
 import { assertEnv, getConfig, postGroups, postLog, patchLog, postEvents } from './api.mjs';
-import { shouldForward, buildForwardMessage } from './filter.mjs';
+import { shouldForward, forwardBody, buildForwardMessage } from './filter.mjs';
 
 assertEnv();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'warn' });
@@ -114,12 +114,13 @@ async function onMessage(m) {
   if (seen.size > 5000) seen.delete(seen.values().next().value);
 
   const senderName = m.pushName ?? '';
+  const sendBody = forwardBody(body, config.keywords, config.excludeKeywords); // hanya baris yang memuat kata kunci
   try {
-    const r = await postLog({ messageKey: key, sourceJid: jid, senderName, body });
+    const r = await postLog({ messageKey: key, sourceJid: jid, senderName, body: sendBody });
     if (r.data?.duplicate) return;
     if (!r.ok) { log('log ditolak:', r.status, r.data?.error ?? ''); return; }
-    queue.push({ id: r.data.id, text: buildForwardMessage({ locationName: r.data.locationName, senderName, at: new Date(ts * 1000), body }) });
-    log(`antre: [${r.data.locationName}] ${body.slice(0, 50).replace(/\s+/g, ' ')}`);
+    queue.push({ id: r.data.id, text: buildForwardMessage({ locationName: r.data.locationName, senderName, at: new Date(ts * 1000), body: sendBody }) });
+    log(`antre: [${r.data.locationName}] ${sendBody.slice(0, 50).replace(/\s+/g, ' ')}`);
     drain();
   } catch (e) { log('catat pesan gagal:', e.message); seen.delete(key); }
 }

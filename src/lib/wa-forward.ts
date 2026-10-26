@@ -21,6 +21,18 @@ export function shouldForward(text: string, keywords: string[], excludeKeywords:
   return keywords.some(k => containsPhrase(t, k));
 }
 
+// Baris-baris pesan yang memuat kata kunci (dan tidak memuat kata pengecualian). Update stok mitra biasanya daftar panjang berisi
+// banyak produk; yang diteruskan hanya baris produk kita (mis. "Mie kremes 4"), bukan seluruh daftar.
+export function extractMatchingLines(text: string, keywords: string[], excludeKeywords: string[] = []): string[] {
+  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && shouldForward(l, keywords, excludeKeywords));
+}
+
+// Isi yang diteruskan: baris yang cocok; bila tak ada satu baris pun yang cocok sendiri (kata kunci terbelah antar baris) → pesan utuh.
+export function forwardBody(text: string, keywords: string[], excludeKeywords: string[] = []): string {
+  const lines = extractMatchingLines(text, keywords, excludeKeywords);
+  return lines.length > 0 ? lines.join('\n') : text.trim();
+}
+
 // Daftar kata kunci dari input admin (dipisah koma/baris): dirapikan, tanpa duplikat & kosong.
 export function parseKeywordList(raw: unknown, max = 50): string[] {
   const parts = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/[,\n]/) : [];

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, Loader2, Save, Wand2, Power } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
@@ -51,19 +51,27 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
   const [saving, setSaving] = useState(false);
   const [busyLoc, setBusyLoc] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // `toast` berganti identitas tiap toast muncul/hilang; lewat ref supaya `load` tidak ikut berubah (dulu itu memicu muat ulang
+  // dan menimpa isian form yang belum disimpan).
+  const toastRef = useRef(toast);
+  useEffect(() => { toastRef.current = toast; });
+
+  // hydrate = isi ulang kolom form dari server (hanya saat pertama buka & setelah simpan); selain itu isian pengguna dibiarkan.
+  const load = useCallback(async (hydrate: boolean) => {
     setLoading(true);
     try {
       const res = await fetch('/api/wa-forward', { headers: { 'x-admin-auth': creds } });
       const d = await res.json();
-      if (!res.ok) { toast.error(d.error ?? 'Gagal memuat.'); return; }
+      if (!res.ok) { toastRef.current.error(d.error ?? 'Gagal memuat.'); return; }
       const o = d as Overview;
       setData(o);
-      setEnabled(o.settings.enabled); setTargetJid(o.settings.targetJid ?? '');
-      setKeywords(o.settings.keywords.join(', ')); setExcludeKeywords(o.settings.excludeKeywords.join(', '));
-      setMaxPerHour(String(o.settings.maxPerHour));
-    } catch { toast.error('Gagal memuat.'); } finally { setLoading(false); }
-  }, [creds, toast]);
+      if (hydrate) {
+        setEnabled(o.settings.enabled); setTargetJid(o.settings.targetJid ?? '');
+        setKeywords(o.settings.keywords.join(', ')); setExcludeKeywords(o.settings.excludeKeywords.join(', '));
+        setMaxPerHour(String(o.settings.maxPerHour));
+      }
+    } catch { toastRef.current.error('Gagal memuat.'); } finally { setLoading(false); }
+  }, [creds]);
 
   const loadLogs = useCallback(async () => {
     try {
@@ -98,7 +106,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
     } catch { toast.error('Gagal mengubah.'); } finally { setTogglingWorker(false); }
   };
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(true); }, [load]);
   useEffect(() => { loadLogs(); }, [loadLogs]);
 
   const saveSettings = async () => {
@@ -111,7 +119,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
       const d = await res.json();
       if (!res.ok) { toast.error(d.error ?? 'Gagal menyimpan.'); return; }
       toast.success('Pengaturan disimpan.');
-      load();
+      load(true);
     } catch { toast.error('Gagal menyimpan.'); } finally { setSaving(false); }
   };
 
@@ -121,7 +129,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
       const res = await fetch('/api/wa-forward/links', { method: 'PUT', headers, body: JSON.stringify({ locationId, jid }) });
       const d = await res.json();
       if (!res.ok) { toast.error(d.error ?? 'Gagal menyimpan pemasangan.'); return; }
-      await load();
+      await load(false);
     } catch { toast.error('Gagal menyimpan pemasangan.'); } finally { setBusyLoc(null); }
   };
 
@@ -147,7 +155,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>
-        <Tooltip label="Muat ulang"><button onClick={() => { load(); loadLogs(); }} className="btn-ghost p-2"><RefreshCw size={15} /></button></Tooltip>
+        <Tooltip label="Muat ulang"><button onClick={() => { load(false); loadLogs(); }} className="btn-ghost p-2"><RefreshCw size={15} /></button></Tooltip>
       </TopbarPortal>
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up space-y-5">

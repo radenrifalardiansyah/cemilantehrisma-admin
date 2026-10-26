@@ -45,6 +45,7 @@ next-env.d.ts
 
 # worker WhatsApp (paket terpisah): dependensi, sesi login WA, dan secret lokal
 /wa-worker/node_modules
-/wa-worker/.auth
+/wa-worker/.auth*
 /wa-worker/.env
 /wa-worker/*.log
+/wa-worker/*.bak-v6

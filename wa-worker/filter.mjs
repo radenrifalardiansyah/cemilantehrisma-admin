@@ -19,6 +19,15 @@ export function shouldForward(text, keywords, excludeKeywords = []) {
   return keywords.some(k => containsPhrase(t, k));
 }
 
+export function extractMatchingLines(text, keywords, excludeKeywords = []) {
+  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l && shouldForward(l, keywords, excludeKeywords));
+}
+
+export function forwardBody(text, keywords, excludeKeywords = []) {
+  const lines = extractMatchingLines(text, keywords, excludeKeywords);
+  return lines.length > 0 ? lines.join('\n') : text.trim();
+}
+
 const WIB_FMT = new Intl.DateTimeFormat('id-ID', {
   timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
