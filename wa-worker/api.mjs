@@ -25,3 +25,4 @@ export const getConfig = state => call('GET', `/api/wa-worker/config?state=${enc
 export const postGroups = groups => call('POST', '/api/wa-worker/groups', { groups });
 export const postLog = entry => call('POST', '/api/wa-worker/log', entry);
 export const patchLog = (id, status, error) => call('PATCH', '/api/wa-worker/log', { id, status, error });
+export const postEvents = events => call('POST', '/api/wa-worker/events', { events });

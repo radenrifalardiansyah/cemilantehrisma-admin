@@ -5,12 +5,20 @@ import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import QRCode from 'qrcode';
 import { createServer } from 'node:http';
-import { assertEnv, getConfig, postGroups, postLog, patchLog } from './api.mjs';
+import { assertEnv, getConfig, postGroups, postLog, patchLog, postEvents } from './api.mjs';
 import { shouldForward, buildForwardMessage } from './filter.mjs';
 
 assertEnv();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'warn' });
-const log = (...a) => console.log(new Date().toLocaleTimeString('id-ID'), ...a);
+// Semua log juga dikirim ke admin (tabel wa_worker_events) agar kejadian worker terlihat tanpa membuka Terminal.
+const eventBuf = [];
+const pushEvent = (level, a) => { eventBuf.push({ at: Date.now(), level, text: a.map(x => (typeof x === 'string' ? x : String(x?.message ?? x))).join(' ') }); if (eventBuf.length > 300) eventBuf.shift(); };
+const log = (...a) => { console.log(new Date().toLocaleTimeString('id-ID'), ...a); pushEvent(/gagal|error|ditolak|GAGAL/i.test(a.join(' ')) ? 'error' : 'info', a); };
+async function flushEvents() {
+  if (eventBuf.length === 0) return;
+  const batch = eventBuf.splice(0, 100);
+  try { const r = await postEvents(batch); if (!r.ok) eventBuf.unshift(...batch.slice(0, 20)); } catch { eventBuf.unshift(...batch.slice(0, 20)); }
+}
 
 const HEARTBEAT_MS = 60_000;
 const GROUPS_REFRESH_MS = 6 * 3600_000;
@@ -26,6 +34,7 @@ const queue = [];
 const sentAt = []; // waktu kirim sukses (ms) — untuk batas per jam
 let draining = false;
 
+let desiredOn = true; // tombol Nyalakan/Matikan koneksi di admin (false = standby: program hidup, koneksi WhatsApp diputus)
 let currentQr = null; // QR login terbaru — ditampilkan juga di halaman lokal agar mudah dipindai
 // Opsional (FORWARD_OWN=1 di .env): ikut meneruskan pesan yang diketik dari nomor ini sendiri (mis. untuk uji coba). Default mati.
 const FORWARD_OWN = process.env.FORWARD_OWN === '1';
@@ -45,8 +54,23 @@ async function refreshConfig() {
       enabled: d.enabled, targetJid: d.targetJid, keywords: d.keywords, excludeKeywords: d.excludeKeywords, maxPerHour: d.maxPerHour,
       links: new Map(d.links.map(l => [l.jid, { locationName: l.locationName }])),
     };
+    desiredOn = d.workerOn !== false;
+    await applyDesired();
     if (d.resync) await syncGroups();
   } catch (e) { log('config gagal (jaringan?):', e.message); }
+}
+
+async function applyDesired() {
+  if (!desiredOn && sock) {
+    const old = sock;
+    sock = null; currentQr = null; state = 'stopped';
+    log('Koneksi WhatsApp dimatikan dari admin (standby, sesi login tetap tersimpan).');
+    try { old.end(undefined); } catch { /* sudah tertutup */ }
+  } else if (desiredOn && state === 'stopped' && !sock) {
+    state = 'connecting';
+    log('Koneksi WhatsApp dinyalakan dari admin, menyambung…');
+    connect().catch(e => log('gagal menyambung:', e.message));
+  }
 }
 
 async function syncGroups() {
@@ -127,12 +151,13 @@ async function drain() {
 async function connect() {
   const { state: auth, saveCreds } = await useMultiFileAuthState('.auth');
   const { version } = await fetchLatestBaileysVersion();
-  sock = makeWASocket({
+  const s = sock = makeWASocket({
     version, auth, logger, browser: ['Teruskan Stok WA', 'Chrome', '1.0'],
     syncFullHistory: false, markOnlineOnConnect: false, getMessage: async () => undefined,
   });
-  sock.ev.on('creds.update', saveCreds);
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+  s.ev.on('creds.update', saveCreds);
+  s.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (s !== sock) return; // socket lama (sudah dimatikan/diganti) diabaikan
     if (qr) { state = 'qr'; currentQr = qr; log('Scan QR ini di WhatsApp nomor cadangan (Perangkat tertaut → Tautkan perangkat):'); qrcode.generate(qr, { small: true }); refreshConfig(); }
     if (connection === 'connecting') state = 'connecting';
     if (connection === 'open') { state = 'open'; currentQr = null; log('WhatsApp terhubung.'); await refreshConfig(); if (!lastGroupsAt) await syncGroups(); }
@@ -147,10 +172,12 @@ async function connect() {
       state = 'close';
       log(`koneksi putus (kode ${code ?? '?'}), menyambung ulang…`);
       await sleep(5_000);
+      if (!desiredOn || s !== sock) return; // dimatikan dari admin selama jeda sambung ulang
       connect().catch(e => { log('gagal menyambung:', e.message); });
     }
   });
-  sock.ev.on('messages.upsert', ({ messages, type }) => {
+  s.ev.on('messages.upsert', ({ messages, type }) => {
+    if (s !== sock) return;
     dbg(`messages.upsert type=${type} jumlah=${messages.length}`);
     if (type !== 'notify') return;
     for (const m of messages) onMessage(m).catch(e => log('error pesan:', e.message));
@@ -184,5 +211,7 @@ setInterval(() => {
   refreshConfig();
   if (state === 'open' && Date.now() - lastGroupsAt > GROUPS_REFRESH_MS) syncGroups();
 }, HEARTBEAT_MS);
+setInterval(flushEvents, 10_000);
 await refreshConfig();
-await connect();
+if (desiredOn && !sock) await connect();
+else if (!desiredOn) { state = 'stopped'; log('Worker standby: koneksi WhatsApp dimatikan dari admin.'); }

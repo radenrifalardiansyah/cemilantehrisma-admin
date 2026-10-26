@@ -1,18 +1,19 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { RefreshCw, Loader2, Save, Wand2 } from 'lucide-react';
+import { RefreshCw, Loader2, Save, Wand2, Power } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import PageLoader from '@/components/PageLoader';
 import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
+import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import { suggestGroup } from '@/lib/wa-forward';
 import type { Action } from '@/types/rbac';
 
 interface Overview {
   settings: { enabled: boolean; targetJid: string | null; keywords: string[]; excludeKeywords: string[]; maxPerHour: number; resyncRequested: boolean };
-  worker: { online: boolean; state: string; lastSeen: string | null };
+  worker: { online: boolean; desired: boolean; state: string; lastSeen: string | null };
   groups: { jid: string; subject: string }[];
   links: { jid: string; locationId: string; isActive: boolean }[];
   locations: { id: string; name: string; code: string }[];
@@ -22,8 +23,10 @@ interface LogRow {
   status: 'pending' | 'sent' | 'failed'; error: string | null; receivedAt: string; sentAt: string | null;
 }
 
+interface WorkerEvent { id: string; at: string; level: 'info' | 'warn' | 'error'; text: string }
+
 const STATE_LABEL: Record<string, string> = {
-  open: 'Terhubung', connecting: 'Menyambung…', qr: 'Perlu scan QR', close: 'Terputus', 'logged-out': 'Logout — perlu scan QR ulang', offline: 'Worker mati',
+  stopped: 'Dimatikan dari admin', open: 'Terhubung', connecting: 'Menyambung…', qr: 'Perlu scan QR', close: 'Terputus', 'logged-out': 'Logout — perlu scan QR ulang', offline: 'Worker mati',
 };
 const groupOption = (g: { jid: string; subject: string }): SearchSelectOption => ({ value: g.jid, label: g.subject || g.jid });
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -36,6 +39,8 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
   const headers = { 'Content-Type': 'application/json', 'x-admin-auth': creds };
   const [data, setData] = useState<Overview | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [events, setEvents] = useState<WorkerEvent[]>([]);
+  const [togglingWorker, setTogglingWorker] = useState(false);
   const [logFilter, setLogFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
@@ -68,6 +73,30 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
       if (res.ok) setLogs(d.logs ?? []);
     } catch { /* riwayat gagal dimuat tidak menghalangi halaman */ }
   }, [creds, logFilter]);
+
+  // Status worker + log kejadian diperbarui otomatis tiap 10 detik (berhenti saat tab tidak terlihat); form pengaturan tidak ikut direset.
+  const loadLive = useCallback(async () => {
+    try {
+      const [ov, ev] = await Promise.all([
+        fetch('/api/wa-forward', { headers: { 'x-admin-auth': creds } }),
+        fetch('/api/wa-forward/events?limit=100', { headers: { 'x-admin-auth': creds } }),
+      ]);
+      if (ov.ok) { const o = await ov.json() as Overview; setData(d => d ? { ...d, worker: o.worker } : d); }
+      if (ev.ok) setEvents((await ev.json()).events ?? []);
+    } catch { /* gagal sesekali tidak mengganggu */ }
+  }, [creds]);
+  useVisiblePolling(() => { loadLive(); loadLogs(); }, 10_000, [loadLive, loadLogs]);
+
+  const toggleWorker = async (on: boolean) => {
+    setTogglingWorker(true);
+    try {
+      const res = await fetch('/api/wa-forward/worker', { method: 'PUT', headers, body: JSON.stringify({ on }) });
+      const d = await res.json();
+      if (!res.ok) { toast.error(d.error ?? 'Gagal mengubah.'); return; }
+      setData(x => x ? { ...x, worker: { ...x.worker, desired: on } } : x);
+      toast.success(on ? 'Koneksi dinyalakan. Worker menyambung dalam ±1 menit.' : 'Koneksi dimatikan. Worker berhenti dalam ±1 menit (tetap standby).');
+    } catch { toast.error('Gagal mengubah.'); } finally { setTogglingWorker(false); }
+  };
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadLogs(); }, [loadLogs]);
@@ -125,7 +154,15 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
 
           {/* 1. Status worker */}
           <Section title="Status Worker" desc="Program WhatsApp yang membaca grup mitra. Harus menyala agar pesan bisa diteruskan."
-            action={canEdit && <button onClick={resync} className="btn-ghost text-xs" style={{ height: 32 }}><RefreshCw size={13} /> Sinkron grup</button>}>
+            action={canEdit && (
+              <div className="flex items-center gap-2">
+                <button onClick={resync} className="btn-ghost text-xs" style={{ height: 32 }}><RefreshCw size={13} /> Sinkron grup</button>
+                <button onClick={() => toggleWorker(!data.worker.desired)} disabled={togglingWorker || !data.worker.online}
+                  className={data.worker.desired ? 'btn-ghost text-xs' : 'btn-primary text-xs'} style={{ height: 32 }}>
+                  {togglingWorker ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />} {data.worker.desired ? 'Matikan koneksi' : 'Nyalakan koneksi'}
+                </button>
+              </div>
+            )}>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
               <span className={`badge ${workerOk ? 'badge-green' : data.worker.online ? 'badge-amber' : 'badge-red'}`}>
                 {STATE_LABEL[data.worker.state] ?? data.worker.state}
@@ -137,6 +174,14 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
                 <span style={{ color: 'var(--text-muted)' }}>Grup terdeteksi: </span>{data.groups.length}
               </p>
             </div>
+            {!data.worker.online && (
+              <p className="px-5 pb-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Program worker tidak berjalan di komputer. Tombol nyala/mati hanya berfungsi bila programnya hidup — jalankan dulu dengan <code>npm start</code> di folder wa-worker.
+              </p>
+            )}
+            {data.worker.online && !data.worker.desired && (
+              <p className="px-5 pb-4 text-xs" style={{ color: 'var(--text-muted)' }}>Koneksi WhatsApp sedang dimatikan dari admin; worker standby dan tidak meneruskan pesan.</p>
+            )}
           </Section>
 
           {/* 2. Pengaturan */}
@@ -220,7 +265,23 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
             )}
           </Section>
 
-          {/* 4. Riwayat */}
+          {/* 4. Log worker */}
+          <Section title="Log Worker" desc="Kejadian terbaru dari worker: koneksi, pesan grup yang masuk (diteruskan atau dilewati + alasannya), dan error. Diperbarui otomatis tiap 10 detik.">
+            {events.length === 0 ? (
+              <p className="p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Belum ada log dari worker.</p>
+            ) : (
+              <div className="max-h-[360px] overflow-y-auto thin-scrollbar divide-y divide-[var(--border-2)]">
+                {events.map(e => (
+                  <div key={e.id} className="px-5 py-1.5 flex gap-3 text-xs">
+                    <span className="tabular flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{new Date(e.at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hourCycle: 'h23' })}</span>
+                    <span className="break-words min-w-0" style={{ color: e.level === 'error' ? 'var(--danger, #DC2626)' : e.level === 'warn' ? '#B45309' : 'var(--text-secondary)' }}>{e.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 5. Riwayat */}
           <Section title="Riwayat Diteruskan" desc="Pesan terbaru yang lolos filter dan dikirim ke grup tujuan."
             action={
               <div className="w-[220px]">

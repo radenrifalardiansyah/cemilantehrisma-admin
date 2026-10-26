@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requireWorker } from '@/lib/wa-worker-auth';
 
-const STATES = new Set(['open', 'connecting', 'qr', 'close', 'logged-out']);
+const STATES = new Set(['open', 'connecting', 'qr', 'close', 'logged-out', 'stopped']);
 
 // Satu panggilan per menit dari worker: sekaligus heartbeat (?state=...) dan pengambilan konfigurasi.
 // Flag resync dibaca lalu langsung dimatikan, supaya sinkron grup hanya dijalankan sekali per permintaan admin.
@@ -15,8 +15,8 @@ export async function GET(req: NextRequest) {
 
   const [s] = await sql<{
     enabled: boolean; target_jid: string | null; keywords: string[]; exclude_keywords: string[];
-    max_per_hour: number; resync_requested: boolean;
-  }[]>`select enabled, target_jid, keywords, exclude_keywords, max_per_hour, resync_requested from wa_forward_settings where id = 1`;
+    max_per_hour: number; resync_requested: boolean; worker_desired: boolean;
+  }[]>`select enabled, target_jid, keywords, exclude_keywords, max_per_hour, resync_requested, worker_desired from wa_forward_settings where id = 1`;
   await sql`update wa_forward_settings set worker_state = ${workerState}, worker_last_seen = now(), resync_requested = false where id = 1`;
   if (!s) return Response.json({ error: 'Pengaturan belum dibuat (jalankan scripts/add-wa-forward.mjs).' }, { status: 500 });
 
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   `;
   return Response.json({
     enabled: s.enabled, targetJid: s.target_jid, keywords: s.keywords, excludeKeywords: s.exclude_keywords,
-    maxPerHour: s.max_per_hour, resync: s.resync_requested,
+    maxPerHour: s.max_per_hour, resync: s.resync_requested, workerOn: s.worker_desired,
     links: links.map(l => ({ jid: l.jid, locationId: l.location_id, locationName: l.location_name })),
   });
 }
