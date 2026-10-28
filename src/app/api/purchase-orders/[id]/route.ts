@@ -14,8 +14,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   const [row] = await sql<PoRow[]>`
-    select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature
+    select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature,
+      ap.full_name as approved_by_name, ap.signature as approved_by_signature
     from purchase_orders po left join profiles cp on cp.username = po.created_by
+    left join profiles ap on ap.username = po.approved_by
     where po.id = ${id}
   `;
   if (!row) return Response.json({ error: 'PO tidak ditemukan.' }, { status: 404 });

@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       const [po] = await pgTx<PoRow[]>`select * from purchase_orders where id = ${poId} for update`;
       if (!po) throw new Error('PO tidak ditemukan.');
       if (po.status === 'batal') throw new Error('PO ini sudah dibatalkan.');
+      if (po.status === 'draft') throw new Error('PO belum di-approve. Approve PO dulu sebelum membuat GR.');
       if (po.status === 'diterima') throw new Error('PO ini sudah diterima penuh.');
       poNumber = po.po_number;
       const [{ exists }] = await pgTx<{ exists: boolean }[]>`select exists(select 1 from goods_receipts where po_id = ${poId} and status = 'draft') as exists`;

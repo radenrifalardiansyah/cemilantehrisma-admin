@@ -42,7 +42,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'product-report',   label: 'Laporan Produk',     actions: ['view'] },
   { key: 'stock',            label: 'Gudang',             actions: ['view', 'edit'] },
   { key: 'materials',        label: 'Bahan Baku',         actions: CRUD },
-  { key: 'purchase-orders',  label: 'Purchase Order (PO)', actions: CRUD },
+  // `approve` = menyetujui PO (syarat sebelum dikirim ke supplier & dibuatkan GR) dan rollback PO.
+  { key: 'purchase-orders',  label: 'Purchase Order (PO)', actions: [...CRUD, 'approve'] },
   // `approve` = menyetujui/membatalkan Goods Receipt (GR) yang memasukkan pembelian ke stok.
   { key: 'goods-receipts',   label: 'Goods Receipt (GR)', actions: [...CRUD, 'approve'] },
   { key: 'suppliers',        label: 'Supplier',           actions: CRUD },

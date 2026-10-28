@@ -32,7 +32,7 @@ const dateDisplay = (iso?: string | null) =>
   iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
 const PO_STATUS: Record<string, { label: string; cls: string }> = {
-  draft: { label: 'Draft', cls: 'badge-gray' }, terkirim: { label: 'Terkirim', cls: 'badge-blue' },
+  draft: { label: 'Draft', cls: 'badge-gray' }, disetujui: { label: 'Disetujui', cls: 'badge-green' }, terkirim: { label: 'Terkirim', cls: 'badge-blue' },
   diterima_sebagian: { label: 'Diterima Sebagian', cls: 'badge-amber' }, diterima: { label: 'Diterima Penuh', cls: 'badge-green' },
   batal: { label: 'Dibatalkan', cls: 'badge-red' },
 };

@@ -8,6 +8,7 @@ export interface PoLike {
   poNumber: string; supplierName: string; supplierPhone: string; supplierPic?: string; items: PoItem[]; total: number;
   date: string; expectedDate: string | null; note: string; status: PoStatus; cancelNote: string | null;
   createdBy?: string | null; createdByName?: string | null;
+  approvedBy?: string | null; approvedByName?: string | null; approvedAt?: { seconds: number } | null;
 }
 export interface GrLike {
   grNumber: string; doNumber: string; poNumber: string | null; supplierName: string | null;
@@ -22,15 +23,17 @@ export function printedNow() {
 }
 
 // `sigs` = data-URI tanda tangan yang sudah di-resolve pemanggil (browser: toDataUri, server: serverSignatureDataUri).
-export function poToDocData(po: PoLike, supplierAddress?: string, sigs?: { created?: string }): PurchaseDocData {
+export function poToDocData(po: PoLike, supplierAddress?: string, sigs?: { created?: string; approved?: string }): PurchaseDocData {
   return {
     kind: 'po', number: po.poNumber, date: formatDocDate(po.date), printedAt: printedNow(),
     supplierName: po.supplierName, supplierPhone: po.supplierPhone || undefined, supplierPic: po.supplierPic || undefined, supplierAddress: supplierAddress || undefined,
     expectedDate: po.expectedDate ? formatDocDate(po.expectedDate) : undefined, createdBy: po.createdByName || po.createdBy || undefined, createdBySignature: sigs?.created,
+    approvedBy: po.approvedByName || po.approvedBy || undefined, approvedBySignature: sigs?.approved,
+    approvedAt: po.approvedAt ? new Date(po.approvedAt.seconds * 1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' }) : undefined,
     items: po.items, total: po.total, note: po.note || undefined,
     ...(po.status === 'batal'
       ? { statusLabel: 'DIBATALKAN', statusTone: 'void' as const, cancelNote: po.cancelNote || undefined }
-      : po.status === 'draft' ? { statusLabel: 'DRAFT', statusTone: 'warn' as const } : {}),
+      : po.status === 'draft' ? { statusLabel: 'DRAFT - BELUM DI-APPROVE', statusTone: 'warn' as const } : {}),
   };
 }
 

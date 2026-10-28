@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       id: r.id, poNumber: r.po_number, date: r.date, supplierName: r.supplier_name,
       items: items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', '),
       total: Number(r.total), status: r.status, expectedDate: r.expected_date, receivedValue: Number(r.received_value),
-      late: !!r.expected_date && r.expected_date < today && ['draft', 'terkirim', 'diterima_sebagian'].includes(r.status),
+      late: !!r.expected_date && r.expected_date < today && ['draft', 'disetujui', 'terkirim', 'diterima_sebagian'].includes(r.status),
     };
   });
   return Response.json({ rows: data, summary: summarizePo(data) });

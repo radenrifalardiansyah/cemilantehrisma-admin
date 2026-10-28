@@ -40,6 +40,7 @@ interface Po {
   items: PoItem[]; total: number; date: string; expectedDate: string | null; note: string;
   status: PoStatus; cancelNote: string | null; received: Record<string, number>; createdBy?: string | null;
   createdByName?: string | null; createdBySignature?: string | null;
+  approvedBy?: string | null; approvedByName?: string | null; approvedBySignature?: string | null; approvedAt?: { seconds: number } | null;
 }
 interface Gr {
   id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null; supplierPhone?: string; supplierAddress?: string;
@@ -84,6 +85,7 @@ const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 
 
 const PO_BADGE: Record<PoStatus, { label: string; cls: string }> = {
   draft: { label: 'Draft', cls: 'badge-gray' },
+  disetujui: { label: 'Disetujui', cls: 'badge-green' },
   terkirim: { label: 'Terkirim', cls: 'badge-blue' },
   diterima_sebagian: { label: 'Diterima Sebagian', cls: 'badge-amber' },
   diterima: { label: 'Diterima Penuh', cls: 'badge-green' },
@@ -112,12 +114,14 @@ interface Props {
   walletBalances: Record<string, number>;
   storeHeader: StoreHeader;
   canApprove: boolean;
+  /** Hak approve PO (menyetujui PO sebelum dikirim & dibuatkan GR). */
+  canApprovePo: boolean;
   /** Dipanggil setelah aksi yang mengubah stok/keuangan (approve/batal GR) supaya induk memuat ulang. */
   onStockChanged: () => void;
 }
 
 export default function PurchaseFlowPanel({
-  creds, view, onGoto, openGrId, onOpenGrHandled, materials, suppliers, walletOptions, walletBalances, storeHeader, canApprove, onStockChanged,
+  creds, view, onGoto, openGrId, onOpenGrHandled, materials, suppliers, walletOptions, walletBalances, storeHeader, canApprove, canApprovePo, onStockChanged,
 }: Props) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -173,7 +177,7 @@ export default function PurchaseFlowPanel({
     if (!sigCache.current.has(url)) sigCache.current.set(url, await toDataUri(url));
     return sigCache.current.get(url);
   };
-  const poDoc = async (p: Po) => poToDocData({ ...p, supplierPic: supplierOf(p.supplierId)?.pic }, supplierOf(p.supplierId)?.address, { created: await sigUri(p.createdBySignature) });
+  const poDoc = async (p: Po) => poToDocData({ ...p, supplierPic: supplierOf(p.supplierId)?.pic }, supplierOf(p.supplierId)?.address, { created: await sigUri(p.createdBySignature), approved: await sigUri(p.approvedBySignature) });
   const grDoc = async (g: Gr, kind: 'gr' | 'do') =>
     grToDocData(g, kind, supplierInfoOf(g), { created: await sigUri(g.createdBySignature), approved: await sigUri(g.approvedBySignature), attachments: (await Promise.all((g.attachments ?? []).map(u => toDataUri(u)))).filter((u): u is string => !!u) }, walletOptions.find(w => w.value === g.walletId)?.label);
   const poPdf = async (p: Po) => {
@@ -358,6 +362,17 @@ ${pdfUrl}`.trim();
   const [cancelNote, setCancelNote] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
+  const approvePo = async (p: Po) => {
+    if (!await confirm({ message: `Approve ${p.poNumber}? Setelah di-approve PO tidak bisa diedit, bisa dikirim ke supplier via WA, dan bisa dibuatkan GR.` })) return;
+    setBusyId(`apr-${p.id}`);
+    try {
+      const r = await fetch(`/api/purchase-orders/${p.id}/approve`, { method: 'POST', headers });
+      const d = await r.json().catch(() => ({})) as { error?: string };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal meng-approve PO.'); return; }
+      toast.success(`${p.poNumber} di-approve.`);
+      await loadPos();
+    } finally { setBusyId(null); }
+  };
   const askCancelPo = (p: Po) => {
     setCancelNote('');
     setCancelTarget({ kind: 'po', id: p.id, label: p.poNumber, needReason: false, warn: 'PO ditandai dibatalkan dan tidak bisa dibuatkan GR lagi. GR draft yang menggantung ikut dibatalkan.' });
@@ -396,7 +411,7 @@ ${pdfUrl}`.trim();
   const [rollingBack, setRollingBack] = useState(false);
   const askRollbackPo = (p: Po) => {
     setRbNote('');
-    setRbTarget({ kind: 'po', id: p.id, label: p.poNumber, warn: 'PO kembali ke Draft sehingga isinya bisa diedit lagi, lalu dikirim ulang ke supplier. Hanya bisa kalau PO belum punya GR.' });
+    setRbTarget({ kind: 'po', id: p.id, label: p.poNumber, warn: 'PO kembali ke Draft (approval dicabut) sehingga isinya bisa diedit lagi, lalu harus di-approve ulang sebelum dikirim ke supplier. Hanya bisa kalau PO belum punya GR.' });
   };
   const askRollbackGr = (g: Gr) => {
     setRbNote('');
@@ -567,7 +582,7 @@ ${pdfUrl}`.trim();
 
   // Tombol aksi per baris — dipakai bersama oleh tampilan Tabel dan Kartu.
   const poActions = (p: Po) => {
-    const canGr = p.status === 'draft' || p.status === 'terkirim' || p.status === 'diterima_sebagian';
+    const canGr = p.status === 'disetujui' || p.status === 'terkirim' || p.status === 'diterima_sebagian';
     return (
       <>
         {canGr && (
@@ -582,7 +597,12 @@ ${pdfUrl}`.trim();
             </button>
           </Tooltip>
         )}
-        {p.status !== 'batal' && (
+        {p.status === 'draft' && canApprovePo && (
+          <button onClick={() => approvePo(p)} disabled={busyId === `apr-${p.id}`} className="btn-ghost px-2.5 py-1 text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--success)' }}>
+            {busyId === `apr-${p.id}` ? <Spin /> : <Check size={12} />} Approve
+          </button>
+        )}
+        {p.status !== 'batal' && p.status !== 'draft' && (
           <Tooltip label="Kirim PO ke supplier via WhatsApp">
             <button onClick={() => sendPoWhatsApp(p)} disabled={busyId === `wa-${p.id}`} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--success)' }}>
               {busyId === `wa-${p.id}` ? <Spin /> : <MessageCircle size={12} />}
@@ -606,7 +626,7 @@ ${pdfUrl}`.trim();
             <button onClick={() => askCancelPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
           </Tooltip>
         )}
-        {p.status === 'terkirim' && canApprove && (
+        {(p.status === 'disetujui' || p.status === 'terkirim') && canApprovePo && (
           <Tooltip label="Rollback ke Draft (bisa diedit lagi)">
             <button onClick={() => askRollbackPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
           </Tooltip>

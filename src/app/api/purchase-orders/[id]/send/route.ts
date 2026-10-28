@@ -7,9 +7,10 @@ import { rowToPo, type PoRow } from '@/lib/purchase-orders-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// Dipanggil saat tombol "Kirim WA" diklik: tandai PO draft → terkirim (dikunci dari edit) dan
-// kembalikan token untuk link PDF publik. Aman dipanggil berulang (kirim ulang WA) — PO yang sudah
-// terkirim/diterima cuma dikembalikan tokennya tanpa mengubah status.
+// Dipanggil saat tombol "Kirim WA" diklik: tandai PO disetujui → terkirim dan kembalikan token untuk
+// link PDF publik. PO yang belum di-approve ditolak (PDF yang sampai ke supplier harus sudah bertanda
+// tangan approval). Aman dipanggil berulang (kirim ulang WA) — PO yang sudah terkirim/diterima cuma
+// dikembalikan tokennya tanpa mengubah status.
 export async function POST(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'purchase-orders', 'edit');
   if (guard instanceof Response) return guard;
@@ -22,7 +23,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const [r] = await pgTx<PoRow[]>`select * from purchase_orders where id = ${id} for update`;
       if (!r) throw new Error('PO tidak ditemukan.');
       if (r.status === 'batal') throw new Error('PO ini sudah dibatalkan.');
-      if (r.status === 'draft') {
+      if (r.status === 'draft') throw new Error('PO belum di-approve. Approve dulu sebelum dikirim ke supplier.');
+      if (r.status === 'disetujui') {
         await pgTx`update purchase_orders set status = 'terkirim', sent_at = now(), updated_at = now() where id = ${id}`;
         return { row: { ...r, status: 'terkirim' }, changed: true };
       }
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     try {
       await logHistory(getDb(), {
         entity: 'purchase-orders', entityId: id, entityLabel: `${row.po_number} - ${row.supplier_name}`,
-        action: 'update', actor: guard, before: { status: 'draft' }, after: { status: 'terkirim' },
+        action: 'update', actor: guard, before: { status: 'disetujui' }, after: { status: 'terkirim' },
       });
     } catch (err) {
       console.error('Failed to write history for PO send', err);

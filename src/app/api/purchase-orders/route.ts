@@ -14,8 +14,10 @@ export async function GET(req: NextRequest) {
   const sql = getSql();
   const [rows, grRows] = await Promise.all([
     sql<PoRow[]>`
-      select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature
+      select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature,
+        ap.full_name as approved_by_name, ap.signature as approved_by_signature
       from purchase_orders po left join profiles cp on cp.username = po.created_by
+      left join profiles ap on ap.username = po.approved_by
       order by po.created_at desc
     `,
     sql<{ po_id: string; items: unknown }[]>`select po_id, items from goods_receipts where status = 'approved'`,

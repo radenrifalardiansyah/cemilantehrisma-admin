@@ -7,7 +7,7 @@ import { rowToPo, type PoRow } from '@/lib/purchase-orders-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// Rollback PO terkirim → draft supaya isinya bisa diedit lagi. Butuh hak `approve`; alasan wajib.
+// Rollback PO disetujui/terkirim → draft (approval dicabut) supaya isinya bisa diedit lagi. Butuh hak `approve`; alasan wajib.
 // Ditolak kalau PO sudah punya GR (rollback/hapus GR-nya dulu) atau sudah dibatalkan (final).
 export async function POST(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'purchase-orders', 'edit');
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       `;
       if (approved > 0) throw new Error('PO ini sudah punya GR yang di-approve. Rollback GR-nya dulu.');
       if (draft > 0) throw new Error('PO ini masih punya GR draft. Hapus atau batalkan GR draft-nya dulu.');
-      await pgTx`update purchase_orders set status = 'draft', sent_at = null, updated_at = now() where id = ${id}`;
+      await pgTx`update purchase_orders set status = 'draft', sent_at = null, approved_by = null, approved_at = null, updated_at = now() where id = ${id}`;
       return rowToPo(row);
     });
   } catch (err) {
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     await logHistory(getDb(), {
       entity: 'purchase-orders', entityId: id, entityLabel: `${before.poNumber} - rollback ke draft`,
-      action: 'update', actor: guard, before, after: { ...before, status: 'draft', sentAt: null },
+      action: 'update', actor: guard, before, after: { ...before, status: 'draft', sentAt: null, approvedBy: null, approvedAt: null },
       meta: { rollbackReason: reason },
     });
   } catch (err) {

@@ -22,18 +22,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const sql = getSql();
     const [row] = await sql<PoRow[]>`
-      select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature
+      select po.*, cp.full_name as created_by_name, cp.signature as created_by_signature,
+        ap.full_name as approved_by_name, ap.signature as approved_by_signature
       from purchase_orders po left join profiles cp on cp.username = po.created_by
+      left join profiles ap on ap.username = po.approved_by
       where po.id = ${id} and po.token = ${token}
     `;
     if (!row) return new NextResponse('PO tidak ditemukan.', { status: 404 });
     const po = rowToPo(row);
 
     const [sup] = row.supplier_id ? await sql<{ address: string; pic: string }[]>`select address, pic from suppliers where id = ${row.supplier_id}` : [];
-    const [store, createdSig] = await Promise.all([getServerStoreHeader(), serverSignatureDataUri(po.createdBySignature)]);
+    const [store, createdSig, approvedSig] = await Promise.all([getServerStoreHeader(), serverSignatureDataUri(po.createdBySignature), serverSignatureDataUri(po.approvedBySignature)]);
     const buffer = await renderToBuffer(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      React.createElement(PurchaseDocPDF, { data: poToDocData({ ...po, supplierPic: sup?.pic }, sup?.address, { created: createdSig }), store }) as any,
+      React.createElement(PurchaseDocPDF, { data: poToDocData({ ...po, supplierPic: sup?.pic }, sup?.address, { created: createdSig, approved: approvedSig }), store }) as any,
     );
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

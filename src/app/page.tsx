@@ -1524,7 +1524,7 @@ export default function AdminPage() {
           onHighlightHandled={() => setHighlightMaterialId(null)} />
       )}
       {(activeTab === 'purchase-orders' || activeTab === 'goods-receipts') && (
-        <PurchaseFlowTab creds={creds} view={activeTab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')}
+        <PurchaseFlowTab creds={creds} view={activeTab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')} canApprovePo={can('purchase-orders', 'approve')}
           onGoto={(v, grId) => { setOpenGrId(grId ?? null); setActiveTab(v === 'po' ? 'purchase-orders' : 'goods-receipts'); }}
           openGrId={openGrId} onOpenGrHandled={() => setOpenGrId(null)} />
       )}

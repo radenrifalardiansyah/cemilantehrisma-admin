@@ -7,7 +7,7 @@ import { GR_CONDITIONS, type GrCondition } from '@/lib/gr-conditions';
 // camelCase seperti materials-pg.ts. PO tidak menyentuh stok/keuangan; baru saat GR di-approve
 // dibuat baris `material_purchases` (lihat material-purchase-core.ts).
 
-export type PoStatus = 'draft' | 'terkirim' | 'diterima_sebagian' | 'diterima' | 'batal';
+export type PoStatus = 'draft' | 'disetujui' | 'terkirim' | 'diterima_sebagian' | 'diterima' | 'batal';
 export type GrStatus = 'draft' | 'approved' | 'dibatalkan';
 
 export interface PoItem { materialId: string; materialName: string; unit: string; qty: number; price: number; subtotal: number }
@@ -19,6 +19,7 @@ export interface PoRow {
   items: unknown; total: string; date: string; expected_date: string | null; note: string;
   status: string; token: string; sent_at: Date | null; cancel_note: string | null; created_by: string | null;
   created_by_name?: string | null; created_by_signature?: string | null;
+  approved_by?: string | null; approved_at?: Date | null; approved_by_name?: string | null; approved_by_signature?: string | null;
   created_at: Date; updated_at: Date | null;
 }
 export function rowToPo(r: PoRow, opts?: { includeToken?: boolean }) {
@@ -28,6 +29,8 @@ export function rowToPo(r: PoRow, opts?: { includeToken?: boolean }) {
     total: Number(r.total), date: r.date, expectedDate: r.expected_date, note: r.note,
     status: r.status as PoStatus, sentAt: toTimestamp(r.sent_at), cancelNote: r.cancel_note, createdBy: r.created_by,
     createdByName: r.created_by_name || null, createdBySignature: r.created_by_signature || null,
+    approvedBy: r.approved_by ?? null, approvedAt: toTimestamp(r.approved_at ?? null),
+    approvedByName: r.approved_by_name || null, approvedBySignature: r.approved_by_signature || null,
     ...(opts?.includeToken ? { token: r.token } : {}),
     createdAt: toTimestamp(r.created_at), updatedAt: toTimestamp(r.updated_at),
   };
@@ -84,11 +87,11 @@ export async function receivedByMaterial(pgTx: PgTx, poId: string, excludeGrId?:
 }
 
 // Hitung ulang status PO dari GR yang approved: diterima (semua item terpenuhi) / diterima_sebagian /
-// kembali ke terkirim (sudah pernah dikirim) atau draft. PO yang `batal` tidak disentuh.
+// kembali ke terkirim (sudah pernah dikirim) / disetujui (belum dikirim) / draft. PO yang `batal` tidak disentuh.
 // Dipanggil setelah approve & pembatalan GR, di dalam transaksi yang sama.
 export async function recalcPoStatus(pgTx: PgTx, poId: string): Promise<PoStatus> {
-  const [po] = await pgTx<{ items: unknown; status: string; sent_at: Date | null }[]>`
-    select items, status, sent_at from purchase_orders where id = ${poId} for update
+  const [po] = await pgTx<{ items: unknown; status: string; sent_at: Date | null; approved_at: Date | null }[]>`
+    select items, status, sent_at, approved_at from purchase_orders where id = ${poId} for update
   `;
   if (!po) throw new Error('PO tidak ditemukan.');
   if (po.status === 'batal') return 'batal';
@@ -98,7 +101,7 @@ export async function recalcPoStatus(pgTx: PgTx, poId: string): Promise<PoStatus
   const ordered = new Map<string, number>();
   items.forEach(it => ordered.set(it.materialId, (ordered.get(it.materialId) ?? 0) + it.qty));
   const complete = [...ordered].every(([mid, q]) => (received.get(mid) ?? 0) >= q);
-  const status: PoStatus = anyReceived ? (complete ? 'diterima' : 'diterima_sebagian') : (po.sent_at ? 'terkirim' : 'draft');
+  const status: PoStatus = anyReceived ? (complete ? 'diterima' : 'diterima_sebagian') : (po.sent_at ? 'terkirim' : po.approved_at ? 'disetujui' : 'draft');
   await pgTx`update purchase_orders set status = ${status}, updated_at = now() where id = ${poId}`;
   return status;
 }

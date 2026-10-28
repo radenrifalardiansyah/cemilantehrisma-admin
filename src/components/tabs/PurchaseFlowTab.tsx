@@ -12,8 +12,8 @@ import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWal
 // Menu Purchase Order (PO) dan Goods Receipt (GR) — dua menu terpisah, satu komponen (`view`).
 // Memuat bahan baku, supplier, dompet & header toko sekali untuk PurchaseFlowPanel; daftar PO/GR
 // dimuat panel itu sendiri.
-export default function PurchaseFlowTab({ creds, view, canApprove, onGoto, openGrId, onOpenGrHandled }: {
-  creds: string; view: 'po' | 'gr'; canApprove: boolean;
+export default function PurchaseFlowTab({ creds, view, canApprove, canApprovePo, onGoto, openGrId, onOpenGrHandled }: {
+  creds: string; view: 'po' | 'gr'; canApprove: boolean; canApprovePo: boolean;
   onGoto: (v: 'po' | 'gr', grId?: string) => void;
   openGrId?: string | null; onOpenGrHandled?: () => void;
 }) {
@@ -62,6 +62,7 @@ export default function PurchaseFlowTab({ creds, view, canApprove, onGoto, openG
           walletBalances={walletBalances}
           storeHeader={storeHeader}
           canApprove={canApprove}
+          canApprovePo={canApprovePo}
           onStockChanged={() => { load(); refetchBalances(); }}
         />
       </div>

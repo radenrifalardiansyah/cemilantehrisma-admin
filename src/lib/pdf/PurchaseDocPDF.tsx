@@ -30,9 +30,9 @@ export interface PurchaseDocData {
   expectedDate?: string;       // PO
   createdBy?: string;          // nama tampilan (nama lengkap, cadangan username)
   createdBySignature?: string; // data-URI gambar tanda tangan
-  approvedBy?: string;         // GR/DO
+  approvedBy?: string;         // PO/GR/DO
   approvedBySignature?: string;
-  approvedAt?: string;         // GR/DO (sudah terformat)
+  approvedAt?: string;         // PO/GR/DO (sudah terformat)
   attachments?: string[];      // GR/DO: foto lampiran (data-URI) → halaman "Lampiran" setelah dokumen
   paymentLabel?: string;       // GR/DO: metode (dompet) + status, mis. 'Kas Toko · Lunas'
   items: (PoItem | GrItem)[];
@@ -309,12 +309,17 @@ function Signatures({ data, store }: { data: PurchaseDocData; store: StoreHeader
   const k = data.kind;
   // Dokumen GR/DO yang sudah di-approve tanpa gambar tanda tangan → cap "ditandatangani sistem" (bukan ruang kosong).
   const approved = k !== 'po' && data.statusTone === 'ok';
-  // PO: sah di sistem begitu diterbitkan (bukan draft / dibatalkan).
+  // PO: tanda tangan approval baru muncul setelah PO di-approve (bukan draft / dibatalkan).
   const issued = k === 'po' && !data.statusTone;
   const sigs: { role: string; name?: string; meta?: string; image?: string; sys?: { title: string; sub: string } }[] = k === 'po'
     ? [
       { role: 'Dibuat oleh', name: data.createdBy, image: data.createdBySignature, sys: issued ? { title: 'DIBUAT DI SISTEM', sub: data.date } : undefined },
-      { role: 'Disetujui', name: store.ownerName, image: store.ownerSignature, sys: issued ? { title: 'DISETUJUI SECARA SISTEM', sub: data.date } : undefined },
+      {
+        role: 'Disetujui', name: data.approvedBy || (issued ? store.ownerName : undefined),
+        image: issued ? (data.approvedBySignature || store.ownerSignature) : undefined,
+        sys: issued ? { title: 'DISETUJUI SECARA SISTEM', sub: [data.approvedBy ? `oleh ${data.approvedBy}` : '', data.approvedAt ?? data.date].filter(Boolean).join(' · ') } : undefined,
+        meta: issued && data.approvedAt ? `Tgl. ${data.approvedAt}` : undefined,
+      },
       { role: 'Supplier', name: data.supplierName },
     ]
     : [
