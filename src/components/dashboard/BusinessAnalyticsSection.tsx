@@ -152,6 +152,31 @@ export default function BusinessAnalyticsSection({
         { label: 'Laba Kotor', value: pdfRp(f.labaKotor) },
         { label: 'Laba Bersih', value: pdfRp(f.labaBersih) },
       ],
+      charts: [
+        {
+          title: 'Tren Penjualan per Channel', type: 'line', labels: data.dailyTrend.map(d => shortDate(d.date)),
+          series: [
+            { name: 'Online', color: '#0284C7', values: data.dailyTrend.map(d => d.online) },
+            { name: 'Kasir', color: '#D4691E', values: data.dailyTrend.map(d => d.pos) },
+            { name: 'Konsinyasi', color: '#7C3AED', values: data.dailyTrend.map(d => d.consignment) },
+          ],
+        },
+        {
+          title: 'Pendapatan vs Pengeluaran', type: 'line', labels: data.dailyTrend.map(d => shortDate(d.date)),
+          series: [
+            { name: 'Pendapatan', color: '#15803D', values: data.dailyTrend.map(d => d.pendapatan) },
+            { name: 'Pengeluaran', color: '#DC2626', values: data.dailyTrend.map(d => d.expense) },
+          ],
+        },
+        {
+          title: 'Pengeluaran per Kategori', type: 'bar', labels: data.expenseByCategory.map(c => c.category),
+          series: [{ name: 'Pengeluaran', color: '#DC2626', values: data.expenseByCategory.map(c => c.amount) }],
+        },
+        {
+          title: 'Pemasukan Lain per Kategori', type: 'bar', labels: data.incomeByCategory.map(c => c.category),
+          series: [{ name: 'Pemasukan', color: '#059669', values: data.incomeByCategory.map(c => c.amount) }],
+        },
+      ],
       sections: [
         {
           title: 'Pendapatan per Channel',

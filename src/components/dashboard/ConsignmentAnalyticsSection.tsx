@@ -203,6 +203,11 @@ export default function ConsignmentAnalyticsSection({
   const buildPdf = (): AnalyticsReportData | null => {
     if (!data) return null;
     const sm = data.summary;
+    const active = data.topLocations.filter(l => l.pendapatan > 0 || l.kirim > 0);
+    const best = active.length > 0 ? data.topLocations[0] : null; // topLocations sudah urut pendapatan terbesar
+    const bestRate = active.length > 0 ? [...active].sort((a, b) => b.sellThroughPct - a.sellThroughPct)[0] : null;
+    const bestQty = active.length > 0 ? [...active].sort((a, b) => b.jual - a.jual)[0] : null;
+    const worstUnpaid = [...data.topLocations].sort((a, b) => b.belumLunasAmount - a.belumLunasAmount).find(l => l.belumLunasAmount > 0);
     const sumLoc = (f: (l: ConsignmentAnalyticsData['topLocations'][number]) => number) => data.topLocations.reduce((a, l) => a + f(l), 0);
     return {
       title: 'ANALITIK MITRA',
@@ -217,8 +222,52 @@ export default function ConsignmentAnalyticsSection({
         { label: 'Stok Titip Saat Ini', value: pdfRp(sm.stockValue) },
         { label: `Lunas (${sm.lunas.count} rekap)`, value: pdfRp(sm.lunas.amount) },
         { label: `Belum Lunas (${sm.belumLunas.count} rekap)`, value: pdfRp(sm.belumLunas.amount) },
+        ...(best ? [
+          { label: 'Mitra Terbaik (Pendapatan)', value: `${best.name} - ${pdfRp(best.pendapatan)} (${sm.totalPendapatan > 0 ? Math.round((best.pendapatan / sm.totalPendapatan) * 100) : 0}% dari total)` },
+          { label: 'Tingkat Terjual Tertinggi', value: `${bestRate!.name} - ${bestRate!.sellThroughPct}%` },
+          { label: 'Pcs Terjual Terbanyak', value: `${bestQty!.name} - ${bestQty!.jual} pcs` },
+          ...(worstUnpaid ? [{ label: 'Perlu Perhatian (Belum Lunas Terbesar)', value: `${worstUnpaid.name} - ${pdfRp(worstUnpaid.belumLunasAmount)}` }] : []),
+        ] : []),
+      ],
+      charts: [
+        {
+          title: 'Tren Dikirim vs Pendapatan', type: 'line', labels: data.dailyTrend.map(d => shortDate(d.date)),
+          series: [
+            { name: 'Dikirim', color: '#0284C7', values: data.dailyTrend.map(d => d.kirim) },
+            { name: 'Pendapatan', color: '#059669', values: data.dailyTrend.map(d => d.pendapatan) },
+          ],
+        },
+        {
+          title: 'Mitra Teratas (Pendapatan)', type: 'bar', labels: data.topLocations.slice(0, 8).map(l => l.name),
+          series: [{ name: 'Pendapatan', color: '#D4691E', values: data.topLocations.slice(0, 8).map(l => l.pendapatan) }],
+        },
+        {
+          title: '% Terealisasi per Mitra', type: 'bar', unit: 'pct', labels: [...active].sort((a, b) => b.sellThroughPct - a.sellThroughPct).slice(0, 8).map(l => l.name),
+          series: [{ name: 'Terealisasi', color: '#059669', values: [...active].sort((a, b) => b.sellThroughPct - a.sellThroughPct).slice(0, 8).map(l => l.sellThroughPct) }],
+        },
+        {
+          title: 'Nilai Stok Titip Belum Terealisasi per Mitra', type: 'bar', labels: [...data.topLocations].sort((a, b) => b.stockValue - a.stockValue).filter(l => l.stockValue > 0).slice(0, 8).map(l => l.name),
+          series: [{ name: 'Stok titip', color: '#0284C7', values: [...data.topLocations].sort((a, b) => b.stockValue - a.stockValue).filter(l => l.stockValue > 0).slice(0, 8).map(l => l.stockValue) }],
+        },
+        {
+          title: 'Produk Terlaris di Mitra', type: 'bar', labels: data.topProducts.map(p => p.productName),
+          series: [{ name: 'Pendapatan', color: '#7C3AED', values: data.topProducts.map(p => p.revenue) }],
+        },
       ],
       sections: [
+        {
+          title: 'Peringkat Mitra (berdasarkan Pendapatan)', emptyText: 'Belum ada aktivitas mitra di periode ini.',
+          columns: [
+            { header: 'Rank', width: '7%', align: 'center' }, { header: 'Mitra', width: '27%', bold: true },
+            { header: 'Pendapatan', width: '17%', align: 'right', bold: true }, { header: 'Kontribusi', width: '11%', align: 'right' },
+            { header: 'Terealisasi', width: '12%', align: 'right' }, { header: 'Jual', width: '8%', align: 'right' },
+            { header: 'Retur', width: '8%', align: 'right' }, { header: 'Reject', width: '10%', align: 'right' },
+          ],
+          rows: active.map((l, i) => [
+            i + 1, l.name, pdfRp(l.pendapatan), sm.totalPendapatan > 0 ? `${Math.round((l.pendapatan / sm.totalPendapatan) * 1000) / 10}%` : '-',
+            `${l.sellThroughPct}%`, l.jual, l.retur, l.reject,
+          ]),
+        },
         {
           title: 'Rincian per Lokasi Mitra', emptyText: 'Belum ada lokasi mitra.',
           columns: [

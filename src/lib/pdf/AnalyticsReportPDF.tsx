@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, StyleSheet, Svg, G, Line, Path, Circle } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
 
@@ -12,11 +12,21 @@ export interface AnalyticsPdfSection {
   total?: (string | number)[];
   emptyText?: string;
 }
+// Grafik yang digambar langsung (vektor) di PDF. 'line' = tren beberapa seri atas `labels`;
+// 'bar' = peringkat horizontal (satu seri, `labels` = nama baris).
+export interface AnalyticsPdfChart {
+  title: string;
+  type: 'line' | 'bar';
+  labels: string[];
+  series: { name: string; color: string; values: number[] }[];
+  unit?: 'rp' | 'num' | 'pct';       // default 'rp'
+}
 export interface AnalyticsReportData {
   title: string;                       // mis. "ANALITIK MITRA"
   periodLabel: string;
   generatedAt: string;
   cards: { label: string; value: string }[];
+  charts?: AnalyticsPdfChart[];
   sections: AnalyticsPdfSection[];
 }
 
@@ -57,9 +67,116 @@ const s = StyleSheet.create({
   tTotalCell: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 4 },
   empty: { fontSize: 8.5, color: C.muted, marginBottom: 14 },
 
+  chartBox: { borderWidth: 1, borderColor: C.border, borderRadius: 6, padding: 8, marginBottom: 12 },
+  chartTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold', marginBottom: 4 },
+  legend: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  legendDot: { width: 7, height: 7, borderRadius: 4 },
+  legendText: { fontSize: 7, color: C.muted },
+  barRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  barLabel: { width: '30%', fontSize: 7.5, paddingRight: 6 },
+  barTrack: { flexGrow: 1, height: 9, backgroundColor: '#F3ECE2', borderRadius: 3 },
+  barFill: { height: 9, borderRadius: 3 },
+  barValue: { width: '20%', fontSize: 7.5, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+
   footer: { position: 'absolute', bottom: 18, left: 32, right: 32, textAlign: 'center', fontSize: 7, color: C.muted },
   pageNo: { position: 'absolute', bottom: 18, right: 32, fontSize: 7, color: C.muted },
 });
+
+type Unit = 'rp' | 'num' | 'pct';
+const fmtAxis = (n: number, unit: Unit) => {
+  const a = Math.abs(n);
+  if (unit === 'pct') return `${Math.round(n)}%`;
+  if (unit === 'rp') {
+    if (a >= 1_000_000) return `${(n / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1)}jt`;
+    if (a >= 1_000) return `${(n / 1_000).toFixed(0)}rb`;
+    return String(Math.round(n));
+  }
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(n);
+};
+const fmtFull = (n: number, unit: Unit) => unit === 'pct' ? `${n}%` : unit === 'rp'
+  ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+  : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(n);
+
+// Batas atas sumbu Y yang "bulat" (1/2/5 x 10^n) supaya garis grid rapi.
+function niceMax(v: number): number {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / pow;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+}
+
+function Legend({ series }: { series: AnalyticsPdfChart['series'] }) {
+  return (
+    <View style={s.legend}>
+      {series.map((sr, i) => (
+        <View key={i} style={s.legendItem}>
+          <View style={[s.legendDot, { backgroundColor: sr.color }]} />
+          <Text style={s.legendText}>{sr.name}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function LineChartPdf({ chart }: { chart: AnalyticsPdfChart }) {
+  const unit = chart.unit ?? 'rp';
+  const W = 515, H = 150, L = 38, R = 8, T = 8, B = 20;
+  const pw = W - L - R, ph = H - T - B;
+  const n = chart.labels.length;
+  const max = niceMax(Math.max(0, ...chart.series.flatMap(sr => sr.values)));
+  const x = (i: number) => L + (n <= 1 ? pw / 2 : (i / (n - 1)) * pw);
+  const y = (v: number) => T + ph - (v / max) * ph;
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const step = Math.max(1, Math.ceil(n / 7));
+  const showDots = n <= 31;
+  return (
+    <View style={s.chartBox} wrap={false}>
+      <Text style={s.chartTitle}>{chart.title}</Text>
+      <Legend series={chart.series} />
+      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        {ticks.map((tk, i) => (
+          <Line key={i} x1={L} x2={W - R} y1={T + ph - tk * ph} y2={T + ph - tk * ph} stroke={tk === 0 ? '#C9BBA8' : C.border} strokeWidth={0.7} strokeDasharray={tk === 0 ? undefined : '3 3'} />
+        ))}
+        {ticks.map((tk, i) => (
+          <Text key={`y${i}`} x={L - 4} y={T + ph - tk * ph + 2.5} style={{ fontSize: 6.5, fill: C.muted }} textAnchor="end">{fmtAxis(max * tk, unit)}</Text>
+        ))}
+        {chart.labels.map((lb, i) => (i % step === 0 || i === n - 1) && (
+          <Text key={`x${i}`} x={x(i)} y={H - 6} style={{ fontSize: 6.5, fill: C.muted }} textAnchor="middle">{lb}</Text>
+        ))}
+        {chart.series.map((sr, si) => (
+          <G key={si}>
+            {n > 1 && <Path d={sr.values.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')} stroke={sr.color} strokeWidth={2} fill="none" />}
+            {showDots && sr.values.map((v, i) => <Circle key={i} cx={x(i)} cy={y(v)} r={2.6} fill={sr.color} stroke="#FFFFFF" strokeWidth={0.8} />)}
+          </G>
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+function BarChartPdf({ chart }: { chart: AnalyticsPdfChart }) {
+  const unit = chart.unit ?? 'rp';
+  const sr = chart.series[0];
+  const max = Math.max(1, ...sr.values);
+  return (
+    <View style={s.chartBox} wrap={false}>
+      <Text style={s.chartTitle}>{chart.title}</Text>
+      {chart.labels.map((lb, i) => (
+        <View key={i} style={s.barRow}>
+          <Text style={s.barLabel}>{lb.length > 28 ? `${lb.slice(0, 27)}.` : lb}</Text>
+          <View style={s.barTrack}><View style={[s.barFill, { width: `${Math.max(1.5, (sr.values[i] / max) * 100)}%`, backgroundColor: sr.color }]} /></View>
+          <Text style={s.barValue}>{fmtFull(sr.values[i], unit)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function Chart({ chart }: { chart: AnalyticsPdfChart }) {
+  if (chart.labels.length === 0 || chart.series.length === 0) return null;
+  return chart.type === 'line' ? <LineChartPdf chart={chart} /> : <BarChartPdf chart={chart} />;
+}
 
 function Section({ sec }: { sec: AnalyticsPdfSection }) {
   return (
@@ -125,6 +242,8 @@ export default function AnalyticsReportPDF({ data, store }: { data: AnalyticsRep
             ))}
           </View>
         )}
+
+        {(data.charts ?? []).map((ch, i) => <Chart key={i} chart={ch} />)}
 
         {data.sections.map((sec, i) => <Section key={i} sec={sec} />)}
 

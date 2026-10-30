@@ -207,6 +207,27 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
         { label: 'Tingkat Terjual', value: `${s.sellThroughPct}%` }, { label: 'Saldo Dompet Lapak', value: pdfRp(s.walletTotal) },
         { label: 'Omzet Periode Sebelumnya', value: pdfRp(s.prevRevenue) }, { label: 'Stok Mati', value: `${s.deadStockCount} item / ${pdfRp(s.deadStockValue)}` },
       ],
+      charts: [
+        {
+          title: 'Tren Omzet Harian', type: 'line', labels: data.daily.map(d => shortDate(d.date)),
+          series: [
+            { name: 'Periode ini', color: '#D4691E', values: data.daily.map(d => d.revenue) },
+            { name: 'Periode sebelumnya', color: '#A08468', values: data.daily.map(d => d.prev) },
+          ],
+        },
+        {
+          title: 'Omzet per Lapak', type: 'bar', labels: data.stalls.slice(0, 8).map(x => x.name),
+          series: [{ name: 'Omzet', color: '#D4691E', values: data.stalls.slice(0, 8).map(x => x.revenue) }],
+        },
+        {
+          title: 'Produk Terlaris', type: 'bar', labels: data.topProducts.slice(0, 8).map(p => p.name),
+          series: [{ name: 'Omzet', color: '#7C3AED', values: data.topProducts.slice(0, 8).map(p => p.revenue) }],
+        },
+        {
+          title: 'Transaksi per Jam', type: 'line', unit: 'num', labels: data.hours.map(h => String(h.hour).padStart(2, '0')),
+          series: [{ name: 'Transaksi', color: '#0284C7', values: data.hours.map(h => h.count) }],
+        },
+      ],
       sections: [
         {
           title: 'Omzet per Lapak', emptyText: 'Belum ada penjualan di periode ini.',

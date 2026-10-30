@@ -1249,6 +1249,23 @@ export default function AdminPage() {
                 { label: 'Halaman / Pengunjung', value: ws.visitors > 0 ? (ws.pageViews / ws.visitors).toFixed(1) : '-' },
                 { label: 'Perangkat', value: `Mobile ${pct(ws.mobile)} / Desktop ${pct(ws.desktop)}` },
               ],
+              charts: [
+                {
+                  title: 'Tren Pageview & Pengunjung Unik', type: 'line', unit: 'num', labels: ws.daily.map(d => shortDate(d.date)),
+                  series: [
+                    { name: 'Pageview', color: '#0284C7', values: ws.daily.map(d => d.views) },
+                    { name: 'Pengunjung unik', color: '#7C3AED', values: ws.daily.map(d => d.visitors) },
+                  ],
+                },
+                {
+                  title: 'Halaman Terpopuler', type: 'bar', unit: 'num', labels: ws.topPages.slice(0, 6).map(p => pageLabel(p.path)),
+                  series: [{ name: 'Pengunjung', color: '#0284C7', values: ws.topPages.slice(0, 6).map(p => p.visitors) }],
+                },
+                {
+                  title: 'Produk Terpopuler (Klik)', type: 'bar', unit: 'num', labels: ws.topProducts.slice(0, 6).map(p => p.name),
+                  series: [{ name: 'Klik', color: '#D4691E', values: ws.topProducts.slice(0, 6).map(p => p.clicks) }],
+                },
+              ],
               sections: [
                 {
                   title: 'Tren Pageview Harian', emptyText: 'Belum ada data kunjungan.',
