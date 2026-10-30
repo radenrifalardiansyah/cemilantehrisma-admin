@@ -135,6 +135,9 @@ export async function GET(req: NextRequest) {
     });
   });
 
+  // Mitra yang belum punya kirim/rekap di periode ini (mis. baru ditambahkan) tetap ditampilkan dengan nilai 0.
+  locations.forEach(l => { getLocAgg(l.id); });
+
   const topLocations = [...locAgg.entries()]
     .map(([id, a]) => {
       const totalUnits = a.jual + a.retur + a.reject;
