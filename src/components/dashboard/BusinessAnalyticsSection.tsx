@@ -13,6 +13,8 @@ import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
 import { SALDO_AWAL_KEY } from '@/lib/finance';
 import PageLoader from '@/components/PageLoader';
+import AnalyticsPdfButton from './AnalyticsPdfButton';
+import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };
@@ -116,11 +118,12 @@ interface Props {
   onCustomFromChange: (v: string) => void;
   onCustomToChange: (v: string) => void;
   onNavigateFinance: () => void;
+  creds: string; // untuk kop toko di PDF
 }
 
 export default function BusinessAnalyticsSection({
   data, loading, period, customFrom, customTo,
-  onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateFinance,
+  onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateFinance, creds,
 }: Props) {
   // "Saldo Awal" (kas sebelum mulai pakai aplikasi ini) diisi manual di tab Jurnal Kas Laporan
   // Keuangan, disimpan di localStorage browser yang sama — dibaca ulang di sini supaya "Saldo Kas
@@ -130,6 +133,74 @@ export default function BusinessAnalyticsSection({
     const saved = localStorage.getItem(SALDO_AWAL_KEY);
     if (saved) setSaldoAwal(parseFloat(saved) || 0);
   }, []);
+
+  const buildPdf = (): AnalyticsReportData | null => {
+    if (!data) return null;
+    const f = data.finance;
+    const catRows = (list: { category: string; amount: number }[]) => {
+      const tot = list.reduce((a, c) => a + c.amount, 0);
+      return { rows: list.map((c, i) => [i + 1, c.category, pdfRp(c.amount), tot > 0 ? `${Math.round((c.amount / tot) * 1000) / 10}%` : '-']), total: ['', 'Total', pdfRp(tot), ''] as (string | number)[] };
+    };
+    const catCols = [
+      { header: 'No', width: '8%', align: 'center' as const }, { header: 'Kategori', width: '50%', bold: true },
+      { header: 'Jumlah', width: '25%', align: 'right' as const }, { header: 'Porsi', width: '17%', align: 'right' as const },
+    ];
+    const exp = catRows(data.expenseByCategory);
+    const inc = catRows(data.incomeByCategory);
+    return {
+      title: 'ANALITIK BISNIS',
+      periodLabel: `${pdfDate(data.period.from)} - ${pdfDate(data.period.to)}`,
+      generatedAt: pdfNow(),
+      cards: [
+        { label: 'Saldo Kas Saat Ini', value: pdfRp(saldoAwal + data.cash.allTimeTx) },
+        { label: 'Total Pendapatan', value: pdfRp(data.channels.total) },
+        { label: 'Laba Kotor', value: pdfRp(f.labaKotor) },
+        { label: 'Laba Bersih', value: pdfRp(f.labaBersih) },
+      ],
+      sections: [
+        {
+          title: 'Pendapatan per Channel',
+          columns: [{ header: 'Channel', width: '60%', bold: true }, { header: 'Jumlah', width: '40%', align: 'right' }],
+          rows: [
+            ['Penjualan Online', pdfRp(data.channels.online)], ['Penjualan Kasir (POS)', pdfRp(data.channels.pos)],
+            ['Konsinyasi', pdfRp(data.channels.consignment)], ['Pemasukan Lain', pdfRp(data.channels.incomeLain)],
+          ],
+          total: ['Total Pendapatan', pdfRp(data.channels.total)],
+        },
+        {
+          title: 'Ringkasan Keuangan',
+          columns: [{ header: 'Komponen', width: '60%', bold: true }, { header: 'Jumlah', width: '40%', align: 'right' }],
+          rows: [
+            ['Pendapatan', pdfRp(f.pendapatan)], ['HPP', pdfRp(f.hpp)], ['Laba Kotor', pdfRp(f.labaKotor)],
+            ['Beban Operasional', pdfRp(f.bebanOperasional)],
+            ...(f.selisihStok != null ? [['Selisih Stok', pdfRp(f.selisihStok)]] : []),
+          ],
+          total: ['Laba Bersih', pdfRp(f.labaBersih)],
+        },
+        { title: 'Pengeluaran per Kategori', columns: catCols, rows: exp.rows, total: exp.total, emptyText: 'Belum ada pengeluaran di periode ini.' },
+        { title: 'Pemasukan Lain per Kategori', columns: catCols, rows: inc.rows, total: inc.total, emptyText: 'Belum ada pemasukan lain di periode ini.' },
+        {
+          title: `Bahan Baku (${data.materials.count} item, ${data.materials.lowStockCount} stok menipis)`,
+          columns: [
+            { header: 'No', width: '7%', align: 'center' }, { header: 'Bahan', width: '33%', bold: true },
+            { header: 'Stok', width: '18%', align: 'right' }, { header: 'Harga Rata-rata', width: '20%', align: 'right' }, { header: 'Nilai', width: '22%', align: 'right', bold: true },
+          ],
+          rows: data.materials.topByValue.map((m, i) => [i + 1, m.name, `${formatQty(m.stockQty)} ${m.unit}`, pdfRp(m.avgCost), pdfRp(m.value)]),
+          total: ['', 'Total nilai stok bahan', '', '', pdfRp(data.materials.totalValue)],
+          emptyText: 'Belum ada data bahan baku.',
+        },
+        {
+          title: 'Tren Harian',
+          columns: [
+            { header: 'Tanggal', width: '14%' }, { header: 'Online', width: '15%', align: 'right' }, { header: 'Kasir', width: '15%', align: 'right' },
+            { header: 'Konsinyasi', width: '15%', align: 'right' }, { header: 'Pendapatan', width: '21%', align: 'right', bold: true }, { header: 'Pengeluaran', width: '20%', align: 'right' },
+          ],
+          rows: data.dailyTrend.map(d => [pdfDate(d.date), pdfRp(d.online), pdfRp(d.pos), pdfRp(d.consignment), pdfRp(d.pendapatan), pdfRp(d.expense)]),
+          total: ['Total', pdfRp(data.dailyTrend.reduce((a, d) => a + d.online, 0)), pdfRp(data.dailyTrend.reduce((a, d) => a + d.pos, 0)), pdfRp(data.dailyTrend.reduce((a, d) => a + d.consignment, 0)), pdfRp(data.dailyTrend.reduce((a, d) => a + d.pendapatan, 0)), pdfRp(data.dailyTrend.reduce((a, d) => a + d.expense, 0))],
+        },
+      ],
+    };
+  };
 
   return (
     <div className="space-y-5">
@@ -175,6 +246,8 @@ export default function BusinessAnalyticsSection({
               {p.label}
             </button>
           ))}
+          <AnalyticsPdfButton creds={creds} build={buildPdf} disabled={!data || loading}
+            filename={data ? `analitik-bisnis-${data.period.from}_${data.period.to}.pdf` : 'analitik-bisnis.pdf'} />
         </div>
       </div>
 
@@ -235,13 +308,13 @@ export default function BusinessAnalyticsSection({
                 <ResponsiveContainer>
                   <AreaChart data={data.dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <defs><linearGradient id="bizOnlineFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0284C7" stopOpacity={0.26} /><stop offset="100%" stopColor="#0284C7" stopOpacity={0} /></linearGradient><linearGradient id="bizPosFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4691E" stopOpacity={0.26} /><stop offset="100%" stopColor="#D4691E" stopOpacity={0} /></linearGradient><linearGradient id="bizConsFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C3AED" stopOpacity={0.26} /><stop offset="100%" stopColor="#7C3AED" stopOpacity={0} /></linearGradient></defs>
-                    <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                    <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
                     <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
                     <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
                     <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-                    <Area type="monotone" dataKey="online" name="Online" stackId="ch" stroke="#0284C7" fill="url(#bizOnlineFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
-                    <Area type="monotone" dataKey="pos" name="Kasir" stackId="ch" stroke="#D4691E" fill="url(#bizPosFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
-                    <Area type="monotone" dataKey="consignment" name="Konsinyasi" stackId="ch" stroke="#7C3AED" fill="url(#bizConsFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="online" name="Online" stackId="ch" stroke="#0284C7" fill="url(#bizOnlineFill)" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#0284C7' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="pos" name="Kasir" stackId="ch" stroke="#D4691E" fill="url(#bizPosFill)" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="consignment" name="Konsinyasi" stackId="ch" stroke="#7C3AED" fill="url(#bizConsFill)" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#7C3AED' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -288,12 +361,12 @@ export default function BusinessAnalyticsSection({
                 <div style={{ width: '100%', height: 200 }}>
                   <ResponsiveContainer>
                     <LineChart data={data.dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                      <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
                       <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
                       <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
                       <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-                      <Line type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#15803D" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
-                      <Line type="monotone" dataKey="expense" name="Pengeluaran" stroke="#DC2626" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                      <Line type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#15803D" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#15803D' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                      <Line type="monotone" dataKey="expense" name="Pengeluaran" stroke="#DC2626" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#DC2626' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

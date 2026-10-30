@@ -60,6 +60,8 @@ import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer }
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 import TopListChart from '@/components/dashboard/TopListChart';
 import BusinessAnalyticsSection, { type BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
+import AnalyticsPdfButton from '@/components/dashboard/AnalyticsPdfButton';
+import { pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import LapakAnalyticsSection from '@/components/dashboard/LapakAnalyticsSection';
 import { type PeriodKey, periodRange } from '@/lib/period';
@@ -183,14 +185,14 @@ function RevenueChart({ data }: { data: { date: string; revenue: number; count: 
               <stop offset="100%" stopColor="#D4691E" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+          <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
           <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
             axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
           <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
             axisLine={false} tickLine={false} width={48} tickCount={5} />
           <RechartsTooltip content={<RevenueTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-          <Area type="monotone" dataKey="revenue" name="Pendapatan" stroke="#D4691E" strokeWidth={2.5}
-            fill="url(#dashRevenueFill)" dot={data.length === 1 ? { r: 4 } : false}
+          <Area type="monotone" dataKey="revenue" name="Pendapatan" stroke="#D4691E" strokeWidth={3}
+            fill="url(#dashRevenueFill)" dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }}
             activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} />
         </AreaChart>
       </ResponsiveContainer>
@@ -227,7 +229,7 @@ function PageviewChart({ data }: { data: { date: string; views: number; visitors
       <div style={{ width: '100%', height: 240 }}>
         <ResponsiveContainer>
           <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+            <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
             <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
               axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
             <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
@@ -235,8 +237,8 @@ function PageviewChart({ data }: { data: { date: string; views: number; visitors
             <RechartsTooltip content={<PageviewTooltip />} cursor={{ fill: 'var(--border-2)', fillOpacity: 0.5 }} />
             {avgViews > 0 && <ReferenceLine y={avgViews} stroke="#0284C7" strokeOpacity={0.5} strokeDasharray="5 4" />}
             <Bar dataKey="views" name="Pageview" fill="#0284C7" fillOpacity={0.85} radius={[4, 4, 0, 0]} maxBarSize={28} />
-            <Line type="monotone" dataKey="visitors" name="Pengunjung unik" stroke="#7C3AED" strokeWidth={2.5}
-              dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#7C3AED' }} />
+            <Line type="monotone" dataKey="visitors" name="Pengunjung unik" stroke="#7C3AED" strokeWidth={3}
+              dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#7C3AED' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#7C3AED' }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1214,6 +1216,7 @@ export default function AdminPage() {
           </div>
         </div>
 
+        <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--surface-2)' }}>
           {([7, 30] as const).map(r => (
             <button key={r} onClick={() => changeWebRange(r)} disabled={webLoading}
@@ -1226,6 +1229,59 @@ export default function AdminPage() {
               {r} hari
             </button>
           ))}
+        </div>
+        <AnalyticsPdfButton creds={creds} disabled={webLoading || !dashData?.webStats}
+          filename={`analitik-web-${webRange}-hari-${new Date().toLocaleDateString('en-CA')}.pdf`}
+          build={(): AnalyticsReportData | null => {
+            const ws = dashData?.webStats;
+            if (!ws) return null;
+            const devTotal = ws.mobile + ws.desktop;
+            const pct = (n: number) => devTotal > 0 ? `${Math.round((n / devTotal) * 100)}%` : '-';
+            const last = ws.daily[ws.daily.length - 1]?.date;
+            const first = ws.daily[0]?.date;
+            return {
+              title: 'ANALITIK PENGUNJUNG WEB',
+              periodLabel: first && last ? `${pdfDate(first)} - ${pdfDate(last)} (${webRange} hari)` : `${webRange} hari terakhir`,
+              generatedAt: pdfNow(),
+              cards: [
+                { label: 'Pengunjung Unik', value: ws.visitors.toLocaleString('id') },
+                { label: 'Total Pageview', value: ws.pageViews.toLocaleString('id') },
+                { label: 'Halaman / Pengunjung', value: ws.visitors > 0 ? (ws.pageViews / ws.visitors).toFixed(1) : '-' },
+                { label: 'Perangkat', value: `Mobile ${pct(ws.mobile)} / Desktop ${pct(ws.desktop)}` },
+              ],
+              sections: [
+                {
+                  title: 'Tren Pageview Harian', emptyText: 'Belum ada data kunjungan.',
+                  columns: [{ header: 'Tanggal', width: '40%' }, { header: 'Pageview', width: '30%', align: 'right', bold: true }, { header: 'Pengunjung', width: '30%', align: 'right' }],
+                  rows: ws.daily.map(d => [pdfDate(d.date), d.views, d.visitors]),
+                  total: ['Total', ws.daily.reduce((a, d) => a + d.views, 0), ws.daily.reduce((a, d) => a + d.visitors, 0)],
+                },
+                {
+                  title: 'Halaman Terpopuler', emptyText: 'Belum ada data.',
+                  columns: [{ header: 'No', width: '8%', align: 'center' }, { header: 'Halaman', width: '62%', bold: true }, { header: 'Pengunjung', width: '30%', align: 'right' }],
+                  rows: ws.topPages.map((p, i) => [i + 1, pageLabel(p.path), p.visitors]),
+                },
+                {
+                  title: 'Menu Terklik', emptyText: 'Belum ada data.',
+                  columns: [{ header: 'No', width: '8%', align: 'center' }, { header: 'Menu', width: '62%', bold: true }, { header: 'Klik', width: '30%', align: 'right' }],
+                  rows: ws.topMenu.map((m, i) => [i + 1, pageLabel(m.path), m.count]),
+                  total: ['', 'Total', ws.topMenu.reduce((a, m) => a + m.count, 0)],
+                },
+                {
+                  title: 'Kategori Terpopuler', emptyText: 'Belum ada data.',
+                  columns: [{ header: 'No', width: '8%', align: 'center' }, { header: 'Kategori', width: '62%', bold: true }, { header: 'Dilihat', width: '30%', align: 'right' }],
+                  rows: ws.topCategories.map((c, i) => [i + 1, c.name, c.count]),
+                  total: ['', 'Total', ws.topCategories.reduce((a, c) => a + c.count, 0)],
+                },
+                {
+                  title: 'Produk Terpopuler', emptyText: 'Belum ada data.',
+                  columns: [{ header: 'No', width: '8%', align: 'center' }, { header: 'Produk', width: '52%', bold: true }, { header: 'Klik', width: '20%', align: 'right' }, { header: 'Tambah ke Keranjang', width: '20%', align: 'right' }],
+                  rows: ws.topProducts.map((p, i) => [i + 1, p.name, p.clicks, p.addToCart]),
+                  total: ['', 'Total', ws.topProducts.reduce((a, p) => a + p.clicks, 0), ws.topProducts.reduce((a, p) => a + p.addToCart, 0)],
+                },
+              ],
+            };
+          }} />
         </div>
       </div>
 
@@ -1435,6 +1491,7 @@ export default function AdminPage() {
           onCustomFromChange={setBizCustomFrom}
           onCustomToChange={setBizCustomTo}
           onNavigateFinance={() => setActiveTab('finance-report')}
+          creds={creds}
         />
       )}
 
@@ -1451,6 +1508,7 @@ export default function AdminPage() {
           onCustomFromChange={setMitraCustomFrom}
           onCustomToChange={setMitraCustomTo}
           onNavigateLocation={() => setActiveTab('consignment')}
+          creds={creds}
         />
       )}
 

@@ -3728,6 +3728,7 @@ _${storeHeader.name}_`.trim();
             onCustomFromChange={setAnalyticsCustomFrom}
             onCustomToChange={setAnalyticsCustomTo}
             onNavigateLocation={() => setSubTab('lokasi')}
+            creds={creds}
           />
         </div>
       )}

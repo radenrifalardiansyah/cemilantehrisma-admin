@@ -11,6 +11,8 @@ import {
 import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
+import AnalyticsPdfButton from './AnalyticsPdfButton';
+import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 
 export interface ConsignmentAnalyticsData {
   period: { from: string; to: string };
@@ -191,12 +193,64 @@ interface Props {
   onCustomFromChange: (v: string) => void;
   onCustomToChange: (v: string) => void;
   onNavigateLocation?: (locationId: string) => void;
+  creds: string; // untuk header toko di PDF
 }
 
 export default function ConsignmentAnalyticsSection({
   data, loading, period, customFrom, customTo,
-  onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateLocation,
+  onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateLocation, creds,
 }: Props) {
+  const buildPdf = (): AnalyticsReportData | null => {
+    if (!data) return null;
+    const sm = data.summary;
+    const sumLoc = (f: (l: ConsignmentAnalyticsData['topLocations'][number]) => number) => data.topLocations.reduce((a, l) => a + f(l), 0);
+    return {
+      title: 'ANALITIK MITRA',
+      periodLabel: `${pdfDate(data.period.from)} - ${pdfDate(data.period.to)}`,
+      generatedAt: pdfNow(),
+      cards: [
+        { label: 'Total Mitra', value: String(sm.totalPartners) },
+        { label: 'Nilai Dikirim', value: pdfRp(sm.totalKirim) },
+        { label: 'Pendapatan', value: pdfRp(sm.totalPendapatan) },
+        { label: 'Tingkat Terjual', value: `${sm.sellThroughPct}%` },
+        { label: 'Selisih (Kirim - Pendapatan)', value: pdfRp(sm.totalSelisih) },
+        { label: 'Stok Titip Saat Ini', value: pdfRp(sm.stockValue) },
+        { label: `Lunas (${sm.lunas.count} rekap)`, value: pdfRp(sm.lunas.amount) },
+        { label: `Belum Lunas (${sm.belumLunas.count} rekap)`, value: pdfRp(sm.belumLunas.amount) },
+      ],
+      sections: [
+        {
+          title: 'Rincian per Lokasi Mitra', emptyText: 'Belum ada lokasi mitra.',
+          columns: [
+            { header: 'No', width: '5%', align: 'center' }, { header: 'Mitra', width: '23%', bold: true },
+            { header: 'Dikirim', width: '14%', align: 'right' }, { header: 'Pendapatan', width: '14%', align: 'right', bold: true },
+            { header: 'Selisih', width: '12%', align: 'right' }, { header: 'Terjual', width: '8%', align: 'right' },
+            { header: 'Lunas', width: '12%', align: 'right' }, { header: 'Belum Lunas', width: '12%', align: 'right' },
+          ],
+          rows: data.topLocations.map((l, i) => [i + 1, l.name, pdfRp(l.kirim), pdfRp(l.pendapatan), pdfRp(l.selisih), `${l.sellThroughPct}%`, pdfRp(l.lunasAmount), pdfRp(l.belumLunasAmount)]),
+          total: ['', `Total (${data.topLocations.length} mitra)`, pdfRp(sumLoc(l => l.kirim)), pdfRp(sumLoc(l => l.pendapatan)), pdfRp(sumLoc(l => l.selisih)), `${sm.sellThroughPct}%`, pdfRp(sumLoc(l => l.lunasAmount)), pdfRp(sumLoc(l => l.belumLunasAmount))],
+        },
+        {
+          title: 'Produk Terlaris di Mitra', emptyText: 'Belum ada penjualan di periode ini.',
+          columns: [
+            { header: 'No', width: '8%', align: 'center' }, { header: 'Produk', width: '52%', bold: true },
+            { header: 'Qty Terjual', width: '15%', align: 'right' }, { header: 'Pendapatan', width: '25%', align: 'right', bold: true },
+          ],
+          rows: data.topProducts.map((p, i) => [i + 1, p.productName, p.qtySold, pdfRp(p.revenue)]),
+          total: ['', 'Total', data.topProducts.reduce((a, p) => a + p.qtySold, 0), pdfRp(data.topProducts.reduce((a, p) => a + p.revenue, 0))],
+        },
+        {
+          title: 'Tren Harian (Dikirim vs Pendapatan)',
+          columns: [
+            { header: 'Tanggal', width: '30%' }, { header: 'Dikirim', width: '35%', align: 'right' }, { header: 'Pendapatan', width: '35%', align: 'right', bold: true },
+          ],
+          rows: data.dailyTrend.map(d => [pdfDate(d.date), pdfRp(d.kirim), pdfRp(d.pendapatan)]),
+          total: ['Total', pdfRp(data.dailyTrend.reduce((a, d) => a + d.kirim, 0)), pdfRp(data.dailyTrend.reduce((a, d) => a + d.pendapatan, 0))],
+        },
+      ],
+    };
+  };
+
   return (
     <div className="space-y-5">
       {/* Header + pemilih periode */}
@@ -221,6 +275,8 @@ export default function ConsignmentAnalyticsSection({
               {p.label}
             </button>
           ))}
+          <AnalyticsPdfButton creds={creds} build={buildPdf} disabled={!data || loading}
+            filename={data ? `analitik-mitra-${data.period.from}_${data.period.to}.pdf` : 'analitik-mitra.pdf'} />
         </div>
       </div>
 
@@ -280,12 +336,12 @@ export default function ConsignmentAnalyticsSection({
                 <ResponsiveContainer>
                   <AreaChart data={data.dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <defs><linearGradient id="consSendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0284C7" stopOpacity={0.26} /><stop offset="100%" stopColor="#0284C7" stopOpacity={0} /></linearGradient><linearGradient id="consRevFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#059669" stopOpacity={0.26} /><stop offset="100%" stopColor="#059669" stopOpacity={0} /></linearGradient></defs>
-                    <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                    <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
                     <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
                     <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
                     <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-                    <Area type="monotone" dataKey="kirim" name="Dikirim" stroke="#0284C7" fill="url(#consSendFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
-                    <Area type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#059669" fill="url(#consRevFill)" strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="kirim" name="Dikirim" stroke="#0284C7" fill="url(#consSendFill)" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#0284C7' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="pendapatan" name="Pendapatan" stroke="#059669" fill="url(#consRevFill)" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#059669' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -366,7 +422,7 @@ export default function ConsignmentAnalyticsSection({
                 <div style={{ width: '100%', height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={pcsSummary} margin={{ top: 20, right: 8, left: -18, bottom: 0 }} barCategoryGap={24}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                      <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
                       <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 700, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
                       <Tooltip content={<PcsSummaryTooltip />} cursor={{ fill: 'var(--surface-2)' }} />

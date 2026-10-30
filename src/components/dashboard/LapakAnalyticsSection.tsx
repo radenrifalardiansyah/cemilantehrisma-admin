@@ -11,6 +11,8 @@ import FilterSelect from '@/components/FilterSelect';
 import TopListChart from './TopListChart';
 import PeriodBar from '@/components/tabs/titip-jual/PeriodBar';
 import PageLoader from '@/components/PageLoader';
+import AnalyticsPdfButton from './AnalyticsPdfButton';
+import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { periodRange, type PeriodKey } from '@/lib/period';
 
 interface LapakAnalytics {
@@ -186,6 +188,69 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
   const dowData = data.weekdays.map(w => ({ ...w, label: DOW[w.dow - 1] }));
   const peakHourLabel = peakHour && peakHour.count > 0 ? `${String(peakHour.hour).padStart(2, '0')}.00–${String((peakHour.hour + 1) % 24).padStart(2, '0')}.00` : '';
 
+  const stallLabel = data.stallOptions.find(o => o.id === stallId)?.name;
+  const buildPdf = (): AnalyticsReportData => {
+    const stockCols = [
+      { header: 'No', width: '6%', align: 'center' as const }, { header: 'Produk', width: '30%', bold: true }, { header: 'Lapak', width: '20%' },
+      { header: 'Penitip', width: '20%' }, { header: 'Stok', width: '9%', align: 'right' as const }, { header: 'Terjual', width: '15%', align: 'right' as const },
+    ];
+    const stockRows = (list: StockRow[]) => list.map((r, i) => [i + 1, r.name, r.stallName, r.consignorName, r.stock, r.sold]);
+    return {
+      title: 'ANALITIK LAPAK',
+      periodLabel: `${pdfDate(from)} - ${pdfDate(to)}${stallLabel ? ` (${stallLabel})` : ' (Semua lapak)'}`,
+      generatedAt: pdfNow(),
+      cards: [
+        { label: 'Omzet', value: pdfRp(s.revenue) }, { label: 'Transaksi', value: String(s.count) },
+        { label: 'Rata-rata / Transaksi', value: pdfRp(s.avgTicket) }, { label: 'Barang Terjual', value: String(s.itemsSold) },
+        { label: 'Pendapatan Toko', value: pdfRp(s.storeIncome) }, { label: 'Bagian Penitip', value: pdfRp(s.consignorShare) },
+        { label: 'Hutang ke Penitip (Belum Dibayar)', value: pdfRp(s.liabilityUnpaid) }, { label: 'Nilai Stok', value: pdfRp(s.stockValue) },
+        { label: 'Tingkat Terjual', value: `${s.sellThroughPct}%` }, { label: 'Saldo Dompet Lapak', value: pdfRp(s.walletTotal) },
+        { label: 'Omzet Periode Sebelumnya', value: pdfRp(s.prevRevenue) }, { label: 'Stok Mati', value: `${s.deadStockCount} item / ${pdfRp(s.deadStockValue)}` },
+      ],
+      sections: [
+        {
+          title: 'Omzet per Lapak', emptyText: 'Belum ada penjualan di periode ini.',
+          columns: [{ header: 'No', width: '8%', align: 'center' }, { header: 'Lapak', width: '42%', bold: true }, { header: 'Transaksi', width: '20%', align: 'right' }, { header: 'Omzet', width: '30%', align: 'right', bold: true }],
+          rows: data.stalls.map((x, i) => [i + 1, x.name, x.count, pdfRp(x.revenue)]),
+          total: ['', 'Total', data.stalls.reduce((a, x) => a + x.count, 0), pdfRp(data.stalls.reduce((a, x) => a + x.revenue, 0))],
+        },
+        {
+          title: 'Produk Terlaris', emptyText: 'Belum ada produk terjual.',
+          columns: [{ header: 'No', width: '7%', align: 'center' }, { header: 'Produk', width: '43%', bold: true }, { header: 'Jenis', width: '15%' }, { header: 'Qty', width: '12%', align: 'right' }, { header: 'Omzet', width: '23%', align: 'right', bold: true }],
+          rows: data.topProducts.map((p, i) => [i + 1, p.name, p.kind === 'own' ? 'Produk toko' : 'Titipan', p.qty, pdfRp(p.revenue)]),
+          total: ['', 'Total', '', data.topProducts.reduce((a, p) => a + p.qty, 0), pdfRp(data.topProducts.reduce((a, p) => a + p.revenue, 0))],
+        },
+        {
+          title: 'Penitip', emptyText: 'Belum ada penjualan titipan.',
+          columns: [{ header: 'No', width: '7%', align: 'center' }, { header: 'Penitip', width: '31%', bold: true }, { header: 'Qty', width: '10%', align: 'right' }, { header: 'Penjualan Kotor', width: '20%', align: 'right' }, { header: 'Bagian Penitip', width: '16%', align: 'right' }, { header: 'Bagian Toko', width: '16%', align: 'right' }],
+          rows: data.consignors.map((c, i) => [i + 1, c.name, c.qty, pdfRp(c.gross), pdfRp(c.owed), pdfRp(c.ours)]),
+          total: ['', 'Total', data.consignors.reduce((a, c) => a + c.qty, 0), pdfRp(data.consignors.reduce((a, c) => a + c.gross, 0)), pdfRp(data.consignors.reduce((a, c) => a + c.owed, 0)), pdfRp(data.consignors.reduce((a, c) => a + c.ours, 0))],
+        },
+        {
+          title: 'Hutang ke Penitip', emptyText: 'Tidak ada hutang ke penitip.',
+          columns: [{ header: 'No', width: '8%', align: 'center' }, { header: 'Penitip', width: '32%', bold: true }, { header: 'Belum Disettle', width: '20%', align: 'right' }, { header: 'Belum Dibayar', width: '20%', align: 'right' }, { header: 'Total', width: '20%', align: 'right', bold: true }],
+          rows: data.liabilities.map((l, i) => [i + 1, l.name, pdfRp(l.unsettled), pdfRp(l.unpaid), pdfRp(l.total)]),
+          total: ['', 'Total', pdfRp(data.liabilities.reduce((a, l) => a + l.unsettled, 0)), pdfRp(data.liabilities.reduce((a, l) => a + l.unpaid, 0)), pdfRp(data.liabilities.reduce((a, l) => a + l.total, 0))],
+        },
+        {
+          title: 'Metode Pembayaran', emptyText: 'Belum ada transaksi.',
+          columns: [{ header: 'Metode', width: '40%', bold: true }, { header: 'Transaksi', width: '25%', align: 'right' }, { header: 'Jumlah', width: '35%', align: 'right', bold: true }],
+          rows: data.methods.map(m => [METHOD_STYLE[m.method]?.label ?? m.method, m.count, pdfRp(m.amount)]),
+          total: ['Total', data.methods.reduce((a, m) => a + m.count, 0), pdfRp(methodTotal)],
+        },
+        {
+          title: 'Tren Omzet Harian', emptyText: 'Belum ada data.',
+          columns: [{ header: 'Tanggal', width: '30%' }, { header: 'Periode Ini', width: '35%', align: 'right', bold: true }, { header: 'Periode Sebelumnya', width: '35%', align: 'right' }],
+          rows: data.daily.map(d => [pdfDate(d.date), pdfRp(d.revenue), pdfRp(d.prev)]),
+          total: ['Total', pdfRp(data.daily.reduce((a, d) => a + d.revenue, 0)), pdfRp(data.daily.reduce((a, d) => a + d.prev, 0))],
+        },
+        { title: 'Stok Mati (Tidak Laku)', columns: stockCols, rows: stockRows(data.deadStock), emptyText: 'Tidak ada stok mati.' },
+        { title: 'Stok Menipis', columns: stockCols, rows: stockRows(data.lowStock), emptyText: 'Tidak ada stok menipis.' },
+        { title: 'Stok Habis', columns: stockCols, rows: stockRows(data.soldOut), emptyText: 'Tidak ada stok habis.' },
+      ],
+    };
+  };
+
   return (
     <div className="space-y-5">
       {header}
@@ -195,6 +260,8 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
           <FilterSelect value={stallId} onChange={setStallId} searchPlaceholder="Cari lapak…"
             options={[{ value: '', label: 'Semua lapak' }, ...data.stallOptions.map(o => ({ value: o.id, label: o.name }))]} />
         </div>
+        <AnalyticsPdfButton creds={creds} build={buildPdf} disabled={state === 'loading'}
+          filename={`analitik-lapak-${from}_${to}.pdf`} />
       </div>
 
       <div style={{ opacity: state === 'loading' ? 0.6 : 1, transition: 'opacity 0.15s' }} className="space-y-5">
@@ -226,7 +293,7 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
                     <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={28} tickMargin={8} />
                     <YAxis tickFormatter={compactRp} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={48} tickCount={5} />
                     <Tooltip content={<TrendTip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1 }} />
-                    <Area type="monotone" dataKey="revenue" name="Periode ini" stroke="#D4691E" fill="url(#lapakFill)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="revenue" name="Periode ini" stroke="#D4691E" fill="url(#lapakFill)" strokeWidth={3} dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                     <Line type="monotone" dataKey="prev" name="Periode sebelumnya" stroke="#A08468" strokeWidth={1.5} strokeDasharray="5 4" dot={false} activeDot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
