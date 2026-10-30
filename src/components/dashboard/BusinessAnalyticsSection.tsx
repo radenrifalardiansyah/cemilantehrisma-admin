@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell,
@@ -11,7 +10,7 @@ import {
 } from 'lucide-react';
 import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
-import { SALDO_AWAL_KEY } from '@/lib/finance';
+import { useSaldoAwal } from '@/lib/useSaldoAwal';
 import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
 import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
@@ -125,14 +124,10 @@ export default function BusinessAnalyticsSection({
   data, loading, period, customFrom, customTo,
   onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateFinance, creds,
 }: Props) {
-  // "Saldo Awal" (kas sebelum mulai pakai aplikasi ini) diisi manual di tab Jurnal Kas Laporan
-  // Keuangan, disimpan di localStorage browser yang sama — dibaca ulang di sini supaya "Saldo Kas
-  // Saat Ini" konsisten persis dengan yang ada di Laporan Keuangan, bukan cuma sebagian (allTimeTx).
-  const [saldoAwal, setSaldoAwal] = useState(0);
-  useEffect(() => {
-    const saved = localStorage.getItem(SALDO_AWAL_KEY);
-    if (saved) setSaldoAwal(parseFloat(saved) || 0);
-  }, []);
+  // "Saldo Awal" (kas sebelum mulai pakai aplikasi ini) diisi di tab Jurnal Kas Laporan Keuangan,
+  // disimpan di server — dibaca ulang di sini supaya "Saldo Kas Saat Ini" konsisten persis dengan
+  // yang ada di Laporan Keuangan.
+  const { saldoAwal } = useSaldoAwal(creds);
 
   const buildPdf = (): AnalyticsReportData | null => {
     if (!data) return null;

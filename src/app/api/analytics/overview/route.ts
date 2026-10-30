@@ -5,10 +5,12 @@ import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { stockAdjustmentForPeriod } from '@/lib/stock-adjustment-pg';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
+import { fetchInstallmentPayments, installmentRatio } from '@/lib/installment-payments-report';
 
 interface OrderDoc {
   total?: number; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAtSeconds: number | null;
+  hasPayments?: boolean; // punya cicilan → dihitung per cicilan (paid_at), bukan lewat total pesanan
   items?: { productId?: string; qty: number; costPrice?: number }[];
 }
 interface RecapDoc {
@@ -34,10 +36,10 @@ const isNonPnlExpense = (e: ExpenseDoc) => e.excludeFromPnl === true;
 const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const sql = getSql();
-    const [orderRows, recapRows, incomeRows, expenseRows, materialRows, productRows] = await Promise.all([
+    const [orderRows, recapRows, incomeRows, expenseRows, materialRows, productRows, installments] = await Promise.all([
       // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
-      sql<{ total: string; source: string; status: string; payment_status: string; created_at: Date; items: unknown }[]>`
-        select total, source, status, payment_status, created_at, items from orders
+      sql<{ total: string; source: string; status: string; payment_status: string; created_at: Date; items: unknown; has_payments: boolean }[]>`
+        select total, source, status, payment_status, created_at, items, exists(select 1 from order_payments p where p.order_id = orders.id) as has_payments from orders
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
@@ -58,6 +60,7 @@ const getRawAnalytics = unstable_cache(
         select id, name, unit, stock_qty, avg_cost, min_stock from raw_materials
       `,
       sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
+      fetchInstallmentPayments(sql, from, to),
     ]);
 
     return {
@@ -65,6 +68,7 @@ const getRawAnalytics = unstable_cache(
         total: Number(r.total), source: r.source as 'kasir' | 'portal', status: r.status,
         paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
         createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+        hasPayments: r.has_payments === true,
         items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
       })),
       recaps: recapRows.map((r): RecapDoc => ({
@@ -79,6 +83,7 @@ const getRawAnalytics = unstable_cache(
         stockQty: Number(r.stock_qty), avgCost: Number(r.avg_cost), minStock: Number(r.min_stock),
       })),
       productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
+      installments,
     };
   },
   ['admin-analytics-overview'],
@@ -102,7 +107,9 @@ const getAllTimeCash = unstable_cache(
         coalesce((select sum(amount) filter (where type = 'prive') from capital_entries where not is_adjustment), 0) as total_prive,
         coalesce((select sum(amount) from income), 0) as total_income,
         coalesce((select sum(amount) from expenses), 0) as total_expenses,
-        coalesce((select sum(total) from orders where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'), 0) as total_orders,
+        coalesce((select sum(total) from orders where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
+          and not exists (select 1 from order_payments p where p.order_id = orders.id)), 0)
+          + coalesce((select sum(amount) from order_payments), 0) as total_orders,
         coalesce((select sum(total_revenue) from consignment_recaps where payment_status != 'belum_lunas'), 0) as total_recaps
     `;
     return {
@@ -128,17 +135,19 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Parameter from & to (yyyy-mm-dd) wajib diisi.' }, { status: 400 });
   }
 
-  const { orders, recaps, income, expenses, materials, productCosts } = await getRawAnalytics(from, to);
+  const { orders, recaps, income, expenses, materials, productCosts, installments } = await getRawAnalytics(from, to);
   const productCostMap = new Map(productCosts);
 
   // ── Sama persis dengan FinanceReportTab: order/rekap "Belum Lunas" tidak dihitung sebagai uang
   // masuk, dan pesanan yang masih "baru" (belum dikonfirmasi — online atau kasir berisi item
   // "Buka PO") belum dihitung sebagai omzet ──
-  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan' && !o.hasPayments);
   const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
-  const posRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
-  const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
+  const posRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0)
+    + installments.filter(p => p.source !== 'portal').reduce((s, p) => s + p.amount, 0);
+  const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0)
+    + installments.filter(p => p.source === 'portal').reduce((s, p) => s + p.amount, 0);
   const consignmentRevenue = countedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
   const incomeLain = income.reduce((s, i) => s + (i.amount ?? 0), 0);
   const totalPendapatan = posRevenue + onlineRevenue + consignmentRevenue + incomeLain;
@@ -151,7 +160,9 @@ export async function GET(req: NextRequest) {
     s + (o.items ?? []).reduce((s2, it) => s2 + it.qty * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
   const hppKonsinyasi = countedRecaps.reduce((s, r) =>
     s + (r.items ?? []).reduce((s2, it) => s2 + it.qtySold * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
-  const hpp = hppPenjualan + hppKonsinyasi;
+  const hppCicilan = installments.reduce((s, p) =>
+    s + installmentRatio(p) * p.items.reduce((s2, it) => s2 + it.qty * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
+  const hpp = hppPenjualan + hppKonsinyasi + hppCicilan;
   const labaKotor = totalPendapatan - hpp;
 
   const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e) && !isNonPnlExpense(e));
@@ -212,6 +223,10 @@ export async function GET(req: NextRequest) {
     if (o.createdAtSeconds == null) return;
     const b = bucket(wibDateKey(new Date(o.createdAtSeconds * 1000)));
     if (o.source === 'portal') b.online += o.total ?? 0; else b.pos += o.total ?? 0;
+  });
+  installments.forEach(p => {
+    const b = bucket(wibDateKey(new Date(p.paidAtSeconds * 1000)));
+    if (p.source === 'portal') b.online += p.amount; else b.pos += p.amount;
   });
   countedRecaps.forEach(r => {
     if (r.createdAtSeconds == null) return;

@@ -17,7 +17,8 @@ import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
-import { SALDO_AWAL_KEY } from '@/lib/finance';
+import { useSaldoAwal } from '@/lib/useSaldoAwal';
+import type { InstallmentPayment } from '@/lib/installment-payments-report';
 import type { WalletDoc } from '@/lib/useWallets';
 import { resolveIcon } from '@/lib/icon-registry';
 import PageLoader from '@/components/PageLoader';
@@ -60,6 +61,7 @@ interface OrderRecord {
   createdAt?: { seconds: number };
   items?: { productId?: string; qty: number; costPrice?: number; name?: string }[];
   walletId?: string | null;
+  paidAmount?: number; // total cicilan yang sudah diterima (>0 = dihitung lewat cicilan, bukan total pesanan)
 }
 
 interface RecapRecord {
@@ -303,6 +305,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [income,   setIncome]   = useState<IncomeRecord[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [capital,  setCapital]  = useState<CapitalRecord[]>([]);
+  // Cicilan pesanan kredit yang diterima di periode ini (dihitung per tanggal uang diterima).
+  const [installments, setInstallments] = useState<InstallmentPayment[]>([]);
   const [exporting, setExporting] = useState(false);
   const [printingPdf, setPrintingPdf] = useState(false);
 
@@ -323,12 +327,8 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     logo:    logoDataUri,
   };
 
-  const [saldoAwalRaw, setSaldoAwalRaw] = useState('0');
-  useEffect(() => {
-    const saved = localStorage.getItem(SALDO_AWAL_KEY);
-    if (saved) setSaldoAwalRaw(saved);
-  }, []);
-  const saldoAwal = parseFloat(saldoAwalRaw) || 0;
+  // Saldo Awal disimpan di server (bukan localStorage) supaya sama di semua perangkat/akun.
+  const { raw: saldoAwalRaw, saldoAwal, update: setSaldoAwalRaw } = useSaldoAwal(creds);
 
   // ── Saldo Kas Saat Ini ───────────────────────────────────────
   // Independen dari filter periode di atas: tarik SEMUA transaksi sejak awal pencatatan (bukan cuma
@@ -364,6 +364,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   };
   useEffect(() => { loadAllTimeSaldo(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const saldoSaatIni = saldoAwal + (allTimeTxSaldo ?? 0);
+  const walletSum = Object.values(walletBalances).reduce((a, b) => a + b, 0) + unassignedBalance;
 
   const { from, to } = periodRange(period, customFrom, customTo);
 
@@ -383,7 +384,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     setLoading(true);
     try {
       const qs = `from=${from}&to=${to}`;
-      const [oRes, rRes, iRes, eRes, cRes, bRes, sRes] = await Promise.all([
+      const [oRes, rRes, iRes, eRes, cRes, bRes, sRes, pRes] = await Promise.all([
         fetch(`${API}/api/orders?${qs}`, { headers }),
         fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
         fetch(`${API}/api/income?${qs}`, { headers }),
@@ -391,6 +392,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         fetch(`${API}/api/capital?${qs}`, { headers }),
         fetch(`${API}/api/wallets/balances?before=${from}`, { headers }),
         fetch(`${API}/api/stock/opname/summary?${qs}`, { headers }),
+        fetch(`${API}/api/finance/installment-payments?${qs}`, { headers }),
       ]);
       const orders   = oRes.ok ? (await oRes.json() as { orders: OrderRecord[] }).orders : [];
       const recaps   = rRes.ok ? (await rRes.json() as { recaps: RecapRecord[] }).recaps : [];
@@ -399,7 +401,9 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const capital  = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
       const txBefore = bRes.ok ? (await bRes.json() as { totalTx: number }).totalTx : 0;
       const adj = sRes.ok ? (await sRes.json() as { loss: number; gain: number; net: number }) : { loss: 0, gain: 0, net: 0 };
+      const payments = pRes.ok ? (await pRes.json() as { payments: InstallmentPayment[] }).payments : [];
       if (myLoadId !== loadIdRef.current) return;
+      setInstallments(payments);
       setOrders(orders);
       setRecaps(recaps);
       setIncome(income);
@@ -437,10 +441,14 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // Order/rekap "Belum Lunas" tidak ikut dihitung sebagai uang masuk sampai ditandai Lunas
   // (lihat menu Pesanan / riwayat Pembelian Bahan Baku & Rekap Konsinyasi). Field yang hilang
   // (data lama sebelum fitur ini ada) dianggap lunas.
-  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  // Pesanan yang punya cicilan (paidAmount > 0) TIDAK dihitung lewat total pesanannya — uangnya
+  // diakui per cicilan di `installments` (tanggal uang diterima), sama seperti saldo dompet.
+  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan' && !(o.paidAmount && o.paidAmount > 0));
   const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
-  const kasirRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
-  const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0);
+  const kasirRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0)
+    + installments.filter(p => p.source !== 'portal').reduce((s, p) => s + p.amount, 0);
+  const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0)
+    + installments.filter(p => p.source === 'portal').reduce((s, p) => s + p.amount, 0);
   const consignmentRevenue = countedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
   const totalPendapatanLain = income.reduce((s, i) => s + i.amount, 0);
   const totalPendapatan = kasirRevenue + onlineRevenue + consignmentRevenue + totalPendapatanLain;
@@ -455,9 +463,13 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // TERKINI (effectiveCostPrice) — ini yang bikin tombol "Hitung Ulang HPP" berguna tanpa transaksi ulang.
   const hppPenjualan = countedOrders.reduce((s, o) =>
     s + (o.items ?? []).reduce((s2, it) => s2 + it.qty * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
+  // HPP cicilan diakui sebanding dengan uang yang masuk (cicilan 50% dari total → 50% HPP pesanan).
+  const installmentRatio = (p: InstallmentPayment) => (p.orderTotal > 0 ? Math.min(1, p.amount / p.orderTotal) : 0);
+  const hppCicilan = installments.reduce((s, p) =>
+    s + installmentRatio(p) * p.items.reduce((s2, it) => s2 + it.qty * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
   const hppKonsinyasi = countedRecaps.reduce((s, r) =>
     s + (r.items ?? []).reduce((s2, it) => s2 + it.qtySold * effectiveCostPrice(it.costPrice, it.productId), 0), 0);
-  const hpp = hppPenjualan + hppKonsinyasi;
+  const hpp = hppPenjualan + hppKonsinyasi + hppCicilan;
   const labaKotor = totalPendapatan - hpp;
 
   const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e) && !isNonPnlExpense(e));
@@ -478,6 +490,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // beda dari costPrice eksplisit 0 — kalau ketemu, Laba Kotor pada periode ini bisa understate HPP.
   const hasMissingCostData =
     countedOrders.some(o => o.items?.some(it => it.qty > 0 && it.costPrice === undefined)) ||
+    installments.some(p => p.items.some(it => it.qty > 0 && it.costPrice === undefined)) ||
     countedRecaps.some(r => r.items?.some(it => it.qtySold > 0 && it.costPrice === undefined));
 
   // Produk yang costPrice-nya masih 0 walau sudah dicoba fallback ke Harga Modal produk terkini —
@@ -486,6 +499,9 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // "Hitung Ulang HPP" untuk langsung kepakai tanpa perlu transaksi ulang.
   const zeroCostProducts = new Set<string>();
   countedOrders.forEach(o => (o.items ?? []).forEach(it => {
+    if (it.qty > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
+  }));
+  installments.forEach(p => p.items.forEach(it => {
     if (it.qty > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
   }));
   countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
@@ -506,11 +522,15 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   countedOrders.forEach(o => (o.items ?? []).forEach(it => {
     if (it.qty > 0) addHppRow(it.productId, it.name || '(tanpa nama)', it.qty, effectiveCostPrice(it.costPrice, it.productId));
   }));
+  installments.forEach(p => {
+    const ratio = installmentRatio(p);
+    p.items.forEach(it => { if (it.qty > 0) addHppRow(it.productId, it.name || '(tanpa nama)', it.qty * ratio, effectiveCostPrice(it.costPrice, it.productId)); });
+  });
   countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
     if (it.qtySold > 0) addHppRow(it.productId, it.productName || '(tanpa nama)', it.qtySold, effectiveCostPrice(it.costPrice, it.productId));
   }));
   const hppDetailRows: DetailRow[] = [...hppByProduct.values()].sort((a, b) => b.total - a.total)
-    .map(r => ({ key: r.key, label: r.name, sub: `${r.qty} pcs × ${formatRp(r.qty ? r.total / r.qty : 0)}`, value: r.total }));
+    .map(r => ({ key: r.key, label: r.name, sub: `${+r.qty.toFixed(2)} pcs × ${formatRp(r.qty ? r.total / r.qty : 0)}`, value: r.total }));
 
   // Rincian Omzet per sumber — kasir/online/konsinyasi/lain-lain, sama seperti yang dipakai di
   // Export Excel & PDF (lihat incomeRows di printPdf), cuma dibungkus format DetailRow di sini.
@@ -556,6 +576,12 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       debit: o.total ?? 0, kredit: 0,
       invoiceNo: o.invoiceNo || undefined,
     })),
+    ...installments.map(p => ({
+      seconds: p.paidAtSeconds,
+      description: `Cicilan ${p.source === 'portal' ? 'Online' : 'Kasir'} - ${p.invoiceNo || p.customerName}`,
+      debit: p.amount, kredit: 0,
+      invoiceNo: p.invoiceNo || undefined,
+    })),
     ...countedRecaps.map(r => ({
       seconds: r.createdAt?.seconds ?? 0,
       description: `Pendapatan Konsinyasi - ${r.locationName}`,
@@ -592,6 +618,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     const key = new Date(o.createdAt.seconds * 1000).toLocaleDateString('en-CA');
     const cur = dailyMap.get(key) ?? { income: 0, expense: 0 };
     cur.income += o.total ?? 0; dailyMap.set(key, cur);
+  });
+  installments.forEach(p => {
+    const key = new Date(p.paidAtSeconds * 1000).toLocaleDateString('en-CA');
+    const cur = dailyMap.get(key) ?? { income: 0, expense: 0 };
+    cur.income += p.amount; dailyMap.set(key, cur);
   });
   countedRecaps.forEach(r => {
     if (!r.createdAt?.seconds) return;
@@ -833,6 +864,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
               </div>
             )}
           </div>
+          {Math.abs(saldoSaatIni - walletSum) >= 1 && (
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+              Total kartu dompet ({formatRp(walletSum)}) beda {formatRp(Math.abs(saldoSaatIni - walletSum))} dari Saldo Kas Saat Ini: total di atas memakai Saldo Awal manual (tab Jurnal Kas), sedangkan kartu dompet memakai saldo awal tiap dompet{wallets.some(w => !w.isActive) ? ' dan ikut menghitung dompet nonaktif' : ''}.
+            </p>
+          )}
         </div>
       )}
 
@@ -878,7 +914,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             <div className="card p-3 flex items-center gap-2.5" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
               <AlertTriangle size={15} style={{ color: '#B45309', flexShrink: 0 }} />
               <p className="text-xs font-medium" style={{ color: '#92400E' }}>
-                Sebagian transaksi lama di periode ini belum punya data HPP tersimpan (dari sebelum fitur ini aktif), sehingga HPP dihitung 0 untuk transaksi tsb — Laba Kotor &amp; Laba Bersih bisa sedikit lebih tinggi dari sebenarnya.
+                Sebagian transaksi lama di periode ini belum punya data HPP tersimpan (dari sebelum fitur ini aktif), sehingga HPP-nya dihitung dari Harga Modal produk saat ini — bisa berbeda dari modal sebenarnya saat transaksi terjadi. Kalau Harga Modal produknya juga kosong, HPP dihitung 0 (produknya tercantum di peringatan di bawah).
               </p>
             </div>
           )}
@@ -1280,10 +1316,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
           <div className="card p-4 flex items-center gap-3 flex-wrap">
             <label className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Saldo Awal (opsional)</label>
             <NumberInput value={saldoAwalRaw}
-              onChange={raw => { setSaldoAwalRaw(raw); localStorage.setItem(SALDO_AWAL_KEY, raw); }}
+              onChange={raw => setSaldoAwalRaw(raw)}
               className="input w-full sm:w-[180px]" style={{ height: 36 }} placeholder="0" />
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              Saldo kas nyata sebelum mulai pencatatan di aplikasi ini (disimpan di browser ini saja, bukan data akuntansi baku). Dipakai juga sebagai dasar &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
+              Saldo kas nyata sebelum mulai pencatatan di aplikasi ini (disimpan di server, sama di semua perangkat). Dipakai juga sebagai dasar &quot;Saldo Kas Saat Ini&quot; di bagian atas halaman.
             </p>
           </div>
 
