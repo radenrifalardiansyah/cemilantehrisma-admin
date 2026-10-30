@@ -24,6 +24,8 @@ export interface GenericTablePDFData {
   // saat dirender. Lihat CategoriesTab.tsx (kolom Emoji sengaja tidak disertakan di PDF) dan
   // OrdersTab.tsx (pakai "-" biasa untuk diskon, bukan "−").
   rows: (string | number)[][];
+  // Opsional: baris total di akhir tabel (urutan sel mengikuti `columns`; '' = sel kosong).
+  totalRow?: (string | number)[];
 }
 
 const C = {
@@ -57,6 +59,8 @@ const s = StyleSheet.create({
   tHeadCell: { color: C.white, fontSize: 7.5, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 4 },
   tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
   tRowAlt: { backgroundColor: C.accentBg },
+  tTotalRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.accentBg },
+  tTotalCell: { fontSize: 8, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 4, color: C.dark },
   tCell: { fontSize: 8, paddingVertical: 4.5, paddingHorizontal: 4, color: C.dark },
 
   footer: { position: 'absolute', bottom: 18, left: 32, right: 32, textAlign: 'center', fontSize: 7, color: C.muted },
@@ -121,6 +125,15 @@ export default function GenericTablePDF({ data, store, orientation = 'landscape'
               })}
             </View>
           ))}
+          {data.totalRow && (
+            <View style={s.tTotalRow} wrap={false}>
+              {data.totalRow.map((cell, ci) => (
+                <Text key={ci} style={[s.tTotalCell, { width: data.columns[ci]?.width ?? 'auto', textAlign: data.columns[ci]?.align ?? 'left' }]}>
+                  {cell === undefined || cell === null ? '' : String(cell)}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
 
         <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>

@@ -363,6 +363,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       const blob = await pdf(
         <GenericTablePDF
           store={storeHeader}
+          orientation="portrait"
           data={{
             title: 'DAFTAR DOMPET',
             label,
@@ -379,6 +380,11 @@ export default function WalletsTab({ creds }: { creds: string }) {
               i + 1, w.name, WALLET_TYPE_LABEL[w.type], w.isActive ? 'Aktif' : 'Nonaktif',
               formatRp(w.initialBalance), formatRp(balances[w.id] ?? 0),
             ]),
+            totalRow: [
+              '', 'TOTAL', '', '',
+              formatRp(rows.reduce((s, w) => s + w.initialBalance, 0)),
+              formatRp(rows.reduce((s, w) => s + (balances[w.id] ?? 0), 0)),
+            ],
           }}
         />
       ).toBlob();
@@ -583,6 +589,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       const blob = await pdf(
         <GenericTablePDF
           store={storeHeader}
+          orientation="portrait"
           data={{
             title: 'TRANSFER ANTAR DOMPET',
             label,
@@ -598,6 +605,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
             rows: rows.map((t, i) => [
               i + 1, formatDateDisplay(t.date), walletName(t.fromWalletId), walletName(t.toWalletId), formatRp(t.amount), t.note || '',
             ]),
+            totalRow: ['', 'TOTAL', '', '', formatRp(rows.reduce((s, t) => s + t.amount, 0)), ''],
           }}
         />
       ).toBlob();
