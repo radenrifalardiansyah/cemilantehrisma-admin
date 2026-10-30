@@ -553,6 +553,28 @@ ${pdfUrl}`.trim();
     } finally { setBusyId(null); }
   };
 
+  // Approve massal dari centang — hanya PO Draft yang disetujui; yang lain dilewati & dilaporkan.
+  const bulkApprove = async () => {
+    const ids = [...selPo];
+    if (ids.length === 0) return;
+    if (!await confirm({
+      message: `Approve ${ids.length} PO yang dicentang? Hanya PO berstatus Draft yang disetujui; PO lain dilewati. PO yang di-approve tidak bisa diedit lagi.`,
+      confirmLabel: 'Approve',
+    })) return;
+    setBusyId('bulk-apr');
+    try {
+      const r = await fetch('/api/purchase-orders/bulk-approve', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ ids }) });
+      const d = await r.json().catch(() => ({})) as { error?: string; approved?: number; skipped?: { label: string; reason: string }[] };
+      if (!r.ok) { toast.error(d.error ?? 'Gagal meng-approve PO.'); return; }
+      const skipped = d.skipped ?? [];
+      const skipText = skipped.slice(0, 3).map(x => `${x.label} (${x.reason})`).join(', ') + (skipped.length > 3 ? ', …' : '');
+      if ((d.approved ?? 0) > 0) toast.success(`${d.approved} PO di-approve.${skipped.length > 0 ? ` ${skipped.length} dilewati: ${skipText}.` : ''}`);
+      else toast.error(`Tidak ada PO yang bisa di-approve: ${skipText}.`);
+      setSelPo(new Set());
+      await loadPos();
+    } finally { setBusyId(null); }
+  };
+
   const templateDownload = async () => {
     try { await downloadPoTemplate(materials.map(m => m.name), suppliers[0]?.name, todayISO()); }
     catch { toast.error('Gagal membuat template.'); }
@@ -913,6 +935,12 @@ ${pdfUrl}`.trim();
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
             <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
             <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            {view === 'po' && canApprovePo && (
+              <button onClick={bulkApprove} disabled={busyId === 'bulk-apr'}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'var(--success)', color: '#fff' }}>
+                {busyId === 'bulk-apr' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Approve
+              </button>
+            )}
             {view === 'po' ? (
               <button onClick={() => printSelected('po')} disabled={busyId === 'bulk-po'}
                 className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap disabled:opacity-40" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
