@@ -70,7 +70,10 @@ interface ProductRow {
   qtyPos: number; qtyOnline: number; qtyConsignment: number; qtyTotal: number;
   revenue: number; cogs: number; qtyFree: number; cogsFree: number;
 }
-interface TrendProduct { key: string; name: string }
+interface TrendProduct { key: string; name: string; color?: string | null }
+
+// Warna tema produk (bgColor di Produk); fallback ke palet tetap kalau kosong.
+const trendColor = (p: TrendProduct, i: number) => p.color || TREND_COLORS[i];
 interface ProductMeta { emoji: string; imageUrls?: string[]; bgColor: string; category?: string }
 interface Category { id: string; name: string; emoji: string }
 
@@ -557,7 +560,7 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                       <button key={p.key} onClick={() => toggleTrendKey(p.key)}
                         className="flex items-center gap-1.5 font-semibold transition-opacity"
                         style={{ color: hidden ? 'var(--text-muted)' : 'var(--text-secondary)', opacity: hidden ? 0.5 : 1 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 4, background: TREND_COLORS[i], display: 'inline-block', flexShrink: 0 }} />
+                        <span style={{ width: 8, height: 8, borderRadius: 4, background: trendColor(p, i), display: 'inline-block', flexShrink: 0 }} />
                         {p.name}
                       </button>
                     );
@@ -573,7 +576,13 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                     <RTooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
                     {trendProducts.map((p, i) => !hiddenTrendKeys.has(p.key) && (
                       <Line key={p.key} type="monotone" dataKey={p.key} name={p.name}
-                        stroke={TREND_COLORS[i]} strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                        stroke={trendColor(p, i)}
+                        // Garis pertama paling tebal & digambar paling bawah, berikutnya makin tipis di atasnya —
+                        // jadi produk dengan qty sama tetap terlihat (tidak saling menutupi). Titik per hari
+                        // menandai bahwa grafik hanya punya sedikit titik data.
+                        strokeWidth={Math.max(2, 5 - i * 1.5)} strokeDasharray={i > 0 ? '6 4' : undefined}
+                        dot={{ r: Math.max(3, 6 - i * 1.5), strokeWidth: 2, stroke: '#fff', fill: trendColor(p, i) }}
+                        activeDot={{ r: 7, strokeWidth: 2, stroke: '#fff' }} />
                     ))}
                   </LineChart>
                 </ResponsiveContainer>

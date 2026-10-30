@@ -50,10 +50,11 @@ const getRawProductReport = unstable_cache(
         select payment_status, items, created_at from consignment_recaps
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
-      sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
+      sql<{ id: string; cost_price: string | null; bg_color: string | null }[]>`select id, cost_price, bg_color from products`,
     ]);
     return {
       productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
+      productColors: productRows.map(r => [r.id, r.bg_color] as const),
       orders: orderRows.map((r): OrderDoc => ({
         source: r.source as 'kasir' | 'portal', status: r.status, paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
         items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
@@ -82,8 +83,9 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Parameter from & to (yyyy-mm-dd) wajib diisi.' }, { status: 400 });
   }
 
-  const { orders, recaps, productCosts } = await getRawProductReport(from, to);
+  const { orders, recaps, productCosts, productColors } = await getRawProductReport(from, to);
   const productCostMap = new Map(productCosts);
+  const productColorMap = new Map(productColors);
   // HPP — pakai costPrice snapshot saat transaksi; fallback ke Harga Modal produk terkini kalau
   // snapshot 0/kosong (transaksi lama). Sama seperti analytics/overview.
   const effectiveCost = (stored: number | undefined, productId: string | undefined) =>
@@ -164,7 +166,7 @@ export async function GET(req: NextRequest) {
 
   // Grafik tren — dibatasi ke 4 produk terlaris supaya tetap terbaca (bukan spaghetti chart) dan
   // warnanya bisa dipetakan tetap 1:1 per produk di client (lihat ProductReportTab).
-  const trendProducts = products.slice(0, 4).map(p => ({ key: p.key, name: p.name }));
+  const trendProducts = products.slice(0, 4).map(p => ({ key: p.key, name: p.name, color: productColorMap.get(p.productId) ?? null }));
   const dailyTrend = eachDay(from, to).map(date => {
     const byProduct = dailyQty.get(date);
     const row: Record<string, string | number> = { date };
