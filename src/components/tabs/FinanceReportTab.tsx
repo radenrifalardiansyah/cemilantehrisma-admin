@@ -498,12 +498,15 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // berarti "Harga Modal / HPP" produk itu memang belum pernah diisi sama sekali di menu Produk.
   // Daftar ini dikasih ke user supaya tahu produk mana yang perlu diisi HPP-nya, lalu klik
   // "Hitung Ulang HPP" untuk langsung kepakai tanpa perlu transaksi ulang.
+  // Baris ongkos kirim (tanpa productId, nama diawali "Ongkir") memang tidak punya Harga Modal —
+  // bukan produk, jadi tidak perlu diingatkan.
+  const isShippingLine = (it: { productId?: string; name?: string }) => !it.productId && /^ongkir/i.test((it.name ?? '').trim());
   const zeroCostProducts = new Set<string>();
   countedOrders.forEach(o => (o.items ?? []).forEach(it => {
-    if (it.qty > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
+    if (it.qty > 0 && !isShippingLine(it) && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
   }));
   installments.forEach(p => p.items.forEach(it => {
-    if (it.qty > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
+    if (it.qty > 0 && !isShippingLine(it) && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.name || '(tanpa nama)');
   }));
   countedRecaps.forEach(r => (r.items ?? []).forEach(it => {
     if (it.qtySold > 0 && effectiveCostPrice(it.costPrice, it.productId) === 0) zeroCostProducts.add(it.productName || '(tanpa nama)');
