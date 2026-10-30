@@ -17,6 +17,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import NumberInput from '@/components/NumberInput';
 import Tooltip from '@/components/Tooltip';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
+import MonthlyFinanceSection from '@/components/dashboard/MonthlyFinanceSection';
 import { useSaldoAwal } from '@/lib/useSaldoAwal';
 import type { InstallmentPayment } from '@/lib/installment-payments-report';
 import type { WalletDoc } from '@/lib/useWallets';
@@ -1255,6 +1256,9 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
               <TrendChart data={trendData} />
             </div>
           )}
+
+          {/* Penjualan & laba per bulan (satu tahun / rentang bulan) — berdiri sendiri, tidak ikut filter periode */}
+          <MonthlyFinanceSection creds={creds} />
 
           {/* Rincian Pendapatan & Beban */}
           <div className="grid lg:grid-cols-2 gap-4">

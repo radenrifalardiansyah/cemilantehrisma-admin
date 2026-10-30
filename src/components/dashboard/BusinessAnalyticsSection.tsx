@@ -13,6 +13,7 @@ import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
 import { useSaldoAwal } from '@/lib/useSaldoAwal';
 import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
+import MonthlyFinanceSection from './MonthlyFinanceSection';
 import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 
 export interface BusinessAnalyticsData {
@@ -488,6 +489,9 @@ export default function BusinessAnalyticsSection({
           </div>
         </div>
       )}
+
+      {/* Penjualan & laba per bulan — berdiri sendiri, tidak ikut filter periode di atas */}
+      <MonthlyFinanceSection creds={creds} />
     </div>
   );
 }
