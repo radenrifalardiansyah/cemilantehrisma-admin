@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, Image, StyleSheet, Svg, G, Line, Path, Circle } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, StyleSheet, Svg, G, Line, Path, Circle, Rect } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
 
@@ -13,10 +13,11 @@ export interface AnalyticsPdfSection {
   emptyText?: string;
 }
 // Grafik yang digambar langsung (vektor) di PDF. 'line' = tren beberapa seri atas `labels`;
-// 'bar' = peringkat horizontal (satu seri, `labels` = nama baris).
+// 'bar' = peringkat horizontal (satu seri, `labels` = nama baris);
+// 'vbar' = batang vertikal berkelompok per label (beberapa seri; bar tertinggi per seri dipekatkan, nilai negatif didukung).
 export interface AnalyticsPdfChart {
   title: string;
-  type: 'line' | 'bar';
+  type: 'line' | 'bar' | 'vbar';
   labels: string[];
   series: { name: string; color: string; values: number[] }[];
   unit?: 'rp' | 'num' | 'pct';       // default 'rp'
@@ -155,6 +156,62 @@ function LineChartPdf({ chart }: { chart: AnalyticsPdfChart }) {
   );
 }
 
+function VBarChartPdf({ chart }: { chart: AnalyticsPdfChart }) {
+  const unit = chart.unit ?? 'rp';
+  const W = 515, H = 210, L = 40, R = 8, T = 14, B = 22;
+  const pw = W - L - R, ph = H - T - B;
+  const n = chart.labels.length;
+  const all = chart.series.flatMap(sr => sr.values);
+  const maxV = Math.max(0, ...all);
+  const minV = Math.min(0, ...all);
+  // Langkah sumbu "bulat" (1/2/5 x 10^n) supaya label seperti 2jt, 4jt, 6jt — bukan 7,4jt.
+  const stepY = niceMax((maxV - minV || 1) / 4);
+  const yMax = Math.ceil(maxV / stepY) * stepY || stepY;
+  const yMin = Math.floor(minV / stepY) * stepY;
+  const y = (v: number) => T + ph * ((yMax - v) / (yMax - yMin));
+  const group = pw / n;
+  const inner = group * 0.72;
+  const barW = inner / chart.series.length;
+  const ticks = Array.from({ length: Math.round((yMax - yMin) / stepY) + 1 }, (_, i) => yMin + i * stepY);
+  const step = Math.max(1, Math.ceil(n / 14));
+  return (
+    <View style={s.chartBox} wrap={false}>
+      <Text style={s.chartTitle}>{chart.title}</Text>
+      <Legend series={chart.series} />
+      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        {ticks.map((tv, i) => (
+          <G key={i}>
+            <Line x1={L} x2={W - R} y1={y(tv)} y2={y(tv)} stroke={Math.abs(tv) < 1e-9 ? '#C9BBA8' : C.border} strokeWidth={0.7} strokeDasharray={Math.abs(tv) < 1e-9 ? undefined : '3 3'} />
+            <Text x={L - 4} y={y(tv) + 2.5} style={{ fontSize: 6.5, fill: C.muted }} textAnchor="end">{fmtAxis(tv, unit)}</Text>
+          </G>
+        ))}
+        {chart.labels.map((lb, i) => i % step === 0 && (
+          <Text key={`x${i}`} x={L + group * i + group / 2} y={H - 8} style={{ fontSize: 6.5, fill: C.muted }} textAnchor="middle">{lb}</Text>
+        ))}
+        {chart.series.map((sr, si) => {
+          const top = Math.max(...sr.values);
+          return (
+            <G key={si}>
+              {sr.values.map((v, i) => {
+                if (v === 0) return null;
+                const isTop = v === top && v > 0;
+                const x0 = L + group * i + (group - inner) / 2 + si * barW;
+                const yy = Math.min(y(v), y(0));
+                return (
+                  <G key={i}>
+                    <Rect x={x0 + 0.6} y={yy} width={Math.max(1, barW - 1.2)} height={Math.max(1, Math.abs(y(v) - y(0)))} rx={1.5} fill={sr.color} fillOpacity={isTop ? 1 : 0.5} />
+                    {isTop && <Text x={x0 + barW / 2} y={yy - 3} style={{ fontSize: 6.5, fill: C.dark, fontFamily: 'Helvetica-Bold' }} textAnchor="middle">{fmtAxis(v, unit)}</Text>}
+                  </G>
+                );
+              })}
+            </G>
+          );
+        })}
+      </Svg>
+    </View>
+  );
+}
+
 function BarChartPdf({ chart }: { chart: AnalyticsPdfChart }) {
   const unit = chart.unit ?? 'rp';
   const sr = chart.series[0];
@@ -175,7 +232,8 @@ function BarChartPdf({ chart }: { chart: AnalyticsPdfChart }) {
 
 function Chart({ chart }: { chart: AnalyticsPdfChart }) {
   if (chart.labels.length === 0 || chart.series.length === 0) return null;
-  return chart.type === 'line' ? <LineChartPdf chart={chart} /> : <BarChartPdf chart={chart} />;
+  if (chart.type === 'line') return <LineChartPdf chart={chart} />;
+  return chart.type === 'vbar' ? <VBarChartPdf chart={chart} /> : <BarChartPdf chart={chart} />;
 }
 
 function Section({ sec }: { sec: AnalyticsPdfSection }) {

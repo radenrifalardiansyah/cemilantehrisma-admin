@@ -111,8 +111,8 @@ export default function MonthlyFinanceSection({ creds }: { creds: string }) {
     if (!rows || rows.length === 0) return null;
     const labels = rows.map(r => shortMonth(r.month));
     return {
-      title: 'PENJUALAN & LABA BULANAN',
-      periodLabel, generatedAt: pdfNow(),
+      title: 'PENJUALAN & LABA',
+      periodLabel: `Per Bulan, ${periodLabel}`, generatedAt: pdfNow(),
       cards: [
         { label: 'Total Penjualan', value: pdfRp(total('pendapatan')) },
         { label: 'Total Laba Kotor', value: pdfRp(total('labaKotor')) },
@@ -123,13 +123,9 @@ export default function MonthlyFinanceSection({ creds }: { creds: string }) {
         ...(worstSales ? [{ label: 'Bulan Penjualan Terendah', value: `${fullMonth(worstSales.month)} - ${pdfRp(worstSales.pendapatan)}` }] : []),
       ],
       charts: [
-        { title: 'Penjualan per Bulan', type: 'bar', labels, series: [{ name: 'Penjualan', color: '#0284C7', values: rows.map(r => r.pendapatan) }] },
-        { title: 'Laba Bersih per Bulan', type: 'bar', labels, series: [{ name: 'Laba Bersih', color: '#059669', values: rows.map(r => Math.max(0, r.labaBersih)) }] },
-        { title: 'Tren Penjualan, Laba Kotor & Laba Bersih', type: 'line', labels, series: [
-          { name: 'Penjualan', color: '#0284C7', values: rows.map(r => r.pendapatan) },
-          { name: 'Laba Kotor', color: '#D4691E', values: rows.map(r => r.labaKotor) },
-          { name: 'Laba Bersih', color: '#059669', values: rows.map(r => r.labaBersih) },
-        ] },
+        // Sama dengan grafik di layar: bar berkelompok per bulan untuk metrik yang sedang dipilih.
+        { title: `${active.map(m => m.label).join(' vs ')} per Bulan`, type: 'vbar', labels,
+          series: active.map(m => ({ name: m.label, color: m.color, values: rows.map(r => r[m.key]) })) },
       ],
       sections: [{
         title: 'Rincian per Bulan',
