@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
 } from 'recharts';
 import {
   Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store,
@@ -566,30 +566,16 @@ export default function ProductReportTab({ creds }: { creds: string }) {
               </div>
               <div style={{ width: '100%', height: 220 }}>
                 <ResponsiveContainer>
-                  {/* Rentang pendek (≤14 hari): batang berdampingan — garis hampir tak terbaca untuk 2–3 titik,
-                      dan produk dengan qty sama saling menutupi. Rentang panjang tetap garis. */}
-                  {dailyTrend.length <= 14 ? (
-                    <BarChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={3}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
-                      <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickMargin={8} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={40} tickCount={5} />
-                      <RTooltip content={<TrendTooltip />} cursor={{ fill: 'var(--border-2)', opacity: 0.4 }} />
-                      {trendProducts.map((p, i) => !hiddenTrendKeys.has(p.key) && (
-                        <Bar key={p.key} dataKey={p.key} name={p.name} fill={TREND_COLORS[i]} radius={[4, 4, 0, 0]} maxBarSize={36} />
-                      ))}
-                    </BarChart>
-                  ) : (
-                    <LineChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
-                      <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={40} tickCount={5} />
-                      <RTooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-                      {trendProducts.map((p, i) => !hiddenTrendKeys.has(p.key) && (
-                        <Line key={p.key} type="monotone" dataKey={p.key} name={p.name}
-                          stroke={TREND_COLORS[i]} strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
-                      ))}
-                    </LineChart>
-                  )}
+                  <LineChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                    <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={40} tickCount={5} />
+                    <RTooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+                    {trendProducts.map((p, i) => !hiddenTrendKeys.has(p.key) && (
+                      <Line key={p.key} type="monotone" dataKey={p.key} name={p.name}
+                        stroke={TREND_COLORS[i]} strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                    ))}
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
