@@ -1,12 +1,16 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
+import { PdfLineChart, PdfHBarChart, ChartLegend, type BarItem } from './pdf-charts';
 
 export interface FinanceReportIncomeRow { label: string; amount: number }
 export interface FinanceReportExpenseRow { category: string; amount: number; foldedIntoHpp: boolean }
 export interface FinanceReportJournalRow {
   tanggal: string; jam: string; keterangan: string; debit: number; kredit: number; saldo: number;
 }
+
+export interface FinanceReportWalletRow { name: string; balance: number; color?: string }
+export interface FinanceReportTrendPoint { label: string; income: number; expense: number }
 
 export interface FinanceReportPDFData {
   periodLabel: string;
@@ -25,6 +29,16 @@ export interface FinanceReportPDFData {
   totalPrive: number;
   saldoAwal: number;
   journal: FinanceReportJournalRow[];
+  // Margin & penilaian usaha
+  marginBersihPct: number;
+  gradeLabel: string; // mis. "B - Sehat"
+  // Pendapatan − Pengeluaran (kas) dan rekonsiliasi ke perubahan saldo kas periode
+  labaBersihKas: number;
+  rekonsiliasi: { selisihStok: number; modalMasuk: number; prive: number; selisihWaktu: number; nonPnl: number; perubahanKas: number };
+  // Saldo kas riil sejak awal pencatatan (tidak tergantung periode) + rincian per dompet
+  saldoSaatIni: number;
+  wallets: FinanceReportWalletRow[];
+  trend: FinanceReportTrendPoint[];
 }
 
 const rp = (n: number) =>
@@ -99,6 +113,13 @@ const s = StyleSheet.create({
   colKredit: { width: '13%', textAlign: 'right' },
   colSaldo:  { width: '13%', textAlign: 'right', fontFamily: 'Helvetica-Bold' },
 
+  sectionTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: C.dark, marginTop: 14, marginBottom: 5 },
+  card: { borderRadius: 6, borderWidth: 1, borderColor: C.border, padding: 8 },
+  kv: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3.5, borderTopWidth: 1, borderTopColor: C.border },
+  kvLabel: { fontSize: 8.5, color: C.dark },
+  kvValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  note: { fontSize: 7, color: C.muted, marginTop: 4 },
+
   footer: { position: 'absolute', bottom: 20, left: 36, right: 36, textAlign: 'center', fontSize: 7, color: C.muted },
   pageNo: { position: 'absolute', bottom: 20, right: 36, fontSize: 7, color: C.muted },
 });
@@ -135,6 +156,7 @@ function ReportHeader({ store, title, metaRows }: { store: StoreHeader; title: s
 export default function FinanceReportPDF({ data, store }: { data: FinanceReportPDFData; store: StoreHeader }) {
   const totalDebit  = data.journal.reduce((sum, j) => sum + j.debit, 0);
   const totalKredit = data.journal.reduce((sum, j) => sum + j.kredit, 0);
+  const walletTotal = data.wallets.reduce((sum, w) => sum + w.balance, 0);
   const saldoAkhir  = data.journal.length > 0 ? data.journal[data.journal.length - 1].saldo : data.saldoAwal;
 
   return (
@@ -174,6 +196,24 @@ export default function FinanceReportPDF({ data, store }: { data: FinanceReportP
             <Text style={[s.summaryValue, { color: data.labaBersih >= 0 ? C.accent : C.red }]}>{rp(data.labaBersih)}</Text>
           </View>
         </View>
+
+        <Text style={[s.note, { marginTop: 6 }]}>
+          Margin bersih {data.marginBersihPct.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% dari Omzet · Penilaian usaha: {data.gradeLabel}
+        </Text>
+
+        {data.trend.length > 0 && (
+          <View wrap={false}>
+            <Text style={s.sectionTitle}>Tren Pendapatan vs Pengeluaran</Text>
+            <ChartLegend items={[{ name: 'Pendapatan', color: C.green }, { name: 'Pengeluaran', color: C.red }]} />
+            <PdfLineChart
+              labels={data.trend.map(t => t.label)}
+              series={[
+                { name: 'Pendapatan', color: C.green, values: data.trend.map(t => t.income), fill: true },
+                { name: 'Pengeluaran', color: C.red, values: data.trend.map(t => t.expense), fill: true },
+              ]}
+            />
+          </View>
+        )}
 
         <View style={s.panelRow}>
           <View style={s.panel}>
@@ -230,6 +270,89 @@ export default function FinanceReportPDF({ data, store }: { data: FinanceReportP
       <Page size="A4" style={s.page}>
         <ReportHeader
           store={store}
+          title="POSISI KAS & DOMPET"
+          metaRows={[{ label: 'Periode', value: `${data.periodLabel} (${data.from} s/d ${data.to})` }]}
+        />
+
+        <View style={[s.card, { backgroundColor: C.accentBg, borderColor: C.accent }]}>
+          <Text style={s.summaryLabel}>Saldo Kas Saat Ini (seluruh transaksi sejak awal pencatatan)</Text>
+          <Text style={[s.summaryValue, { fontSize: 15, color: data.saldoSaatIni >= 0 ? C.accent : C.red }]}>{rp(data.saldoSaatIni)}</Text>
+        </View>
+
+        <Text style={s.sectionTitle}>Saldo per Dompet</Text>
+        {data.wallets.length === 0 ? (
+          <Text style={s.panelEmpty}>Belum ada dompet.</Text>
+        ) : (
+          <View style={s.card}>
+            <PdfHBarChart
+              width={483}
+              labelW={120}
+              valueW={90}
+              items={data.wallets.map((w): BarItem => ({
+                label: w.name.length > 22 ? `${w.name.slice(0, 21)}…` : w.name,
+                value: w.balance,
+                color: w.balance < 0 ? C.red : (w.color || C.accent),
+                valueText: rp(w.balance),
+              }))}
+            />
+            <View style={[s.kv, { marginTop: 4 }]}>
+              <Text style={s.kvLabel}>Total semua dompet</Text>
+              <Text style={s.kvValue}>{rp(walletTotal)}</Text>
+            </View>
+          </View>
+        )}
+        {Math.abs(data.saldoSaatIni - walletTotal) >= 1 && (
+          <Text style={s.note}>
+            Total dompet beda {rp(Math.abs(data.saldoSaatIni - walletTotal))} dari Saldo Kas Saat Ini: saldo kas memakai Saldo Awal manual, kartu dompet memakai saldo awal tiap dompet.
+          </Text>
+        )}
+
+        <Text style={s.sectionTitle}>Ringkasan Laba Rugi (Akrual)</Text>
+        <View style={s.card}>
+          <PdfHBarChart
+            width={483}
+            labelW={120}
+            valueW={90}
+            items={[
+              { label: 'Omzet', value: data.totalPendapatan, color: C.green, valueText: rp(data.totalPendapatan) },
+              { label: 'HPP', value: data.hpp, color: '#B45309', valueText: rp(data.hpp) },
+              { label: 'Laba Kotor', value: data.labaKotor, color: data.labaKotor < 0 ? C.red : C.accent, valueText: rp(data.labaKotor) },
+              { label: 'Beban Operasional', value: data.totalBebanOperasional, color: C.red, valueText: rp(data.totalBebanOperasional) },
+              { label: data.labaBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih', value: data.labaBersih, color: data.labaBersih >= 0 ? C.accent : C.red, valueText: rp(data.labaBersih) },
+            ]}
+          />
+        </View>
+
+        <Text style={s.sectionTitle}>Pendapatan - Pengeluaran (Kas)</Text>
+        <View style={s.card}>
+          <View style={[s.kv, { borderTopWidth: 0 }]}><Text style={s.kvLabel}>Total Pendapatan</Text><Text style={[s.kvValue, { color: C.green }]}>{rp(data.totalPendapatan)}</Text></View>
+          <View style={s.kv}><Text style={s.kvLabel}>Total Beban (Kas)</Text><Text style={[s.kvValue, { color: C.red }]}>{rp(data.totalBeban)}</Text></View>
+          <View style={s.kv}><Text style={s.kvLabel}>{data.labaBersihKas >= 0 ? 'Laba Bersih (Kas)' : 'Rugi Bersih (Kas)'}</Text><Text style={[s.kvValue, { color: data.labaBersihKas >= 0 ? C.accent : C.red }]}>{rp(data.labaBersihKas)}</Text></View>
+        </View>
+
+        <Text style={s.sectionTitle}>Rekonsiliasi: Laba Bersih ke Perubahan Saldo Kas Periode Ini</Text>
+        <View style={s.card}>
+          <View style={[s.kv, { borderTopWidth: 0 }]}><Text style={s.kvLabel}>Laba Bersih (Akrual)</Text><Text style={s.kvValue}>{rp(data.labaBersih)}</Text></View>
+          {data.rekonsiliasi.selisihStok !== 0 && (
+            <View style={s.kv}><Text style={s.kvLabel}>{data.rekonsiliasi.selisihStok < 0 ? '(+) Kerugian Stok Opname (non-kas)' : '(-) Keuntungan Stok Opname (non-kas)'}</Text><Text style={s.kvValue}>{rp(-data.rekonsiliasi.selisihStok)}</Text></View>
+          )}
+          <View style={s.kv}><Text style={s.kvLabel}>(+) Modal Masuk</Text><Text style={[s.kvValue, { color: C.green }]}>{rp(data.rekonsiliasi.modalMasuk)}</Text></View>
+          <View style={s.kv}><Text style={s.kvLabel}>(-) Prive</Text><Text style={[s.kvValue, { color: C.red }]}>{rp(data.rekonsiliasi.prive)}</Text></View>
+          <View style={s.kv}><Text style={s.kvLabel}>{data.rekonsiliasi.selisihWaktu >= 0 ? '(+)' : '(-)'} Selisih Waktu Bahan Baku/Produksi</Text><Text style={s.kvValue}>{rp(data.rekonsiliasi.selisihWaktu)}</Text></View>
+          {data.rekonsiliasi.nonPnl > 0 && (
+            <View style={s.kv}><Text style={s.kvLabel}>(-) Pengeluaran Non-Operasional</Text><Text style={[s.kvValue, { color: C.red }]}>{rp(data.rekonsiliasi.nonPnl)}</Text></View>
+          )}
+          <View style={s.kv}><Text style={[s.kvLabel, { fontFamily: 'Helvetica-Bold' }]}>= Perubahan Saldo Kas (Periode Ini)</Text><Text style={[s.kvValue, { color: data.rekonsiliasi.perubahanKas >= 0 ? C.green : C.red }]}>{rp(data.rekonsiliasi.perubahanKas)}</Text></View>
+        </View>
+        <Text style={s.note}>Cicilan pesanan kredit dihitung pada tanggal uangnya diterima; HPP-nya diakui sebanding dengan cicilan.</Text>
+
+        <Text style={s.footer}>Dokumen ini dibuat otomatis oleh sistem — {store.name} · {SITE_URL}</Text>
+        <Text style={s.pageNo} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+      </Page>
+
+      <Page size="A4" style={s.page}>
+        <ReportHeader
+          store={store}
           title="JURNAL KAS"
           metaRows={[
             { label: 'Periode', value: `${data.periodLabel} (${data.from} s/d ${data.to})` },
@@ -255,6 +378,16 @@ export default function FinanceReportPDF({ data, store }: { data: FinanceReportP
             <Text style={[s.summaryValue, { color: C.accent }]}>{rp(saldoAkhir)}</Text>
           </View>
         </View>
+
+        {data.journal.length > 1 && (
+          <View wrap={false}>
+            <Text style={s.sectionTitle}>Pergerakan Saldo Kas</Text>
+            <PdfLineChart
+              labels={data.journal.map(j => j.tanggal)}
+              series={[{ name: 'Saldo', color: C.accent, values: data.journal.map(j => j.saldo), fill: true }]}
+            />
+          </View>
+        )}
 
         <View style={s.table}>
           <View style={s.tHeadRow}>

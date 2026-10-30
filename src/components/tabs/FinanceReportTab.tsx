@@ -766,6 +766,15 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             expenseRows, totalBeban, totalBebanOperasional, selisihStok, labaBersih,
             totalModalMasuk, totalPrive,
             saldoAwal: saldoAwalPeriode, journal: journalRows,
+            marginBersihPct, gradeLabel: `${gradeUsaha.grade} - ${gradeUsaha.label}`,
+            labaBersihKas: labaBersihKasLama,
+            rekonsiliasi: { selisihStok, modalMasuk: totalModalMasuk, prive: totalPrive, selisihWaktu: selisihWaktuPersediaan, nonPnl: totalBebanNonPnl, perubahanKas: perubahanSaldoKasPeriode },
+            saldoSaatIni,
+            wallets: [
+              ...wallets.filter(w => w.isActive).map(w => ({ name: w.name, balance: walletBalances[w.id] ?? 0, color: w.color })),
+              ...(unassignedBalance !== 0 ? [{ name: 'Belum Ditentukan', balance: unassignedBalance, color: '#9CA3AF' }] : []),
+            ],
+            trend: trendData.map(t => ({ label: trendDateLabel(t.date), income: t.income, expense: t.expense })),
           }}
         />
       ).toBlob();
