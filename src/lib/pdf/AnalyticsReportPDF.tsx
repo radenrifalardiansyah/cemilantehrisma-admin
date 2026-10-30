@@ -10,6 +10,7 @@ export interface AnalyticsPdfSection {
   columns: AnalyticsPdfColumn[];
   rows: (string | number)[][];
   total?: (string | number)[];
+  highlightRows?: number[];            // indeks baris yang diberi latar sorot (mis. bulan terbaik)
   emptyText?: string;
 }
 // Grafik yang digambar langsung (vektor) di PDF. 'line' = tren beberapa seri atas `labels`;
@@ -63,6 +64,7 @@ const s = StyleSheet.create({
   tHeadCell: { color: C.white, fontSize: 7, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 4 },
   tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
   tRowAlt: { backgroundColor: C.accentBg },
+  tRowHi: { backgroundColor: '#FFF1BF', borderTopColor: '#E8C766' },
   tCell: { fontSize: 7.5, paddingVertical: 4.5, paddingHorizontal: 4 },
   tTotalRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.accentBg },
   tTotalCell: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 4 },
@@ -246,7 +248,7 @@ function Section({ sec }: { sec: AnalyticsPdfSection }) {
             {sec.columns.map((c, i) => <Text key={i} style={[s.tHeadCell, { width: c.width, textAlign: c.align ?? 'left' }]}>{c.header}</Text>)}
           </View>
           {sec.rows.map((row, ri) => (
-            <View key={ri} style={[s.tRow, ...(ri % 2 === 1 ? [s.tRowAlt] : [])]} wrap={false}>
+            <View key={ri} style={[s.tRow, ...(sec.highlightRows?.includes(ri) ? [s.tRowHi] : ri % 2 === 1 ? [s.tRowAlt] : [])]} wrap={false}>
               {row.map((cell, ci) => (
                 <Text key={ci} style={[s.tCell, { width: sec.columns[ci].width, textAlign: sec.columns[ci].align ?? 'left' }, sec.columns[ci].bold ? { fontFamily: 'Helvetica-Bold' } : {}]}>
                   {cell === '' ? '-' : String(cell)}

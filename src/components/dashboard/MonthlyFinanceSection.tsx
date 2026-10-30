@@ -128,12 +128,16 @@ export default function MonthlyFinanceSection({ creds }: { creds: string }) {
           series: active.map(m => ({ name: m.label, color: m.color, values: rows.map(r => r[m.key]) })) },
       ],
       sections: [{
-        title: 'Rincian per Bulan',
+        title: 'Rincian per Bulan (baris kuning = bulan terbaik)',
         columns: [
-          { header: 'Bulan', width: '16%', bold: true }, { header: 'Penjualan', width: '17%', align: 'right', bold: true }, { header: 'HPP', width: '14%', align: 'right' },
-          { header: 'Laba Kotor', width: '14%', align: 'right' }, { header: 'Beban Ops.', width: '14%', align: 'right' }, { header: 'Selisih Stok', width: '12%', align: 'right' }, { header: 'Laba Bersih', width: '13%', align: 'right', bold: true },
+          { header: 'Bulan', width: '22%', bold: true }, { header: 'Penjualan', width: '15%', align: 'right', bold: true }, { header: 'HPP', width: '12%', align: 'right' },
+          { header: 'Laba Kotor', width: '13%', align: 'right' }, { header: 'Beban Ops.', width: '13%', align: 'right' }, { header: 'Selisih Stok', width: '11%', align: 'right' }, { header: 'Laba Bersih', width: '14%', align: 'right', bold: true },
         ],
-        rows: rows.map(r => [fullMonth(r.month).replace(/ \d{4}$/, ` ${r.month.slice(2, 4)}`), pdfRp(r.pendapatan), pdfRp(r.hpp), pdfRp(r.labaKotor), pdfRp(r.bebanOperasional), pdfRp(r.selisihStok), pdfRp(r.labaBersih)]),
+        rows: rows.map(r => {
+          const tags = [bestSales?.month === r.month ? 'Penjualan tertinggi' : '', bestProfit?.month === r.month ? 'Laba bersih tertinggi' : ''].filter(Boolean);
+          return [`${fullMonth(r.month).replace(/ \d{4}$/, ` ${r.month.slice(2, 4)}`)}${tags.length ? `\n* ${tags.join(' + ')}` : ''}`, pdfRp(r.pendapatan), pdfRp(r.hpp), pdfRp(r.labaKotor), pdfRp(r.bebanOperasional), pdfRp(r.selisihStok), pdfRp(r.labaBersih)];
+        }),
+        highlightRows: rows.map((r, i) => (bestSales?.month === r.month || bestProfit?.month === r.month ? i : -1)).filter(i => i >= 0),
         total: ['Total', pdfRp(total('pendapatan')), pdfRp(rows.reduce((a, r) => a + r.hpp, 0)), pdfRp(total('labaKotor')), pdfRp(rows.reduce((a, r) => a + r.bebanOperasional, 0)), pdfRp(rows.reduce((a, r) => a + r.selisihStok, 0)), pdfRp(total('labaBersih'))],
       }],
     };
