@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Store, Search, Loader2, ChevronLeft, ChevronRight, RefreshCw, Check, X, Eye,
-  Send, ShoppingBag, CalendarCheck, Scale,
+  Send, ShoppingBag, CalendarCheck, CalendarDays, Scale,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import MitraDailyReportPDF from '@/lib/pdf/MitraDailyReportPDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
-import { formatReportDay, type DailyProductRow, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
+import { describePeriod, formatReportDay, type DailyProductRow, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
 import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -45,9 +45,7 @@ function Checkbox({ checked, indeterminate, onChange }: { checked: boolean; inde
 }
 
 const hasActivity = (s: ReportSection) => s.days.length > 0;
-const fmtShort = (iso: string) =>
-  new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-const periodText = (from: string, to: string) => (from === to ? fmtShort(from) : `${fmtShort(from)} - ${fmtShort(to)}`);
+const periodText = (from: string, to: string) => describePeriod(from, to).text;
 const nowText = () => new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -114,12 +112,6 @@ function DayTables({ section }: { section: ReportSection }) {
   }
   return (
     <div className="flex flex-col gap-4">
-      {section.days.length > 1 && (
-        <div>
-          <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Ringkasan produk selama periode ({section.products.length} produk)</p>
-          <ProductTable rows={section.products} />
-        </div>
-      )}
       {section.days.map(day => (
         <div key={day.date}>
           <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--text-primary)' }}>
@@ -303,7 +295,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     setExportingPdf(true);
     try {
       const blob = await pdf(
-        <MitraDailyReportPDF store={storeHeader} data={{ periodText: periodText(from, to), generatedAt: nowText(), sections: rows }} />
+        <MitraDailyReportPDF store={storeHeader} data={{ from, to, generatedAt: nowText(), sections: rows }} />
       ).toBlob();
       const who = rows.length === 1 ? rows[0].locationName.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'mitra';
       downloadBlob(blob, `laporan-harian-${who}-${from}${to !== from ? `_${to}` : ''}.pdf`);
@@ -394,7 +386,12 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
           </div>
         )}
-        <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>{periodText(from, to)}</span>
+      </div>
+      <div className="card px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+        <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}><CalendarDays size={13} /> Periode laporan</span>
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Dari <b style={{ color: 'var(--text-primary)' }}>{describePeriod(from, to).fromLong}</b></span>
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Sampai <b style={{ color: 'var(--text-primary)' }}>{describePeriod(from, to).toLong}</b></span>
+        <span className="badge badge-gray text-[10px]">{describePeriod(from, to).days} hari</span>
       </div>
 
       {/* Header: filter + search + aksi */}
@@ -603,6 +600,15 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               </div>
             </div>
             <div className="modal-body">
+              <p className="text-xs font-bold mb-2" style={{ color: 'var(--accent)' }}>Rincian per hari</p>
+              <DayTables section={previewSection} />
+
+              {/* Ringkasan — bagian terpisah di paling bawah */}
+              <div className="mt-6 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--text-primary)', color: '#fff' }}>
+                <span className="text-xs font-bold tracking-wide">RINGKASAN · {previewSection.locationName.toUpperCase()}</span>
+                <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
+              </div>
+              <div className="mt-3">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                 {([
                   ['Total Kirim', `${rupiah(previewSection.totals.nilaiKirim)}`, `${previewSection.totals.kirim} pcs`],
@@ -620,7 +626,13 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                   </div>
                 ))}
               </div>
-              <DayTables section={previewSection} />
+              {previewSection.days.length > 1 && (
+                <div className="mb-2">
+                  <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Produk selama periode ({previewSection.products.length} produk)</p>
+                  <ProductTable rows={previewSection.products} />
+                </div>
+              )}
+              </div>
               <p className="text-[11px] mt-4" style={{ color: 'var(--text-muted)' }}>
                 Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
               </p>

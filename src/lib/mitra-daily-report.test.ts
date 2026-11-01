@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMitraDailyReport } from './mitra-daily-report';
+import { buildMitraDailyReport, describePeriod } from './mitra-daily-report';
 
 // 2026-11-01 05:00 WIB = 2026-10-31 22:00 UTC
 const at = (iso: string) => ({ seconds: Math.floor(new Date(`${iso}+07:00`).getTime() / 1000) });
@@ -52,5 +52,13 @@ describe('buildMitraDailyReport', () => {
     expect(l1.realisasiPct).toBeNull();
     expect(l1.days[0].totals.stokAkhir).toBe(27); // tetap memperhitungkan kirim sesudah rentang
     expect(l2.days).toEqual([]);
+  });
+
+  it('menjelaskan periode: tanggal dari/sampai dan jumlah hari', () => {
+    expect(describePeriod('2026-11-01', '2026-11-01').text).toBe('1 November 2026 (1 hari)');
+    const p = describePeriod('2026-10-30', '2026-11-02');
+    expect(p.text).toBe('30 Oktober 2026 s/d 2 November 2026 (4 hari)');
+    expect(p.days).toBe(4);
+    expect(p.fromLong).toBe('Jumat, 30 Oktober 2026');
   });
 });

@@ -168,3 +168,13 @@ export function buildMitraDailyReport(input: {
 export function formatReportDay(iso: string): string {
   return new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
 }
+
+// Keterangan periode laporan yang eksplisit: "1 November 2026 s/d 2 November 2026 (2 hari)".
+export function describePeriod(from: string, to: string): { text: string; fromLong: string; toLong: string; days: number } {
+  const short = (iso: string) => new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+  const days = Math.max(1, Math.round((new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) / 86400000) + 1);
+  return {
+    text: from === to ? `${short(from)} (1 hari)` : `${short(from)} s/d ${short(to)} (${days} hari)`,
+    fromLong: formatReportDay(from), toLong: formatReportDay(to), days,
+  };
+}

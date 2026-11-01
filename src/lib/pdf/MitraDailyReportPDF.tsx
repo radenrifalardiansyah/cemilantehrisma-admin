@@ -3,10 +3,11 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import SystemSeal from './SystemSeal';
 import type { StoreHeader } from './ShipmentNotePDF';
-import { formatReportDay, type DailyProductRow, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
+import { describePeriod, formatReportDay, type DailyProductRow, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
 
 export interface MitraDailyReportData {
-  periodText:  string;
+  from:        string; // YYYY-MM-DD (WIB)
+  to:          string;
   generatedAt: string;
   sections:    (MitraDailyReportSection & { code?: string })[];
 }
@@ -75,6 +76,10 @@ const s = StyleSheet.create({
   sectionRow:          { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border, paddingVertical: 4, paddingHorizontal: 6 },
   sectionRowText:      { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.accent },
   sectionRowSub:       { fontSize: 7.5, color: C.muted },
+  subTitle: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', color: C.accent, marginTop: 16, marginBottom: -8 },
+  summaryBanner: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: C.dark, borderRadius: 6, paddingVertical: 7, paddingHorizontal: 10, marginTop: 22 },
+  summaryBannerTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.white, letterSpacing: 0.8 },
+  summaryBannerSub: { fontSize: 8, color: '#E6DDD0' },
   totalRow: { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border },
 
   totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
@@ -166,7 +171,7 @@ function Header({ store, data }: { store: StoreHeader; data: MitraDailyReportDat
           <Text style={s.docSub}>Dokumen Internal</Text>
           <View style={s.docMetaRow}>
             <Text style={s.docMetaLabel}>Periode:</Text>
-            <Text style={s.docMetaValue}>{data.periodText}</Text>
+            <Text style={s.docMetaValue}>{describePeriod(data.from, data.to).text}</Text>
           </View>
           <View style={s.docMetaRow}>
             <Text style={s.docMetaLabel}>Dicetak:</Text>
@@ -205,7 +210,48 @@ function Signature({ store, periodText }: { store: StoreHeader; periodText: stri
   );
 }
 
-// Ringkasan semua mitra — halaman pertama bila laporan memuat lebih dari satu mitra.
+function PeriodBox({ data }: { data: MitraDailyReportData }) {
+  const p = describePeriod(data.from, data.to);
+  return (
+    <View style={s.infoBox}>
+      <Text style={s.infoLabel}>Periode Laporan</Text>
+      <Text style={s.infoValue}>Dari: {p.fromLong}</Text>
+      <Text style={s.infoValue}>Sampai: {p.toLong}</Text>
+      <Text style={s.infoSub}>Lama periode: {p.days} hari</Text>
+    </View>
+  );
+}
+
+// Penanda bagian ringkasan — memisahkannya dari rincian harian di atasnya.
+function SummaryBanner({ title, sub }: { title: string; sub: string }) {
+  return (
+    <View style={s.summaryBanner} wrap={false} minPresenceAhead={90}>
+      <Text style={s.summaryBannerTitle}>{title}</Text>
+      <Text style={s.summaryBannerSub}>{sub}</Text>
+    </View>
+  );
+}
+
+function TableHead() {
+  return (
+    <View style={s.tHeadRow} fixed>
+      <Text style={[s.tHeadCell, { width: W.no }]}>No</Text>
+      <Text style={[s.tHeadCell, { width: W.name }]}>Produk</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAwal'}</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.harga }]}>{'Harga\nSatuan'}</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Kirim</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Kirim</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Rekap</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Rekap</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.retur }]}>Retur</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.reject }]}>Reject</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Selisih</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAkhir'}</Text>
+    </View>
+  );
+}
+
+// Ringkasan semua mitra — halaman terakhir bila laporan memuat lebih dari satu mitra.
 const OV = { no: '6%', name: '28%', rp: '16%', pct: '9%', stok: '9%' };
 function OverviewPage({ data, store }: { data: MitraDailyReportData; store: StoreHeader }) {
   const t = data.sections.reduce((a, x) => ({
@@ -220,12 +266,14 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
       <Header store={store} data={data} />
       <View style={s.infoRow}>
         <View style={s.infoBox}>
-          <Text style={s.infoLabel}>Ringkasan</Text>
+          <Text style={s.infoLabel}>Isi Laporan</Text>
           <Text style={s.infoValue}>{data.sections.length} mitra</Text>
-          <Text style={s.infoSub}>Periode {data.periodText}</Text>
+          <Text style={s.infoSub}>Rincian per mitra ada di halaman sebelumnya</Text>
         </View>
+        <PeriodBox data={data} />
       </View>
-      <View style={s.table}>
+      <SummaryBanner title="RINGKASAN SEMUA MITRA" sub={describePeriod(data.from, data.to).text} />
+      <View style={[s.table, { marginTop: 10 }]}>
         <View style={s.tHeadRow} fixed>
           {head.map(([h, w, r]) => <Text key={h} style={[s.tHeadCell, { width: w }, ...(r ? [s.right] : [])]}>{h}</Text>)}
         </View>
@@ -256,7 +304,8 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
 }
 
 function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sections'][number]; data: MitraDailyReportData; store: StoreHeader; no?: number }) {
-  const showPeriodSummary = sec.days.length > 1; // satu hari saja = ringkasan periode sama dengan rinciannya
+  const period = describePeriod(data.from, data.to);
+  const showProductSummary = sec.days.length > 1; // satu hari saja = rekap produk periode sama dengan rinciannya
   const valOf = (pick: (r: DailyProductRow) => number) => sec.products.reduce((t, r) => t + pick(r) * r.harga, 0);
   return (
     <Page size="A4" style={s.page} wrap>
@@ -268,45 +317,18 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
           <Text style={s.infoValue}>{no ? `${no}. ` : ''}{sec.locationName}{sec.code ? `  ·  ${sec.code}` : ''}</Text>
           <Text style={s.infoSub}>{sec.days.length} hari ada aktivitas · {sec.products.length} produk</Text>
         </View>
-        <View style={s.infoBox}>
-          <Text style={s.infoLabel}>Stok Mitra</Text>
-          <Text style={s.infoValue}>Awal {sec.stokAwalPeriode} | Akhir {sec.stokAkhirPeriode} pcs</Text>
-          <Text style={s.infoSub}>Saat ini {sec.currentStock} pcs · {rp(sec.currentStockValue)} · terealisasi {pct(sec.realisasiPct)}</Text>
-        </View>
+        <PeriodBox data={data} />
       </View>
 
+      {/* Rincian per hari */}
+      <Text style={s.subTitle}>Rincian per hari</Text>
       {sec.days.length === 0 ? (
         <View style={s.table}>
           <Text style={[s.tCell, { padding: 12, color: C.muted }]}>Tidak ada kirim maupun rekap pada periode ini.</Text>
         </View>
       ) : (
         <View style={s.table}>
-          <View style={s.tHeadRow} fixed>
-            <Text style={[s.tHeadCell, { width: W.no }]}>No</Text>
-            <Text style={[s.tHeadCell, { width: W.name }]}>Produk</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAwal'}</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.harga }]}>{'Harga\nSatuan'}</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Kirim</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Kirim</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Rekap</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Rekap</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.retur }]}>Retur</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.reject }]}>Reject</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Selisih</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAkhir'}</Text>
-          </View>
-
-          {showPeriodSummary && (
-            <Fragment>
-              <View style={s.sectionRow} wrap={false} minPresenceAhead={50}>
-                <Text style={s.sectionRowText}>Ringkasan produk selama periode</Text>
-                <Text style={s.sectionRowSub}>stok awal = awal periode · stok akhir = akhir periode</Text>
-              </View>
-              <ProductRows rows={sec.products} />
-              <TotalRow rows={sec.products} label="Total periode" />
-            </Fragment>
-          )}
-
+          <TableHead />
           {sec.days.map(day => (
             <Fragment key={day.date}>
               <View style={s.sectionRow} wrap={false} minPresenceAhead={50}>
@@ -317,6 +339,21 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
               <TotalRow rows={day.rows} label="Subtotal" />
             </Fragment>
           ))}
+        </View>
+      )}
+
+      {/* Ringkasan — bagian terpisah di paling bawah */}
+      <SummaryBanner title={`RINGKASAN${no ? ` · ${no}. ` : ' · '}${sec.locationName.toUpperCase()}`} sub={period.text} />
+
+      {showProductSummary && (
+        <View style={[s.table, { marginTop: 10 }]}>
+          <TableHead />
+          <View style={s.sectionRow} wrap={false}>
+            <Text style={s.sectionRowText}>Produk selama periode</Text>
+            <Text style={s.sectionRowSub}>stok awal = awal periode | stok akhir = akhir periode</Text>
+          </View>
+          <ProductRows rows={sec.products} />
+          <TotalRow rows={sec.products} label="Total periode" />
         </View>
       )}
 
@@ -361,7 +398,7 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
             </View>
           </View>
         </View>
-        <Signature store={store} periodText={data.periodText} />
+        <Signature store={store} periodText={period.text} />
       </View>
 
       <Footer store={store} />
@@ -373,10 +410,10 @@ export default function MitraDailyReportPDF({ data, store }: { data: MitraDailyR
   const multi = data.sections.length > 1;
   return (
     <Document>
-      {multi && <OverviewPage data={data} store={store} />}
       {data.sections.map((sec, i) => (
         <MitraPage key={sec.locationId} sec={sec} data={data} store={store} no={multi ? i + 1 : undefined} />
       ))}
+      {multi && <OverviewPage data={data} store={store} />}
     </Document>
   );
 }

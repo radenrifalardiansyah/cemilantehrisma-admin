@@ -33,12 +33,12 @@ const store = { name: 'Cemilan Teh Risma', tagline: 'Camilan khas rumahan', addr
 
 describe('MitraDailyReportPDF', () => {
   it('merender banyak mitra (ringkasan + detail multi-hari + mitra kosong) menjadi PDF valid', async () => {
-    const buf = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ periodText: '1 - 2 November 2026', generatedAt: 'now', sections: build('2026-11-01', '2026-11-02') }} />);
+    const buf = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-02', generatedAt: 'now', sections: build('2026-11-01', '2026-11-02') }} />);
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     if (process.env.PDF_OUT) writeFileSync(`${process.env.PDF_OUT}/multi.pdf`, buf);
   });
   it('merender satu mitra satu hari', async () => {
-    const buf = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ periodText: '1 November 2026', generatedAt: 'now', sections: build('2026-11-01', '2026-11-01').slice(0, 1) }} />);
+    const buf = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-01', generatedAt: 'now', sections: build('2026-11-01', '2026-11-01').slice(0, 1) }} />);
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     if (process.env.PDF_OUT) writeFileSync(`${process.env.PDF_OUT}/single.pdf`, buf);
   });
