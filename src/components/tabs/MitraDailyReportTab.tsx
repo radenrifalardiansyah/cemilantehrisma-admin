@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Store, Search, Loader2, ChevronLeft, ChevronRight, RefreshCw, Check, X, Eye,
-  Send, ShoppingBag, CalendarCheck, PackageCheck,
+  Send, ShoppingBag, CalendarCheck, Scale,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import MitraDailyReportPDF from '@/lib/pdf/MitraDailyReportPDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
-import { formatReportDay, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
+import { formatReportDay, type DailyProductRow, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
 import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
@@ -61,43 +61,72 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+const pctText = (n: number | null) => (n === null ? '-' : `${n.toLocaleString('id-ID')}%`);
+
+function ProductTable({ rows }: { rows: DailyProductRow[] }) {
+  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
+  const th = 'px-2.5 py-2 text-[10px] font-bold uppercase text-right whitespace-nowrap';
+  const td = 'px-2.5 py-2 text-xs tabular text-right whitespace-nowrap';
+  const dash = (n: number) => (n ? n : '-');
+  const dashRp = (n: number) => (n ? rupiah(n) : '-');
+  return (
+    <div className="card overflow-x-auto" style={{ borderColor: 'var(--border-2)' }}>
+      <table className="w-full" style={{ minWidth: 820 }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+            <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
+            <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Produk</th>
+            <th className={th}>Harga Satuan</th><th className={th}>Kirim</th><th className={th}>Nilai Kirim</th>
+            <th className={th}>Rekap</th><th className={th}>Nilai Rekap</th><th className={th}>Retur</th><th className={th}>Reject</th>
+            <th className={th}>Selisih</th><th className={th}>Stok Awal</th><th className={th}>Stok Akhir</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.productId} style={{ borderTop: '1px solid var(--border-2)' }}>
+              <td className="px-2.5 py-2 text-xs tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+              <td className="px-2.5 py-2 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{r.productName}</td>
+              <td className={td}>{dashRp(r.harga)}</td><td className={td}>{dash(r.kirim)}</td><td className={td}>{dashRp(r.nilaiKirim)}</td>
+              <td className={td}>{dash(r.jual)}</td><td className={td}>{dashRp(r.nilaiJual)}</td>
+              <td className={td} style={r.retur ? { color: 'var(--info, #1D4ED8)', fontWeight: 700 } : undefined}>{dash(r.retur)}</td>
+              <td className={td} style={r.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(r.reject)}</td>
+              <td className={td} style={r.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{r.selisih ? rupiah(r.selisih) : '-'}</td>
+              <td className={td}>{r.stokAwal}</td>
+              <td className={`${td} font-bold`}>{r.stokAkhir}</td>
+            </tr>
+          ))}
+          <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+            <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">Total</td><td className="px-2.5 py-2" />
+            <td className={`${td} font-bold`}>{sum('kirim')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiKirim'))}</td>
+            <td className={`${td} font-bold`}>{sum('jual')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiJual'))}</td>
+            <td className={`${td} font-bold`}>{sum('retur')}</td><td className={`${td} font-bold`}>{sum('reject')}</td>
+            <td className={`${td} font-bold`}>{rupiah(sum('selisih'))}</td><td className={`${td} font-bold`}>{sum('stokAwal')}</td><td className={`${td} font-bold`}>{sum('stokAkhir')}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function DayTables({ section }: { section: ReportSection }) {
   if (section.days.length === 0) {
     return <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>Tidak ada kirim maupun rekap pada periode ini.</p>;
   }
-  const th = 'px-3 py-2 text-[10px] font-bold uppercase text-right';
-  const td = 'px-3 py-2 text-xs tabular text-right';
   return (
     <div className="flex flex-col gap-4">
+      {section.days.length > 1 && (
+        <div>
+          <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Ringkasan produk selama periode ({section.products.length} produk)</p>
+          <ProductTable rows={section.products} />
+        </div>
+      )}
       {section.days.map(day => (
         <div key={day.date}>
-          <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--text-primary)' }}>{formatReportDay(day.date)}</p>
-          <div className="card overflow-x-auto" style={{ borderColor: 'var(--border-2)' }}>
-            <table className="w-full" style={{ minWidth: 420 }}>
-              <thead>
-                <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                  <th className="px-3 py-2 text-[10px] font-bold uppercase text-left">Produk</th>
-                  <th className={th}>Kirim</th><th className={th}>Jual</th><th className={th}>Retur</th><th className={th}>Reject</th><th className={th}>Stok Akhir</th>
-                </tr>
-              </thead>
-              <tbody>
-                {day.rows.map(r => (
-                  <tr key={r.productId} style={{ borderTop: '1px solid var(--border-2)' }}>
-                    <td className="px-3 py-2 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{r.productName}</td>
-                    <td className={td}>{r.kirim || '-'}</td><td className={td}>{r.jual || '-'}</td>
-                    <td className={td}>{r.retur || '-'}</td><td className={td}>{r.reject || '-'}</td>
-                    <td className={`${td} font-bold`}>{r.stokAkhir}</td>
-                  </tr>
-                ))}
-                <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
-                  <td className="px-3 py-2 text-xs font-bold">Total</td>
-                  <td className={`${td} font-bold`}>{day.totals.kirim}</td><td className={`${td} font-bold`}>{day.totals.jual}</td>
-                  <td className={`${td} font-bold`}>{day.totals.retur}</td><td className={`${td} font-bold`}>{day.totals.reject}</td>
-                  <td className={`${td} font-bold`}>{day.totals.stokAkhir}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--text-primary)' }}>
+            {formatReportDay(day.date)} <span className="font-medium" style={{ color: 'var(--text-muted)' }}>· stok awal {day.totals.stokAwal} → akhir {day.totals.stokAkhir} pcs</span>
+          </p>
+          <ProductTable rows={day.rows} />
         </div>
       ))}
     </div>
@@ -185,7 +214,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     return n;
   });
 
-  const sum = (k: 'kirim' | 'jual' | 'retur' | 'reject') => filtered.reduce((t, s) => t + s.totals[k], 0);
+  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih') => filtered.reduce((t, s) => t + s.totals[k], 0);
+  const rowOffset = Number.isFinite(pageSize) ? (safePage - 1) * pageSize : 0;
   const activeCount = filtered.filter(hasActivity).length;
   const previewSection = previewId ? sections.find(s => s.locationId === previewId) ?? null : null;
 
@@ -199,7 +229,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       const fill = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb } });
       const border = { top: { style: 'thin' as const, color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin' as const, color: { argb: 'FFE5E7EB' } }, left: { style: 'thin' as const, color: { argb: 'FFE5E7EB' } }, right: { style: 'thin' as const, color: { argb: 'FFE5E7EB' } } };
 
-      const addSheet = (name: string, title: string, headersRow: string[], widths: number[], data: (string | number)[][], numCols: number[]) => {
+      // numCols = kolom angka (rata kanan); rpCols ⊂ numCols = kolom rupiah (format "Rp"#,##0).
+      const addSheet = (name: string, title: string, headersRow: string[], widths: number[], data: (string | number)[][], numCols: number[], rpCols: number[]) => {
         const ws = wb.addWorksheet(name);
         ws.columns = widths.map(width => ({ width }));
         const n = headersRow.length;
@@ -220,7 +251,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
         const head = ws.getRow(3);
         headersRow.forEach((h, i) => { head.getCell(i + 1).value = h; });
         head.height = 24;
-        head.eachCell(cell => { cell.fill = fill('FFE8821A'); cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }; cell.alignment = { vertical: 'middle', horizontal: 'center' }; });
+        head.eachCell(cell => { cell.fill = fill('FFE8821A'); cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }; cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; });
         ws.views = [{ state: 'frozen', ySplit: 3 }];
         data.forEach((vals, idx) => {
           const row = ws.getRow(4 + idx);
@@ -228,26 +259,37 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             const c = row.getCell(i + 1);
             c.value = v;
             if (numCols.includes(i)) c.alignment = { horizontal: 'right' };
+            if (rpCols.includes(i)) c.numFmt = '"Rp"#,##0';
           });
           row.eachCell(cell => { cell.fill = fill(idx % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF'); cell.border = border; });
         });
       };
 
       addSheet('Ringkasan', 'LAPORAN HARIAN MITRA — RINGKASAN',
-        ['Mitra', 'Kode', 'Status', 'Hari Aktif', 'Kirim', 'Jual', 'Retur', 'Reject', 'Stok Saat Ini'],
-        [28, 10, 11, 11, 10, 10, 10, 10, 14],
-        rows.map(s => [s.locationName, s.code, s.isActive ? 'Aktif' : 'Nonaktif', s.days.length, s.totals.kirim, s.totals.jual, s.totals.retur, s.totals.reject, s.currentStock]),
-        [3, 4, 5, 6, 7, 8]);
+        ['No', 'Mitra', 'Kode', 'Status', 'Hari Aktif', 'Kirim (pcs)', 'Nilai Kirim', 'Rekap (pcs)', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih (Kirim - Rekap)', '% Terealisasi', 'Stok Awal Periode', 'Stok Akhir Periode', 'Stok Saat Ini (pcs)', 'Nilai Stok Saat Ini'],
+        [6, 28, 10, 11, 10, 11, 16, 11, 16, 9, 9, 20, 13, 12, 12, 13, 17],
+        rows.map((s, i) => [i + 1, s.locationName, s.code, s.isActive ? 'Aktif' : 'Nonaktif', s.days.length, s.totals.kirim, s.totals.nilaiKirim, s.totals.jual, s.totals.nilaiJual, s.totals.retur, s.totals.reject, s.totals.selisih, s.realisasiPct === null ? '-' : `${s.realisasiPct}%`, s.stokAwalPeriode, s.stokAkhirPeriode, s.currentStock, s.currentStockValue]),
+        [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], [6, 8, 11, 16]);
+
+      const productCols = ['No', 'Mitra', 'Produk', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Rekap (pcs)', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih (Kirim - Rekap)', 'Stok Awal', 'Stok Akhir'];
+      const productWidths = [6, 26, 30, 15, 11, 16, 11, 16, 9, 9, 20, 11, 11];
+      const productNum = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const productRp = [3, 5, 7, 10];
+      const productVals = (no: number, mitra: string, r: DailyProductRow) => [no, mitra, r.productName, r.harga, r.kirim, r.nilaiKirim, r.jual, r.nilaiJual, r.retur, r.reject, r.selisih, r.stokAwal, r.stokAkhir];
+
+      const perProduct: (string | number)[][] = [];
+      for (const s of rows) s.products.forEach((r, i) => perProduct.push(productVals(i + 1, s.locationName, r)));
+      addSheet('Produk per Mitra', 'LAPORAN HARIAN MITRA — PRODUK YANG DIKIRIM & DIREKAP SELAMA PERIODE',
+        productCols, productWidths, perProduct, productNum, productRp);
 
       const detail: (string | number)[][] = [];
       for (const s of rows) {
         for (const day of s.days) {
-          for (const r of day.rows) detail.push([s.locationName, formatReportDay(day.date), r.productName, r.kirim, r.jual, r.retur, r.reject, r.stokAkhir]);
+          day.rows.forEach((r, i) => detail.push([formatReportDay(day.date), ...productVals(i + 1, s.locationName, r)]));
         }
       }
       addSheet('Rincian Harian', 'LAPORAN HARIAN MITRA — RINCIAN PER HARI & PRODUK',
-        ['Mitra', 'Tanggal', 'Produk', 'Kirim', 'Jual', 'Retur', 'Reject', 'Stok Akhir'],
-        [26, 28, 30, 10, 10, 10, 10, 12], detail, [3, 4, 5, 6, 7]);
+        ['Tanggal', ...productCols], [28, ...productWidths], detail, productNum.map(n => n + 1), productRp.map(n => n + 1));
 
       const buffer = await wb.xlsx.writeBuffer();
       downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `laporan-harian-mitra-${from}${to !== from ? `_${to}` : ''}.xlsx`);
@@ -279,13 +321,16 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
   ];
 
   const metrics = (s: ReportSection) => (
-    <div className="grid grid-cols-5 gap-2 text-center flex-shrink-0" style={{ minWidth: 250 }}>
+    <div className="grid grid-cols-5 gap-2 text-center flex-shrink-0" style={{ minWidth: 290 }}>
       {([['Kirim', s.totals.kirim], ['Jual', s.totals.jual], ['Retur', s.totals.retur], ['Reject', s.totals.reject], ['Stok', s.currentStock]] as const).map(([label, val]) => (
         <div key={label}>
           <p className="text-[9px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>{label}</p>
           <p className="text-sm font-bold tabular" style={{ color: label === 'Stok' ? 'var(--accent)' : 'var(--text-primary)' }}>{val}</p>
         </div>
       ))}
+      <p className="col-span-5 text-[10px] tabular text-left mt-0.5" style={{ color: 'var(--text-muted)' }}>
+        Kirim {rupiah(s.totals.nilaiKirim)} · Rekap {rupiah(s.totals.nilaiJual)} · Selisih <b style={{ color: s.totals.selisih < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{rupiah(s.totals.selisih)}</b>
+      </p>
     </div>
   );
   const badges = (s: ReportSection) => (
@@ -319,14 +364,14 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       {/* Ringkasan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { icon: <Send size={16} />, label: 'Total Dikirim (pcs)', val: sum('kirim'), color: 'var(--accent)', bg: 'var(--accent-bg)' },
-          { icon: <ShoppingBag size={16} />, label: 'Total Terjual (pcs)', val: sum('jual'), color: 'var(--success)', bg: 'var(--success-bg)' },
-          { icon: <PackageCheck size={16} />, label: 'Retur + Reject (pcs)', val: sum('retur') + sum('reject'), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
+          { icon: <Send size={16} />, label: `Total Kirim · ${sum('kirim')} pcs`, val: rupiah(sum('nilaiKirim')), color: 'var(--accent)', bg: 'var(--accent-bg)' },
+          { icon: <ShoppingBag size={16} />, label: `Total Rekap · ${sum('jual')} pcs`, val: rupiah(sum('nilaiJual')), color: 'var(--success)', bg: 'var(--success-bg)' },
+          { icon: <Scale size={16} />, label: `Selisih (Kirim - Rekap) · ${pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)} terealisasi`, val: rupiah(sum('selisih')), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
           { icon: <CalendarCheck size={16} />, label: 'Mitra Ada Aktivitas', val: `${activeCount} / ${filtered.length}`, color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
         ].map((c, i) => (
           <div key={i} className="card p-4 flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.bg, color: c.color }}>{c.icon}</div>
-            <div>
+            <div className="min-w-0">
               <p className="text-lg font-extrabold tabular leading-none" style={{ color: c.color }}>{c.val}</p>
               <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
             </div>
@@ -416,9 +461,11 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
               {paginated.map((s, idx) => {
                 const isSelected = selected.has(s.locationId);
+                const num = rowOffset + idx + 1;
                 return (
                   <div key={s.locationId} className="flex flex-wrap items-center gap-3 px-4 py-3"
                     style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: s.isActive ? 1 : 0.75 }}>
+                    <span className="w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                     <Checkbox checked={isSelected} onChange={() => toggleSelect(s.locationId)} />
                     <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                       <Store size={16} />
@@ -445,8 +492,9 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {paginated.map(s => {
+              {paginated.map((s, idx) => {
                 const isSelected = selected.has(s.locationId);
+                const num = rowOffset + idx + 1;
                 return (
                   <div key={s.locationId} className="card overflow-hidden relative" style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2, opacity: s.isActive ? 1 : 0.75 }}>
                     <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}>
@@ -456,7 +504,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                       <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-1" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
                         <Store size={20} />
                       </div>
-                      <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                      <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{num}. {s.locationName}</p>
                       <div className="flex items-center justify-center gap-1 flex-wrap">{badges(s)}</div>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{[s.contactName, s.contactPhone].filter(Boolean).join(' · ') || '—'}</p>
                     </div>
@@ -556,11 +604,20 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               </div>
             </div>
             <div className="modal-body">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
-                {([['Kirim', previewSection.totals.kirim], ['Terjual', previewSection.totals.jual], ['Retur', previewSection.totals.retur], ['Reject', previewSection.totals.reject], ['Stok Saat Ini', previewSection.currentStock]] as const).map(([label, val]) => (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                {([
+                  ['Total Kirim', `${rupiah(previewSection.totals.nilaiKirim)}`, `${previewSection.totals.kirim} pcs`],
+                  ['Total Rekap', `${rupiah(previewSection.totals.nilaiJual)}`, `${previewSection.totals.jual} pcs terjual`],
+                  ['Selisih (Kirim - Rekap)', rupiah(previewSection.totals.selisih), `${pctText(previewSection.realisasiPct)} terealisasi`],
+                  ['Retur', `${previewSection.totals.retur} pcs`, ''],
+                  ['Reject', `${previewSection.totals.reject} pcs`, ''],
+                  ['Stok Awal → Akhir Periode', `${previewSection.stokAwalPeriode} → ${previewSection.stokAkhirPeriode} pcs`, ''],
+                  ['Stok Saat Ini', `${previewSection.currentStock} pcs`, rupiah(previewSection.currentStockValue)],
+                ] as const).map(([label, val, sub]) => (
                   <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
                     <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>{label}</p>
-                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: label === 'Stok Saat Ini' ? 'var(--accent)' : 'var(--text-primary)' }}>{val} pcs</p>
+                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: label === 'Stok Saat Ini' ? 'var(--accent)' : 'var(--text-primary)' }}>{val}</p>
+                    {sub && <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
                   </div>
                 ))}
               </div>

@@ -9,7 +9,7 @@ import { buildMitraDailyReport, type DailyReportRecap } from '@/lib/mitra-daily-
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface LocationRow { id: string; name: string; code: string | null; contact_name: string | null; contact_phone: string | null; is_active: boolean | null }
-interface StockRow { location_id: string; product_id: string; product_name: string; stock_qty: string | number }
+interface StockRow { location_id: string; product_id: string; product_name: string; stock_qty: string | number; harga_titip: string | number | null }
 
 // Laporan Harian Mitra: per mitra, per hari, per produk — kirim, jual, retur, reject, stok akhir.
 // Dihitung di server dalam satu kali jalan (bukan N+1 per mitra). Stok akhir hari D dihitung mundur dari
@@ -29,14 +29,14 @@ export async function GET(req: NextRequest) {
   const since = wibDayStart(from).toDate();
   const [locRows, stockRows, shipRows, recapRows] = await Promise.all([
     sql<LocationRow[]>`select id, name, code, contact_name, contact_phone, is_active from consignment_locations order by name asc`,
-    sql<StockRow[]>`select location_id, product_id, product_name, stock_qty from consignment_stock`,
+    sql<StockRow[]>`select location_id, product_id, product_name, stock_qty, harga_titip from consignment_stock`,
     sql<ShipmentRow[]>`select * from consignment_shipments where created_at >= ${since}`,
     sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${since}`,
   ]);
 
-  const stockByLocation: Record<string, { productId: string; productName: string; stockQty: number }[]> = {};
+  const stockByLocation: Record<string, { productId: string; productName: string; stockQty: number; hargaTitip: number }[]> = {};
   for (const r of stockRows) {
-    (stockByLocation[r.location_id] ??= []).push({ productId: r.product_id, productName: r.product_name, stockQty: Number(r.stock_qty) });
+    (stockByLocation[r.location_id] ??= []).push({ productId: r.product_id, productName: r.product_name, stockQty: Number(r.stock_qty), hargaTitip: Number(r.harga_titip) || 0 });
   }
 
   const sections = buildMitraDailyReport({
