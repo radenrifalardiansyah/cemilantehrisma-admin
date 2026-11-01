@@ -113,6 +113,7 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
 interface ConsignmentLocation {
   id: string; name: string; contactName: string; contactPhone: string; address: string; note: string; code?: string; logoUrl?: string;
   waGroup?: string | null; // grup WA yang dipasangkan di Teruskan Stok WA
+  isActive?: boolean; // undefined/true = aktif; nonaktif tidak muncul di pilihan form Kirim Stok & Rekap
 }
 
 function LocationLogo({ location, size }: { location: { name: string; logoUrl?: string }; size: number }) {
@@ -131,8 +132,8 @@ function LocationLogo({ location, size }: { location: { name: string; logoUrl?: 
     </div>
   );
 }
-type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string; logoUrl: string };
-const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '', logoUrl: '' };
+type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string; logoUrl: string; isActive: boolean };
+const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '', logoUrl: '', isActive: true };
 
 const LOCATION_CODE_PREFIX = 'MTR';
 
@@ -407,6 +408,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [dailyLocation,  setDailyLocation]  = useState(''); // '' = semua mitra
   const [dailyFrom,      setDailyFrom]      = useState('');
   const [dailyTo,        setDailyTo]        = useState('');
+  const [dailyInactive,  setDailyInactive]  = useState(false); // sertakan mitra nonaktif saat "Semua mitra"
   const [exportingDaily, setExportingDaily] = useState(false);
 
   const openLocationHistory = async (l: ConsignmentLocation) => {
@@ -444,6 +446,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const [locationSearch,   setLocationSearch]   = useState('');
   const [locationOnlyInStock, setLocationOnlyInStock] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<'semua' | 'aktif' | 'nonaktif'>('semua');
   const [locationPeriod,     setLocationPeriod]     = useState<LocationPeriodKey>('month');
   const [locationCustomFrom, setLocationCustomFrom] = useState('');
   const [locationCustomTo,   setLocationCustomTo]   = useState('');
@@ -509,7 +512,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const openCreateL = () => { setEditingL(null); setLForm({ ...EMPTY_LOCATION, code: nextLocationCode(locations) }); setShowLForm(true); };
   const openEditL = (l: ConsignmentLocation) => {
-    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '', logoUrl: l.logoUrl ?? '' }); setShowLForm(true);
+    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '', logoUrl: l.logoUrl ?? '', isActive: l.isActive !== false }); setShowLForm(true);
   };
   const uploadLocationLogo = async (file?: File) => {
     if (!file) return;
@@ -874,7 +877,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
           raw[field] = cellText(cell.value);
         });
         if (!raw.name.trim()) return;
-        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '', logoUrl: '' });
+        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '', logoUrl: '', isActive: true });
       });
 
       if (rows.length === 0) {
@@ -901,6 +904,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const filteredLocations = locations.filter(l => {
     if (locationOnlyInStock && locationStockTotals(l.id).qty <= 0) return false;
+    if (locationStatus === 'aktif' && l.isActive === false) return false;
+    if (locationStatus === 'nonaktif' && l.isActive !== false) return false;
     if (!locationSearch) return true;
     const q = locationSearch.toLowerCase();
     return l.name.toLowerCase().includes(q)
@@ -2120,6 +2125,10 @@ _${storeHeader.name}_`.trim();
     });
   };
 
+  // Pilihan lokasi di form: mitra nonaktif disembunyikan, kecuali yang sedang terpilih (mis. saat mengedit
+  // kirim/rekap lama milik mitra yang kini nonaktif).
+  const locationOptionsFor = (currentId: string) =>
+    locations.filter(l => l.isActive !== false || l.id === currentId).map(l => ({ value: l.id, label: l.isActive === false ? `${l.name} (nonaktif)` : l.name }));
   const locationOptions = locations.map(l => ({ value: l.id, label: l.name }));
   const productOptions  = products.map(p => ({ value: p.id, label: p.name, imageUrl: p.imageUrls?.[0], emoji: p.emoji }));
   const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
@@ -2452,7 +2461,7 @@ _${storeHeader.name}_`.trim();
       if (!sr.ok || !rr.ok) throw new Error('fetch');
       const { shipments: allShipments } = await sr.json() as { shipments: Shipment[] };
       const { recaps: allRecaps } = await rr.json() as { recaps: Recap[] };
-      const chosen = locations.filter(l => !dailyLocation || l.id === dailyLocation);
+      const chosen = locations.filter(l => dailyLocation ? l.id === dailyLocation : (dailyInactive || l.isActive !== false));
       const sections = buildMitraDailyReport({
         locations: chosen, stockByLocation: locationStock, shipments: allShipments, recaps: allRecaps, from: dailyFrom, to: dailyTo,
       });
@@ -2565,6 +2574,14 @@ _${storeHeader.name}_`.trim();
                   <PackageCheck size={14} /> <span className="hidden sm:inline">Ada Stok</span>
                 </button>
               )}
+              {locations.length > 0 && (
+                <select value={locationStatus} onChange={e => { setLocationStatus(e.target.value as typeof locationStatus); resetLocationPage(); }}
+                  aria-label="Filter status mitra" className="input text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, width: 'auto', paddingRight: 28 }}>
+                  <option value="semua">Semua status</option>
+                  <option value="aktif">Aktif</option>
+                  <option value="nonaktif">Nonaktif</option>
+                </select>
+              )}
               <div className="flex items-center gap-2 justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
                   <button onClick={downloadLocationTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
@@ -2596,7 +2613,7 @@ _${storeHeader.name}_`.trim();
                 )}
                 {locations.length > 0 && (
                   <Tooltip label="Laporan Harian Mitra (PDF)">
-                    <button onClick={() => { const today = toISODate(new Date()); setDailyFrom(today); setDailyTo(today); setDailyLocation(''); setDailyOpen(true); }} aria-label="Laporan Harian Mitra"
+                    <button onClick={() => { const today = toISODate(new Date()); setDailyFrom(today); setDailyTo(today); setDailyLocation(''); setDailyInactive(false); setDailyOpen(true); }} aria-label="Laporan Harian Mitra"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       <DailyReportIcon size={16} />
                     </button>
@@ -2661,6 +2678,7 @@ _${storeHeader.name}_`.trim();
                                   {l.code}
                                 </span>
                               )}
+                              {l.isActive === false && <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>}
                               {l.waGroup && (
                                 <span className="badge badge-green" title={`Grup WA: ${l.waGroup}`} style={{ fontSize: 10, padding: '1px 6px', gap: 3 }}>
                                   <MessageCircle size={10} /> Grup WA
@@ -2768,6 +2786,7 @@ _${storeHeader.name}_`.trim();
                                 {l.code}
                               </span>
                             )}
+                            {l.isActive === false && <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>}
                             {l.waGroup && (
                               <span className="badge badge-green" title={`Grup WA: ${l.waGroup}`} style={{ fontSize: 10, padding: '1px 6px', gap: 3 }}>
                                 <MessageCircle size={10} /> Grup WA
@@ -3375,6 +3394,15 @@ _${storeHeader.name}_`.trim();
                   <textarea rows={3} value={lForm.note} onChange={e => setLForm({ ...lForm, note: e.target.value })}
                     placeholder="Catatan tambahan (opsional)" className="input resize-none" />
                 </div>
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={lForm.isActive} onChange={e => setLForm({ ...lForm, isActive: e.target.checked })} style={{ marginTop: 3 }} />
+                  <span>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Mitra aktif</span>
+                    <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Nonaktif = tidak muncul di pilihan Kirim Stok & Rekap. Riwayat dan laporannya tetap ada.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
             <div className="modal-footer">
@@ -3412,7 +3440,7 @@ _${storeHeader.name}_`.trim();
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="field-label">Lokasi Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptions}
+                    <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptionsFor(sendLocationId)}
                       placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
                   </div>
                   <div>
@@ -3618,7 +3646,7 @@ _${storeHeader.name}_`.trim();
                     <label className="field-label">Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
                     <SearchSelect value={recapLocationId} disabled={!!editingRecap}
                       onChange={id => { setRecapLocationId(id); loadRecapStock(id); }}
-                      options={locationOptions} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                      options={locationOptionsFor(recapLocationId)} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
                   </div>
                   <div>
                     <label className="field-label">Tanggal &amp; Jam</label>
@@ -3841,6 +3869,12 @@ _${storeHeader.name}_`.trim();
                   <input type="date" value={dailyTo} onChange={e => setDailyTo(e.target.value)} className="input w-full" />
                 </div>
               </div>
+              {!dailyLocation && locations.some(l => l.isActive === false) && (
+                <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+                  <input type="checkbox" checked={dailyInactive} onChange={e => setDailyInactive(e.target.checked)} />
+                  Sertakan mitra nonaktif
+                </label>
+              )}
               <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
               </p>
