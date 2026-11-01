@@ -292,16 +292,16 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     } finally { setExportingExcel(false); }
   };
 
-  const exportPdf = async (rows: ReportSection[], label: string) => {
+  const exportPdf = async (rows: ReportSection[], label: string, summaryOnly = false) => {
     if (rows.length === 0) { toast.error('Tidak ada mitra untuk diexport.'); return; }
     setExportingPdf(true);
     try {
       const blob = await pdf(
-        <MitraDailyReportPDF store={storeHeader} data={{ from, to, generatedAt: nowText(), sections: rows }} />
+        <MitraDailyReportPDF store={storeHeader} data={{ from, to, generatedAt: nowText(), sections: rows, summaryOnly }} />
       ).toBlob();
       const who = rows.length === 1 ? rows[0].locationName.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'mitra';
-      downloadBlob(blob, `laporan-harian-${who}-${from}${to !== from ? `_${to}` : ''}.pdf`);
-      toast.success(`Berhasil export ${rows.length} mitra (${label}) ke PDF.`);
+      downloadBlob(blob, `laporan-harian-${who}${summaryOnly ? '-ringkasan' : ''}-${from}${to !== from ? `_${to}` : ''}.pdf`);
+      toast.success(`Berhasil export ${summaryOnly ? 'ringkasan ' : ''}${rows.length} mitra (${label}) ke PDF.`);
     } catch {
       toast.error('Gagal membuat file PDF.');
     } finally { setExportingPdf(false); }
@@ -423,6 +423,12 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+              </button>
+            </Tooltip>
+            <Tooltip label="Export PDF Ringkasan saja">
+              <button onClick={() => exportPdf(filtered, 'sesuai filter', true)} disabled={exportingPdf} aria-label="Export PDF Ringkasan"
+                className="btn-ghost px-2.5 text-[11px] font-bold flex items-center justify-center gap-1.5" style={{ height: HEADER_BTN_H }}>
+                <PdfIcon size={14} /> <span className="hidden md:inline">Ringkasan</span>
               </button>
             </Tooltip>
             <ViewToggle mode={view} onChange={setView} height={HEADER_BTN_H} />
@@ -589,14 +595,21 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       {/* Ringkasan semua mitra — bagian terpisah di paling bawah (sama dengan halaman terakhir PDF) */}
       {!error && filtered.length > 1 && (
         <div>
+          <div className="flex items-stretch gap-2">
           <button type="button" onClick={() => setSummaryOpen(o => !o)} aria-expanded={summaryOpen}
-            className="w-full rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left" style={{ background: 'var(--text-primary)', color: '#fff' }}>
+            className="flex-1 min-w-0 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left" style={{ background: 'var(--text-primary)', color: '#fff' }}>
             <span className="text-xs font-bold tracking-wide flex items-center gap-2">
               <ChevronRight size={14} style={{ transform: summaryOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
               RINGKASAN SEMUA MITRA
             </span>
             <span className="text-[11px] opacity-80">{periodText(from, to)} · {summaryOpen ? 'klik untuk menutup' : 'klik untuk membuka'}</span>
           </button>
+          <Tooltip label="Download PDF ringkasan saja">
+            <button onClick={() => exportPdf(filtered, 'sesuai filter', true)} disabled={exportingPdf} className="btn-ghost px-3 flex items-center gap-1.5 text-xs font-bold flex-shrink-0">
+              {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />} <span className="hidden sm:inline">PDF Ringkasan</span>
+            </button>
+          </Tooltip>
+          </div>
           {summaryOpen && <div className="card overflow-x-auto mt-3" style={{ borderColor: 'var(--border-2)' }}>
             <table className="w-full" style={{ minWidth: 560 }}>
               <thead>
@@ -647,6 +660,10 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />} PDF
             </button>
+            <button onClick={() => exportPdf(sections.filter(s => selected.has(s.locationId)), 'terpilih', true)} disabled={exportingPdf}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap" style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+              <PdfIcon size={13} /> PDF Ringkasan
+            </button>
             <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">Batal</button>
           </div>
         </div>
@@ -670,6 +687,11 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                 <Tooltip label="Export Excel">
                   <button onClick={() => exportExcel([previewSection], previewSection.locationName)} disabled={exportingExcel} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
                     {exportingExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="PDF ringkasan saja">
+                  <button onClick={() => exportPdf([previewSection], previewSection.locationName, true)} disabled={exportingPdf} className="h-8 px-2 rounded-lg flex items-center gap-1 text-[11px] font-bold flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
+                    <PdfIcon size={13} /> Ringkasan
                   </button>
                 </Tooltip>
                 <Tooltip label="Download PDF">

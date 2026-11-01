@@ -42,4 +42,11 @@ describe('MitraDailyReportPDF', () => {
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     if (process.env.PDF_OUT) writeFileSync(`${process.env.PDF_OUT}/single.pdf`, buf);
   });
+  it('merender PDF ringkasan saja (banyak mitra & satu mitra)', async () => {
+    const multi = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-02', generatedAt: 'now', summaryOnly: true, sections: build('2026-11-01', '2026-11-02') }} />);
+    expect(multi.subarray(0, 4).toString()).toBe('%PDF');
+    const one = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-02', generatedAt: 'now', summaryOnly: true, sections: build('2026-11-01', '2026-11-02').slice(0, 1) }} />);
+    expect(one.subarray(0, 4).toString()).toBe('%PDF');
+    if (process.env.PDF_OUT) { writeFileSync(`${process.env.PDF_OUT}/sum_multi.pdf`, multi); writeFileSync(`${process.env.PDF_OUT}/sum_one.pdf`, one); }
+  });
 });

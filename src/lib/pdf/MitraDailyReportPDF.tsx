@@ -9,6 +9,7 @@ export interface MitraDailyReportData {
   from:        string; // YYYY-MM-DD (WIB)
   to:          string;
   generatedAt: string;
+  summaryOnly?: boolean; // true = hanya ringkasan (tanpa rincian per hari)
   sections:    (MitraDailyReportSection & { code?: string })[];
 }
 
@@ -223,9 +224,9 @@ function PeriodBox({ data }: { data: MitraDailyReportData }) {
 }
 
 // Penanda bagian ringkasan — memisahkannya dari rincian harian di atasnya.
-function SummaryBanner({ title, sub }: { title: string; sub: string }) {
+function SummaryBanner({ title, sub, first }: { title: string; sub: string; first?: boolean }) {
   return (
-    <View style={s.summaryBanner} wrap={false} minPresenceAhead={90}>
+    <View style={[s.summaryBanner, ...(first ? [{ marginTop: 4 }] : [])]} wrap={false} minPresenceAhead={90}>
       <Text style={s.summaryBannerTitle}>{title}</Text>
       <Text style={s.summaryBannerSub}>{sub}</Text>
     </View>
@@ -268,7 +269,7 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
         <View style={s.infoBox}>
           <Text style={s.infoLabel}>Isi Laporan</Text>
           <Text style={s.infoValue}>{data.sections.length} mitra</Text>
-          <Text style={s.infoSub}>Rincian per mitra ada di halaman sebelumnya</Text>
+          <Text style={s.infoSub}>{data.summaryOnly ? 'Hanya ringkasan (tanpa rincian per hari)' : 'Rincian per mitra ada di halaman sebelumnya'}</Text>
         </View>
         <PeriodBox data={data} />
       </View>
@@ -321,8 +322,8 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
       </View>
 
       {/* Rincian per hari */}
-      <Text style={s.subTitle}>Rincian per hari</Text>
-      {sec.days.length === 0 ? (
+      {!data.summaryOnly && <Text style={s.subTitle}>Rincian per hari</Text>}
+      {data.summaryOnly ? null : sec.days.length === 0 ? (
         <View style={s.table}>
           <Text style={[s.tCell, { padding: 12, color: C.muted }]}>Tidak ada kirim maupun rekap pada periode ini.</Text>
         </View>
@@ -343,7 +344,7 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
       )}
 
       {/* Ringkasan — bagian terpisah di paling bawah */}
-      <SummaryBanner title={`RINGKASAN${no ? ` · ${no}. ` : ' · '}${sec.locationName.toUpperCase()}`} sub={period.text} />
+      <SummaryBanner title={`RINGKASAN${no ? ` · ${no}. ` : ' · '}${sec.locationName.toUpperCase()}`} sub={period.text} first={!!data.summaryOnly} />
 
       {showProductSummary && (
         <View style={[s.table, { marginTop: 10 }]}>
@@ -410,7 +411,8 @@ export default function MitraDailyReportPDF({ data, store }: { data: MitraDailyR
   const multi = data.sections.length > 1;
   return (
     <Document>
-      {data.sections.map((sec, i) => (
+      {/* Ringkasan saja: banyak mitra = satu halaman ringkasan; satu mitra = halamannya tanpa rincian harian */}
+      {!(data.summaryOnly && multi) && data.sections.map((sec, i) => (
         <MitraPage key={sec.locationId} sec={sec} data={data} store={store} no={multi ? i + 1 : undefined} />
       ))}
       {multi && <OverviewPage data={data} store={store} />}
