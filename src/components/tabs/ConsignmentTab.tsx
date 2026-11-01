@@ -7,7 +7,7 @@ import {
   Search, ChevronLeft, ChevronRight, Upload,
   History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText,
 } from 'lucide-react';
-import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon, DailyReportIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
@@ -2598,14 +2598,14 @@ _${storeHeader.name}_`.trim();
                   <Tooltip label="Laporan Harian Mitra (PDF)">
                     <button onClick={() => { const today = toISODate(new Date()); setDailyFrom(today); setDailyTo(today); setDailyLocation(''); setDailyOpen(true); }} aria-label="Laporan Harian Mitra"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      <FileText size={14} />
+                      <DailyReportIcon size={16} />
                     </button>
                   </Tooltip>
                 )}
                 <Tooltip label="Download Form Daftar Pengiriman (kosong, untuk dicetak)">
                   <button onClick={downloadDeliveryForm} disabled={downloadingDeliveryForm} aria-label="Download Form Daftar Pengiriman"
                     className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                    {downloadingDeliveryForm ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
+                    {downloadingDeliveryForm ? <Loader2 size={14} className="animate-spin" /> : <DeliveryFormIcon size={16} />}
                   </button>
                 </Tooltip>
                 {locations.length > 0 && <ViewToggle mode={locationView} onChange={setLocationView} height={HEADER_BTN_H} />}
