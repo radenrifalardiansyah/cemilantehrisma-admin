@@ -36,6 +36,8 @@ import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
 import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
+import MitraDailyReportPDF from '@/lib/pdf/MitraDailyReportPDF';
+import { buildMitraDailyReport } from '@/lib/mitra-daily-report';
 import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
 import DeliveryFormPDF from '@/lib/pdf/DeliveryFormPDF';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -399,6 +401,13 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [invoiceFrom, setInvoiceFrom] = useState('');
   const [invoiceTo,   setInvoiceTo]   = useState('');
   const [exportingHistoryPdf,   setExportingHistoryPdf]   = useState(false);
+
+  // ── Laporan harian mitra (modal) ───────────────────────────────
+  const [dailyOpen,      setDailyOpen]      = useState(false);
+  const [dailyLocation,  setDailyLocation]  = useState(''); // '' = semua mitra
+  const [dailyFrom,      setDailyFrom]      = useState('');
+  const [dailyTo,        setDailyTo]        = useState('');
+  const [exportingDaily, setExportingDaily] = useState(false);
 
   const openLocationHistory = async (l: ConsignmentLocation) => {
     setHistoryLocation(l);
@@ -2119,22 +2128,29 @@ _${storeHeader.name}_`.trim();
   type HistoryEntry =
     | { kind: 'kirim'; seconds: number; shipment: Shipment }
     | { kind: 'rekap'; seconds: number; recap: Recap };
+  // Filter "Periode" di modal berlaku untuk layar, PDF, dan Excel (kosong = seluruh riwayat).
+  // Invoice/WA memakai data mentah + from/to sendiri.
+  const periodFromSec = invoiceFrom ? new Date(`${invoiceFrom}T00:00:00+07:00`).getTime() / 1000 : -Infinity;
+  const periodToSec   = invoiceTo   ? new Date(`${invoiceTo}T23:59:59+07:00`).getTime() / 1000   : Infinity;
+  const inPeriod = (x: { createdAt?: { seconds: number } }) => { const sec = x.createdAt?.seconds ?? 0; return sec >= periodFromSec && sec <= periodToSec; };
+  const periodShipments = historyShipments.filter(inPeriod);
+  const periodRecaps    = historyRecaps.filter(inPeriod);
   const historyTimeline: HistoryEntry[] = [
-    ...historyShipments.map(s => ({ kind: 'kirim' as const, seconds: s.createdAt?.seconds ?? 0, shipment: s })),
-    ...historyRecaps.map(r => ({ kind: 'rekap' as const, seconds: r.createdAt?.seconds ?? 0, recap: r })),
+    ...periodShipments.map(s => ({ kind: 'kirim' as const, seconds: s.createdAt?.seconds ?? 0, shipment: s })),
+    ...periodRecaps.map(r => ({ kind: 'rekap' as const, seconds: r.createdAt?.seconds ?? 0, recap: r })),
   ].sort((a, b) => b.seconds - a.seconds);
-  const historyTotalKirim   = historyShipments.reduce((s, sh) => s + sh.items.reduce((ss, it) => ss + it.subtotal, 0), 0);
-  const historyTotalSold    = historyRecaps.reduce((s, r) => s + r.totalSold, 0);
-  const historyTotalRetur   = historyRecaps.reduce((s, r) => s + r.totalRetur, 0);
-  const historyTotalReject  = historyRecaps.reduce((s, r) => s + (r.totalReject || 0), 0);
-  const historyTotalRevenue = historyRecaps.reduce((s, r) => s + r.totalRevenue, 0);
-  const historyBelumLunas   = historyRecaps.filter(r => r.paymentStatus === 'belum_lunas').length;
+  const historyTotalKirim   = periodShipments.reduce((s, sh) => s + sh.items.reduce((ss, it) => ss + it.subtotal, 0), 0);
+  const historyTotalSold    = periodRecaps.reduce((s, r) => s + r.totalSold, 0);
+  const historyTotalRetur   = periodRecaps.reduce((s, r) => s + r.totalRetur, 0);
+  const historyTotalReject  = periodRecaps.reduce((s, r) => s + (r.totalReject || 0), 0);
+  const historyTotalRevenue = periodRecaps.reduce((s, r) => s + r.totalRevenue, 0);
+  const historyBelumLunas   = periodRecaps.filter(r => r.paymentStatus === 'belum_lunas').length;
 
   // Excel riwayat lokasi — 2 sheet (Kirim & Rekap) dalam satu file, sama gaya dengan
   // exportShipmentsExcel/exportRecapsExcel tapi diringkas ke satu lokasi saja.
   const exportHistoryExcel = async () => {
     if (!historyLocation) return;
-    if (historyShipments.length === 0 && historyRecaps.length === 0) { toast.error('Tidak ada riwayat untuk diexport.'); return; }
+    if (periodShipments.length === 0 && periodRecaps.length === 0) { toast.error(invoiceFrom || invoiceTo ? 'Tidak ada riwayat pada periode ini.' : 'Tidak ada riwayat untuk diexport.'); return; }
     setExportingHistoryExcel(true);
     try {
       const wb = new ExcelJS.Workbook();
@@ -2190,7 +2206,7 @@ _${storeHeader.name}_`.trim();
 
       buildSheet(
         'Kirim', `RIWAYAT KIRIM — ${historyLocation.name.toUpperCase()}`,
-        `${historyShipments.length} pengiriman · Diexport ${todayLabel}`,
+        `${periodShipments.length} pengiriman · Diexport ${todayLabel}`,
         [
           { header: 'No', key: 'no', width: 6 },
           { header: 'Tanggal', key: 'date', width: 20 },
@@ -2199,7 +2215,7 @@ _${storeHeader.name}_`.trim();
           { header: 'Catatan', key: 'note', width: 28 },
         ],
         ws => {
-          historyShipments.forEach((sh, i) => {
+          periodShipments.forEach((sh, i) => {
             const row = ws.addRow({
               no: i + 1,
               date: formatDate(sh.createdAt?.seconds),
@@ -2225,7 +2241,7 @@ _${storeHeader.name}_`.trim();
 
       buildSheet(
         'Rekap', `RIWAYAT REKAP — ${historyLocation.name.toUpperCase()}`,
-        `${historyRecaps.length} rekap · Diexport ${todayLabel}`,
+        `${periodRecaps.length} rekap · Diexport ${todayLabel}`,
         [
           { header: 'No', key: 'no', width: 6 },
           { header: 'Tanggal', key: 'date', width: 20 },
@@ -2239,7 +2255,7 @@ _${storeHeader.name}_`.trim();
           { header: 'Catatan', key: 'note', width: 26 },
         ],
         ws => {
-          historyRecaps.forEach((r, i) => {
+          periodRecaps.forEach((r, i) => {
             const row = ws.addRow({
               no: i + 1,
               date: formatDate(r.createdAt?.seconds),
@@ -2363,10 +2379,14 @@ _${storeHeader.name}_`.trim();
   // PDF riwayat lokasi — satu dokumen berisi ringkasan + linimasa lengkap (kirim & rekap).
   const exportHistoryPdf = async () => {
     if (!historyLocation) return;
-    if (historyTimeline.length === 0) { toast.error('Tidak ada riwayat untuk diexport.'); return; }
+    if (invoiceFrom && invoiceTo && invoiceFrom > invoiceTo) { toast.error('Tanggal "dari" tidak boleh setelah "sampai".'); return; }
+    const pShipments = periodShipments;
+    const pRecaps    = periodRecaps;
+    const timeline   = historyTimeline;
+    if (timeline.length === 0) { toast.error(invoiceFrom || invoiceTo ? 'Tidak ada riwayat pada periode ini.' : 'Tidak ada riwayat untuk diexport.'); return; }
     setExportingHistoryPdf(true);
     try {
-      const entries = historyTimeline.map(entry => entry.kind === 'kirim'
+      const entries = timeline.map(entry => entry.kind === 'kirim'
         ? {
             kind: 'kirim' as const,
             date: formatDate(entry.shipment.createdAt?.seconds),
@@ -2391,11 +2411,12 @@ _${storeHeader.name}_`.trim();
             address:         historyLocation.address || undefined,
             generatedAt:     new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             currentStockQty: locationStockTotals(historyLocation.id).qty,
-            totalKirim:      historyTotalKirim,
-            totalRevenue:    historyTotalRevenue,
-            totalSold:       historyTotalSold,
-            totalRetur:      historyTotalRetur,
-            totalReject:     historyTotalReject,
+            totalKirim:      pShipments.reduce((sum, sh) => sum + sh.items.reduce((ss, it) => ss + it.subtotal, 0), 0),
+            totalRevenue:    pRecaps.reduce((sum, r) => sum + r.totalRevenue, 0),
+            totalSold:       pRecaps.reduce((sum, r) => sum + r.totalSold, 0),
+            totalRetur:      pRecaps.reduce((sum, r) => sum + r.totalRetur, 0),
+            totalReject:     pRecaps.reduce((sum, r) => sum + (r.totalReject || 0), 0),
+            periodText:      invoiceFrom || invoiceTo ? `${invoiceFrom || 'awal'} s/d ${invoiceTo || 'sekarang'}` : undefined,
             entries,
           }}
         />
@@ -2413,6 +2434,53 @@ _${storeHeader.name}_`.trim();
       toast.error('Gagal membuat PDF riwayat.');
     } finally {
       setExportingHistoryPdf(false);
+    }
+  };
+
+  // Laporan harian mitra — satu mitra atau semua mitra dalam satu PDF, per hari & per produk.
+  // Selalu mengambil seluruh riwayat kirim/rekap (bukan hanya rentang) karena stok akhir tiap hari
+  // dihitung mundur dari stok saat ini.
+  const exportDailyReport = async () => {
+    if (!dailyFrom || !dailyTo) { toast.error('Isi tanggal dari dan sampai.'); return; }
+    if (dailyFrom > dailyTo) { toast.error('Tanggal "dari" tidak boleh setelah "sampai".'); return; }
+    setExportingDaily(true);
+    try {
+      const [sr, rr] = await Promise.all([
+        fetch(`${API}/api/consignment/send?from=2000-01-01`, { headers }),
+        fetch(`${API}/api/consignment/recap?from=2000-01-01`, { headers }),
+      ]);
+      if (!sr.ok || !rr.ok) throw new Error('fetch');
+      const { shipments: allShipments } = await sr.json() as { shipments: Shipment[] };
+      const { recaps: allRecaps } = await rr.json() as { recaps: Recap[] };
+      const chosen = locations.filter(l => !dailyLocation || l.id === dailyLocation);
+      const sections = buildMitraDailyReport({
+        locations: chosen, stockByLocation: locationStock, shipments: allShipments, recaps: allRecaps, from: dailyFrom, to: dailyTo,
+      });
+      const fmt = (iso: string) => new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+      const blob = await pdf(
+        <MitraDailyReportPDF
+          store={storeHeader}
+          data={{
+            periodText: dailyFrom === dailyTo ? fmt(dailyFrom) : `${fmt(dailyFrom)} - ${fmt(dailyTo)}`,
+            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            sections,
+          }}
+        />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const who = dailyLocation ? (chosen[0]?.name ?? 'mitra').replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'semua-mitra';
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-harian-${who}-${dailyFrom}${dailyTo !== dailyFrom ? `_${dailyTo}` : ''}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setDailyOpen(false);
+    } catch {
+      toast.error('Gagal membuat laporan harian mitra.');
+    } finally {
+      setExportingDaily(false);
     }
   };
 
@@ -2523,6 +2591,14 @@ _${storeHeader.name}_`.trim();
                     <button onClick={() => exportLocationsPDF(filteredLocations, 'sesuai filter')} disabled={exportingLocationsPdf} aria-label="Export PDF"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       {exportingLocationsPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                    </button>
+                  </Tooltip>
+                )}
+                {locations.length > 0 && (
+                  <Tooltip label="Laporan Harian Mitra (PDF)">
+                    <button onClick={() => { const today = toISODate(new Date()); setDailyFrom(today); setDailyTo(today); setDailyLocation(''); setDailyOpen(true); }} aria-label="Laporan Harian Mitra"
+                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                      <FileText size={14} />
                     </button>
                   </Tooltip>
                 )}
@@ -3733,6 +3809,52 @@ _${storeHeader.name}_`.trim();
         </div>
       )}
 
+      {dailyOpen && (
+        <div className="modal-overlay" onClick={() => !exportingDaily && setDailyOpen(false)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><FileText size={17} /></div>
+                <div>
+                  <p className="modal-title">Laporan Harian Mitra</p>
+                  <p className="modal-subtitle">Kirim, jual, retur, reject & stok akhir per hari</p>
+                </div>
+              </div>
+              <Tooltip label="Tutup">
+                <button onClick={() => setDailyOpen(false)} disabled={exportingDaily} className="modal-close"><X size={14} /></button>
+              </Tooltip>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={fieldLabel}>Mitra</label>
+                <SearchSelect value={dailyLocation || 'all'} onChange={v => setDailyLocation(v === 'all' ? '' : v)} options={[{ value: 'all', label: 'Semua mitra (satu PDF)' }, ...locationOptions]} placeholder="Pilih mitra" />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={fieldLabel}>Dari tanggal</label>
+                  <input type="date" value={dailyFrom} onChange={e => setDailyFrom(e.target.value)} className="input w-full" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={fieldLabel}>Sampai tanggal</label>
+                  <input type="date" value={dailyTo} onChange={e => setDailyTo(e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setDailyOpen(false)} disabled={exportingDaily} className="btn-ghost text-xs">Batal</button>
+              <button onClick={exportDailyReport} disabled={exportingDaily} className="btn-primary text-xs">
+                {exportingDaily ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />} Unduh PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {historyLocation && (
         <div className="modal-overlay" onClick={closeLocationHistory}>
           <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
@@ -3776,14 +3898,14 @@ _${storeHeader.name}_`.trim();
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode invoice:</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode:</span>
                 <input type="date" value={invoiceFrom} onChange={e => setInvoiceFrom(e.target.value)} className="input" style={{ height: 32, width: 140 }} />
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
                 <input type="date" value={invoiceTo} onChange={e => setInvoiceTo(e.target.value)} className="input" style={{ height: 32, width: 140 }} />
                 {(invoiceFrom || invoiceTo) && (
                   <button onClick={() => { setInvoiceFrom(''); setInvoiceTo(''); }} style={{ fontSize: 11, color: 'var(--text-secondary)', textDecoration: 'underline' }}>Semua</button>
                 )}
-                <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>(kosong = seluruh riwayat)</span>
+                <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>(kosong = seluruh riwayat · berlaku untuk layar, PDF, Excel & invoice)</span>
               </div>
               {historyLoading ? (
                 <PageLoader compact />

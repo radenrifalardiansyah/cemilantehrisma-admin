@@ -16,6 +16,7 @@ export interface LocationHistoryData {
   contactPhone?:    string;
   address?:         string;
   generatedAt:      string;
+  periodText?:      string;
   currentStockQty:  number;
   totalKirim:       number;
   totalRevenue:     number;
@@ -117,6 +118,12 @@ export default function LocationHistoryPDF({ data, store }: { data: LocationHist
               <Text style={s.docMetaLabel}>Dicetak:</Text>
               <Text style={s.docMetaValue}>{data.generatedAt}</Text>
             </View>
+            {data.periodText && (
+              <View style={s.docMetaRow}>
+                <Text style={s.docMetaLabel}>Periode:</Text>
+                <Text style={s.docMetaValue}>{data.periodText}</Text>
+              </View>
+            )}
           </View>
         </View>
 
