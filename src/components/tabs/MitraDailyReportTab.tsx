@@ -76,7 +76,7 @@ function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[];
             <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
             <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Produk</th>
             <th className={th}>Stok Awal</th><th className={th}>Harga Satuan</th><th className={th}>Kirim</th><th className={th}>Nilai Kirim</th>
-            <th className={th}>Rekap</th><th className={th}>Nilai Rekap</th><th className={th}>Retur</th><th className={th}>Reject</th>
+            <th className={th}>Terjual</th><th className={th}>Nilai Terjual</th><th className={th}>Retur</th><th className={th}>Reject</th>
             <th className={th}>Selisih</th><th className={th}>Stok Akhir</th>
           </tr>
         </thead>
@@ -259,12 +259,12 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       };
 
       addSheet('Ringkasan', 'LAPORAN HARIAN MITRA — RINGKASAN',
-        ['No', 'Mitra', 'Kode', 'Status', 'Hari Aktif', 'Kirim (pcs)', 'Nilai Kirim', 'Rekap (pcs)', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih (Kirim - Rekap)', '% Terealisasi', 'Stok Awal Periode', 'Stok Akhir Periode', 'Stok Saat Ini (pcs)', 'Nilai Stok Saat Ini'],
+        ['No', 'Mitra', 'Kode', 'Status', 'Hari Aktif', 'Kirim (pcs)', 'Nilai Kirim', 'Terjual (pcs)', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih (Kirim - Terjual)', '% Terealisasi', 'Stok Awal Periode', 'Stok Akhir Periode', 'Stok Saat Ini (pcs)', 'Nilai Stok Saat Ini'],
         [6, 28, 10, 11, 10, 11, 16, 11, 16, 9, 9, 20, 13, 12, 12, 13, 17],
         rows.map((s, i) => [i + 1, s.locationName, s.code, s.isActive ? 'Aktif' : 'Nonaktif', s.days.length, s.totals.kirim, s.totals.nilaiKirim, s.totals.jual, s.totals.nilaiJual, s.totals.retur, s.totals.reject, s.totals.selisih, s.realisasiPct === null ? '-' : `${s.realisasiPct}%`, s.stokAwalPeriode, s.stokAkhirPeriode, s.currentStock, s.currentStockValue]),
         [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], [6, 8, 11, 16]);
 
-      const productCols = ['No', 'Mitra', 'Produk', 'Stok Awal', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Rekap (pcs)', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih (Kirim - Rekap)', 'Stok Akhir'];
+      const productCols = ['No', 'Mitra', 'Produk', 'Stok Awal', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Terjual (pcs)', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih (Kirim - Terjual)', 'Stok Akhir'];
       const productWidths = [6, 26, 30, 11, 15, 11, 16, 11, 16, 9, 9, 20, 11];
       const productNum = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
       const productRp = [4, 6, 8, 11];
@@ -322,7 +322,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
         </div>
       ))}
       <p className="col-span-5 text-[10px] tabular text-left mt-0.5" style={{ color: 'var(--text-muted)' }}>
-        Kirim {rupiah(s.totals.nilaiKirim)} · Rekap {rupiah(s.totals.nilaiJual)} · Selisih <b style={{ color: s.totals.selisih < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{rupiah(s.totals.selisih)}</b>
+        Kirim {rupiah(s.totals.nilaiKirim)} · Terjual {rupiah(s.totals.nilaiJual)} · Selisih <b style={{ color: s.totals.selisih < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{rupiah(s.totals.selisih)}</b>
       </p>
     </div>
   );
@@ -358,8 +358,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { icon: <Send size={16} />, label: `Total Kirim · ${sum('kirim')} pcs`, val: rupiah(sum('nilaiKirim')), color: 'var(--accent)', bg: 'var(--accent-bg)' },
-          { icon: <ShoppingBag size={16} />, label: `Total Rekap · ${sum('jual')} pcs`, val: rupiah(sum('nilaiJual')), color: 'var(--success)', bg: 'var(--success-bg)' },
-          { icon: <Scale size={16} />, label: `Selisih (Kirim - Rekap) · ${pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)} terealisasi`, val: rupiah(sum('selisih')), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
+          { icon: <ShoppingBag size={16} />, label: `Total Terjual · ${sum('jual')} pcs`, val: rupiah(sum('nilaiJual')), color: 'var(--success)', bg: 'var(--success-bg)' },
+          { icon: <Scale size={16} />, label: `Selisih (Kirim - Terjual) · ${pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)} terealisasi`, val: rupiah(sum('selisih')), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
           { icon: <CalendarCheck size={16} />, label: 'Mitra Ada Aktivitas', val: `${activeCount} / ${filtered.length}`, color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
         ].map((c, i) => (
           <div key={i} className="card p-4 flex items-center gap-3">
@@ -469,7 +469,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                     <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
                     <th className="px-1 py-2" style={{ width: 28 }} />
                     <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Mitra</th>
-                    {['Stok Awal', 'Kirim', 'Nilai Kirim', 'Rekap', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih', 'Stok Akhir'].map(h => (
+                    {['Stok Awal', 'Kirim', 'Nilai Kirim', 'Terjual', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih', 'Stok Akhir'].map(h => (
                       <th key={h} className="px-2.5 py-2 text-[10px] font-bold uppercase text-right whitespace-nowrap"
                         style={h === 'Retur' ? { color: '#1D4ED8' } : h === 'Reject' ? { color: 'var(--danger)' } : undefined}>{h}</th>
                     ))}
@@ -614,7 +614,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             <table className="w-full" style={{ minWidth: 560 }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                  {['No', 'Mitra', 'Total Kirim', 'Total Rekap', 'Selisih', '% Real.', 'Stok'].map((h, i) => (
+                  {['No', 'Mitra', 'Total Kirim', 'Total Terjual', 'Selisih', '% Real.', 'Stok'].map((h, i) => (
                     <th key={h} className={`px-2.5 py-2 text-[10px] font-bold uppercase ${i < 2 ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
@@ -739,10 +739,10 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               <div className="mt-4 ml-auto rounded-xl p-4" style={{ background: 'var(--accent-bg)', maxWidth: 440 }}>
                 {([
                   ['Total Kirim', `${previewSection.totals.kirim} pcs · ${rupiah(previewSection.totals.nilaiKirim)}`, undefined],
-                  ['Total Rekap (terjual)', `${previewSection.totals.jual} pcs · ${rupiah(previewSection.totals.nilaiJual)}`, 'var(--success)'],
+                  ['Total Terjual', `${previewSection.totals.jual} pcs · ${rupiah(previewSection.totals.nilaiJual)}`, 'var(--success)'],
                   ['Total Retur', `${previewSection.totals.retur} pcs · ${rupiah(previewSection.products.reduce((a, r) => a + r.retur * r.harga, 0))}`, '#1D4ED8'],
                   ['Total Reject', `${previewSection.totals.reject} pcs · ${rupiah(previewSection.products.reduce((a, r) => a + r.reject * r.harga, 0))}`, 'var(--danger)'],
-                  ['% Terealisasi (rekap / kirim)', pctText(previewSection.realisasiPct), undefined],
+                  ['% Terealisasi (terjual / kirim)', pctText(previewSection.realisasiPct), undefined],
                   ['Stok Awal Periode', `${previewSection.stokAwalPeriode} pcs`, undefined],
                   ['Stok Akhir Periode', `${previewSection.stokAkhirPeriode} pcs`, undefined],
                   ['Stok Saat Ini', `${previewSection.currentStock} pcs · ${rupiah(previewSection.currentStockValue)}`, undefined],
@@ -753,7 +753,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                   </div>
                 ))}
                 <div className="flex justify-between gap-3 mt-2 pt-2 items-baseline" style={{ borderTop: '1px solid var(--border-2)' }}>
-                  <span className="text-sm font-bold">Selisih (Kirim - Rekap)</span>
+                  <span className="text-sm font-bold">Selisih (Kirim - Terjual)</span>
                   <span className="text-lg font-extrabold tabular" style={{ color: previewSection.totals.selisih < 0 ? 'var(--danger)' : 'var(--accent)' }}>{rupiah(previewSection.totals.selisih)}</span>
                 </div>
               </div>

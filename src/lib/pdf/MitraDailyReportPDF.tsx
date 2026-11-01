@@ -97,7 +97,7 @@ const s = StyleSheet.create({
 });
 
 // Lebar kolom (% dari lebar tabel) — total 100.
-const W = { no: '4%', name: '15%', harga: '9%', qty: '5%', qtyL: '6%', rp: '11.5%', stok: '7%' };
+const W = { no: '4%', name: '13.5%', harga: '8.8%', qty: '6.2%', qtyL: '6%', rp: '11.5%', stok: '7%' };
 
 function ProductRows({ rows }: { rows: DailyProductRow[] }) {
   return (
@@ -233,8 +233,8 @@ function TableHead() {
       <Text style={[s.tHeadCell, s.right, { width: W.harga }]}>{'Harga\nSatuan'}</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Kirim</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Kirim</Text>
-      <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Rekap</Text>
-      <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Rekap</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Terjual</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>{'Nilai\nTerjual'}</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.retur }]}>Retur</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.reject }]}>Reject</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Selisih</Text>
@@ -250,7 +250,7 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
     kirim: a.kirim + x.totals.nilaiKirim, jual: a.jual + x.totals.nilaiJual, stok: a.stok + x.currentStock,
   }), { kirim: 0, jual: 0, stok: 0 });
   const head: [string, string, boolean][] = [
-    ['No', OV.no, false], ['Mitra', OV.name, false], ['Total Kirim', OV.rp, true], ['Total Rekap', OV.rp, true],
+    ['No', OV.no, false], ['Mitra', OV.name, false], ['Total Kirim', OV.rp, true], ['Total Terjual', OV.rp, true],
     ['Selisih', OV.rp, true], ['% Real.', OV.pct, true], ['Stok', OV.stok, true],
   ];
   return (
