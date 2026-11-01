@@ -149,6 +149,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(true);        // ringkasan semua mitra (bawah daftar)
+  const [previewSummaryOpen, setPreviewSummaryOpen] = useState(true); // ringkasan di modal preview
 
   // Generasi request — respons periode lama yang datang belakangan tidak boleh menimpa periode baru.
   const loadIdRef = useRef(0);
@@ -454,37 +456,70 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Tidak ada mitra yang cocok.</p>
             </div>
           ) : view === 'table' ? (
-            <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
-              {paginated.map((s, idx) => {
-                const isSelected = selected.has(s.locationId);
-                const num = rowOffset + idx + 1;
-                return (
-                  <div key={s.locationId} className="flex flex-wrap items-center gap-3 px-4 py-3"
-                    style={{ borderTop: idx > 0 ? '1px solid var(--border-2)' : undefined, background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: s.isActive ? 1 : 0.75 }}>
-                    <span className="w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
-                    <Checkbox checked={isSelected} onChange={() => toggleSelect(s.locationId)} />
-                    <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
-                      <Store size={16} />
-                    </div>
-                    <div className="flex-1 min-w-[160px]">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
-                        {badges(s)}
-                      </div>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {[s.contactName, s.contactPhone].filter(Boolean).join(' · ') || '—'} · {s.days.length} hari ada aktivitas
-                      </p>
-                    </div>
-                    {metrics(s)}
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {previewButton(s)}
-                      <Tooltip label="PDF mitra ini">
-                        <button onClick={() => exportPdf([s], s.locationName)} disabled={exportingPdf} className="btn-ghost p-2"><PdfIcon size={14} /></button>
-                      </Tooltip>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="card overflow-x-auto" style={{ borderColor: 'var(--border-2)' }}>
+              <table className="w-full" style={{ minWidth: 1080 }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                    <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
+                    <th className="px-1 py-2" style={{ width: 28 }} />
+                    <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Mitra</th>
+                    {['Stok Awal', 'Kirim', 'Nilai Kirim', 'Rekap', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih', 'Stok Akhir'].map(h => (
+                      <th key={h} className="px-2.5 py-2 text-[10px] font-bold uppercase text-right whitespace-nowrap"
+                        style={h === 'Retur' ? { color: '#1D4ED8' } : h === 'Reject' ? { color: 'var(--danger)' } : undefined}>{h}</th>
+                    ))}
+                    <th className="px-2.5 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((s, idx) => {
+                    const isSelected = selected.has(s.locationId);
+                    const num = rowOffset + idx + 1;
+                    const td = 'px-2.5 py-2.5 text-xs tabular text-right whitespace-nowrap';
+                    const dash = (n: number) => (n ? n : '-');
+                    return (
+                      <tr key={s.locationId} style={{ borderTop: '1px solid var(--border-2)', background: isSelected ? 'rgba(212,105,30,0.05)' : undefined, opacity: s.isActive ? 1 : 0.75 }}>
+                        <td className="px-2.5 py-2.5 text-xs font-bold tabular" style={{ color: 'var(--text-muted)' }}>{num}</td>
+                        <td className="px-1 py-2.5"><Checkbox checked={isSelected} onChange={() => toggleSelect(s.locationId)} /></td>
+                        <td className="px-2.5 py-2.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                            {badges(s)}
+                          </div>
+                          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            {[s.contactName, s.contactPhone].filter(Boolean).join(' · ') || '—'} · {s.days.length} hari ada aktivitas
+                          </p>
+                        </td>
+                        <td className={td}>{s.stokAwalPeriode}</td>
+                        <td className={td}>{dash(s.totals.kirim)}</td>
+                        <td className={td}>{s.totals.nilaiKirim ? rupiah(s.totals.nilaiKirim) : '-'}</td>
+                        <td className={td}>{dash(s.totals.jual)}</td>
+                        <td className={td}>{s.totals.nilaiJual ? rupiah(s.totals.nilaiJual) : '-'}</td>
+                        <td className={td} style={s.totals.retur ? { color: '#1D4ED8', fontWeight: 700 } : undefined}>{dash(s.totals.retur)}</td>
+                        <td className={td} style={s.totals.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(s.totals.reject)}</td>
+                        <td className={td} style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? rupiah(s.totals.selisih) : '-'}</td>
+                        <td className={`${td} font-bold`}>{s.stokAkhirPeriode}</td>
+                        <td className="px-2.5 py-2.5">
+                          <div className="flex items-center gap-1 justify-end">
+                            {previewButton(s)}
+                            <Tooltip label="PDF mitra ini">
+                              <button onClick={() => exportPdf([s], s.locationName)} disabled={exportingPdf} className="btn-ghost p-2"><PdfIcon size={14} /></button>
+                            </Tooltip>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                    <td className="px-2.5 py-2.5" /><td className="px-1 py-2.5" />
+                    <td className="px-2.5 py-2.5 text-xs font-bold">Total ({filtered.length} mitra)</td>
+                    {[
+                      filtered.reduce((a, s) => a + s.stokAwalPeriode, 0), sum('kirim'), rupiah(sum('nilaiKirim')), sum('jual'), rupiah(sum('nilaiJual')),
+                      sum('retur'), sum('reject'), rupiah(sum('selisih')), filtered.reduce((a, s) => a + s.stokAkhirPeriode, 0),
+                    ].map((v, i) => <td key={i} className="px-2.5 py-2.5 text-xs tabular text-right font-bold whitespace-nowrap">{v}</td>)}
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -554,11 +589,15 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       {/* Ringkasan semua mitra — bagian terpisah di paling bawah (sama dengan halaman terakhir PDF) */}
       {!error && filtered.length > 1 && (
         <div>
-          <div className="rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--text-primary)', color: '#fff' }}>
-            <span className="text-xs font-bold tracking-wide">RINGKASAN SEMUA MITRA</span>
-            <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
-          </div>
-          <div className="card overflow-x-auto mt-3" style={{ borderColor: 'var(--border-2)' }}>
+          <button type="button" onClick={() => setSummaryOpen(o => !o)} aria-expanded={summaryOpen}
+            className="w-full rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left" style={{ background: 'var(--text-primary)', color: '#fff' }}>
+            <span className="text-xs font-bold tracking-wide flex items-center gap-2">
+              <ChevronRight size={14} style={{ transform: summaryOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+              RINGKASAN SEMUA MITRA
+            </span>
+            <span className="text-[11px] opacity-80">{periodText(from, to)} · {summaryOpen ? 'klik untuk menutup' : 'klik untuk membuka'}</span>
+          </button>
+          {summaryOpen && <div className="card overflow-x-auto mt-3" style={{ borderColor: 'var(--border-2)' }}>
             <table className="w-full" style={{ minWidth: 560 }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
@@ -589,7 +628,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                 </tr>
               </tbody>
             </table>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -660,10 +699,15 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               <DayTables section={previewSection} />
 
               {/* Ringkasan — bagian terpisah di paling bawah (urutan sama dengan PDF) */}
-              <div className="mt-6 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--text-primary)', color: '#fff' }}>
-                <span className="text-xs font-bold tracking-wide">RINGKASAN · {previewSection.locationName.toUpperCase()}</span>
+              <button type="button" onClick={() => setPreviewSummaryOpen(o => !o)} aria-expanded={previewSummaryOpen}
+                className="mt-6 w-full rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left" style={{ background: 'var(--text-primary)', color: '#fff' }}>
+                <span className="text-xs font-bold tracking-wide flex items-center gap-2">
+                  <ChevronRight size={14} style={{ transform: previewSummaryOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                  RINGKASAN · {previewSection.locationName.toUpperCase()}
+                </span>
                 <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
-              </div>
+              </button>
+              {previewSummaryOpen && <>
               {previewSection.days.length > 1 && (
                 <div className="mt-3">
                   <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Produk selama periode ({previewSection.products.length} produk)</p>
@@ -691,6 +735,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                   <span className="text-lg font-extrabold tabular" style={{ color: previewSection.totals.selisih < 0 ? 'var(--danger)' : 'var(--accent)' }}>{rupiah(previewSection.totals.selisih)}</span>
                 </div>
               </div>
+              </>}
               <p className="text-[11px] mt-4" style={{ color: 'var(--text-muted)' }}>
                 Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
               </p>
