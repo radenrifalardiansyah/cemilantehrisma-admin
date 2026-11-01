@@ -77,9 +77,9 @@ function ProductTable({ rows }: { rows: DailyProductRow[] }) {
           <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
             <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
             <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Produk</th>
-            <th className={th}>Harga Satuan</th><th className={th}>Kirim</th><th className={th}>Nilai Kirim</th>
+            <th className={th}>Stok Awal</th><th className={th}>Harga Satuan</th><th className={th}>Kirim</th><th className={th}>Nilai Kirim</th>
             <th className={th}>Rekap</th><th className={th}>Nilai Rekap</th><th className={th}>Retur</th><th className={th}>Reject</th>
-            <th className={th}>Selisih</th><th className={th}>Stok Awal</th><th className={th}>Stok Akhir</th>
+            <th className={th}>Selisih</th><th className={th}>Stok Akhir</th>
           </tr>
         </thead>
         <tbody>
@@ -87,21 +87,20 @@ function ProductTable({ rows }: { rows: DailyProductRow[] }) {
             <tr key={r.productId} style={{ borderTop: '1px solid var(--border-2)' }}>
               <td className="px-2.5 py-2 text-xs tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
               <td className="px-2.5 py-2 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{r.productName}</td>
-              <td className={td}>{dashRp(r.harga)}</td><td className={td}>{dash(r.kirim)}</td><td className={td}>{dashRp(r.nilaiKirim)}</td>
+              <td className={td}>{r.stokAwal}</td><td className={td}>{dashRp(r.harga)}</td><td className={td}>{dash(r.kirim)}</td><td className={td}>{dashRp(r.nilaiKirim)}</td>
               <td className={td}>{dash(r.jual)}</td><td className={td}>{dashRp(r.nilaiJual)}</td>
               <td className={td} style={r.retur ? { color: 'var(--info, #1D4ED8)', fontWeight: 700 } : undefined}>{dash(r.retur)}</td>
               <td className={td} style={r.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(r.reject)}</td>
               <td className={td} style={r.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{r.selisih ? rupiah(r.selisih) : '-'}</td>
-              <td className={td}>{r.stokAwal}</td>
               <td className={`${td} font-bold`}>{r.stokAkhir}</td>
             </tr>
           ))}
           <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
-            <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">Total</td><td className="px-2.5 py-2" />
+            <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">Total</td><td className={`${td} font-bold`}>{sum('stokAwal')}</td><td className="px-2.5 py-2" />
             <td className={`${td} font-bold`}>{sum('kirim')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiKirim'))}</td>
             <td className={`${td} font-bold`}>{sum('jual')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiJual'))}</td>
             <td className={`${td} font-bold`}>{sum('retur')}</td><td className={`${td} font-bold`}>{sum('reject')}</td>
-            <td className={`${td} font-bold`}>{rupiah(sum('selisih'))}</td><td className={`${td} font-bold`}>{sum('stokAwal')}</td><td className={`${td} font-bold`}>{sum('stokAkhir')}</td>
+            <td className={`${td} font-bold`}>{rupiah(sum('selisih'))}</td><td className={`${td} font-bold`}>{sum('stokAkhir')}</td>
           </tr>
         </tbody>
       </table>
@@ -271,11 +270,11 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
         rows.map((s, i) => [i + 1, s.locationName, s.code, s.isActive ? 'Aktif' : 'Nonaktif', s.days.length, s.totals.kirim, s.totals.nilaiKirim, s.totals.jual, s.totals.nilaiJual, s.totals.retur, s.totals.reject, s.totals.selisih, s.realisasiPct === null ? '-' : `${s.realisasiPct}%`, s.stokAwalPeriode, s.stokAkhirPeriode, s.currentStock, s.currentStockValue]),
         [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], [6, 8, 11, 16]);
 
-      const productCols = ['No', 'Mitra', 'Produk', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Rekap (pcs)', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih (Kirim - Rekap)', 'Stok Awal', 'Stok Akhir'];
-      const productWidths = [6, 26, 30, 15, 11, 16, 11, 16, 9, 9, 20, 11, 11];
+      const productCols = ['No', 'Mitra', 'Produk', 'Stok Awal', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Rekap (pcs)', 'Nilai Rekap', 'Retur', 'Reject', 'Selisih (Kirim - Rekap)', 'Stok Akhir'];
+      const productWidths = [6, 26, 30, 11, 15, 11, 16, 11, 16, 9, 9, 20, 11];
       const productNum = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-      const productRp = [3, 5, 7, 10];
-      const productVals = (no: number, mitra: string, r: DailyProductRow) => [no, mitra, r.productName, r.harga, r.kirim, r.nilaiKirim, r.jual, r.nilaiJual, r.retur, r.reject, r.selisih, r.stokAwal, r.stokAkhir];
+      const productRp = [4, 6, 8, 11];
+      const productVals = (no: number, mitra: string, r: DailyProductRow) => [no, mitra, r.productName, r.stokAwal, r.harga, r.kirim, r.nilaiKirim, r.jual, r.nilaiJual, r.retur, r.reject, r.selisih, r.stokAkhir];
 
       const perProduct: (string | number)[][] = [];
       for (const s of rows) s.products.forEach((r, i) => perProduct.push(productVals(i + 1, s.locationName, r)));

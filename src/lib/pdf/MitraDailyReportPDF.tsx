@@ -109,6 +109,7 @@ function ProductRows({ rows }: { rows: DailyProductRow[] }) {
         <View key={r.productId} style={[s.tRow, ...(i % 2 === 1 ? [s.tRowAlt] : [])]} wrap={false}>
           <Text style={[s.tCell, { width: W.no }]}>{i + 1}</Text>
           <Text style={[s.tCell, { width: W.name }]}>{r.productName}</Text>
+          <Text style={[s.tCell, s.right, { width: W.stok }]}>{r.stokAwal}</Text>
           <Text style={[s.tCell, s.right, { width: W.harga }]}>{dashRp(r.harga)}</Text>
           <Text style={[s.tCell, s.right, { width: W.qty }]}>{dash(r.kirim)}</Text>
           <Text style={[s.tCell, s.right, { width: W.rp }]}>{dashRp(r.nilaiKirim)}</Text>
@@ -117,7 +118,6 @@ function ProductRows({ rows }: { rows: DailyProductRow[] }) {
           <Text style={[s.tCell, s.right, { width: W.qtyL }, ...(r.retur > 0 ? [s.returCell] : [s.zeroCell])]}>{r.retur}</Text>
           <Text style={[s.tCell, s.right, { width: W.qtyL }, ...(r.reject > 0 ? [s.rejectCell] : [s.zeroCell])]}>{r.reject}</Text>
           <Text style={[s.tCell, s.right, { width: W.rp }, ...(r.selisih < 0 ? [{ color: C.reject }] : [])]}>{r.selisih ? rp(r.selisih) : '-'}</Text>
-          <Text style={[s.tCell, s.right, { width: W.stok }]}>{r.stokAwal}</Text>
           <Text style={[s.tCell, s.right, s.bold, { width: W.stok }]}>{r.stokAkhir}</Text>
         </View>
       ))}
@@ -133,6 +133,7 @@ function TotalRow({ rows, label }: { rows: DailyProductRow[]; label: string }) {
     <View style={s.totalRow} wrap={false}>
       <Text style={[s.tCell, { width: W.no }]} />
       <Text style={[s.tCell, s.bold, { width: W.name }]}>{label}</Text>
+      <Text style={[s.tCell, s.right, s.bold, { width: W.stok }]}>{sum('stokAwal')}</Text>
       <Text style={[s.tCell, { width: W.harga }]} />
       <Text style={[s.tCell, s.right, s.bold, { width: W.qty }]}>{sum('kirim')}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.rp }]}>{rp(sum('nilaiKirim'))}</Text>
@@ -141,7 +142,6 @@ function TotalRow({ rows, label }: { rows: DailyProductRow[]; label: string }) {
       <Text style={[s.tCell, s.right, s.bold, { width: W.qtyL }, ...(sum('retur') > 0 ? [{ color: C.retur }] : [])]}>{sum('retur')}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.qtyL }, ...(sum('reject') > 0 ? [{ color: C.reject }] : [])]}>{sum('reject')}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.rp }, ...(selisih < 0 ? [{ color: C.reject }] : [])]}>{rp(selisih)}</Text>
-      <Text style={[s.tCell, s.right, s.bold, { width: W.stok }]}>{sum('stokAwal')}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.stok }]}>{sum('stokAkhir')}</Text>
     </View>
   );
@@ -284,6 +284,7 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
           <View style={s.tHeadRow} fixed>
             <Text style={[s.tHeadCell, { width: W.no }]}>No</Text>
             <Text style={[s.tHeadCell, { width: W.name }]}>Produk</Text>
+            <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAwal'}</Text>
             <Text style={[s.tHeadCell, s.right, { width: W.harga }]}>{'Harga\nSatuan'}</Text>
             <Text style={[s.tHeadCell, s.right, { width: W.qty }]}>Kirim</Text>
             <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Nilai Kirim</Text>
@@ -292,7 +293,6 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
             <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.retur }]}>Retur</Text>
             <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.reject }]}>Reject</Text>
             <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Selisih</Text>
-            <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAwal'}</Text>
             <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAkhir'}</Text>
           </View>
 
