@@ -5,11 +5,11 @@
 export interface DailyReportLocation { id: string; name: string }
 export interface DailyReportStockItem { productId: string; productName: string; stockQty: number }
 export interface DailyReportShipment {
-  locationId?: string; createdAt?: { seconds: number } | null;
+  locationId?: string | null; createdAt?: { seconds: number } | null;
   items: { productId: string; productName: string; qty: number }[];
 }
 export interface DailyReportRecap {
-  locationId?: string; createdAt?: { seconds: number } | null;
+  locationId?: string | null; createdAt?: { seconds: number } | null;
   items: { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number }[];
 }
 
@@ -99,4 +99,9 @@ export function buildMitraDailyReport(input: {
       currentStock: [...current.values()].reduce((t, q) => t + q, 0),
     };
   });
+}
+
+// "Senin, 2 November 2026" — tanggal laporan dalam WIB (dipakai PDF, tab laporan, dan modal preview).
+export function formatReportDay(iso: string): string {
+  return new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
 }

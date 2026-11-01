@@ -7,7 +7,7 @@ import {
   Search, ChevronLeft, ChevronRight, Upload,
   History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText,
 } from 'lucide-react';
-import { ExcelIcon, PdfIcon, DailyReportIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
+import { ExcelIcon, PdfIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
@@ -36,8 +36,6 @@ import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
 import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
 import LocationHistoryPDF from '@/lib/pdf/LocationHistoryPDF';
-import MitraDailyReportPDF from '@/lib/pdf/MitraDailyReportPDF';
-import { buildMitraDailyReport } from '@/lib/mitra-daily-report';
 import LocationsListPDF from '@/lib/pdf/LocationsListPDF';
 import DeliveryFormPDF from '@/lib/pdf/DeliveryFormPDF';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -402,14 +400,6 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [invoiceFrom, setInvoiceFrom] = useState('');
   const [invoiceTo,   setInvoiceTo]   = useState('');
   const [exportingHistoryPdf,   setExportingHistoryPdf]   = useState(false);
-
-  // ── Laporan harian mitra (modal) ───────────────────────────────
-  const [dailyOpen,      setDailyOpen]      = useState(false);
-  const [dailyLocation,  setDailyLocation]  = useState(''); // '' = semua mitra
-  const [dailyFrom,      setDailyFrom]      = useState('');
-  const [dailyTo,        setDailyTo]        = useState('');
-  const [dailyInactive,  setDailyInactive]  = useState(false); // sertakan mitra nonaktif saat "Semua mitra"
-  const [exportingDaily, setExportingDaily] = useState(false);
 
   const openLocationHistory = async (l: ConsignmentLocation) => {
     setHistoryLocation(l);
@@ -2446,53 +2436,6 @@ _${storeHeader.name}_`.trim();
     }
   };
 
-  // Laporan harian mitra — satu mitra atau semua mitra dalam satu PDF, per hari & per produk.
-  // Selalu mengambil seluruh riwayat kirim/rekap (bukan hanya rentang) karena stok akhir tiap hari
-  // dihitung mundur dari stok saat ini.
-  const exportDailyReport = async () => {
-    if (!dailyFrom || !dailyTo) { toast.error('Isi tanggal dari dan sampai.'); return; }
-    if (dailyFrom > dailyTo) { toast.error('Tanggal "dari" tidak boleh setelah "sampai".'); return; }
-    setExportingDaily(true);
-    try {
-      const [sr, rr] = await Promise.all([
-        fetch(`${API}/api/consignment/send?from=2000-01-01`, { headers }),
-        fetch(`${API}/api/consignment/recap?from=2000-01-01`, { headers }),
-      ]);
-      if (!sr.ok || !rr.ok) throw new Error('fetch');
-      const { shipments: allShipments } = await sr.json() as { shipments: Shipment[] };
-      const { recaps: allRecaps } = await rr.json() as { recaps: Recap[] };
-      const chosen = locations.filter(l => dailyLocation ? l.id === dailyLocation : (dailyInactive || l.isActive !== false));
-      const sections = buildMitraDailyReport({
-        locations: chosen, stockByLocation: locationStock, shipments: allShipments, recaps: allRecaps, from: dailyFrom, to: dailyTo,
-      });
-      const fmt = (iso: string) => new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-      const blob = await pdf(
-        <MitraDailyReportPDF
-          store={storeHeader}
-          data={{
-            periodText: dailyFrom === dailyTo ? fmt(dailyFrom) : `${fmt(dailyFrom)} - ${fmt(dailyTo)}`,
-            generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            sections,
-          }}
-        />
-      ).toBlob();
-      const url = URL.createObjectURL(blob);
-      const who = dailyLocation ? (chosen[0]?.name ?? 'mitra').replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'semua-mitra';
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `laporan-harian-${who}-${dailyFrom}${dailyTo !== dailyFrom ? `_${dailyTo}` : ''}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setDailyOpen(false);
-    } catch {
-      toast.error('Gagal membuat laporan harian mitra.');
-    } finally {
-      setExportingDaily(false);
-    }
-  };
-
   // Muatan awal: tampilkan loader saja (tanpa tab Lokasi/Kirim/Rekap/Analitik & tombol aksi) sampai
   // ketiga daftar selesai dimuat pertama kali. `booted` mencegah loader penuh muncul lagi saat refresh.
   const [booted, setBooted] = useState(false);
@@ -2608,14 +2551,6 @@ _${storeHeader.name}_`.trim();
                     <button onClick={() => exportLocationsPDF(filteredLocations, 'sesuai filter')} disabled={exportingLocationsPdf} aria-label="Export PDF"
                       className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                       {exportingLocationsPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
-                    </button>
-                  </Tooltip>
-                )}
-                {locations.length > 0 && (
-                  <Tooltip label="Laporan Harian Mitra (PDF)">
-                    <button onClick={() => { const today = toISODate(new Date()); setDailyFrom(today); setDailyTo(today); setDailyLocation(''); setDailyInactive(false); setDailyOpen(true); }} aria-label="Laporan Harian Mitra"
-                      className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
-                      <DailyReportIcon size={16} />
                     </button>
                   </Tooltip>
                 )}
@@ -3834,58 +3769,6 @@ _${storeHeader.name}_`.trim();
             onNavigateLocation={() => setSubTab('lokasi')}
             creds={creds}
           />
-        </div>
-      )}
-
-      {dailyOpen && (
-        <div className="modal-overlay" onClick={() => !exportingDaily && setDailyOpen(false)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><FileText size={17} /></div>
-                <div>
-                  <p className="modal-title">Laporan Harian Mitra</p>
-                  <p className="modal-subtitle">Kirim, jual, retur, reject & stok akhir per hari</p>
-                </div>
-              </div>
-              <Tooltip label="Tutup">
-                <button onClick={() => setDailyOpen(false)} disabled={exportingDaily} className="modal-close"><X size={14} /></button>
-              </Tooltip>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={fieldLabel}>Mitra</label>
-                <SearchSelect value={dailyLocation || 'all'} onChange={v => setDailyLocation(v === 'all' ? '' : v)} options={[{ value: 'all', label: 'Semua mitra (satu PDF)' }, ...locationOptions]} placeholder="Pilih mitra" />
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={fieldLabel}>Dari tanggal</label>
-                  <input type="date" value={dailyFrom} onChange={e => setDailyFrom(e.target.value)} className="input w-full" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={fieldLabel}>Sampai tanggal</label>
-                  <input type="date" value={dailyTo} onChange={e => setDailyTo(e.target.value)} className="input w-full" />
-                </div>
-              </div>
-              {!dailyLocation && locations.some(l => l.isActive === false) && (
-                <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
-                  <input type="checkbox" checked={dailyInactive} onChange={e => setDailyInactive(e.target.checked)} />
-                  Sertakan mitra nonaktif
-                </label>
-              )}
-              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setDailyOpen(false)} disabled={exportingDaily} className="btn-ghost text-xs">Batal</button>
-              <button onClick={exportDailyReport} disabled={exportingDaily} className="btn-primary text-xs">
-                {exportingDaily ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />} Unduh PDF
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

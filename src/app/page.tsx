@@ -34,6 +34,7 @@ import StallOwnTab   from '@/components/tabs/StallOwnTab';
 import KasirLapakTab from '@/components/tabs/KasirLapakTab';
 import CashierSalesReportTab from '@/components/tabs/CashierSalesReportTab';
 import StallSalesReportTab from '@/components/tabs/StallSalesReportTab';
+import MitraDailyReportTab from '@/components/tabs/MitraDailyReportTab';
 import ProcurementReportTab from '@/components/tabs/ProcurementReportTab';
 import PurchaseFlowTab from '@/components/tabs/PurchaseFlowTab';
 import MaterialsTab, { isLowStock as isMaterialLowStock } from '@/components/tabs/MaterialsTab';
@@ -1609,6 +1610,7 @@ export default function AdminPage() {
           highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
           onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
       )}
+      {activeTab === 'mitra-report' && <MitraDailyReportTab creds={creds} />}
       {activeTab === 'wa-forward' && <WaForwardTab creds={creds} can={(a: Action) => can('wa-forward', a)} />}
       {activeTab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
       {activeTab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}

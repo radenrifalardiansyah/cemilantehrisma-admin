@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import type { StoreHeader } from './ShipmentNotePDF';
-import type { MitraDailyReportSection } from '@/lib/mitra-daily-report';
+import { formatReportDay, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
 
 export interface MitraDailyReportData {
   periodText:  string;
@@ -53,9 +53,6 @@ const s = StyleSheet.create({
   pageNo: { position: 'absolute', bottom: 24, right: 40, fontSize: 7.5, color: C.muted },
 });
 
-const fmtDay = (iso: string) =>
-  new Date(`${iso}T12:00:00+07:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-
 function Head() {
   return (
     <View style={s.tHead}>
@@ -104,7 +101,7 @@ export default function MitraDailyReportPDF({ data, store }: { data: MitraDailyR
             {sec.days.length === 0 && <Text style={s.empty}>Tidak ada kirim maupun rekap pada periode ini.</Text>}
             {sec.days.map(day => (
               <View key={day.date}>
-                <Text style={s.dayTitle} minPresenceAhead={60}>{fmtDay(day.date)}</Text>
+                <Text style={s.dayTitle} minPresenceAhead={60}>{formatReportDay(day.date)}</Text>
                 <View style={s.table}>
                   <Head />
                   {day.rows.map((r, i) => (

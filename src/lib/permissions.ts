@@ -24,6 +24,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'consignment',      label: 'Mitra',              actions: CRUD },
   // Teruskan Stok WA (menu sendiri di modul Mitra): view = lihat status & riwayat; edit = pemetaan grup, pengaturan, sinkron grup.
   { key: 'wa-forward',       label: 'Teruskan Stok WA',   actions: ['view', 'edit'] },
+  // Laporan Harian Mitra (menu Laporan di modul Manajemen): kirim, jual, retur, reject & stok akhir per hari.
+  { key: 'mitra-report',     label: 'Laporan Harian Mitra', actions: ['view'] },
   { key: 'consign',          label: 'Titip Jual',         actions: CRUD },
   // Opname & Jurnal Kas Lapak = menu sendiri di bawah folder Titip Jual (data & API-nya tetap dijaga 'consign').
   { key: 'consign-opname',   label: 'Opname Titipan',     actions: ['view', 'create', 'delete'] },
