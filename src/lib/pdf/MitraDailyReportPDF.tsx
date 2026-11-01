@@ -83,15 +83,6 @@ const s = StyleSheet.create({
   summaryBannerSub: { fontSize: 8, color: '#E6DDD0' },
   totalRow: { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border },
 
-  totalsWrap: { marginTop: 14, alignItems: 'flex-end' },
-  totalsBox: { width: '66%', backgroundColor: C.accentBg, borderRadius: 6, padding: 10 },
-  totalsLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 },
-  totalsKey: { fontSize: 9, color: C.muted },
-  totalsVal: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: C.dark },
-  totalsFinalLine: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.border },
-  totalsFinalKey: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.dark },
-  totalsFinalVal: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.accent },
-
   signRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 },
   signBox: { width: '42%', alignItems: 'center' },
   signLabel: { fontSize: 9, color: C.muted },
@@ -306,8 +297,8 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
 
 function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sections'][number]; data: MitraDailyReportData; store: StoreHeader; no?: number }) {
   const period = describePeriod(data.from, data.to);
-  const showProductSummary = sec.days.length > 1; // satu hari saja = rekap produk periode sama dengan rinciannya
-  const valOf = (pick: (r: DailyProductRow) => number) => sec.products.reduce((t, r) => t + pick(r) * r.harga, 0);
+  // Satu hari saja = rekap produk periode sama dengan rinciannya, kecuali memang diminta ringkasan saja.
+  const showProductSummary = sec.days.length > 0 && (sec.days.length > 1 || !!data.summaryOnly);
   return (
     <Page size="A4" style={s.page} wrap>
       <Header store={store} data={data} />
@@ -344,8 +335,14 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
       )}
 
       {/* Ringkasan — bagian terpisah di paling bawah */}
-      <SummaryBanner title={`RINGKASAN${no ? ` · ${no}. ` : ' · '}${sec.locationName.toUpperCase()}`} sub={period.text} first={!!data.summaryOnly} />
-
+      {data.summaryOnly && sec.days.length === 0 && (
+        <View style={s.table}>
+          <Text style={[s.tCell, { padding: 12, color: C.muted }]}>Tidak ada kirim maupun rekap pada periode ini.</Text>
+        </View>
+      )}
+      {showProductSummary && (
+        <SummaryBanner title={`RINGKASAN${no ? ` · ${no}. ` : ' · '}${sec.locationName.toUpperCase()}`} sub={period.text} first={!!data.summaryOnly} />
+      )}
       {showProductSummary && (
         <View style={[s.table, { marginTop: 10 }]}>
           <TableHead />
@@ -359,46 +356,6 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
       )}
 
       <View wrap={false}>
-        <View style={s.totalsWrap}>
-          <View style={s.totalsBox}>
-            <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Total Kirim</Text>
-              <Text style={s.totalsVal}>{sec.totals.kirim} pcs  ·  {rp(sec.totals.nilaiKirim)}</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Total Rekap (terjual)</Text>
-              <Text style={[s.totalsVal, { color: C.green }]}>{sec.totals.jual} pcs  ·  {rp(sec.totals.nilaiJual)}</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={[s.totalsKey, { color: C.retur }]}>Total Retur</Text>
-              <Text style={[s.totalsVal, { color: C.retur }]}>{sec.totals.retur} pcs  ·  {rp(valOf(r => r.retur))}</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={[s.totalsKey, { color: C.reject }]}>Total Reject</Text>
-              <Text style={[s.totalsVal, { color: C.reject }]}>{sec.totals.reject} pcs  ·  {rp(valOf(r => r.reject))}</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>% Terealisasi (rekap / kirim)</Text>
-              <Text style={s.totalsVal}>{pct(sec.realisasiPct)}</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Stok Awal Periode</Text>
-              <Text style={s.totalsVal}>{sec.stokAwalPeriode} pcs</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Stok Akhir Periode</Text>
-              <Text style={s.totalsVal}>{sec.stokAkhirPeriode} pcs</Text>
-            </View>
-            <View style={s.totalsLine}>
-              <Text style={s.totalsKey}>Stok Saat Ini</Text>
-              <Text style={s.totalsVal}>{sec.currentStock} pcs  ·  {rp(sec.currentStockValue)}</Text>
-            </View>
-            <View style={s.totalsFinalLine}>
-              <Text style={s.totalsFinalKey}>Selisih (Kirim - Rekap)</Text>
-              <Text style={[s.totalsFinalVal, ...(sec.totals.selisih < 0 ? [{ color: C.reject }] : [])]}>{rp(sec.totals.selisih)}</Text>
-            </View>
-          </View>
-        </View>
         <Signature store={store} periodText={period.text} />
       </View>
 
