@@ -3811,7 +3811,7 @@ _${storeHeader.name}_`.trim();
 
       {dailyOpen && (
         <div className="modal-overlay" onClick={() => !exportingDaily && setDailyOpen(false)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
             <div className="modal-accent" />
             <span className="modal-handle" />
             <div className="modal-header">
