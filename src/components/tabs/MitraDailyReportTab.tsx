@@ -62,7 +62,7 @@ function downloadBlob(blob: Blob, filename: string) {
 const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const pctText = (n: number | null) => (n === null ? '-' : `${n.toLocaleString('id-ID')}%`);
 
-function ProductTable({ rows }: { rows: DailyProductRow[] }) {
+function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[]; totalLabel?: string }) {
   const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
   const th = 'px-2.5 py-2 text-[10px] font-bold uppercase text-right whitespace-nowrap';
   const td = 'px-2.5 py-2 text-xs tabular text-right whitespace-nowrap';
@@ -94,7 +94,7 @@ function ProductTable({ rows }: { rows: DailyProductRow[] }) {
             </tr>
           ))}
           <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
-            <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">Total</td><td className={`${td} font-bold`}>{sum('stokAwal')}</td><td className="px-2.5 py-2" />
+            <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">{totalLabel}</td><td className={`${td} font-bold`}>{sum('stokAwal')}</td><td className="px-2.5 py-2" />
             <td className={`${td} font-bold`}>{sum('kirim')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiKirim'))}</td>
             <td className={`${td} font-bold`}>{sum('jual')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiJual'))}</td>
             <td className={`${td} font-bold`}>{sum('retur')}</td><td className={`${td} font-bold`}>{sum('reject')}</td>
@@ -115,9 +115,9 @@ function DayTables({ section }: { section: ReportSection }) {
       {section.days.map(day => (
         <div key={day.date}>
           <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--text-primary)' }}>
-            {formatReportDay(day.date)} <span className="font-medium" style={{ color: 'var(--text-muted)' }}>· stok awal {day.totals.stokAwal} → akhir {day.totals.stokAkhir} pcs</span>
+            {formatReportDay(day.date)} <span className="font-medium" style={{ color: 'var(--text-muted)' }}>· stok awal {day.totals.stokAwal} | akhir {day.totals.stokAkhir} pcs</span>
           </p>
-          <ProductTable rows={day.rows} />
+          <ProductTable rows={day.rows} totalLabel="Subtotal" />
         </div>
       ))}
     </div>
@@ -551,6 +551,48 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
         </>
       )}
 
+      {/* Ringkasan semua mitra — bagian terpisah di paling bawah (sama dengan halaman terakhir PDF) */}
+      {!error && filtered.length > 1 && (
+        <div>
+          <div className="rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--text-primary)', color: '#fff' }}>
+            <span className="text-xs font-bold tracking-wide">RINGKASAN SEMUA MITRA</span>
+            <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
+          </div>
+          <div className="card overflow-x-auto mt-3" style={{ borderColor: 'var(--border-2)' }}>
+            <table className="w-full" style={{ minWidth: 560 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                  {['No', 'Mitra', 'Total Kirim', 'Total Rekap', 'Selisih', '% Real.', 'Stok'].map((h, i) => (
+                    <th key={h} className={`px-2.5 py-2 text-[10px] font-bold uppercase ${i < 2 ? 'text-left' : 'text-right'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((s, i) => (
+                  <tr key={s.locationId} style={{ borderTop: '1px solid var(--border-2)' }}>
+                    <td className="px-2.5 py-2 text-xs tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                    <td className="px-2.5 py-2 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiKirim ? rupiah(s.totals.nilaiKirim) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiJual ? rupiah(s.totals.nilaiJual) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right" style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? rupiah(s.totals.selisih) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{pctText(s.realisasiPct)}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{s.currentStock}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                  <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">Total</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{rupiah(sum('nilaiKirim'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{rupiah(sum('nilaiJual'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{rupiah(sum('selisih'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{filtered.reduce((a, s) => a + s.currentStock, 0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Bulk action bar */}
       {selected.size > 0 && (
         <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
@@ -600,38 +642,54 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               </div>
             </div>
             <div className="modal-body">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
+                <div className="p-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Lokasi / Mitra</p>
+                  <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{previewSection.locationName}{previewSection.code ? ` · ${previewSection.code}` : ''}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{previewSection.days.length} hari ada aktivitas · {previewSection.products.length} produk</p>
+                </div>
+                <div className="p-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                  <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Periode Laporan</p>
+                  <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>Dari: {describePeriod(from, to).fromLong}</p>
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Sampai: {describePeriod(from, to).toLong}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Lama periode: {describePeriod(from, to).days} hari</p>
+                </div>
+              </div>
+
               <p className="text-xs font-bold mb-2" style={{ color: 'var(--accent)' }}>Rincian per hari</p>
               <DayTables section={previewSection} />
 
-              {/* Ringkasan — bagian terpisah di paling bawah */}
+              {/* Ringkasan — bagian terpisah di paling bawah (urutan sama dengan PDF) */}
               <div className="mt-6 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--text-primary)', color: '#fff' }}>
                 <span className="text-xs font-bold tracking-wide">RINGKASAN · {previewSection.locationName.toUpperCase()}</span>
                 <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
               </div>
-              <div className="mt-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                {([
-                  ['Total Kirim', `${rupiah(previewSection.totals.nilaiKirim)}`, `${previewSection.totals.kirim} pcs`],
-                  ['Total Rekap', `${rupiah(previewSection.totals.nilaiJual)}`, `${previewSection.totals.jual} pcs terjual`],
-                  ['Selisih (Kirim - Rekap)', rupiah(previewSection.totals.selisih), `${pctText(previewSection.realisasiPct)} terealisasi`],
-                  ['Retur', `${previewSection.totals.retur} pcs`, ''],
-                  ['Reject', `${previewSection.totals.reject} pcs`, ''],
-                  ['Stok Awal → Akhir Periode', `${previewSection.stokAwalPeriode} → ${previewSection.stokAkhirPeriode} pcs`, ''],
-                  ['Stok Saat Ini', `${previewSection.currentStock} pcs`, rupiah(previewSection.currentStockValue)],
-                ] as const).map(([label, val, sub]) => (
-                  <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                    <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>{label}</p>
-                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: label === 'Stok Saat Ini' ? 'var(--accent)' : 'var(--text-primary)' }}>{val}</p>
-                    {sub && <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
-                  </div>
-                ))}
-              </div>
               {previewSection.days.length > 1 && (
-                <div className="mb-2">
+                <div className="mt-3">
                   <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Produk selama periode ({previewSection.products.length} produk)</p>
-                  <ProductTable rows={previewSection.products} />
+                  <ProductTable rows={previewSection.products} totalLabel="Total periode" />
                 </div>
               )}
+              <div className="mt-4 ml-auto rounded-xl p-4" style={{ background: 'var(--accent-bg)', maxWidth: 440 }}>
+                {([
+                  ['Total Kirim', `${previewSection.totals.kirim} pcs · ${rupiah(previewSection.totals.nilaiKirim)}`, undefined],
+                  ['Total Rekap (terjual)', `${previewSection.totals.jual} pcs · ${rupiah(previewSection.totals.nilaiJual)}`, 'var(--success)'],
+                  ['Total Retur', `${previewSection.totals.retur} pcs · ${rupiah(previewSection.products.reduce((a, r) => a + r.retur * r.harga, 0))}`, '#1D4ED8'],
+                  ['Total Reject', `${previewSection.totals.reject} pcs · ${rupiah(previewSection.products.reduce((a, r) => a + r.reject * r.harga, 0))}`, 'var(--danger)'],
+                  ['% Terealisasi (rekap / kirim)', pctText(previewSection.realisasiPct), undefined],
+                  ['Stok Awal Periode', `${previewSection.stokAwalPeriode} pcs`, undefined],
+                  ['Stok Akhir Periode', `${previewSection.stokAkhirPeriode} pcs`, undefined],
+                  ['Stok Saat Ini', `${previewSection.currentStock} pcs · ${rupiah(previewSection.currentStockValue)}`, undefined],
+                ] as const).map(([label, val, color]) => (
+                  <div key={label} className="flex justify-between gap-3 py-0.5 text-xs">
+                    <span style={{ color: color ?? 'var(--text-muted)' }}>{label}</span>
+                    <span className="font-bold tabular" style={{ color: color ?? 'var(--text-primary)' }}>{val}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between gap-3 mt-2 pt-2 items-baseline" style={{ borderTop: '1px solid var(--border-2)' }}>
+                  <span className="text-sm font-bold">Selisih (Kirim - Rekap)</span>
+                  <span className="text-lg font-extrabold tabular" style={{ color: previewSection.totals.selisih < 0 ? 'var(--danger)' : 'var(--accent)' }}>{rupiah(previewSection.totals.selisih)}</span>
+                </div>
               </div>
               <p className="text-[11px] mt-4" style={{ color: 'var(--text-muted)' }}>
                 Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
