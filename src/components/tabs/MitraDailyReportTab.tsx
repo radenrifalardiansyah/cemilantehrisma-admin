@@ -136,8 +136,11 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     const myLoadId = ++loadIdRef.current;
     setLoading(true);
     setError('');
+    // Batas waktu: tanpa ini, permintaan yang menggantung membuat halaman "memuat" tanpa akhir.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
     try {
-      const r = await fetch(`/api/consignment/daily-report?from=${from}&to=${to}`, { headers });
+      const r = await fetch(`/api/consignment/daily-report?from=${from}&to=${to}`, { headers, signal: ctrl.signal });
       if (myLoadId !== loadIdRef.current) return;
       if (!r.ok) {
         const body = await r.json().catch(() => ({})) as { error?: string };
@@ -146,8 +149,12 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       const d = await r.json() as { sections: ReportSection[] };
       setSections(d.sections);
     } catch (e) {
-      if (myLoadId === loadIdRef.current) setError(e instanceof Error ? e.message : 'Gagal memuat laporan.');
+      const msg = e instanceof DOMException && e.name === 'AbortError'
+        ? 'Server tidak merespons dalam 25 detik. Coba lagi.'
+        : e instanceof Error ? e.message : 'Gagal memuat laporan.';
+      if (myLoadId === loadIdRef.current) setError(msg);
     } finally {
+      clearTimeout(timer);
       if (myLoadId === loadIdRef.current) setLoading(false);
     }
   };
