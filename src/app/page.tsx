@@ -358,6 +358,7 @@ export default function AdminPage() {
   const [bizCustomTo, setBizCustomTo] = useState('');
   const [bizData, setBizData] = useState<BusinessAnalyticsData | null>(null);
   const [bizLoading, setBizLoading] = useState(false);
+  const [bizError, setBizError] = useState('');
 
   // ── Analitik Mitra (kirim/pendapatan/pelunasan per lokasi konsinyasi) — agregasi server-side ──
   const [mitraPeriod, setMitraPeriod] = useState<PeriodKey>('month');
@@ -365,6 +366,7 @@ export default function AdminPage() {
   const [mitraCustomTo, setMitraCustomTo] = useState('');
   const [mitraData, setMitraData] = useState<ConsignmentAnalyticsData | null>(null);
   const [mitraLoading, setMitraLoading] = useState(false);
+  const [mitraError, setMitraError] = useState('');
 
   // ── POS (shared data — PosTab owns cart/checkout state itself) ─────
   const [posProducts,    setPosProducts]    = useState<PosProduct[]>([]);
@@ -500,11 +502,20 @@ export default function AdminPage() {
     const token = authHeader ?? creds;
     if (!token) return;
     setBizLoading(true);
+    setBizError('');
+    // Batas waktu: tanpa ini, permintaan yang menggantung membuat spinner berputar tanpa akhir.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
     try {
       const { from, to } = periodRange(bizPeriod, bizCustomFrom, bizCustomTo);
-      const res = await fetch(`/api/analytics/overview?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token } });
+      const res = await fetch(`/api/analytics/overview?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token }, signal: ctrl.signal });
       if (res.ok) setBizData(await res.json() as BusinessAnalyticsData);
-    } catch {}
+      else setBizError('Gagal memuat analitik.');
+    } catch (e) {
+      setBizError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat analitik.');
+    } finally {
+      clearTimeout(timer);
+    }
     setBizLoading(false);
   }, [creds, bizPeriod, bizCustomFrom, bizCustomTo]);
 
@@ -520,11 +531,20 @@ export default function AdminPage() {
     const token = authHeader ?? creds;
     if (!token) return;
     setMitraLoading(true);
+    setMitraError('');
+    // Batas waktu: tanpa ini, permintaan yang menggantung membuat spinner berputar tanpa akhir.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
     try {
       const { from, to } = periodRange(mitraPeriod, mitraCustomFrom, mitraCustomTo);
-      const res = await fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token } });
+      const res = await fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token }, signal: ctrl.signal });
       if (res.ok) setMitraData(await res.json() as ConsignmentAnalyticsData);
-    } catch {}
+      else setMitraError('Gagal memuat analitik.');
+    } catch (e) {
+      setMitraError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat analitik.');
+    } finally {
+      clearTimeout(timer);
+    }
     setMitraLoading(false);
   }, [creds, mitraPeriod, mitraCustomFrom, mitraCustomTo]);
 
@@ -1505,6 +1525,8 @@ export default function AdminPage() {
         <BusinessAnalyticsSection
           data={bizData}
           loading={bizLoading}
+          error={bizError}
+          onRetry={() => { void fetchBusinessAnalytics(); }}
           period={bizPeriod}
           customFrom={bizCustomFrom}
           customTo={bizCustomTo}
@@ -1522,6 +1544,8 @@ export default function AdminPage() {
         <ConsignmentAnalyticsSection
           data={mitraData}
           loading={mitraLoading}
+          error={mitraError}
+          onRetry={() => { void fetchConsignmentAnalytics(); }}
           period={mitraPeriod}
           customFrom={mitraCustomFrom}
           customTo={mitraCustomTo}

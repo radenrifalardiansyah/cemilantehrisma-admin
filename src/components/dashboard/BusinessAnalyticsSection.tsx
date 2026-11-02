@@ -111,6 +111,8 @@ function CategoryTooltip({ active, payload }: {
 interface Props {
   data: BusinessAnalyticsData | null;
   loading: boolean;
+  error?: string;
+  onRetry?: () => void;
   period: PeriodKey;
   customFrom: string;
   customTo: string;
@@ -122,7 +124,7 @@ interface Props {
 }
 
 export default function BusinessAnalyticsSection({
-  data, loading, period, customFrom, customTo,
+  data, loading, error, onRetry, period, customFrom, customTo,
   onPeriodChange, onCustomFromChange, onCustomToChange, onNavigateFinance, creds,
 }: Props) {
   // "Saldo Awal" (kas sebelum mulai pakai aplikasi ini) diisi di tab Jurnal Kas Laporan Keuangan,
@@ -282,6 +284,13 @@ export default function BusinessAnalyticsSection({
 
       {loading && !data && (
         <PageLoader compact />
+      )}
+
+      {!loading && !data && error && (
+        <div className="card p-6 text-center space-y-3">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{error}</p>
+          {onRetry && <button onClick={onRetry} className="btn-primary">Coba lagi</button>}
+        </div>
       )}
 
       {data && (
