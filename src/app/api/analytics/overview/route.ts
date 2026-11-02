@@ -135,7 +135,23 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Parameter from & to (yyyy-mm-dd) wajib diisi.' }, { status: 400 });
   }
 
-  const { orders, recaps, income, expenses, materials, productCosts, installments } = await getRawAnalytics(from, to);
+  // Semua sumber data dijemput sekaligus (dulu berurutan: tiap satu menambah satu putaran ke database,
+  // dan lambat/macetnya salah satu membuat seluruh dashboard ikut menunggu).
+  const sql = getSql();
+  const [raw, stockAdj, allTime, [productStock]] = await Promise.all([
+    getRawAnalytics(from, to),
+    // Selisih stok opname periode ini (rugi kalau fisik < sistem) — sama dengan FinanceReportTab.
+    stockAdjustmentForPeriod(sql, from, to),
+    getAllTimeCash(),
+    // Produk jadi — snapshot kondisi saat ini: menipis (≤ batas minimum) & habis.
+    sql<{ low: string; out: string }[]>`
+      select
+        count(*) filter (where not open_po and min_stock > 0 and stock_qty > 0 and stock_qty <= min_stock) as low,
+        count(*) filter (where not open_po and stock_qty <= 0 and published) as out
+      from products
+    `,
+  ]);
+  const { orders, recaps, income, expenses, materials, productCosts, installments } = raw;
   const productCostMap = new Map(productCosts);
 
   // ── Sama persis dengan FinanceReportTab: order/rekap "Belum Lunas" tidak dihitung sebagai uang
@@ -167,8 +183,6 @@ export async function GET(req: NextRequest) {
 
   const expensesOperasional = expenses.filter(e => !isCogsSourcedExpense(e) && !isNonPnlExpense(e));
   const totalBebanOperasional = expensesOperasional.reduce((s, e) => s + (e.amount ?? 0), 0);
-  // Selisih stok opname periode ini (rugi kalau fisik < sistem) — sama dengan FinanceReportTab.
-  const stockAdj = await stockAdjustmentForPeriod(getSql(), from, to);
   const labaBersih = labaKotor - totalBebanOperasional + stockAdj.net;
 
   const expenseByCategoryMap = new Map<string, number>();
@@ -184,7 +198,6 @@ export async function GET(req: NextRequest) {
 
   // ── Saldo kas — snapshot sejak awal pencatatan (bukan per-periode), sama rumusnya dengan
   // loadAllTimeSaldo di FinanceReportTab ──
-  const allTime = await getAllTimeCash();
   const allTimeTxSaldo =
     allTime.totalOrdersRevenue +
     allTime.totalRecapsRevenue +
@@ -201,13 +214,6 @@ export async function GET(req: NextRequest) {
   }));
   const totalMaterialValue = materialsWithValue.reduce((s, m) => s + m.value, 0);
   const lowStockCount = materials.filter(isMaterialLowStock).length;
-  // ── Produk jadi — snapshot kondisi saat ini: menipis (≤ batas minimum) & habis ──
-  const [productStock] = await getSql()<{ low: string; out: string }[]>`
-    select
-      count(*) filter (where not open_po and min_stock > 0 and stock_qty > 0 and stock_qty <= min_stock) as low,
-      count(*) filter (where not open_po and stock_qty <= 0 and published) as out
-    from products
-  `;
   const topByValue = [...materialsWithValue].sort((a, b) => b.value - a.value).slice(0, 8);
 
   // ── Tren harian per channel — bucket pakai hari kalender WIB, bukan UTC, supaya tidak selisih
