@@ -671,7 +671,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       {/* Preview laporan satu mitra */}
       {previewSection && (
         <div className="modal-overlay" onClick={() => setPreviewId(null)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
+          <div className="modal-sheet modal-lg" style={{ maxWidth: 1120 }} onClick={e => e.stopPropagation()}>
             <div className="modal-accent" />
             <span className="modal-handle" />
             <div className="modal-header">
