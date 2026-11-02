@@ -6,9 +6,6 @@ import {
   Send, ShoppingBag, CalendarCheck, CalendarDays, Scale,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
-import ExcelJS from 'exceljs';
-import { pdf } from '@react-pdf/renderer';
-import MitraDailyReportPDF from '@/lib/pdf/MitraDailyReportPDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { describePeriod, formatReportDay, type DailyProductRow, type MitraDailyReportSection } from '@/lib/mitra-daily-report';
 import { type PeriodKey, periodRange, PERIOD_OPTIONS } from '@/lib/period';
@@ -216,6 +213,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     if (rows.length === 0) { toast.error('Tidak ada mitra untuk diexport.'); return; }
     setExportingExcel(true);
     try {
+      const ExcelJS = (await import('exceljs')).default;
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Cemilan Teh Risma Admin';
       wb.created = new Date();
@@ -296,6 +294,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     if (rows.length === 0) { toast.error('Tidak ada mitra untuk diexport.'); return; }
     setExportingPdf(true);
     try {
+      const [{ pdf }, { default: MitraDailyReportPDF }] = await Promise.all([import('@react-pdf/renderer'), import('@/lib/pdf/MitraDailyReportPDF')]);
       const blob = await pdf(
         <MitraDailyReportPDF store={storeHeader} data={{ from, to, generatedAt: nowText(), sections: rows, summaryOnly }} />
       ).toBlob();
