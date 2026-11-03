@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { AreaChart, Area, ComposedChart, Bar, Line, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -9,8 +9,7 @@ import {
   Loader2,
   Eye, EyeOff, Smartphone, Monitor, BarChart2, Globe, Award,
   MousePointerClick, Tag, ShoppingCart, Download, Share, AlertTriangle,
-  LayoutDashboard, PieChart, Store, KeyRound,
-} from 'lucide-react';
+  LayoutDashboard, PieChart, Store, KeyRound, Wallet } from 'lucide-react';
 import AppShell, { TabId } from '@/components/AppShell';
 import LoginApprovalScreen from '@/components/LoginApprovalScreen';
 import ForceLogoutOverlay from '@/components/ForceLogoutOverlay';
@@ -68,7 +67,7 @@ import AnalyticsPdfButton from '@/components/dashboard/AnalyticsPdfButton';
 import { pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
 import LapakAnalyticsSection from '@/components/dashboard/LapakAnalyticsSection';
-import { type PeriodKey, periodRange } from '@/lib/period';
+import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
@@ -85,12 +84,13 @@ interface WebStats {
 }
 interface DashMaterial { id: string; name: string; unit: string; stockQty: number; minStock?: number }
 interface LowStockItem { id: string; kind: 'product' | 'material'; name: string; unit: string; stockQty: number; minStock: number }
+interface SumOrder {
+  customerName: string; total: number; createdAt?: { seconds: number }; date?: string;
+  items?: { name: string; qty: number; subtotal: number }[];
+}
+
 interface DashData {
-  orderCount: number; revenue: number;
   productCount: number; resellerCount: number;
-  recentOrders: DashOrder[];
-  revenueTrend: { date: string; revenue: number; count: number }[];
-  topProducts: TopProduct[];
   lowStockItems: LowStockItem[];
   webStats: WebStats | null;
   webStatsErr: string;
@@ -165,41 +165,63 @@ const chartTooltipRow = (color: string, name: string, value: string) => (
   </div>
 );
 
-function RevenueTooltip({ active, payload, label }: { active?: boolean; payload?: { payload?: { revenue: number; count: number } }[]; label?: string }) {
+type TrendPoint = { date: string; kasir: number; konsinyasi: number; count: number };
+
+function RevenueTooltip({ active, payload, label }: { active?: boolean; payload?: { payload?: TrendPoint }[]; label?: string }) {
   const d = payload?.[0]?.payload;
   if (!active || !d) return null;
   return (
     <div style={chartTooltipBox}>
       <div style={{ opacity: 0.65, fontWeight: 700 }}>{label ? shortDate(label) : ''}</div>
-      {chartTooltipRow('#FB923C', 'Pendapatan', formatRp(d.revenue))}
-      {d.count > 0 && chartTooltipRow('#FDBA74', 'Transaksi', `${d.count}x`)}
+      {chartTooltipRow('#FB923C', 'Kasir', formatRp(d.kasir))}
+      {chartTooltipRow('#38BDF8', 'Konsinyasi', formatRp(d.konsinyasi))}
+      {chartTooltipRow('#FFFFFF', 'Total', formatRp(d.kasir + d.konsinyasi))}
+      {d.count > 0 && chartTooltipRow('#FDBA74', 'Transaksi kasir', `${d.count}x`)}
     </div>
   );
 }
 
-function RevenueChart({ data }: { data: { date: string; revenue: number; count: number }[] }) {
+function RevenueChart({ data }: { data: TrendPoint[] }) {
   if (data.length === 0) return null;
+  const showDots = data.length <= 31;
   return (
-    <div style={{ width: '100%', height: 240 }}>
-      <ResponsiveContainer>
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id="dashRevenueFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#D4691E" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="#D4691E" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
-          <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-            axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
-          <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-            axisLine={false} tickLine={false} width={48} tickCount={5} />
-          <RechartsTooltip content={<RevenueTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-          <Area type="monotone" dataKey="revenue" name="Pendapatan" stroke="#D4691E" strokeWidth={3}
-            fill="url(#dashRevenueFill)" dot={{ r: 3.5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }}
-            activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} />
-        </AreaChart>
-      </ResponsiveContainer>
+    <div>
+      <div style={{ width: '100%', height: 240 }}>
+        <ResponsiveContainer>
+          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="dashKasirFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#D4691E" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#D4691E" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="dashKonsinyasiFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#0284C7" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#0284C7" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
+            <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+              axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
+            <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+              axisLine={false} tickLine={false} width={48} tickCount={5} />
+            <RechartsTooltip content={<RevenueTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+            <Area type="monotone" stackId="omzet" dataKey="kasir" name="Kasir" stroke="#D4691E" strokeWidth={3}
+              fill="url(#dashKasirFill)" dot={showDots ? { r: 3, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' } : false}
+              activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} />
+            <Area type="monotone" stackId="omzet" dataKey="konsinyasi" name="Konsinyasi" stroke="#0284C7" strokeWidth={3}
+              fill="url(#dashKonsinyasiFill)" dot={showDots ? { r: 3, strokeWidth: 2, stroke: '#fff', fill: '#0284C7' } : false}
+              activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#0284C7' }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex items-center gap-4 mt-2">
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#D4691E' }} /> Kasir
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#0284C7' }} /> Konsinyasi (rekap mitra)
+        </span>
+      </div>
     </div>
   );
 }
@@ -352,6 +374,16 @@ export default function AdminPage() {
   const [webRange, setWebRange] = useState<7 | 30>(30);
   const [webLoading, setWebLoading] = useState(false);
 
+  // ── Ringkasan — penjualan kasir + omzet konsinyasi (rekap mitra) per periode ──
+  const [sumPeriod, setSumPeriod] = useState<PeriodKey>('7d');
+  const [sumCustomFrom, setSumCustomFrom] = useState('');
+  const [sumCustomTo, setSumCustomTo] = useState('');
+  const [sumOrders, setSumOrders] = useState<SumOrder[]>([]);
+  const [sumConsign, setSumConsign] = useState<{ date: string; pendapatan: number }[]>([]);
+  const [sumRange, setSumRange] = useState<{ from: string; to: string } | null>(null);
+  const [sumLoading, setSumLoading] = useState(false);
+  const [sumError, setSumError] = useState('');
+
   // ── Analitik Bisnis (channel, laba rugi, bahan baku) — agregasi server-side ──
   const [bizPeriod, setBizPeriod] = useState<PeriodKey>('month');
   const [bizCustomFrom, setBizCustomFrom] = useState('');
@@ -382,13 +414,9 @@ export default function AdminPage() {
     const token = authHeader ?? creds;
     const h = { 'x-admin-auth': token };
     try {
-      // Rentang 7 hari (WIB) eksplisit — bukan cuma limit=50 default API, supaya "Omzet Hari Ini"
-      // dan tren 7 hari tetap akurat walau ada >50 transaksi dalam rentang ini.
-      const todayKey = wibDateKey(new Date());
-      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6);
-      const fromKey = wibDateKey(weekAgo);
-      const [oRes, pRes, rRes, cRes, bRes, custRes, matRes, webRes] = await Promise.all([
-        fetch(`/api/orders?from=${fromKey}&to=${todayKey}`, { headers: h }),
+      // Pesanan/omzet per periode diambil terpisah (fetchSummary) supaya ganti filter tanggal
+      // tidak ikut memuat ulang produk, reseller, dsb.
+      const [pRes, rRes, cRes, bRes, custRes, matRes, webRes] = await Promise.all([
         fetch('/api/products',     { headers: h }),
         fetch('/api/resellers',    { headers: h }),
         fetch('/api/categories',   { headers: h }),
@@ -399,8 +427,6 @@ export default function AdminPage() {
       ]);
 
       // ── Firestore data ────────────────────────────────────
-      const orders: { customerName: string; total: number; createdAt?: { seconds: number }; date?: string; items?: { name: string; qty: number; subtotal: number }[] }[] =
-        oRes.ok ? (await oRes.json()).orders : [];
       const fetchedProducts: PosProduct[] = pRes.ok ? (await pRes.json() as { products: PosProduct[] }).products : [];
       const resellers: (PosReseller & Record<string, unknown>)[] = rRes.ok ? (await rRes.json()).resellers : [];
       const fetchedCats: { id: string; name: string; emoji: string }[] =
@@ -415,25 +441,6 @@ export default function AdminPage() {
       setBankOptions(fetchedBanks);
       setCustomerList(fetchedCustomers);
 
-      const revenue = orders.reduce((s, o) => s + (o.total ?? 0), 0);
-      const recentOrders: DashOrder[] = orders.slice(0, 5).map(o => ({
-        customerName: o.customerName,
-        total: o.total,
-        date: o.createdAt?.seconds
-          ? new Date(o.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-          : (o.date ?? '–'),
-      }));
-      const now = new Date();
-      const revenueTrend = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(now); d.setDate(d.getDate() - (6 - i));
-        const key = wibDateKey(d);
-        const label = `${parseInt(key.slice(8, 10), 10)}/${parseInt(key.slice(5, 7), 10)}`;
-        const dayOrders = orders.filter(o =>
-          o.createdAt?.seconds ? wibDateKey(new Date(o.createdAt.seconds * 1000)) === key : false
-        );
-        return { date: label, revenue: dayOrders.reduce((s, o) => s + o.total, 0), count: dayOrders.length };
-      });
-
       // ── Web analytics (Firestore, same project) ───────────
       let webStats: WebStats | null = null;
       let webStatsErr = '';
@@ -442,16 +449,6 @@ export default function AdminPage() {
       } else {
         webStatsErr = webStatsErrMsg(webRes);
       }
-
-      const salesMap: Record<string, number> = {};
-      orders.forEach(o => o.items?.forEach(it => { salesMap[it.name] = (salesMap[it.name] ?? 0) + it.qty; }));
-      const topProducts: TopProduct[] = Object.entries(salesMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, count]) => {
-          const p = fetchedProducts.find(fp => fp.name === name);
-          return { name, emoji: p?.emoji ?? '📦', bgColor: p?.bgColor ?? '#F5F0E9', stock: p?.stock ?? 'Ada', count };
-        });
 
       const lowStockItems: LowStockItem[] = [
         ...fetchedProducts.filter(isProductLowStock).map(p => ({
@@ -462,10 +459,78 @@ export default function AdminPage() {
         })),
       ].sort((a, b) => (a.stockQty / Math.max(a.minStock, 1)) - (b.stockQty / Math.max(b.minStock, 1)));
 
-      setDashData({ orderCount: orders.length, revenue, productCount: fetchedProducts.length, resellerCount: resellers.length, recentOrders, revenueTrend, topProducts, lowStockItems, webStats, webStatsErr });
+      setDashData({ productCount: fetchedProducts.length, resellerCount: resellers.length, lowStockItems, webStats, webStatsErr });
     } catch {}
     setLoading(false);
   }, [creds, webRange]);
+
+  // ── Ringkasan: pesanan kasir + rekap konsinyasi untuk periode terpilih ──
+  const fetchSummary = useCallback(async (authHeader?: string) => {
+    const token = authHeader ?? creds;
+    if (!token) return;
+    setSumLoading(true);
+    setSumError('');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    try {
+      const { from, to } = periodRange(sumPeriod, sumCustomFrom, sumCustomTo);
+      const h = { 'x-admin-auth': token };
+      const [oRes, cRes] = await Promise.all([
+        fetch(`/api/orders?from=${from}&to=${to}`, { headers: h, signal: ctrl.signal }),
+        // Tanpa izin konsinyasi/dashboard → 403; omzet konsinyasi dianggap 0, bukan error.
+        fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: h, signal: ctrl.signal }).catch(() => null),
+      ]);
+      if (!oRes.ok) throw new Error('orders');
+      setSumOrders((await oRes.json() as { orders: SumOrder[] }).orders);
+      setSumConsign(cRes?.ok ? (await cRes.json() as ConsignmentAnalyticsData).dailyTrend : []);
+      setSumRange({ from, to });
+    } catch (e) {
+      setSumError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat ringkasan.');
+    } finally {
+      clearTimeout(timer);
+    }
+    setSumLoading(false);
+  }, [creds, sumPeriod, sumCustomFrom, sumCustomTo]);
+
+  useEffect(() => {
+    if (!authed) return;
+    fetchSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sumPeriod, sumCustomFrom, sumCustomTo]);
+
+  // Turunan Ringkasan (tren harian gabungan kasir + konsinyasi, pesanan terbaru, produk terlaris)
+  const summary = useMemo(() => {
+    if (!sumRange) return null;
+    const keys: string[] = [];
+    for (let t = Date.parse(`${sumRange.from}T00:00:00Z`), end = Date.parse(`${sumRange.to}T00:00:00Z`); t <= end && keys.length < 800; t += 86_400_000) {
+      keys.push(new Date(t).toISOString().slice(0, 10));
+    }
+    const trend = new Map(keys.map(k => [k, { date: k, kasir: 0, konsinyasi: 0, count: 0 }]));
+    sumOrders.forEach(o => {
+      if (!o.createdAt?.seconds) return;
+      const d = trend.get(wibDateKey(new Date(o.createdAt.seconds * 1000)));
+      if (d) { d.kasir += o.total ?? 0; d.count += 1; }
+    });
+    sumConsign.forEach(c => { const d = trend.get(c.date); if (d) d.konsinyasi += c.pendapatan; });
+    const revenueTrend = keys.map(k => trend.get(k)!);
+    const kasir = revenueTrend.reduce((s, d) => s + d.kasir, 0);
+    const konsinyasi = revenueTrend.reduce((s, d) => s + d.konsinyasi, 0);
+    const recentOrders: DashOrder[] = sumOrders.slice(0, 5).map(o => ({
+      customerName: o.customerName, total: o.total,
+      date: o.createdAt?.seconds
+        ? new Date(o.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+        : (o.date ?? '–'),
+    }));
+    const salesMap: Record<string, number> = {};
+    sumOrders.forEach(o => o.items?.forEach(it => { salesMap[it.name] = (salesMap[it.name] ?? 0) + it.qty; }));
+    const topProducts: TopProduct[] = Object.entries(salesMap)
+      .sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([name, count]) => {
+        const p = posProducts.find(fp => fp.name === name);
+        return { name, emoji: p?.emoji ?? '📦', bgColor: p?.bgColor ?? '#F5F0E9', stock: p?.stock ?? 'Ada', count };
+      });
+    return { revenueTrend, kasir, konsinyasi, orderCount: sumOrders.length, recentOrders, topProducts };
+  }, [sumRange, sumOrders, sumConsign, posProducts]);
 
   // ── POS stock refresh — lightweight, products-only (no analytics/resellers/
   // customers) so opening the Kasir tab or starting a new sale doesn't drag in
@@ -588,7 +653,7 @@ export default function AdminPage() {
     // endpoint sudah verifikasi token sendiri lewat requirePermission, jadi tidak perlu menunggu
     // hasil /api/me. Ini menghilangkan satu round-trip berurutan dari waktu sampai data pertama
     // tampil (mis. tab Analitik Mitra) saat login/refresh halaman.
-    fetchDash(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
+    fetchDash(token); fetchSummary(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
     const res = await fetch('/api/me', { headers: { 'x-admin-auth': token } });
     // Hanya 401 yang berarti token memang tidak berlaku (kedaluwarsa/dicabut). Error lain (5xx saat
     // server cold start / database sesaat bermasalah) dilempar supaya pemanggil bisa mencoba lagi —
@@ -603,7 +668,7 @@ export default function AdminPage() {
     };
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
     return true;
-  }, [fetchDash, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics, fetchConsignmentAnalytics]);
+  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics, fetchConsignmentAnalytics]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -1030,7 +1095,7 @@ export default function AdminPage() {
 
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => { fetchDash(); fetchNewOrdersCount(); fetchBusinessAnalytics(); fetchConsignmentAnalytics(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+          <button onClick={() => { fetchDash(); fetchSummary(); fetchNewOrdersCount(); fetchBusinessAnalytics(); fetchConsignmentAnalytics(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
@@ -1060,13 +1125,42 @@ export default function AdminPage() {
         <PageLoader compact />
       )}
 
-      {dashData && (
+      {dashData && summary && (
         <>
+          {/* Filter periode */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PERIOD_OPTIONS.map(p => (
+              <button key={p.id} onClick={() => setSumPeriod(p.id)} disabled={sumLoading}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                style={sumPeriod === p.id
+                  ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' }
+                  : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                {p.label}
+              </button>
+            ))}
+            {sumLoading && <RefreshCw size={13} className="animate-spin" style={{ color: 'var(--text-muted)' }} />}
+          </div>
+          {sumPeriod === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={sumCustomFrom} onChange={e => setSumCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+              <input type="date" value={sumCustomTo} onChange={e => setSumCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+            </div>
+          )}
+          {sumError && (
+            <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--danger)' }}>
+              {sumError}
+              <button onClick={() => { void fetchSummary(); }} className="underline">Coba lagi</button>
+            </div>
+          )}
+
           {/* Stat cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             {[
-              { icon: <Receipt    size={16}/>, label: 'Pesanan Hari Ini', val: (dashData.revenueTrend[dashData.revenueTrend.length - 1]?.count ?? 0).toString(),   color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: 'var(--accent),#A84F10' },
-              { icon: <TrendingUp size={16}/>, label: 'Omzet Hari Ini',  val: formatRp(dashData.revenueTrend[dashData.revenueTrend.length - 1]?.revenue ?? 0),      color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
+              { icon: <Receipt    size={16}/>, label: 'Pesanan Kasir', val: summary.orderCount.toString(), color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: 'var(--accent),#A84F10' },
+              { icon: <TrendingUp size={16}/>, label: 'Omzet Kasir',  val: formatRp(summary.kasir), color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
+              { icon: <Store      size={16}/>, label: 'Omzet Konsinyasi', val: formatRp(summary.konsinyasi), color: '#0284C7', iconBg: '#EFF6FF', bar: '#0284C7,#0369A1' },
+              { icon: <Wallet     size={16}/>, label: 'Total Omzet', val: formatRp(summary.kasir + summary.konsinyasi), color: '#B45309', iconBg: '#FFFBEA', bar: '#B45309,#92400E' },
               { icon: <Package    size={16}/>, label: 'Produk Aktif',    val: dashData.productCount.toString(), color: '#0284C7',        iconBg: '#EFF6FF',           bar: '#0284C7,#0369A1' },
               { icon: <Users      size={16}/>, label: 'Total Reseller',  val: dashData.resellerCount.toString(),color: '#7C3AED',        iconBg: '#F5F3FF',           bar: '#7C3AED,#6D28D9' },
             ].map((c, i) => (
@@ -1089,21 +1183,21 @@ export default function AdminPage() {
           <div className="card p-5">
             <div className="flex items-center justify-between mb-5">
               <div>
-                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Omzet 7 Hari Terakhir</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tren revenue 7 hari terakhir</p>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Omzet</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Penjualan kasir + rekap konsinyasi mitra · {sumRange ? `${pdfDate(sumRange.from)} - ${pdfDate(sumRange.to)}` : ''}</p>
               </div>
-              {dashData.revenueTrend.some(d => d.revenue > 0) && (
+              {summary.kasir + summary.konsinyasi > 0 && (
                 <span className="badge badge-amber">
-                  Total 7 hari: {formatRp(dashData.revenue)}
+                  Total: {formatRp(summary.kasir + summary.konsinyasi)}
                 </span>
               )}
             </div>
-            {dashData.revenueTrend.every(d => d.revenue === 0) ? (
+            {summary.revenueTrend.every(d => d.kasir + d.konsinyasi === 0) ? (
               <div className="py-8 text-center">
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transaksi 7 hari terakhir</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transaksi pada periode ini</p>
               </div>
             ) : (
-              <RevenueChart data={dashData.revenueTrend} />
+              <RevenueChart data={summary.revenueTrend} />
             )}
           </div>
 
@@ -1111,14 +1205,14 @@ export default function AdminPage() {
           <div className="grid lg:grid-cols-2 gap-4">
 
             {/* Recent orders */}
-            {dashData.recentOrders.length > 0 ? (
+            {summary.recentOrders.length > 0 ? (
               <div className="card overflow-hidden">
                 <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
                   <Receipt size={15} style={{ color: 'var(--accent)' }} />
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Pesanan Terbaru</p>
                 </div>
                 <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                  {dashData.recentOrders.map((o, i) => (
+                  {summary.recentOrders.map((o, i) => (
                     <div key={i} className="px-5 py-3.5 flex items-center gap-3"
                       style={{ transition: 'background 0.12s', cursor: 'default' }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
@@ -1152,9 +1246,9 @@ export default function AdminPage() {
                 <Award size={15} style={{ color: 'var(--accent)' }} />
                 <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Produk Terlaris</p>
               </div>
-              {dashData.topProducts.length > 0 ? (
+              {summary.topProducts.length > 0 ? (
                 <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                  {dashData.topProducts.map((prod, i) => {
+                  {summary.topProducts.map((prod, i) => {
                     const rankColors = [
                       { fg: '#B8860B', bg: '#FFFBEA' },
                       { fg: '#6B7280', bg: '#F3F4F6' },
