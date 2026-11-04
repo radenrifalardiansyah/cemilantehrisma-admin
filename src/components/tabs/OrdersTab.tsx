@@ -21,6 +21,7 @@ import ImageLightbox from '@/components/ImageLightbox';
 import SearchSelect from '@/components/SearchSelect';
 import NumberInput from '@/components/NumberInput';
 import { WHATSAPP_NUMBER } from '@/lib/whatsapp';
+import { normalizePhone, isValidIdMobile } from '@/lib/phone';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
@@ -121,11 +122,6 @@ function formatDate(o: Order) {
   if (o.createdAt?.seconds)
     return new Date(o.createdAt.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   return o.date ?? '–';
-}
-
-function normalizePhone(raw: string) {
-  const d = raw.replace(/\D/g, '');
-  return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
 // Langsung ke api.whatsapp.com/send (bukan wa.me): wa.me hanya redirect ke sini, dan lewat redirect itu
@@ -315,6 +311,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const sendInvoiceWhatsApp = (o: Order) => {
     const phone = o.customerPhone?.trim();
     if (!phone) { toast.error('Nomor WhatsApp pelanggan belum diisi di pesanan ini.'); return; }
+    if (!isValidIdMobile(phone)) { toast.error(`Nomor WhatsApp "${phone}" tidak valid — periksa lagi di pesanan atau data pelanggan.`); return; }
 
     const SEP = '─────────────────────';
     const itemLines = o.items
@@ -369,6 +366,7 @@ _${storeName}_`.trim();
   const sendReminderWhatsApp = (o: Order) => {
     const phone = o.customerPhone?.trim();
     if (!phone) { toast.error('Nomor WhatsApp pelanggan belum diisi di pesanan ini.'); return; }
+    if (!isValidIdMobile(phone)) { toast.error(`Nomor WhatsApp "${phone}" tidak valid — periksa lagi di pesanan atau data pelanggan.`); return; }
     const due = dueInfo(o.dueDate);
     const dueLine = o.dueDate && due
       ? due.state === 'overdue' ? `Jatuh tempo : ${formatDueDate(o.dueDate)} (*terlambat ${due.days} hari*)\n`

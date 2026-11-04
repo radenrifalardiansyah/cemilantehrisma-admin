@@ -1,5 +1,6 @@
 'use client';
 
+import { isValidIdMobile, PHONE_FORMAT_HINT } from '@/lib/phone';
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Pencil, Trash2, X, Check, Loader2, Search,
@@ -470,6 +471,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
     if (!editing.name.trim()) {
       setError('Nama wajib diisi.'); return;
     }
+    if (!isValidIdMobile(editing.phone)) { setError(PHONE_FORMAT_HINT); return; }
     setSaving(true); setError('');
     const { id, ...rest } = editing;
     const r = isNew
