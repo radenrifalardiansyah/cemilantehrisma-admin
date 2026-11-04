@@ -903,7 +903,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       || l.contactPhone.toLowerCase().includes(q)
       || l.address.toLowerCase().includes(q)
       || (l.code ?? '').toLowerCase().includes(q);
-  });
+  }).sort((a, b) => Number(a.isActive === false) - Number(b.isActive === false)); // aktif di atas, nonaktif di bawah
   const totalLocationPages   = Math.max(1, Math.ceil(filteredLocations.length / locationPageSize));
   const safeLocationPage     = Math.min(locationPage, totalLocationPages);
   const paginatedLocations   = filteredLocations.slice((safeLocationPage - 1) * locationPageSize, safeLocationPage * locationPageSize);
@@ -1002,6 +1002,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     setShowSendForm(true);
   };
   const openSendForLocation = (l: ConsignmentLocation) => {
+    if (l.isActive === false) { toast.error('Mitra nonaktif tidak bisa dikirimi stok.'); return; }
     openCreateSend();
     setSendLocationId(l.id);
   };
@@ -1556,6 +1557,7 @@ _${storeHeader.name}_`.trim();
     setShowRecapForm(true);
   };
   const openRecapForLocation = (l: ConsignmentLocation) => {
+    if (l.isActive === false) { toast.error('Mitra nonaktif tidak bisa direkap.'); return; }
     openCreateRecap();
     setRecapLocationId(l.id);
     loadRecapStock(l.id);
@@ -2520,9 +2522,9 @@ _${storeHeader.name}_`.trim();
               {locations.length > 0 && (
                 <select value={locationStatus} onChange={e => { setLocationStatus(e.target.value as typeof locationStatus); resetLocationPage(); }}
                   aria-label="Filter status mitra" className="input text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, width: 'auto', paddingRight: 28 }}>
-                  <option value="semua">Semua status</option>
-                  <option value="aktif">Aktif</option>
-                  <option value="nonaktif">Nonaktif</option>
+                  <option value="semua">Semua status ({locations.length})</option>
+                  <option value="aktif">Aktif ({locations.filter(l => l.isActive !== false).length})</option>
+                  <option value="nonaktif">Nonaktif ({locations.filter(l => l.isActive === false).length})</option>
                 </select>
               )}
               <div className="flex items-center gap-2 justify-end flex-shrink-0">
@@ -2599,7 +2601,11 @@ _${storeHeader.name}_`.trim();
                       const num = (safeLocationPage - 1) * (Number.isFinite(locationPageSize) ? locationPageSize : 0) + i + 1;
                       return (
                         <div key={l.id}>
-                          <div className="flex flex-col gap-3 px-4 py-3" style={{ background: isSelected ? 'rgba(212,105,30,0.05)' : undefined }}>
+                          <div className="flex flex-col gap-3 px-4 py-3" style={{
+                            background: isSelected ? 'rgba(212,105,30,0.05)' : l.isActive === false ? 'var(--surface-2)' : undefined,
+                            borderLeft: `3px solid ${l.isActive === false ? 'var(--border)' : 'var(--success)'}`,
+                            opacity: l.isActive === false ? 0.7 : 1,
+                          }}>
                           <div className="flex flex-wrap items-start gap-3">
                           <span className="pt-[5px] w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                           <div className="pt-[5px]"><Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} /></div>
@@ -2613,7 +2619,9 @@ _${storeHeader.name}_`.trim();
                                   {l.code}
                                 </span>
                               )}
-                              {l.isActive === false && <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>}
+                              {l.isActive === false
+                                ? <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>
+                                : <span className="badge badge-green" style={{ fontSize: 10, padding: '1px 6px' }}>Aktif</span>}
                               {l.waGroup && (
                                 <span className="badge badge-green" title={`Grup WA: ${l.waGroup}`} style={{ fontSize: 10, padding: '1px 6px', gap: 3 }}>
                                   <MessageCircle size={10} /> Grup WA
@@ -2635,13 +2643,13 @@ _${storeHeader.name}_`.trim();
                             </div>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0 justify-end w-full sm:w-auto sm:ml-auto">
-                            <Tooltip label="Kirim Stok">
-                              <button onClick={() => openSendForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
+                            <Tooltip label={l.isActive === false ? 'Kirim Stok — mitra nonaktif' : 'Kirim Stok'}>
+                              <button onClick={() => openSendForLocation(l)} disabled={l.isActive === false} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
                                 <Send size={12} />
                               </button>
                             </Tooltip>
-                            <Tooltip label="Rekap Harian">
-                              <button onClick={() => openRecapForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
+                            <Tooltip label={l.isActive === false ? 'Rekap Harian — mitra nonaktif' : 'Rekap Harian'}>
+                              <button onClick={() => openRecapForLocation(l)} disabled={l.isActive === false} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
                                 <ClipboardList size={12} />
                               </button>
                             </Tooltip>
@@ -2678,20 +2686,24 @@ _${storeHeader.name}_`.trim();
                       return (
                         <div key={l.id}>
                           <div className="card overflow-hidden p-5"
-                          style={{ outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                          style={{
+                            outline: isSelected ? '2px solid var(--accent)' : undefined, outlineOffset: -2,
+                            borderLeft: `3px solid ${l.isActive === false ? 'var(--border)' : 'var(--success)'}`,
+                            opacity: l.isActive === false ? 0.7 : 1,
+                          }}>
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <Checkbox checked={isSelected} onChange={() => toggleSelectLocation(l.id)} />
                               <LocationLogo location={l} size={44} />
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              <Tooltip label="Kirim Stok">
-                                <button onClick={() => openSendForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
+                              <Tooltip label={l.isActive === false ? 'Kirim Stok — mitra nonaktif' : 'Kirim Stok'}>
+                                <button onClick={() => openSendForLocation(l)} disabled={l.isActive === false} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Stok">
                                   <Send size={12} />
                                 </button>
                               </Tooltip>
-                              <Tooltip label="Rekap Harian">
-                                <button onClick={() => openRecapForLocation(l)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
+                              <Tooltip label={l.isActive === false ? 'Rekap Harian — mitra nonaktif' : 'Rekap Harian'}>
+                                <button onClick={() => openRecapForLocation(l)} disabled={l.isActive === false} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
                                   <ClipboardList size={12} />
                                 </button>
                               </Tooltip>
@@ -2721,7 +2733,9 @@ _${storeHeader.name}_`.trim();
                                 {l.code}
                               </span>
                             )}
-                            {l.isActive === false && <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>}
+                            {l.isActive === false
+                                ? <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>
+                                : <span className="badge badge-green" style={{ fontSize: 10, padding: '1px 6px' }}>Aktif</span>}
                             {l.waGroup && (
                               <span className="badge badge-green" title={`Grup WA: ${l.waGroup}`} style={{ fontSize: 10, padding: '1px 6px', gap: 3 }}>
                                 <MessageCircle size={10} /> Grup WA
