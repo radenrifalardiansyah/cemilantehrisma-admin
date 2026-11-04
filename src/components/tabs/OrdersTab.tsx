@@ -128,6 +128,12 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
+// Langsung ke api.whatsapp.com/send (bukan wa.me): wa.me hanya redirect ke sini, dan lewat redirect itu
+// WhatsApp Desktop kadang salah menolak nomor valid dengan "isn't on WhatsApp".
+function openWhatsApp(phone: string, message: string) {
+  window.open(`https://api.whatsapp.com/send?phone=${normalizePhone(phone)}&text=${encodeURIComponent(message)}`, '_blank');
+}
+
 // Format Date lokal ke value <input type="datetime-local"> ("YYYY-MM-DDTHH:mm") tanpa lewat UTC
 // (beda dengan toISOString(), yang menggeser jam sesuai timezone browser).
 function toDateTimeLocal(d: Date) {
@@ -356,7 +362,7 @@ ${pdfUrl}
 Terima kasih telah berbelanja!
 _${storeName}_`.trim();
 
-    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+    openWhatsApp(phone, message);
   };
 
   // Pengingat tagihan untuk pesanan kredit yang belum lunas — tone menyesuaikan jatuh tempo.
@@ -387,7 +393,7 @@ ${pdfUrl}
 
 Jika sudah membayar, mohon kirim bukti transfer. Terima kasih 🙏
 _${storeName}_`.trim();
-    window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+    openWhatsApp(phone, message);
   };
 
   // ── Pembayaran bertahap (cicilan) pesanan kredit ──
