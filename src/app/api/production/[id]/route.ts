@@ -7,7 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
-import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
+import { snapQty, rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow, type BatchOutputRow, type BatchMaterialUsedRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -138,7 +138,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       materialIds.forEach(mid => materialState.set(mid, materialState.get(mid)! - (newMaterialsUsed.find(m => m.materialId === mid)?.qty ?? 0)));
       for (const mid of materialIds) {
-        await pgTx`update raw_materials set stock_qty = ${Math.max(0, materialState.get(mid) ?? 0)}, updated_at = now() where id = ${mid}`;
+        await pgTx`update raw_materials set stock_qty = ${snapQty(Math.max(0, materialState.get(mid) ?? 0))}, updated_at = now() where id = ${mid}`;
       }
 
       const productRows = await pgTx<(ProductRow & { id: string })[]>`
@@ -353,7 +353,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
           const mrow = materialById.get(m.materialId);
           if (!mrow) continue;
           const stockQty = Number(mrow.stock_qty) || 0;
-          await pgTx`update raw_materials set stock_qty = ${stockQty + m.qty}, updated_at = now() where id = ${m.materialId}`;
+          await pgTx`update raw_materials set stock_qty = ${snapQty(stockQty + m.qty)}, updated_at = now() where id = ${m.materialId}`;
         }
       }
 

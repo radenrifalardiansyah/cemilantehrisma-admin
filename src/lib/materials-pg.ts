@@ -11,10 +11,14 @@ export interface MaterialRow {
   id: string; name: string; unit: string; min_stock: string; stock_qty: string; avg_cost: string;
   created_at: Date; updated_at: Date | null;
 }
+// Stok dihitung dari akumulasi desimal, jadi bisa menyisakan noise (mis. 0.0000999) saat seharusnya
+// habis. Selisih di bawah 0,005 (di bawah ketelitian tampilan 2 desimal) dianggap 0.
+export const snapQty = (n: number) => (Math.abs(n) < 0.005 ? 0 : n);
+
 export function rowToMaterial(r: MaterialRow) {
   return {
     id: r.id, name: r.name, unit: r.unit,
-    minStock: Number(r.min_stock), stockQty: Number(r.stock_qty), avgCost: Number(r.avg_cost),
+    minStock: Number(r.min_stock), stockQty: snapQty(Number(r.stock_qty)), avgCost: Number(r.avg_cost),
     createdAt: toTimestamp(r.created_at), updatedAt: toTimestamp(r.updated_at),
   };
 }

@@ -165,7 +165,14 @@ const chartTooltipRow = (color: string, name: string, value: string) => (
   </div>
 );
 
-type TrendPoint = { date: string; kasir: number; konsinyasi: number; count: number };
+type TrendPoint = { date: string; kasir: number; online: number; konsinyasi: number; lain: number; count: number };
+
+const OMZET_SERIES = [
+  { key: 'kasir', name: 'Kasir', color: '#D4691E' },
+  { key: 'online', name: 'Online', color: '#7C3AED' },
+  { key: 'konsinyasi', name: 'Konsinyasi', color: '#0284C7' },
+  { key: 'lain', name: 'Pendapatan Lain', color: '#059669' },
+] as const;
 
 function RevenueTooltip({ active, payload, label }: { active?: boolean; payload?: { payload?: TrendPoint }[]; label?: string }) {
   const d = payload?.[0]?.payload;
@@ -173,9 +180,8 @@ function RevenueTooltip({ active, payload, label }: { active?: boolean; payload?
   return (
     <div style={chartTooltipBox}>
       <div style={{ opacity: 0.65, fontWeight: 700 }}>{label ? shortDate(label) : ''}</div>
-      {chartTooltipRow('#FB923C', 'Kasir', formatRp(d.kasir))}
-      {chartTooltipRow('#38BDF8', 'Konsinyasi', formatRp(d.konsinyasi))}
-      {chartTooltipRow('#FFFFFF', 'Total', formatRp(d.kasir + d.konsinyasi))}
+      {OMZET_SERIES.map(sr => chartTooltipRow(sr.color, sr.name, formatRp(d[sr.key])))}
+      {chartTooltipRow('#FFFFFF', 'Total', formatRp(d.kasir + d.online + d.konsinyasi + d.lain))}
       {d.count > 0 && chartTooltipRow('#FDBA74', 'Transaksi kasir', `${d.count}x`)}
     </div>
   );
@@ -190,14 +196,12 @@ function RevenueChart({ data }: { data: TrendPoint[] }) {
         <ResponsiveContainer>
           <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
-              <linearGradient id="dashKasirFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#D4691E" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="#D4691E" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="dashKonsinyasiFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#0284C7" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="#0284C7" stopOpacity={0} />
-              </linearGradient>
+              {OMZET_SERIES.map(sr => (
+                <linearGradient key={sr.key} id={`dashFill-${sr.key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={sr.color} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={sr.color} stopOpacity={0} />
+                </linearGradient>
+              ))}
             </defs>
             <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
             <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
@@ -205,22 +209,20 @@ function RevenueChart({ data }: { data: TrendPoint[] }) {
             <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
               axisLine={false} tickLine={false} width={48} tickCount={5} />
             <RechartsTooltip content={<RevenueTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-            <Area type="monotone" stackId="omzet" dataKey="kasir" name="Kasir" stroke="#D4691E" strokeWidth={3}
-              fill="url(#dashKasirFill)" dot={showDots ? { r: 3, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' } : false}
-              activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#D4691E' }} />
-            <Area type="monotone" stackId="omzet" dataKey="konsinyasi" name="Konsinyasi" stroke="#0284C7" strokeWidth={3}
-              fill="url(#dashKonsinyasiFill)" dot={showDots ? { r: 3, strokeWidth: 2, stroke: '#fff', fill: '#0284C7' } : false}
-              activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#0284C7' }} />
+            {OMZET_SERIES.map(sr => (
+              <Area key={sr.key} type="monotone" stackId="omzet" dataKey={sr.key} name={sr.name} stroke={sr.color} strokeWidth={3}
+                fill={`url(#dashFill-${sr.key})`} dot={showDots ? { r: 3, strokeWidth: 2, stroke: '#fff', fill: sr.color } : false}
+                activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: sr.color }} />
+            ))}
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex items-center gap-4 mt-2">
-        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#D4691E' }} /> Kasir
-        </span>
-        <span className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-          <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#0284C7' }} /> Konsinyasi (rekap mitra)
-        </span>
+      <div className="flex flex-wrap items-center gap-4 mt-2">
+        {OMZET_SERIES.map(sr => (
+          <span key={sr.key} className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: sr.color }} /> {sr.name}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -379,7 +381,7 @@ export default function AdminPage() {
   const [sumCustomFrom, setSumCustomFrom] = useState('');
   const [sumCustomTo, setSumCustomTo] = useState('');
   const [sumOrders, setSumOrders] = useState<SumOrder[]>([]);
-  const [sumConsign, setSumConsign] = useState<{ date: string; pendapatan: number }[]>([]);
+  const [sumOmzet, setSumOmzet] = useState<Pick<BusinessAnalyticsData, 'channels' | 'dailyTrend'> | null>(null);
   const [sumRange, setSumRange] = useState<{ from: string; to: string } | null>(null);
   const [sumLoading, setSumLoading] = useState(false);
   const [sumError, setSumError] = useState('');
@@ -477,12 +479,13 @@ export default function AdminPage() {
       const h = { 'x-admin-auth': token };
       const [oRes, cRes] = await Promise.all([
         fetch(`/api/orders?from=${from}&to=${to}`, { headers: h, signal: ctrl.signal }),
-        // Tanpa izin konsinyasi/dashboard → 403; omzet konsinyasi dianggap 0, bukan error.
-        fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: h, signal: ctrl.signal }).catch(() => null),
+        // Omzet semua channel (kasir, online, konsinyasi, pendapatan lain) — aturan hitung sama
+        // dengan Laporan Keuangan (belum lunas / dibatalkan tidak dihitung).
+        fetch(`/api/analytics/overview?from=${from}&to=${to}`, { headers: h, signal: ctrl.signal }),
       ]);
-      if (!oRes.ok) throw new Error('orders');
+      if (!oRes.ok || !cRes.ok) throw new Error('summary');
       setSumOrders((await oRes.json() as { orders: SumOrder[] }).orders);
-      setSumConsign(cRes?.ok ? (await cRes.json() as ConsignmentAnalyticsData).dailyTrend : []);
+      setSumOmzet(await cRes.json() as BusinessAnalyticsData);
       setSumRange({ from, to });
     } catch (e) {
       setSumError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat ringkasan.');
@@ -505,16 +508,19 @@ export default function AdminPage() {
     for (let t = Date.parse(`${sumRange.from}T00:00:00Z`), end = Date.parse(`${sumRange.to}T00:00:00Z`); t <= end && keys.length < 800; t += 86_400_000) {
       keys.push(new Date(t).toISOString().slice(0, 10));
     }
-    const trend = new Map(keys.map(k => [k, { date: k, kasir: 0, konsinyasi: 0, count: 0 }]));
+    const trend = new Map(keys.map(k => [k, { date: k, kasir: 0, online: 0, konsinyasi: 0, lain: 0, count: 0 }]));
     sumOrders.forEach(o => {
       if (!o.createdAt?.seconds) return;
       const d = trend.get(wibDateKey(new Date(o.createdAt.seconds * 1000)));
-      if (d) { d.kasir += o.total ?? 0; d.count += 1; }
+      if (d) d.count += 1;
     });
-    sumConsign.forEach(c => { const d = trend.get(c.date); if (d) d.konsinyasi += c.pendapatan; });
+    (sumOmzet?.dailyTrend ?? []).forEach(c => {
+      const d = trend.get(c.date);
+      if (d) { d.kasir += c.pos; d.online += c.online; d.konsinyasi += c.consignment; d.lain += c.incomeLain; }
+    });
     const revenueTrend = keys.map(k => trend.get(k)!);
-    const kasir = revenueTrend.reduce((s, d) => s + d.kasir, 0);
-    const konsinyasi = revenueTrend.reduce((s, d) => s + d.konsinyasi, 0);
+    const ch = sumOmzet?.channels ?? { pos: 0, online: 0, consignment: 0, incomeLain: 0, total: 0 };
+    const kasir = ch.pos, online = ch.online, konsinyasi = ch.consignment, lain = ch.incomeLain, total = ch.total;
     const recentOrders: DashOrder[] = sumOrders.slice(0, 5).map(o => ({
       customerName: o.customerName, total: o.total,
       date: o.createdAt?.seconds
@@ -529,8 +535,8 @@ export default function AdminPage() {
         const p = posProducts.find(fp => fp.name === name);
         return { name, emoji: p?.emoji ?? '📦', bgColor: p?.bgColor ?? '#F5F0E9', stock: p?.stock ?? 'Ada', count };
       });
-    return { revenueTrend, kasir, konsinyasi, orderCount: sumOrders.length, recentOrders, topProducts };
-  }, [sumRange, sumOrders, sumConsign, posProducts]);
+    return { revenueTrend, kasir, online, konsinyasi, lain, total, orderCount: sumOrders.length, recentOrders, topProducts };
+  }, [sumRange, sumOrders, sumOmzet, posProducts]);
 
   // ── POS stock refresh — lightweight, products-only (no analytics/resellers/
   // customers) so opening the Kasir tab or starting a new sale doesn't drag in
@@ -1155,12 +1161,14 @@ export default function AdminPage() {
           )}
 
           {/* Stat cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { icon: <Receipt    size={16}/>, label: 'Pesanan Kasir', val: summary.orderCount.toString(), color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: 'var(--accent),#A84F10' },
+              { icon: <Receipt    size={16}/>, label: 'Jumlah Pesanan', val: summary.orderCount.toString(), color: 'var(--accent)',  iconBg: 'var(--accent-bg)',  bar: 'var(--accent),#A84F10' },
               { icon: <TrendingUp size={16}/>, label: 'Omzet Kasir',  val: formatRp(summary.kasir), color: 'var(--success)', iconBg: 'var(--success-bg)', bar: '#15803D,#166534' },
+              { icon: <Globe      size={16}/>, label: 'Omzet Online', val: formatRp(summary.online), color: '#7C3AED', iconBg: '#F5F3FF', bar: '#7C3AED,#6D28D9' },
               { icon: <Store      size={16}/>, label: 'Omzet Konsinyasi', val: formatRp(summary.konsinyasi), color: '#0284C7', iconBg: '#EFF6FF', bar: '#0284C7,#0369A1' },
-              { icon: <Wallet     size={16}/>, label: 'Total Omzet', val: formatRp(summary.kasir + summary.konsinyasi), color: '#B45309', iconBg: '#FFFBEA', bar: '#B45309,#92400E' },
+              { icon: <Wallet     size={16}/>, label: 'Pendapatan Lain', val: formatRp(summary.lain), color: '#059669', iconBg: '#ECFDF5', bar: '#059669,#047857' },
+              { icon: <Wallet     size={16}/>, label: 'Total Omzet', val: formatRp(summary.total), color: '#B45309', iconBg: '#FFFBEA', bar: '#B45309,#92400E' },
               { icon: <Package    size={16}/>, label: 'Produk Aktif',    val: dashData.productCount.toString(), color: '#0284C7',        iconBg: '#EFF6FF',           bar: '#0284C7,#0369A1' },
               { icon: <Users      size={16}/>, label: 'Total Reseller',  val: dashData.resellerCount.toString(),color: '#7C3AED',        iconBg: '#F5F3FF',           bar: '#7C3AED,#6D28D9' },
             ].map((c, i) => (
@@ -1184,15 +1192,15 @@ export default function AdminPage() {
             <div className="flex items-center justify-between mb-5">
               <div>
                 <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Tren Omzet</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Penjualan kasir + rekap konsinyasi mitra · {sumRange ? `${pdfDate(sumRange.from)} - ${pdfDate(sumRange.to)}` : ''}</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Kasir, online, konsinyasi & pendapatan lain · {sumRange ? `${pdfDate(sumRange.from)} - ${pdfDate(sumRange.to)}` : ''}</p>
               </div>
-              {summary.kasir + summary.konsinyasi > 0 && (
+              {summary.total > 0 && (
                 <span className="badge badge-amber">
-                  Total: {formatRp(summary.kasir + summary.konsinyasi)}
+                  Total: {formatRp(summary.total)}
                 </span>
               )}
             </div>
-            {summary.revenueTrend.every(d => d.kasir + d.konsinyasi === 0) ? (
+            {summary.revenueTrend.every(d => d.kasir + d.online + d.konsinyasi + d.lain === 0) ? (
               <div className="py-8 text-center">
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transaksi pada periode ini</p>
               </div>

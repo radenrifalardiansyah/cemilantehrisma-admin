@@ -9,7 +9,7 @@ import { notify } from '@/lib/notifications';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 import { revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg } from '@/lib/stock-pg';
-import { rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow } from '@/lib/materials-pg';
+import { snapQty, rowToBatch, mergeMaterialsUsed, mergeOutputs, type ProductionBatchRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
 
 interface MaterialUsedInput { materialId: string; materialName: string; unit: string; qty: number }
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
       for (const m of materialsUsed) {
         const row = materialById.get(m.materialId)!;
         const oldQty = Number(row.stock_qty) || 0;
-        const newQty = oldQty - m.qty;
+        const newQty = snapQty(oldQty - m.qty);
         const minStock = Number(row.min_stock) || 0;
         await pgTx`update raw_materials set stock_qty = ${newQty}, updated_at = now() where id = ${m.materialId}`;
 
