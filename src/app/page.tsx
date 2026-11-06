@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { AreaChart, Area, ComposedChart, Bar, Line, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { ComposedChart, Bar, Line, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import {
   RefreshCw, TrendingUp, Receipt, Package, Users,
   Loader2,
@@ -193,38 +193,31 @@ function RevenueTooltip({ active, payload, label }: { active?: boolean; payload?
 
 function RevenueChart({ data }: { data: TrendPoint[] }) {
   if (data.length === 0) return null;
-  const showDots = data.length <= 31;
+  // Batang bertumpuk (bukan area): tiap sumber omzet terlihat sebagai potongan warnanya sendiri.
+  // Area bertumpuk membuat sumber bernilai 0 "tertimpa" garis sumber di atasnya, sehingga omzet kasir
+  // tampak seperti omzet online.
   return (
     <div>
       <div style={{ width: '100%', height: 240 }}>
         <ResponsiveContainer>
-          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <defs>
-              {OMZET_SERIES.map(sr => (
-                <linearGradient key={sr.key} id={`dashFill-${sr.key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={sr.color} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={sr.color} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
+          <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
             <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
               axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
             <YAxis tickFormatter={compactNumber} tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
               axisLine={false} tickLine={false} width={48} tickCount={5} />
-            <RechartsTooltip content={<RevenueTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
-            {OMZET_SERIES.map(sr => (
-              <Area key={sr.key} type="monotone" stackId="omzet" dataKey={sr.key} name={sr.name} stroke={sr.color} strokeWidth={3}
-                fill={`url(#dashFill-${sr.key})`} dot={showDots ? { r: 3, strokeWidth: 2, stroke: '#fff', fill: sr.color } : false}
-                activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: sr.color }} />
+            <RechartsTooltip content={<RevenueTooltip />} cursor={{ fill: 'var(--border-2)', fillOpacity: 0.5 }} />
+            {OMZET_SERIES.map((sr, i) => (
+              <Bar key={sr.key} dataKey={sr.key} name={sr.name} stackId="omzet" fill={sr.color} maxBarSize={28}
+                radius={i === OMZET_SERIES.length - 1 ? [4, 4, 0, 0] : 0} />
             ))}
-          </AreaChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
       <div className="flex flex-wrap items-center gap-4 mt-2">
         {OMZET_SERIES.map(sr => (
           <span key={sr.key} className="flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: sr.color }} /> {sr.name}
+            <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: sr.color }} /> {sr.name}
           </span>
         ))}
       </div>
