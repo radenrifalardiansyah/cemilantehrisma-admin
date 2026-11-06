@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getSql } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDateKey } from '@/lib/date';
 
@@ -26,7 +27,8 @@ const getRawWebStats = unstable_cache(
       return wibDateKey(d);
     });
 
-    const [dailyRows, deviceRows, pageRows, clickRows, [totalVisitors], prodRows, catRows] = await Promise.all([
+    // Berurutan (seq): 7 query sekaligus > koneksi pool (5) bisa macet lewat PgBouncer — lihat db-seq.ts.
+    const [dailyRows, deviceRows, pageRows, clickRows, [totalVisitors], prodRows, catRows] = await seq([
       sql<{ day: string; views: number; visitors: number }[]>`
         select day, count(*)::int as views, count(distinct session_id)::int as visitors
         from analytics_events where kind = 'pageview' and day = any(${days}) group by day

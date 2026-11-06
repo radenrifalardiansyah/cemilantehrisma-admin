@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getSql, parseJsonb } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { stockAdjustmentForPeriod } from '@/lib/stock-adjustment-pg';
@@ -36,7 +37,10 @@ const isNonPnlExpense = (e: ExpenseDoc) => e.excludeFromPnl === true;
 const getRawAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const sql = getSql();
-    const [orderRows, recapRows, incomeRows, expenseRows, materialRows, productRows, installments] = await Promise.all([
+    // BERURUTAN (seq), bukan Promise.all: lewat PgBouncer, query yang lebih banyak dari koneksi pool (max 5)
+    // — apalagi bila beberapa request tiba bersamaan — bisa macet total (lihat db-seq.ts). Analitik Bisnis
+    // sempat "Server tidak merespons dalam 25 detik" karena ini.
+    const [orderRows, recapRows, incomeRows, expenseRows, materialRows, productRows] = await seq([
       // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
       sql<{ total: string; source: string; status: string; payment_status: string; created_at: Date; items: unknown; has_payments: boolean }[]>`
         select total, source, status, payment_status, created_at, items, exists(select 1 from order_payments p where p.order_id = orders.id) as has_payments from orders
@@ -60,8 +64,8 @@ const getRawAnalytics = unstable_cache(
         select id, name, unit, stock_qty, avg_cost, min_stock from raw_materials
       `,
       sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
-      fetchInstallmentPayments(sql, from, to),
     ]);
+    const installments = await fetchInstallmentPayments(sql, from, to);
 
     return {
       orders: orderRows.map((r): OrderDoc => ({
@@ -138,19 +142,19 @@ export async function GET(req: NextRequest) {
   // Semua sumber data dijemput sekaligus (dulu berurutan: tiap satu menambah satu putaran ke database,
   // dan lambat/macetnya salah satu membuat seluruh dashboard ikut menunggu).
   const sql = getSql();
-  const [raw, stockAdj, allTime, [productStock]] = await Promise.all([
-    getRawAnalytics(from, to),
-    // Selisih stok opname periode ini (rugi kalau fisik < sistem) — sama dengan FinanceReportTab.
-    stockAdjustmentForPeriod(sql, from, to),
-    getAllTimeCash(),
-    // Produk jadi — snapshot kondisi saat ini: menipis (≤ batas minimum) & habis.
-    sql<{ low: string; out: string }[]>`
-      select
-        count(*) filter (where not open_po and min_stock > 0 and stock_qty > 0 and stock_qty <= min_stock) as low,
-        count(*) filter (where not open_po and stock_qty <= 0 and published) as out
-      from products
-    `,
-  ]);
+  // Berurutan juga (bukan Promise.all) — alasan sama dengan getRawAnalytics. Hasil getRawAnalytics &
+  // getAllTimeCash di-cache, jadi pada request berikutnya yang jalan ke database hanya dua query ringan.
+  const raw = await getRawAnalytics(from, to);
+  // Selisih stok opname periode ini (rugi kalau fisik < sistem) — sama dengan FinanceReportTab.
+  const stockAdj = await stockAdjustmentForPeriod(sql, from, to);
+  const allTime = await getAllTimeCash();
+  // Produk jadi — snapshot kondisi saat ini: menipis (≤ batas minimum) & habis.
+  const [productStock] = await sql<{ low: string; out: string }[]>`
+    select
+      count(*) filter (where not open_po and min_stock > 0 and stock_qty > 0 and stock_qty <= min_stock) as low,
+      count(*) filter (where not open_po and stock_qty <= 0 and published) as out
+    from products
+  `;
   const { orders, recaps, income, expenses, materials, productCosts, installments } = raw;
   const productCostMap = new Map(productCosts);
 

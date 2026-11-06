@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getSql, parseJsonb } from '@/lib/db';
+import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 
@@ -27,7 +28,8 @@ const CONSIGNMENT_ANALYTICS_VIEW_KEYS = ['consignment', 'dashboard'];
 const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const sql = getSql();
-    const [locRows, shipRows, recapRows, stockRows] = await Promise.all([
+    // Berurutan (seq) supaya tidak menumpuk di pool bersama request Analitik lain — lihat db-seq.ts.
+    const [locRows, shipRows, recapRows, stockRows] = await seq([
       sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from consignment_locations`,
       // `consignment_shipments` pindah ke Postgres (Tahap 18a migrasi Fase 2).
       sql<{ location_id: string | null; location_name: string | null; created_at: Date; items: unknown }[]>`
