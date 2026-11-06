@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { pdf } from '@react-pdf/renderer';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import { useToast } from '@/components/Toast';
-import AnalyticsReportPDF, { type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 
 // Tombol "PDF" yang dipakai semua halaman Analitik. `build` dipanggil saat diklik (null = belum ada data).
@@ -21,6 +20,10 @@ export default function AnalyticsPdfButton({ creds, build, filename, disabled }:
     if (!data) { toast.error('Belum ada data untuk diexport.'); return; }
     setBusy(true);
     try {
+      // Library PDF (besar) baru diunduh saat tombol diklik, bukan ikut bundel halaman Analitik.
+      const [{ pdf }, { default: AnalyticsReportPDF }] = await Promise.all([
+        import('@react-pdf/renderer'), import('@/lib/pdf/AnalyticsReportPDF'),
+      ]);
       const blob = await pdf(<AnalyticsReportPDF data={data} store={storeHeader} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

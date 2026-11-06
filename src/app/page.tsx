@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { AreaChart, Area, ComposedChart, Bar, Line, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -62,11 +62,15 @@ const NotificationsTab = dynamic(() => import('@/components/tabs/NotificationsTa
 import type { PosProduct, PosCategory_Entry, PosReseller, PosBank, PosCustomer } from '@/lib/pos-types';
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 import TopListChart from '@/components/dashboard/TopListChart';
-import BusinessAnalyticsSection, { type BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
+import type { BusinessAnalyticsData } from '@/components/dashboard/BusinessAnalyticsSection';
+// Sub-view Analitik dimuat saat dibuka saja (membawa recharts/PDF builder yang berat).
+const BusinessAnalyticsSection = dynamic(() => import('@/components/dashboard/BusinessAnalyticsSection'), { loading: () => <PageLoader compact /> });
 import AnalyticsPdfButton from '@/components/dashboard/AnalyticsPdfButton';
-import { pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
-import ConsignmentAnalyticsSection, { type ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
-import LapakAnalyticsSection from '@/components/dashboard/LapakAnalyticsSection';
+import { pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
+import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import type { ConsignmentAnalyticsData } from '@/components/dashboard/ConsignmentAnalyticsSection';
+const ConsignmentAnalyticsSection = dynamic(() => import('@/components/dashboard/ConsignmentAnalyticsSection'), { loading: () => <PageLoader compact /> });
+const LapakAnalyticsSection = dynamic(() => import('@/components/dashboard/LapakAnalyticsSection'), { loading: () => <PageLoader compact /> });
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
 
@@ -393,6 +397,7 @@ export default function AdminPage() {
   const [bizData, setBizData] = useState<BusinessAnalyticsData | null>(null);
   const [bizLoading, setBizLoading] = useState(false);
   const [bizError, setBizError] = useState('');
+  const bizFresh = useRef<{ key: string; at: number } | null>(null);
 
   // ── Analitik Mitra (kirim/pendapatan/pelunasan per lokasi konsinyasi) — agregasi server-side ──
   const [mitraPeriod, setMitraPeriod] = useState<PeriodKey>('month');
@@ -401,6 +406,7 @@ export default function AdminPage() {
   const [mitraData, setMitraData] = useState<ConsignmentAnalyticsData | null>(null);
   const [mitraLoading, setMitraLoading] = useState(false);
   const [mitraError, setMitraError] = useState('');
+  const mitraFresh = useRef<{ key: string; at: number } | null>(null);
 
   // ── POS (shared data — PosTab owns cart/checkout state itself) ─────
   const [posProducts,    setPosProducts]    = useState<PosProduct[]>([]);
@@ -418,14 +424,13 @@ export default function AdminPage() {
     try {
       // Pesanan/omzet per periode diambil terpisah (fetchSummary) supaya ganti filter tanggal
       // tidak ikut memuat ulang produk, reseller, dsb.
-      const [pRes, rRes, cRes, bRes, custRes, matRes, webRes] = await Promise.all([
+      const [pRes, rRes, cRes, bRes, custRes, matRes] = await Promise.all([
         fetch('/api/products',     { headers: h }),
         fetch('/api/resellers',    { headers: h }),
         fetch('/api/categories',   { headers: h }),
         fetch('/api/master-banks', { headers: h }),
         fetch('/api/customers',    { headers: h }),
         fetch('/api/materials',    { headers: h }),
-        fetch(`/api/web-stats?days=${webRange}`, { headers: h }).catch(() => null),
       ]);
 
       // ── Firestore data ────────────────────────────────────
@@ -443,15 +448,6 @@ export default function AdminPage() {
       setBankOptions(fetchedBanks);
       setCustomerList(fetchedCustomers);
 
-      // ── Web analytics (Firestore, same project) ───────────
-      let webStats: WebStats | null = null;
-      let webStatsErr = '';
-      if (webRes?.ok) {
-        webStats = parseWebStats(await webRes.json() as Record<string, unknown>);
-      } else {
-        webStatsErr = webStatsErrMsg(webRes);
-      }
-
       const lowStockItems: LowStockItem[] = [
         ...fetchedProducts.filter(isProductLowStock).map(p => ({
           id: p.id, kind: 'product' as const, name: p.name, unit: 'pcs', stockQty: p.stockQty ?? 0, minStock: p.minStock ?? 0,
@@ -461,10 +457,10 @@ export default function AdminPage() {
         })),
       ].sort((a, b) => (a.stockQty / Math.max(a.minStock, 1)) - (b.stockQty / Math.max(b.minStock, 1)));
 
-      setDashData({ productCount: fetchedProducts.length, resellerCount: resellers.length, lowStockItems, webStats, webStatsErr });
+      setDashData({ productCount: fetchedProducts.length, resellerCount: resellers.length, lowStockItems, webStats: null, webStatsErr: '' });
     } catch {}
     setLoading(false);
-  }, [creds, webRange]);
+  }, [creds]);
 
   // ── Ringkasan: pesanan kasir + rekap konsinyasi untuk periode terpilih ──
   const fetchSummary = useCallback(async (authHeader?: string) => {
@@ -569,9 +565,10 @@ export default function AdminPage() {
 
   // ── Analitik Bisnis — agregasi channel/laba-rugi/bahan-baku dari endpoint server-side,
   // supaya angkanya identik dengan tab Laporan Keuangan untuk periode yang sama ──
-  const fetchBusinessAnalytics = useCallback(async (authHeader?: string) => {
+  const fetchBusinessAnalytics = useCallback(async (authHeader?: string): Promise<boolean> => {
     const token = authHeader ?? creds;
-    if (!token) return;
+    if (!token) return false;
+    let ok = false;
     setBizLoading(true);
     setBizError('');
     // Batas waktu: tanpa ini, permintaan yang menggantung membuat spinner berputar tanpa akhir.
@@ -580,7 +577,7 @@ export default function AdminPage() {
     try {
       const { from, to } = periodRange(bizPeriod, bizCustomFrom, bizCustomTo);
       const res = await fetch(`/api/analytics/overview?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token }, signal: ctrl.signal });
-      if (res.ok) setBizData(await res.json() as BusinessAnalyticsData);
+      if (res.ok) { setBizData(await res.json() as BusinessAnalyticsData); ok = true; }
       else setBizError('Gagal memuat analitik.');
     } catch (e) {
       setBizError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat analitik.');
@@ -588,19 +585,25 @@ export default function AdminPage() {
       clearTimeout(timer);
     }
     setBizLoading(false);
+    return ok;
   }, [creds, bizPeriod, bizCustomFrom, bizCustomTo]);
 
-  // Refetch tiap kali periode (atau rentang custom) diubah dari toggle di dashboard.
+  // Dimuat hanya saat sub-view Analitik Bisnis dibuka (bukan di tiap login), dan diulang bila periode
+  // berubah. Pindah-pindah sub-view tidak mengambil ulang data yang masih segar (< 3 menit, sama
+  // dengan cache server) untuk periode yang sama.
   useEffect(() => {
-    if (!authed) return;
-    fetchBusinessAnalytics();
+    if (!authed || activeTab !== 'dashboard' || dashSubView !== 'analitik-bisnis') return;
+    const key = `${bizPeriod}|${bizCustomFrom}|${bizCustomTo}`;
+    if (bizData && bizFresh.current?.key === key && Date.now() - bizFresh.current.at < 180_000) return;
+    fetchBusinessAnalytics().then(ok => { if (ok) bizFresh.current = { key, at: Date.now() }; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bizPeriod, bizCustomFrom, bizCustomTo]);
+  }, [authed, activeTab, dashSubView, bizPeriod, bizCustomFrom, bizCustomTo]);
 
   // ── Analitik Mitra — agregasi kirim/rekap per lokasi konsinyasi dari endpoint server-side ──
-  const fetchConsignmentAnalytics = useCallback(async (authHeader?: string) => {
+  const fetchConsignmentAnalytics = useCallback(async (authHeader?: string): Promise<boolean> => {
     const token = authHeader ?? creds;
-    if (!token) return;
+    if (!token) return false;
+    let ok = false;
     setMitraLoading(true);
     setMitraError('');
     // Batas waktu: tanpa ini, permintaan yang menggantung membuat spinner berputar tanpa akhir.
@@ -609,7 +612,7 @@ export default function AdminPage() {
     try {
       const { from, to } = periodRange(mitraPeriod, mitraCustomFrom, mitraCustomTo);
       const res = await fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token }, signal: ctrl.signal });
-      if (res.ok) setMitraData(await res.json() as ConsignmentAnalyticsData);
+      if (res.ok) { setMitraData(await res.json() as ConsignmentAnalyticsData); ok = true; }
       else setMitraError('Gagal memuat analitik.');
     } catch (e) {
       setMitraError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat analitik.');
@@ -617,13 +620,24 @@ export default function AdminPage() {
       clearTimeout(timer);
     }
     setMitraLoading(false);
+    return ok;
   }, [creds, mitraPeriod, mitraCustomFrom, mitraCustomTo]);
 
   useEffect(() => {
-    if (!authed) return;
-    fetchConsignmentAnalytics();
+    if (!authed || activeTab !== 'dashboard' || dashSubView !== 'analitik-mitra') return;
+    const key = `${mitraPeriod}|${mitraCustomFrom}|${mitraCustomTo}`;
+    if (mitraData && mitraFresh.current?.key === key && Date.now() - mitraFresh.current.at < 180_000) return;
+    fetchConsignmentAnalytics().then(ok => { if (ok) mitraFresh.current = { key, at: Date.now() }; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mitraPeriod, mitraCustomFrom, mitraCustomTo]);
+  }, [authed, activeTab, dashSubView, mitraPeriod, mitraCustomFrom, mitraCustomTo]);
+
+  // Statistik pengunjung web hanya dimuat saat sub-view Analitik Web dibuka (dulu ikut di tiap login).
+  useEffect(() => {
+    if (!authed || activeTab !== 'dashboard' || dashSubView !== 'analitik-web') return;
+    if (!dashData || dashData.webStats || dashData.webStatsErr || webLoading) return;
+    void changeWebRange(webRange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, activeTab, dashSubView, dashData]);
 
   // ── Dynamic sidebar data — Struktur Menu / Modul drive the real nav ──
   const fetchNav = useCallback(async (token: string) => {
@@ -659,7 +673,7 @@ export default function AdminPage() {
     // endpoint sudah verifikasi token sendiri lewat requirePermission, jadi tidak perlu menunggu
     // hasil /api/me. Ini menghilangkan satu round-trip berurutan dari waktu sampai data pertama
     // tampil (mis. tab Analitik Mitra) saat login/refresh halaman.
-    fetchDash(token); fetchSummary(token); fetchNav(token); fetchNewOrdersCount(token); fetchBusinessAnalytics(token); fetchConsignmentAnalytics(token);
+    fetchDash(token); fetchSummary(token); fetchNav(token); fetchNewOrdersCount(token);
     const res = await fetch('/api/me', { headers: { 'x-admin-auth': token } });
     // Hanya 401 yang berarti token memang tidak berlaku (kedaluwarsa/dicabut). Error lain (5xx saat
     // server cold start / database sesaat bermasalah) dilempar supaya pemanggil bisa mencoba lagi —
@@ -674,7 +688,7 @@ export default function AdminPage() {
     };
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
     return true;
-  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, fetchBusinessAnalytics, fetchConsignmentAnalytics]);
+  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -1101,7 +1115,14 @@ export default function AdminPage() {
 
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => { fetchDash(); fetchSummary(); fetchNewOrdersCount(); fetchBusinessAnalytics(); fetchConsignmentAnalytics(); }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+          <button onClick={() => {
+            fetchDash(); fetchNewOrdersCount();
+            // Refresh hanya sub-view yang sedang dibuka; sub-view lain dimuat saat dibuka.
+            if (dashSubView === 'ringkasan') fetchSummary();
+            else if (dashSubView === 'analitik-bisnis') fetchBusinessAnalytics();
+            else if (dashSubView === 'analitik-mitra') fetchConsignmentAnalytics();
+            else if (dashSubView === 'analitik-web') changeWebRange(webRange);
+          }} disabled={loading} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </Tooltip>
@@ -1441,6 +1462,8 @@ export default function AdminPage() {
       )}
 
       {/* Web stats cards */}
+      {!dashData?.webStats && !dashData?.webStatsErr && <PageLoader compact />}
+
       {dashData?.webStats && (() => {
         const ws = dashData.webStats!;
         const devTotal = ws.mobile + ws.desktop;

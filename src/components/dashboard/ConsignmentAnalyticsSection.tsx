@@ -12,7 +12,8 @@ import TopListChart from './TopListChart';
 import { type PeriodKey, PERIOD_OPTIONS } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
-import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
+import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 
 export interface ConsignmentAnalyticsData {
   period: { from: string; to: string };

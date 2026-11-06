@@ -12,7 +12,8 @@ import TopListChart from './TopListChart';
 import PeriodBar from '@/components/tabs/titip-jual/PeriodBar';
 import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
-import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
+import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { periodRange, type PeriodKey } from '@/lib/period';
 
 interface LapakAnalytics {

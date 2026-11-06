@@ -14,7 +14,8 @@ import { useSaldoAwal } from '@/lib/useSaldoAwal';
 import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
 import MonthlyFinanceSection from './MonthlyFinanceSection';
-import { pdfRp, pdfDate, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
+import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };

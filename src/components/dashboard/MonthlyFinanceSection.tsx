@@ -5,7 +5,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { CalendarRange, Trophy, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
-import { pdfRp, pdfNow, type AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { pdfRp, pdfNow } from '@/lib/pdf/analytics-format';
+import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 
 interface MonthRow {
   month: string; // yyyy-mm
