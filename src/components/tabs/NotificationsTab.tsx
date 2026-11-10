@@ -10,7 +10,7 @@ import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { TYPE_LABEL, fullTime } from '@/components/NotificationDetailModal';
-import { TYPE_ICON, timeAgo, type NotificationDoc } from '@/components/NotificationBell';
+import { TYPE_ICON, READ_FILTERS, timeAgo, type NotificationDoc, type ReadFilter } from '@/components/NotificationBell';
 import PageLoader from '@/components/PageLoader';
 
 const HEADER_BTN_H = 34;
@@ -43,8 +43,10 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
     fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'x-admin-auth': creds } }).catch(() => {});
   };
 
+  const [readFilter, setReadFilter] = useState<ReadFilter>('all');
   const filtered = notifications.filter(n =>
-    !search || n.title.toLowerCase().includes(search.toLowerCase()) || n.message.toLowerCase().includes(search.toLowerCase())
+    (readFilter === 'all' || (readFilter === 'unread' ? !n.readBy?.includes(username) : !!n.readBy?.includes(username))) &&
+    (!search || n.title.toLowerCase().includes(search.toLowerCase()) || n.message.toLowerCase().includes(search.toLowerCase()))
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -99,6 +101,18 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
               </div>
             )}
           </div>
+
+          {notifications.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {READ_FILTERS.map(f => (
+                <button key={f.id} onClick={() => { setReadFilter(f.id); resetPage(); }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full cursor-pointer transition-colors"
+                  style={readFilter === f.id ? { background: 'var(--accent)', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {loading ? (
             <PageLoader label="Memuat notifikasi" />

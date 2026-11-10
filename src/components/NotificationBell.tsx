@@ -57,6 +57,11 @@ interface NotificationBellProps {
   onViewAll: () => void;
 }
 
+export type ReadFilter = 'all' | 'unread' | 'read';
+export const READ_FILTERS: { id: ReadFilter; label: string }[] = [
+  { id: 'all', label: 'Semua' }, { id: 'unread', label: 'Belum dibaca' }, { id: 'read', label: 'Sudah dibaca' },
+];
+
 type PushStatus = 'idle' | 'enabling' | 'granted' | 'denied';
 
 export default function NotificationBell({ creds, username, onOpen, onViewAll }: NotificationBellProps) {
@@ -109,7 +114,9 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
   const unread = notifications.filter(n => !n.readBy?.includes(username));
   // Dropdown only ever showed the latest 50 — the shared listener now carries more
   // (see NotificationsProvider), so trim for display here rather than render all of it.
-  const visible = notifications.slice(0, 50);
+  const [filter, setFilter] = useState<ReadFilter>('all');
+  const isUnread = (n: NotificationDoc) => !n.readBy?.includes(username);
+  const visible = notifications.filter(n => filter === 'all' || (filter === 'unread' ? isUnread(n) : !isUnread(n))).slice(0, 50);
 
   const markRead = (id: string) => {
     fetch(`/api/notifications/${id}/read`, { method: 'PATCH', headers: { 'x-admin-auth': creds } }).catch(() => {});
@@ -157,10 +164,19 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
               </button>
             )}
           </div>
+          <div className="flex items-center gap-1.5 px-3.5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+            {READ_FILTERS.map(f => (
+              <button key={f.id} onClick={() => setFilter(f.id)}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full cursor-pointer transition-colors"
+                style={filter === f.id ? { background: 'var(--accent)', color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
           <div className="max-h-96 overflow-y-auto thin-scrollbar">
             {visible.length === 0 && (
               <p className="px-3.5 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-                Belum ada notifikasi.
+                {filter === 'unread' ? 'Tidak ada notifikasi yang belum dibaca.' : filter === 'read' ? 'Belum ada notifikasi yang sudah dibaca.' : 'Belum ada notifikasi.'}
               </p>
             )}
             {visible.map(n => {
@@ -201,7 +217,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
                 <button
                   onClick={enablePush}
                   disabled={pushStatus === 'enabling'}
-                  className="text-[11px] font-semibold disabled:opacity-60"
+                  className="text-[11px] font-semibold disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-[var(--surface-2)] hover:underline"
                   style={{ color: 'var(--accent)' }}
                 >
                   {pushStatus === 'enabling' ? 'Mengaktifkan…' : pushStatus === 'denied' ? 'Izin ditolak — coba lagi' : 'Aktifkan notifikasi HP'}
@@ -212,7 +228,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
           <div className="px-3.5 py-2.5 text-center" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               onClick={() => { setOpen(false); onViewAll(); }}
-              className="text-[11px] font-semibold"
+              className="text-[11px] font-semibold cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-[var(--surface-2)] hover:underline"
               style={{ color: 'var(--accent)' }}
             >
               Lihat semua notifikasi
