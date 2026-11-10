@@ -3450,7 +3450,7 @@ _${storeHeader.name}_`.trim();
                             <div>
                               <label style={fieldLabel}>Harga Titip</label>
                               <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
-                                placeholder="0" />
+                                placeholder="0" style={{ textAlign: 'right' }} />
                             </div>
                           </div>
                           {qty > 0 && harga > 0 && (
@@ -3697,7 +3697,7 @@ _${storeHeader.name}_`.trim();
                   </p>
                 </div>
 
-                {recapTotalRevenue > 0 && (
+                {recapLocationId && recapStock.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="field-label" style={{ marginBottom: 0 }}>Biaya Lain-lain <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(opsional)</span></label>
@@ -3712,8 +3712,8 @@ _${storeHeader.name}_`.trim();
                           <div key={i} className="flex items-center gap-2">
                             <input type="text" value={c.label} placeholder="cth: Biaya admin, ongkir…" className="input" style={{ flex: 2 }}
                               onChange={e => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
-                            <input type="number" min="0" value={c.amount} placeholder="Rp 0" className="input" style={{ flex: 1 }}
-                              onChange={e => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} />
+                            <NumberInput value={c.amount} placeholder="Rp 0" className="input" style={{ flex: 1, textAlign: 'right' }}
+                              onChange={raw => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, amount: raw } : x))} />
                             <button type="button" onClick={() => setRecapOtherCosts(prev => prev.filter((_, j) => j !== i))}
                               className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--danger)' }} title="Hapus biaya">
                               <X size={13} />
