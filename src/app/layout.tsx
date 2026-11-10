@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import AdminSplashScreen from "@/components/AdminSplashScreen";
 import KeyboardViewportFix from "@/components/KeyboardViewportFix";
@@ -8,9 +8,16 @@ import ConfirmProvider from "@/components/Confirm";
 import { getCachedAdminBranding } from "@/lib/server/branding";
 import { hexToShades } from "@/lib/color";
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+// Font di-host sendiri (bukan next/font/google) supaya build di Vercel tidak gagal kalau
+// Google Fonts sedang tidak bisa dijangkau saat build.
+const jakarta = localFont({
+  src: [
+    { path: "./fonts/plus-jakarta-sans-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-latin-800-normal.woff2", weight: "800", style: "normal" },
+  ],
   variable: "--font-jakarta",
   display: "swap",
 });
