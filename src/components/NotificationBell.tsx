@@ -152,7 +152,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
           <div className="flex items-center justify-between px-3.5 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Notifikasi</span>
             {unread.length > 0 && (
-              <button onClick={markAllRead} className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+              <button onClick={markAllRead} className="text-xs font-semibold cursor-pointer rounded-md px-2 py-1 -mx-2 transition-colors hover:bg-[var(--surface-2)] hover:underline" style={{ color: 'var(--accent)' }}>
                 Tandai semua dibaca
               </button>
             )}
@@ -170,7 +170,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
                 <button
                   key={n.id}
                   onClick={() => handleClick(n)}
-                  className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left transition-colors"
+                  className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left transition-[filter] cursor-pointer hover:brightness-95"
                   style={{
                     borderBottom: '1px solid var(--border)',
                     background: isRead ? 'transparent' : 'var(--accent-bg)',
