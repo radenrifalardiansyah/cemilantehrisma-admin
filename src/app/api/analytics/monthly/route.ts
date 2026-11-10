@@ -44,8 +44,8 @@ const compute = unstable_cache(
         select total, source, status, payment_status, created_at, items, exists(select 1 from order_payments p where p.order_id = orders.id) as has_payments from orders
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
-      sql<{ total_revenue: string; payment_status: string; created_at: Date; items: unknown }[]>`
-        select total_revenue, payment_status, created_at, items from consignment_recaps
+      sql<{ total_revenue: string; total_other_costs: string | null; payment_status: string; created_at: Date; items: unknown }[]>`
+        select total_revenue, total_other_costs, payment_status, created_at, items from consignment_recaps
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       sql<{ amount: string; date: string }[]>`select amount, date from income where date >= ${from} and date <= ${to}`,
@@ -81,7 +81,10 @@ const compute = unstable_cache(
       if (r.payment_status === 'belum_lunas') continue;
       const b = bk(monthOf(wibDateKey(r.created_at)));
       if (!b) continue;
-      b.consignment += Number(r.total_revenue) || 0;
+      // Kotor; biaya lain-lain rekap dihitung sebagai beban operasional (laba bersih tetap sama).
+      const otherCosts = Number(r.total_other_costs) || 0;
+      b.consignment += (Number(r.total_revenue) || 0) + otherCosts;
+      b.beban += otherCosts;
       b.hpp += ((parseJsonb(r.items) as { productId?: string; qtySold: number; costPrice?: number }[]) ?? [])
         .reduce((s, it) => s + it.qtySold * cost(it.costPrice, it.productId), 0);
     }

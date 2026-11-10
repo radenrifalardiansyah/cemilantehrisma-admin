@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
-import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
+import { rowToRecap, sanitizeOtherCosts, type RecapRow } from '@/lib/recaps-pg';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; costPrice?: number }
@@ -157,7 +157,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
     warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
+    otherCosts?: { label: string; amount: number }[];
   };
+  const otherCosts = sanitizeOtherCosts(data.otherCosts);
+  const totalOtherCosts = otherCosts.reduce((s, c) => s + c.amount, 0);
   const newItems = (data.items ?? [])
     .map(it => ({ ...it, qtySold: Number(it.qtySold) || 0, qtyRetur: Number(it.qtyRetur) || 0, qtyReject: Number(it.qtyReject) || 0 }))
     .filter(it => it.qtySold > 0 || it.qtyRetur > 0 || it.qtyReject > 0);
@@ -291,7 +294,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
       totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
       totalReject  = recapItems.reduce((s, it) => s + (it.qtyReject ?? 0), 0);
-      totalRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
+      const grossRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
+      if (totalOtherCosts > grossRevenue) throw new Error(`Biaya lain-lain (Rp${totalOtherCosts.toLocaleString('id-ID')}) melebihi pendapatan rekap (Rp${grossRevenue.toLocaleString('id-ID')}).`);
+      totalRevenue = grossRevenue - totalOtherCosts; // netto setelah dipotong biaya lain-lain
 
       newReturItems.forEach(it => {
         const p = productState.get(it.productId)!;
@@ -348,7 +353,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         update consignment_recaps set
           location_id = ${data.locationId}, location_name = ${data.locationName},
           items = ${JSON.stringify(recapItems)}, total_sold = ${totalSold}, total_retur = ${totalRetur},
-          total_reject = ${totalReject}, total_revenue = ${totalRevenue}, payment_status = ${paymentStatus},
+          total_reject = ${totalReject}, total_revenue = ${totalRevenue},
+          other_costs = ${JSON.stringify(otherCosts)}, total_other_costs = ${totalOtherCosts}, payment_status = ${paymentStatus},
           warehouse_id = ${data.warehouseId ?? null}, warehouse_name = ${data.warehouseName ?? null},
           note = ${data.note ?? null}, wallet_id = ${data.walletId ?? null},
           created_at = ${data.date ? new Date(data.date) : oldRecapRowPeek.created_at},
@@ -370,7 +376,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       action: 'update',
       actor: guard,
       before: oldRecap,
-      after: { ...oldRecap, locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, paymentStatus },
+      after: { ...oldRecap, locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, otherCosts, totalOtherCosts, paymentStatus },
     });
   } catch (err) {
     console.error('Failed to write history for consignment recap update', err);

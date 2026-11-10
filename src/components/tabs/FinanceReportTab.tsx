@@ -67,6 +67,8 @@ interface OrderRecord {
 
 interface RecapRecord {
   locationName: string; totalRevenue: number; paymentStatus?: 'lunas' | 'belum_lunas';
+  // totalRevenue = netto (sudah dipotong biaya lain-lain). Laporan menampilkan kotor + biaya sebagai beban.
+  otherCosts?: { label: string; amount: number }[]; totalOtherCosts?: number;
   createdAt?: { seconds: number };
   items?: { productId?: string; qtySold: number; costPrice?: number; productName?: string }[];
   walletId?: string | null;
@@ -304,7 +306,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [orders,   setOrders]   = useState<OrderRecord[]>([]);
   const [recaps,   setRecaps]   = useState<RecapRecord[]>([]);
   const [income,   setIncome]   = useState<IncomeRecord[]>([]);
-  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [expensesRaw, setExpensesRaw] = useState<ExpenseRecord[]>([]);
   const [capital,  setCapital]  = useState<CapitalRecord[]>([]);
   // Cicilan pesanan kredit yang diterima di periode ini (dihitung per tanggal uang diterima).
   const [installments, setInstallments] = useState<InstallmentPayment[]>([]);
@@ -408,7 +410,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       setOrders(orders);
       setRecaps(recaps);
       setIncome(income);
-      setExpenses(expenses);
+      setExpensesRaw(expenses);
       setCapital(capital);
       setTxBeforePeriod(txBefore);
       setStockAdj(adj);
@@ -450,7 +452,17 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     + installments.filter(p => p.source !== 'portal').reduce((s, p) => s + p.amount, 0);
   const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0)
     + installments.filter(p => p.source === 'portal').reduce((s, p) => s + p.amount, 0);
-  const consignmentRevenue = countedRecaps.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
+  // Biaya lain-lain rekap konsinyasi (biaya admin, ongkir, dll.) tampil sebagai Beban Operasional,
+  // dan pendapatan konsinyasi tampil KOTOR. Uang masuk bersihnya tetap sama (kotor − biaya = totalRevenue),
+  // jadi laba bersih, Jurnal Kas, dan saldo dompet tidak berubah.
+  const recapCostExpenses: ExpenseRecord[] = countedRecaps.flatMap(r => (r.otherCosts ?? []).map(c => ({
+    category: 'Biaya Konsinyasi', description: `${c.label} - ${r.locationName}`, amount: c.amount,
+    date: r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString('en-CA') : '',
+    createdAt: r.createdAt, walletId: r.walletId,
+  })));
+  const expenses = [...expensesRaw, ...recapCostExpenses];
+  const recapGross = (r: RecapRecord) => (r.totalRevenue ?? 0) + (r.totalOtherCosts ?? 0);
+  const consignmentRevenue = countedRecaps.reduce((s, r) => s + recapGross(r), 0);
   const totalPendapatanLain = income.reduce((s, i) => s + i.amount, 0);
   const totalPendapatan = kasirRevenue + onlineRevenue + consignmentRevenue + totalPendapatanLain;
 
@@ -589,7 +601,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     ...countedRecaps.map(r => ({
       seconds: r.createdAt?.seconds ?? 0,
       description: `Pendapatan Konsinyasi - ${r.locationName}`,
-      debit: r.totalRevenue ?? 0, kredit: 0,
+      debit: recapGross(r), kredit: 0,
     })),
     ...income.map(i => ({
       seconds: dateWithRealTime(i.date, i.createdAt),
@@ -632,7 +644,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     if (!r.createdAt?.seconds) return;
     const key = new Date(r.createdAt.seconds * 1000).toLocaleDateString('en-CA');
     const cur = dailyMap.get(key) ?? { income: 0, expense: 0 };
-    cur.income += r.totalRevenue ?? 0; dailyMap.set(key, cur);
+    cur.income += recapGross(r); dailyMap.set(key, cur);
   });
   income.forEach(i => {
     const cur = dailyMap.get(i.date) ?? { income: 0, expense: 0 };

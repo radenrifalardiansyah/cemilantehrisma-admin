@@ -6,6 +6,17 @@ import { toTimestamp } from '@/lib/orders-pg';
 // persis seperti dokumen Firestore lama (camelCase, createdAt/dueDate/updatedAt/overdueNotifiedAt
 // sebagai {seconds,nanoseconds}) supaya UI tidak perlu berubah — pola sama seperti orders-pg.ts.
 
+export interface RecapOtherCost { label: string; amount: number }
+
+// Biaya lain-lain rekap (biaya admin, ongkir, dll.) — memotong jumlah rekap. Baris kosong/<=0 dibuang.
+export function sanitizeOtherCosts(input: unknown): RecapOtherCost[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map(c => ({ label: String((c as RecapOtherCost)?.label ?? '').trim().slice(0, 80), amount: Math.round(Number((c as RecapOtherCost)?.amount) || 0) }))
+    .filter(c => c.amount > 0)
+    .map(c => ({ ...c, label: c.label || 'Biaya lain' }));
+}
+
 export interface RecapRow {
   id: string;
   location_id: string;
@@ -15,6 +26,8 @@ export interface RecapRow {
   total_retur: string;
   total_reject: string;
   total_revenue: string;
+  other_costs: unknown;
+  total_other_costs: string | null;
   payment_status: string;
   warehouse_id: string | null;
   warehouse_name: string | null;
@@ -35,7 +48,11 @@ export function rowToRecap(r: RecapRow) {
     totalSold: Number(r.total_sold),
     totalRetur: Number(r.total_retur),
     totalReject: Number(r.total_reject),
+    // totalRevenue = NETTO (sudah dipotong biaya lain-lain) — inilah yang dibaca saldo dompet & laporan.
     totalRevenue: Number(r.total_revenue),
+    otherCosts: (parseJsonb(r.other_costs) ?? []) as RecapOtherCost[],
+    totalOtherCosts: Number(r.total_other_costs ?? 0),
+    grossRevenue: Number(r.total_revenue) + Number(r.total_other_costs ?? 0),
     paymentStatus: r.payment_status,
     warehouseId: r.warehouse_id ?? '',
     warehouseName: r.warehouse_name ?? '',

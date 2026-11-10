@@ -156,6 +156,7 @@ interface RecapItem { productId: string; productName: string; qtySold: number; q
 interface Recap {
   id: string; locationId?: string; locationName: string; items: RecapItem[];
   totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number; note?: string;
+  otherCosts?: { label: string; amount: number }[]; totalOtherCosts?: number; grossRevenue?: number;
   paymentStatus?: 'lunas' | 'belum_lunas';
   warehouseId?: string; warehouseName?: string;
   createdAt?: { seconds: number };
@@ -1462,6 +1463,8 @@ _${storeHeader.name}_`.trim();
     return { ok: true, label };
   };
   const [recapNote,         setRecapNote]         = useState('');
+  // Biaya lain-lain (biaya admin, ongkir, dll.) — memotong jumlah rekap. amount disimpan string agar input bebas diketik.
+  const [recapOtherCosts,   setRecapOtherCosts]   = useState<{ label: string; amount: string }[]>([]);
   const [recapPaymentStatus, setRecapPaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [recapWalletId,     setRecapWalletId]     = useState('');
   const [recapWarehouseId,  setRecapWarehouseId]  = useState('');
@@ -1543,16 +1546,20 @@ _${storeHeader.name}_`.trim();
   const recapTotalRevenue = recapRows.reduce((s, r) => s + r.sold * r.item.hargaTitip, 0);
   const recapTotalRetur   = recapRows.reduce((s, r) => s + r.retur, 0);
   const recapTotalReject  = recapRows.reduce((s, r) => s + r.reject, 0);
+  const recapOtherCostsClean = recapOtherCosts.map(c => ({ label: c.label.trim(), amount: Math.round(parseFloat(c.amount) || 0) })).filter(c => c.amount > 0);
+  const recapTotalOtherCosts = recapOtherCostsClean.reduce((s, c) => s + c.amount, 0);
+  const recapNetRevenue      = recapTotalRevenue - recapTotalOtherCosts;
+  const recapCostsExceed     = recapTotalOtherCosts > recapTotalRevenue;
   const recapHasExceeds   = recapRows.some(r => r.exceeds);
   const recapNeedsWarehouse = recapTotalRetur + recapTotalReject > 0;
   const canSubmitRecap    = !!recapLocationId && !isNaN(new Date(recapDate).getTime()) && recapRows.some(r => r.sold > 0 || r.retur > 0 || r.reject > 0)
-    && !recapHasExceeds && (!recapNeedsWarehouse || !!recapWarehouseId)
+    && !recapHasExceeds && !recapCostsExceed && (!recapNeedsWarehouse || !!recapWarehouseId)
     && (recapPaymentStatus === 'belum_lunas' || !!recapWalletId);
 
   const openCreateRecap = () => {
     setEditingRecap(null);
     setRecapLocationId(''); setRecapStock([]); setRecapInputs({});
-    setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
+    setRecapNote(''); setRecapOtherCosts([]); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
     setRecapDate(toLocalDateTimeInput(new Date()));
     setShowRecapForm(true);
   };
@@ -1565,6 +1572,7 @@ _${storeHeader.name}_`.trim();
   const openEditRecap = async (r: Recap) => {
     setEditingRecap(r);
     setRecapNote(r.note ?? '');
+    setRecapOtherCosts((r.otherCosts ?? []).map(c => ({ label: c.label, amount: String(c.amount) })));
     setRecapPaymentStatus(r.paymentStatus ?? 'lunas');
     setRecapWalletId(r.walletId ?? '');
     setRecapWarehouseId(r.warehouseId ?? '');
@@ -1601,6 +1609,7 @@ _${storeHeader.name}_`.trim();
         .map(r => ({ productId: r.item.productId, productName: r.item.productName, qtySold: r.sold, qtyRetur: r.retur, qtyReject: r.reject }));
       const body = JSON.stringify({
         locationId: location.id, locationName: location.name, items, note: recapNote,
+        otherCosts: recapOtherCostsClean,
         paymentStatus: recapPaymentStatus,
         walletId: recapPaymentStatus === 'lunas' ? recapWalletId : null,
         warehouseId: recapNeedsWarehouse ? recapWarehouseId : undefined,
@@ -1612,9 +1621,9 @@ _${storeHeader.name}_`.trim();
         : await fetch(`${API}/api/consignment/recap`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan rekap.'); return; }
-      toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapTotalRevenue)} dari "${location.name}".`);
+      toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapNetRevenue)}${recapTotalOtherCosts > 0 ? ' (setelah biaya lain-lain)' : ''} dari "${location.name}".`);
       setShowRecapForm(false); setEditingRecap(null);
-      setRecapNote(''); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
+      setRecapNote(''); setRecapOtherCosts([]); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
       setRecapDate(toLocalDateTimeInput(new Date()));
       await Promise.all([loadRecaps(), loadLocations()]);
       refetchBalances();
@@ -3688,6 +3697,37 @@ _${storeHeader.name}_`.trim();
                   </p>
                 </div>
 
+                {recapTotalRevenue > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="field-label" style={{ marginBottom: 0 }}>Biaya Lain-lain <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(opsional)</span></label>
+                      <button type="button" onClick={() => setRecapOtherCosts(prev => [...prev, { label: '', amount: '' }])}
+                        className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                        <Plus size={13} /> Tambah Biaya
+                      </button>
+                    </div>
+                    {recapOtherCosts.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {recapOtherCosts.map((c, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <input type="text" value={c.label} placeholder="cth: Biaya admin, ongkir…" className="input" style={{ flex: 2 }}
+                              onChange={e => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+                            <input type="number" min="0" value={c.amount} placeholder="Rp 0" className="input" style={{ flex: 1 }}
+                              onChange={e => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))} />
+                            <button type="button" onClick={() => setRecapOtherCosts(prev => prev.filter((_, j) => j !== i))}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--danger)' }} title="Hapus biaya">
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[11px] mt-1.5" style={{ color: recapCostsExceed ? 'var(--danger)' : 'var(--text-muted)' }}>
+                      {recapCostsExceed ? 'Biaya lain-lain melebihi pendapatan rekap.' : 'Biaya ini memotong jumlah rekap (yang masuk ke dompet & laporan keuangan).'}
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label className="field-label">Status Pembayaran</label>
                   <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
@@ -3720,9 +3760,19 @@ _${storeHeader.name}_`.trim();
                 )}
 
                 {recapTotalRevenue > 0 && (
-                  <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
-                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Pendapatan</span>
-                    <span className="text-lg font-extrabold tabular" style={{ color: 'var(--success)' }}>{formatRp(recapTotalRevenue)}</span>
+                  <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
+                    {recapTotalOtherCosts > 0 && (
+                      <div className="text-xs tabular mb-2" style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div className="flex justify-between"><span>Pendapatan kotor</span><span>{formatRp(recapTotalRevenue)}</span></div>
+                        {recapOtherCostsClean.map((c, i) => (
+                          <div key={i} className="flex justify-between"><span>− {c.label || 'Biaya lain'}</span><span>{formatRp(c.amount)}</span></div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{recapTotalOtherCosts > 0 ? 'Total Setelah Biaya' : 'Total Pendapatan'}</span>
+                      <span className="text-lg font-extrabold tabular" style={{ color: recapCostsExceed ? 'var(--danger)' : 'var(--success)' }}>{formatRp(recapNetRevenue)}</span>
+                    </div>
                   </div>
                 )}
 

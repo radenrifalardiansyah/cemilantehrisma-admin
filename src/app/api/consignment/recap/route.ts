@@ -10,7 +10,7 @@ import { logHistory } from '@/lib/history';
 import { notify } from '@/lib/notifications';
 import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
-import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
+import { rowToRecap, sanitizeOtherCosts, type RecapRow } from '@/lib/recaps-pg';
 
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
@@ -108,7 +108,10 @@ export async function POST(req: NextRequest) {
     locationId: string; locationName: string; note?: string; items: RecapItemInput[];
     paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
     warehouseId?: string; warehouseName?: string; date?: string; dueDate?: string;
+    otherCosts?: { label: string; amount: number }[];
   };
+  const otherCosts = sanitizeOtherCosts(data.otherCosts);
+  const totalOtherCosts = otherCosts.reduce((s, c) => s + c.amount, 0);
   const items = mergeRecapItems(data.items ?? [])
     .map(it => ({ ...it, qtyReject: it.qtyReject ?? 0 }))
     .filter(it => it.qtySold > 0 || it.qtyRetur > 0 || it.qtyReject > 0);
@@ -215,15 +218,17 @@ export async function POST(req: NextRequest) {
       totalSold    = recapItems.reduce((s, it) => s + it.qtySold, 0);
       totalRetur   = recapItems.reduce((s, it) => s + it.qtyRetur, 0);
       totalReject  = recapItems.reduce((s, it) => s + (it.qtyReject ?? 0), 0);
-      totalRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
+      const grossRevenue = recapItems.reduce((s, it) => s + it.revenue, 0);
+      if (totalOtherCosts > grossRevenue) throw new Error(`Biaya lain-lain (Rp${totalOtherCosts.toLocaleString('id-ID')}) melebihi pendapatan rekap (Rp${grossRevenue.toLocaleString('id-ID')}).`);
+      totalRevenue = grossRevenue - totalOtherCosts; // netto setelah dipotong biaya lain-lain
 
       await pgTx`
         insert into consignment_recaps (
-          id, location_id, location_name, items, total_sold, total_retur, total_reject, total_revenue,
+          id, location_id, location_name, items, total_sold, total_retur, total_reject, total_revenue, other_costs, total_other_costs,
           payment_status, warehouse_id, warehouse_name, note, wallet_id, due_date, created_at
         ) values (
           ${recapId}, ${data.locationId}, ${data.locationName}, ${JSON.stringify(recapItems)},
-          ${totalSold}, ${totalRetur}, ${totalReject}, ${totalRevenue}, ${paymentStatus},
+          ${totalSold}, ${totalRetur}, ${totalReject}, ${totalRevenue}, ${JSON.stringify(otherCosts)}, ${totalOtherCosts}, ${paymentStatus},
           ${data.warehouseId ?? null}, ${data.warehouseName ?? null}, ${data.note ?? null}, ${data.walletId ?? null},
           ${data.dueDate ? new Date(data.dueDate) : null}, ${data.date ? new Date(data.date) : new Date()}
         )
@@ -243,7 +248,7 @@ export async function POST(req: NextRequest) {
       entityLabel: `${data.locationName ?? 'Rekap'}${data.date ? ` - ${data.date}` : ''}`,
       action: 'create',
       actor: guard,
-      after: { locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, paymentStatus },
+      after: { locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, otherCosts, totalOtherCosts, paymentStatus },
     });
   } catch (err) {
     console.error('Failed to write history for consignment recap create', err);

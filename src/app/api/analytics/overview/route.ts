@@ -47,8 +47,8 @@ const getRawAnalytics = unstable_cache(
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
-      sql<{ total_revenue: string; payment_status: string; created_at: Date; items: unknown }[]>`
-        select total_revenue, payment_status, created_at, items from consignment_recaps
+      sql<{ total_revenue: string; total_other_costs: string | null; payment_status: string; created_at: Date; items: unknown }[]>`
+        select total_revenue, total_other_costs, payment_status, created_at, items from consignment_recaps
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       // income pindah ke Postgres (Tahap 4 migrasi)
@@ -76,12 +76,18 @@ const getRawAnalytics = unstable_cache(
         items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
       })),
       recaps: recapRows.map((r): RecapDoc => ({
-        totalRevenue: Number(r.total_revenue), paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+        // Kotor (netto + biaya lain-lain) — biayanya dihitung terpisah sebagai beban operasional di `expenses`.
+        totalRevenue: Number(r.total_revenue) + Number(r.total_other_costs ?? 0), paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
         createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
         items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
       })),
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
-      expenses: expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined, excludeFromPnl: r.exclude_from_pnl === true }) as ExpenseDoc),
+      expenses: [
+        ...expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined, excludeFromPnl: r.exclude_from_pnl === true }) as ExpenseDoc),
+        // Biaya lain-lain rekap konsinyasi (biaya admin, ongkir, dll.) → Beban Operasional; sama dengan FinanceReportTab.
+        ...recapRows.filter(r => r.payment_status !== 'belum_lunas' && Number(r.total_other_costs) > 0)
+          .map(r => ({ category: 'Biaya Konsinyasi', amount: Number(r.total_other_costs), date: wibDateKey(r.created_at) }) as ExpenseDoc),
+      ],
       materials: materialRows.map((r): MaterialDoc => ({
         id: r.id, name: r.name, unit: r.unit,
         stockQty: Number(r.stock_qty), avgCost: Number(r.avg_cost), minStock: Number(r.min_stock),
