@@ -7,7 +7,7 @@ const PAGE = 400; // < batas 500 operasi per batch Firestore
 
 // Tandai SEMUA notifikasi sebagai sudah dibaca oleh user ini — bukan hanya yang sedang tampil.
 // Firestore tidak bisa query "array tidak mengandung", jadi seluruh koleksi dipindai per halaman
-// (hanya field readBy yang dibaca) lalu update-nya di-batch.
+// (hanya readBy & createdAt yang dibaca — createdAt wajib ikut karena dipakai sebagai kursor startAfter) lalu update-nya di-batch.
 export async function PATCH(req: NextRequest) {
   const user = await requireSession(req);
   if (user instanceof Response) return user;
@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest) {
   let last: DocumentSnapshot | undefined;
 
   for (;;) {
-    let q = db.collection('notifications').orderBy('createdAt', 'desc').select('readBy').limit(PAGE);
+    let q = db.collection('notifications').orderBy('createdAt', 'desc').select('readBy', 'createdAt').limit(PAGE);
     if (last) q = q.startAfter(last);
     const snap = await q.get();
     if (snap.empty) break;

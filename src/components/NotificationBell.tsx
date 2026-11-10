@@ -8,6 +8,7 @@ import { getClientMessaging, isFirebaseClientConfigured } from '@/lib/firebase-c
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import { useNotifications } from '@/components/NotificationsProvider';
 import NotificationDetailModal from '@/components/NotificationDetailModal';
+import { useToast } from '@/components/Toast';
 
 export interface NotificationDoc {
   id: string;
@@ -57,6 +58,17 @@ interface NotificationBellProps {
   onViewAll: () => void;
 }
 
+// Tandai semua notifikasi dibaca di server; status di UI berubah lewat listener realtime. Kalau gagal,
+// beri tahu user (sebelumnya error ditelan diam-diam sehingga terlihat "tidak berubah").
+export async function markAllNotificationsRead(creds: string, toast: { error: (m: string) => void }) {
+  try {
+    const res = await fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'x-admin-auth': creds } });
+    if (!res.ok) toast.error('Gagal menandai semua notifikasi dibaca.');
+  } catch {
+    toast.error('Gagal menandai semua notifikasi dibaca — periksa koneksi.');
+  }
+}
+
 export type ReadFilter = 'all' | 'unread' | 'read';
 export const READ_FILTERS: { id: ReadFilter; label: string }[] = [
   { id: 'all', label: 'Semua' }, { id: 'unread', label: 'Belum dibaca' }, { id: 'read', label: 'Sudah dibaca' },
@@ -66,6 +78,7 @@ type PushStatus = 'idle' | 'enabling' | 'granted' | 'denied';
 
 export default function NotificationBell({ creds, username, onOpen, onViewAll }: NotificationBellProps) {
   const { notifications } = useNotifications();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<NotificationDoc | null>(null);
   const [pushStatus, setPushStatus] = useState<PushStatus>(() =>
@@ -123,7 +136,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
   };
 
   const markAllRead = () => {
-    fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'x-admin-auth': creds } }).catch(() => {});
+    markAllNotificationsRead(creds, toast);
   };
 
   const handleClick = (n: NotificationDoc) => {

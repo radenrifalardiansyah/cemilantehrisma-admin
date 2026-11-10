@@ -10,7 +10,8 @@ import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
 import PageSizeSelect from '@/components/PageSizeSelect';
 import { TYPE_LABEL, fullTime } from '@/components/NotificationDetailModal';
-import { TYPE_ICON, READ_FILTERS, timeAgo, type NotificationDoc, type ReadFilter } from '@/components/NotificationBell';
+import { useToast } from '@/components/Toast';
+import { TYPE_ICON, READ_FILTERS, markAllNotificationsRead, timeAgo, type NotificationDoc, type ReadFilter } from '@/components/NotificationBell';
 import PageLoader from '@/components/PageLoader';
 
 const HEADER_BTN_H = 34;
@@ -27,6 +28,7 @@ interface NotificationsTabProps {
 
 export default function NotificationsTab({ creds, username, onOpenNotification }: NotificationsTabProps) {
   const { notifications, loading } = useNotifications();
+  const toast = useToast();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [view, setView] = useViewMode('notifications');
@@ -40,7 +42,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
   };
 
   const markAllRead = () => {
-    fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'x-admin-auth': creds } }).catch(() => {});
+    markAllNotificationsRead(creds, toast);
   };
 
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
