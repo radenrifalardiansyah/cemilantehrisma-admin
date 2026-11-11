@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
 } from 'recharts';
 import {
   Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store,
@@ -569,6 +569,19 @@ export default function ProductReportTab({ creds }: { creds: string }) {
               </div>
               <div style={{ width: '100%', height: 220 }}>
                 <ResponsiveContainer>
+                  {dailyTrend.length < 2 ? (
+                    // Periode 1 hari: tiap produk cuma punya 1 titik, garis tidak bisa digambar (hanya titik yang
+                    // saling menumpuk kalau qty sama) — pakai batang berkelompok supaya tiap produk tetap terlihat.
+                    <BarChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="30%">
+                      <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
+                      <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickMargin={8} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={40} tickCount={5} />
+                      <RTooltip content={<TrendTooltip />} cursor={{ fill: 'var(--border-2)', opacity: 0.5 }} />
+                      {trendProducts.map((p, i) => !hiddenTrendKeys.has(p.key) && (
+                        <Bar key={p.key} dataKey={p.key} name={p.name} fill={trendColor(p, i)} radius={[6, 6, 0, 0]} maxBarSize={56} />
+                      ))}
+                    </BarChart>
+                  ) : (
                   <LineChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke="var(--border-2)" strokeDasharray="3 4" />
                     <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={24} tickMargin={8} />
@@ -585,6 +598,7 @@ export default function ProductReportTab({ creds }: { creds: string }) {
                         activeDot={{ r: 7, strokeWidth: 2, stroke: '#fff' }} />
                     ))}
                   </LineChart>
+                  )}
                 </ResponsiveContainer>
               </div>
             </div>
