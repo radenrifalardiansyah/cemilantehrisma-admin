@@ -34,6 +34,7 @@ import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
+import DateTimeInput from '@/components/DateTimeInput';
 
 // /api/products is Postgres-backed and cached 15s server-side, so polling here just keeps
 // the register's stock/harga fresh while Kasir stays open — no Firestore quota to worry about.
@@ -1262,7 +1263,7 @@ export default function PosTab({
             {/* Tanggal & Waktu Transaksi */}
             <div className="card p-4">
               <p className="section-label mb-3 flex items-center gap-1.5"><CalendarClock size={11} /> Tanggal & Waktu Transaksi</p>
-              <input type="datetime-local" value={txDateTime} onChange={e => setTxDateTime(e.target.value)} className="input" />
+              <DateTimeInput value={txDateTime} onChange={setTxDateTime} />
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                 Default sekarang — ubah kalau transaksi ini baru sempat diinput belakangan.
               </p>

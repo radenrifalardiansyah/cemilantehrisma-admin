@@ -29,6 +29,7 @@ import PageLoader from '@/components/PageLoader';
 import { dueInfo, formatDueDate } from '@/lib/receivable';
 import { computeReturn } from '@/lib/order-return';
 import { paymentProblem } from '@/lib/installment';
+import DateTimeInput from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1899,7 +1900,7 @@ _${storeName}_`.trim();
 
                 <div>
                   <label className="field-label">Tanggal &amp; Waktu Transaksi</label>
-                  <input type="datetime-local" value={editTransactionAt} onChange={e => setEditTransactionAt(e.target.value)} className="input" />
+                  <DateTimeInput value={editTransactionAt} onChange={setEditTransactionAt} />
                 </div>
 
                 <div>

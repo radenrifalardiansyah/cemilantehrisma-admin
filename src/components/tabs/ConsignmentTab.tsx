@@ -47,6 +47,7 @@ import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
+import DateTimeInput from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -3411,7 +3412,7 @@ _${storeHeader.name}_`.trim();
                   </div>
                   <div>
                     <label className="field-label">Tanggal &amp; Jam Kirim</label>
-                    <input type="datetime-local" value={sendDate} onChange={e => setSendDate(e.target.value)} className="input" />
+                    <DateTimeInput value={sendDate} onChange={setSendDate} />
                   </div>
                 </div>
 
@@ -3608,7 +3609,7 @@ _${storeHeader.name}_`.trim();
                   </div>
                   <div>
                     <label className="field-label">Tanggal &amp; Jam</label>
-                    <input type="datetime-local" value={recapDate} onChange={e => setRecapDate(e.target.value)} className="input" />
+                    <DateTimeInput value={recapDate} onChange={setRecapDate} />
                   </div>
                 </div>
 
