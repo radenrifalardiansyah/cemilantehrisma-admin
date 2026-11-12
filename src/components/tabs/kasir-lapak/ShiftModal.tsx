@@ -56,7 +56,7 @@ export default function ShiftModal({ creds, stall, mode, onClose, onDone }: {
           <p className="text-xs mt-1.5 tabular font-semibold" style={{ color: 'var(--text-secondary)' }}>Saldo Dompet Lapak {stall.name}: {rupiah(stall.walletBalance)}</p>
         </Field>
         <Field label="Catatan (opsional)">
-          <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
+          <textarea rows={3} className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
         <ErrorBox message={error} />
       </div>

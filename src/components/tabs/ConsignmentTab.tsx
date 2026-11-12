@@ -3468,7 +3468,7 @@ _${storeHeader.name}_`.trim();
 
                 <div>
                   <label className="field-label">Catatan</label>
-                  <input type="text" value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
+                  <textarea rows={4} value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
@@ -3692,7 +3692,7 @@ _${storeHeader.name}_`.trim();
 
                 <div>
                   <label className="field-label">Catatan</label>
-                  <input type="text" value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="cth: kemasan penyok, expired, komplain pelanggan…" className="input" />
+                  <textarea rows={3} value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="cth: kemasan penyok, expired, komplain pelanggan…" className="input" style={{ resize: 'vertical' }} />
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                     Dipakai juga sebagai keterangan retur/reject di riwayat &amp; catatan gudang.
                   </p>

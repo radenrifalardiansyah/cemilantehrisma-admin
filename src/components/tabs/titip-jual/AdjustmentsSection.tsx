@@ -333,7 +333,7 @@ function AdjustmentModal({ creds, data, initialKind, onClose, onDone }: {
         )}
 
         <Field label="Catatan">
-          <input className="input" value={note} maxLength={200} placeholder="Catatan tambahan (opsional)" onChange={e => setNote(e.target.value)} />
+          <textarea rows={3} className="input" value={note} maxLength={200} placeholder="Catatan tambahan (opsional)" onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
 
         {changed.length > 0 && (

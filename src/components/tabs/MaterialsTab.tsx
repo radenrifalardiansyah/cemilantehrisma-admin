@@ -1986,8 +1986,8 @@ ${pdfUrl}`.trim();
 
                 <div>
                   <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={purchaseNote} onChange={e => setPurchaseNote(e.target.value)}
-                    placeholder="Catatan tambahan (opsional)" className="input" />
+                  <textarea rows={3} value={purchaseNote} onChange={e => setPurchaseNote(e.target.value)}
+                    placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 <div>

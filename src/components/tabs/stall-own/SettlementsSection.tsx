@@ -237,7 +237,7 @@ function CreateModal({ creds, stalls, initialStallId, onClose, onCreated }: {
               )}
           </div>
         )}
-        <Field label="Catatan (opsional)"><input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} /></Field>
+        <Field label="Catatan (opsional)"><textarea rows={3} className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} /></Field>
         <ErrorBox message={error} />
       </div>
     </ModalShell>

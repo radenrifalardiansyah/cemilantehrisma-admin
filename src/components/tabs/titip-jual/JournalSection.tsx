@@ -171,7 +171,7 @@ export function EntryModal({ creds, data, initialStallId, onClose, onDone }: {
         </Field>
         <Field label="Jumlah (Rp)" required><NumberInput value={amount} placeholder="0" onChange={setAmount} /></Field>
         <Field label="Keterangan" required>
-          <input className="input" value={note} maxLength={200} placeholder={direction === 'in' ? 'cth: modal awal minggu ini' : 'cth: beli plastik & kertas struk'} onChange={e => setNote(e.target.value)} />
+          <textarea rows={3} className="input" value={note} maxLength={200} placeholder={direction === 'in' ? 'cth: modal awal minggu ini' : 'cth: beli plastik & kertas struk'} onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
         <ErrorBox message={error} />
       </div>

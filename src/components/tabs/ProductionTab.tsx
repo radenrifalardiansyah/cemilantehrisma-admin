@@ -1022,7 +1022,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
 
                 <div>
                   <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" />
+                  <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 {(materialCost > 0 || otherCostNum > 0) && (

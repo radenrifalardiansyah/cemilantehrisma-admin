@@ -1072,7 +1072,7 @@ ${pdfUrl}`.trim();
 
                 <div>
                   <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Catatan untuk supplier (opsional)" className="input" />
+                  <textarea rows={3} value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Catatan untuk supplier (opsional)" className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
@@ -1160,7 +1160,7 @@ ${pdfUrl}`.trim();
 
                 <div>
                   <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={gNote} onChange={e => setGNote(e.target.value)} placeholder="Catatan penerimaan (opsional)" className="input" />
+                  <textarea rows={3} value={gNote} onChange={e => setGNote(e.target.value)} placeholder="Catatan penerimaan (opsional)" className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 <div>

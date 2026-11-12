@@ -169,7 +169,7 @@ export default function ReceiveModal({ creds, stall, items, onClose, onDone }: {
             </div>
 
             <Field label="Catatan">
-              <input className="input" type="text" value={note} maxLength={200} placeholder="Catatan tambahan (opsional)" onChange={e => setNote(e.target.value)} />
+              <textarea rows={3} className="input" value={note} maxLength={200} placeholder="Catatan tambahan (opsional)" onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
             </Field>
             <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
               <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>

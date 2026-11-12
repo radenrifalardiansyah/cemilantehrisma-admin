@@ -131,7 +131,7 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
               Stok barang dikembalikan dan uang {rupiah(voiding.total)} dikeluarkan dari dompet lapak. Hanya bisa selama shift masih terbuka.
             </p>
             <Field label="Alasan pembatalan" required>
-              <input className="input" value={reason} maxLength={200} autoFocus onChange={e => setReason(e.target.value)} placeholder="cth: salah input barang" />
+              <textarea rows={3} className="input" value={reason} maxLength={200} autoFocus onChange={e => setReason(e.target.value)} placeholder="cth: salah input barang" style={{ resize: 'vertical' }} />
             </Field>
             <ErrorBox message={error} />
           </div>

@@ -385,7 +385,7 @@ function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
               )}
           </div>
         )}
-        <Field label="Catatan (opsional)"><input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} /></Field>
+        <Field label="Catatan (opsional)"><textarea rows={3} className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} /></Field>
         <ErrorBox message={error} />
       </div>
     </ModalShell>
@@ -489,7 +489,7 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
         </Field>
         <ProofField creds={creds} url={proofUrl} uploading={uploading} setUploading={setUploading} onChange={setProofUrl} />
         <Field label="Catatan pembayaran (opsional)">
-          <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
+          <textarea rows={3} className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
         <ErrorBox message={error} />
       </div>
@@ -604,7 +604,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
         </div>
         <ProofField creds={creds} url={proofUrl} uploading={uploading} setUploading={setUploading} onChange={setProofUrl} hint="Foto yang sama dipakai untuk semua rekap ini." />
         <Field label="Catatan pembayaran (opsional)">
-          <input className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} />
+          <textarea rows={3} className="input" value={note} maxLength={200} onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
       </div>
     </ModalShell>

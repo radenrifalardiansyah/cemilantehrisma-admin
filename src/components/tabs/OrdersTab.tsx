@@ -1708,7 +1708,7 @@ _${storeName}_`.trim();
               </div>
               <div>
                 <label className="field-label">Catatan (opsional)</label>
-                <input type="text" value={payNote} onChange={e => setPayNote(e.target.value)} className="input" placeholder="Mis. DP, cicilan ke-2" />
+                <textarea rows={3} value={payNote} onChange={e => setPayNote(e.target.value)} className="input" placeholder="Mis. DP, cicilan ke-2" style={{ resize: 'vertical' }} />
               </div>
             </div>
             <div className="modal-footer">
@@ -2037,7 +2037,7 @@ _${storeName}_`.trim();
 
                 <div>
                   <label className="field-label">Catatan</label>
-                  <input type="text" value={editNote} onChange={e => setEditNote(e.target.value)} className="input" />
+                  <textarea rows={3} value={editNote} onChange={e => setEditNote(e.target.value)} className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 <div className="space-y-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>

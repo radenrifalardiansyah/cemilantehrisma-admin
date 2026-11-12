@@ -277,7 +277,7 @@ export default function ShipmentsSection({ creds, stalls, warehouses, can }: Own
               )}
             </div>
             <Field label="Catatan">
-              <input className="input" type="text" value={draft.note} placeholder="Catatan tambahan (opsional)" onChange={e => setDraft({ ...draft, note: e.target.value })} />
+              <textarea rows={3} className="input" value={draft.note} placeholder="Catatan tambahan (opsional)" onChange={e => setDraft({ ...draft, note: e.target.value })} style={{ resize: 'vertical' }} />
             </Field>
             <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
               <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>

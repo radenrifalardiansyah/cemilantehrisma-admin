@@ -853,7 +853,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     </div>
                     <div>
                       <label style={fieldLabel}>Catatan</label>
-                      <input type="text" value={dNote} onChange={e => setDNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" />
+                      <textarea rows={3} value={dNote} onChange={e => setDNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
                     </div>
                     {(dDate !== detail.date || dSupplierId !== (detail.supplierId ?? '') || dSupplierName !== detail.supplierName || dNote !== detail.notes.join(' · ')) && (
                       <button onClick={saveInfo} disabled={savingInfo || !dDate} className="btn-primary text-xs" style={{ height: 34 }}>
@@ -977,7 +977,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     </div>
                     <div>
                       <label style={fieldLabel}>Catatan Pembelian</label>
-                      <input type="text" value={pNote} onChange={e => setPNote(e.target.value)} className="input" placeholder="Opsional (default: Dari Daftar Belanja)" />
+                      <textarea rows={3} value={pNote} onChange={e => setPNote(e.target.value)} className="input" placeholder="Opsional (default: Dari Daftar Belanja)" style={{ resize: 'vertical' }} />
                     </div>
                   </div>
                 )}
@@ -1042,7 +1042,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
                 <div>
                   <label style={fieldLabel}>Catatan</label>
-                  <input type="text" value={fNote} onChange={e => setFNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" />
+                  <textarea rows={3} value={fNote} onChange={e => setFNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
                 </div>
 
                 <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>

@@ -324,8 +324,8 @@ function TransferModal({
             </div>
             <div>
               <label className="field-label">Keterangan</label>
-              <input type="text" placeholder="cth: Redistribusi stok akhir bulan (opsional)" value={note}
-                onChange={e => onNote(e.target.value)} className="input" />
+              <textarea rows={3} placeholder="cth: Redistribusi stok akhir bulan (opsional)" value={note}
+                onChange={e => onNote(e.target.value)} className="input" style={{ resize: 'vertical' }} />
             </div>
             {sameWarehouse && (
               <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>

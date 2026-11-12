@@ -1808,8 +1808,8 @@ export default function PosTab({
             </div>
             <div>
               <p className="section-label mb-1.5">Catatan (opsional)</p>
-              <input type="text" value={shiftNote} onChange={e => setShiftNote(e.target.value)}
-                className="input" placeholder="Catatan tambahan" />
+              <textarea rows={3} value={shiftNote} onChange={e => setShiftNote(e.target.value)}
+                className="input" placeholder="Catatan tambahan" style={{ resize: 'vertical' }} />
             </div>
             <button
               onClick={shiftModal === 'open' ? openShift : closeShift}

@@ -67,7 +67,7 @@ export default function ReturnModal({ creds, sale, onClose, onDone }: {
           })}
         </div>
         <Field label="Alasan retur" required>
-          <input className="input" value={reason} maxLength={200} placeholder="cth: kemasan rusak, salah beli" onChange={e => setReason(e.target.value)} />
+          <textarea rows={3} className="input" value={reason} maxLength={200} placeholder="cth: kemasan rusak, salah beli" onChange={e => setReason(e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
         {calc && !calcError && (
           <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>

@@ -1,13 +1,225 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Calendar, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+
 // Pengganti <input type="datetime-local">: popup native-nya (kalender + kolom jam/menit) beda
-// tampilannya dengan input tanggal lain di admin. Dipecah jadi type="date" + type="time" supaya
-// popup tanggalnya seragam. Value & onChange tetap berformat "YYYY-MM-DDTHH:mm" (sama persis
-// dengan datetime-local), jadi pemanggil tidak perlu mengubah logika apa pun.
+// tampilannya dengan input tanggal lain di admin. Dipecah jadi pemilih tanggal + pemilih jam sendiri
+// (popup native <input type="date"/"time"> tidak bisa di-styling & tampil jelek) supaya seragam.
+// Value & onChange tetap berformat "YYYY-MM-DDTHH:mm" (sama persis dengan datetime-local),
+// jadi pemanggil tidak perlu mengubah logika apa pun.
 interface DateTimeInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+}
+
+const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+const PANEL_W = 160;
+const PANEL_H = 240;
+
+const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const WEEKDAYS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+const CAL_W = 280;
+const CAL_H = 320;
+const pad = (n: number) => String(n).padStart(2, '0');
+const toYmd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+function usePopover(open: boolean, setOpen: (v: boolean) => void, w: number, h: number) {
+  const btnRef   = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const updatePos = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      let top = r.bottom + 6;
+      if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - 6);
+      setPos({ top, left: Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) });
+    };
+    updatePos();
+    const onDown = (e: MouseEvent) => {
+      if (btnRef.current?.contains(e.target as Node)) return;
+      if (panelRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, true);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('resize', updatePos);
+      window.removeEventListener('scroll', updatePos, true);
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, setOpen, w, h]);
+  return { btnRef, panelRef, pos };
+}
+
+function DatePicker({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { btnRef, panelRef, pos } = usePopover(open, setOpen, CAL_W, CAL_H);
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
+  const [view, setView] = useState(() => { const d = parsed ?? new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+
+  const toggle = () => {
+    if (!open) { const d = parsed ?? new Date(); setView({ y: d.getFullYear(), m: d.getMonth() }); }
+    setOpen(o => !o);
+  };
+  const shift = (delta: number) => setView(v => { const d = new Date(v.y, v.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+
+  const offset = (new Date(view.y, view.m, 1).getDay() + 6) % 7; // minggu mulai Senin
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const cells: (number | null)[] = [...Array(offset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  const todayYmd = toYmd(new Date());
+  const pick = (ymd: string) => { onChange(ymd); setOpen(false); };
+
+  const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        disabled={disabled}
+        onClick={toggle}
+        className="input disabled:opacity-50"
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left' }}
+      >
+        <span className="tabular" style={{ color: parsed ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          {parsed ? `${pad(parsed.getDate())}/${pad(parsed.getMonth() + 1)}/${parsed.getFullYear()}` : 'dd/mm/yyyy'}
+        </span>
+        <Calendar size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </button>
+      {open && pos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed', top: pos.top, left: pos.left, width: CAL_W, zIndex: 10000, padding: 12,
+            background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <button type="button" aria-label="Bulan sebelumnya" onClick={() => shift(-1)} style={navBtn}><ChevronLeft size={16} /></button>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{MONTHS[view.m]} {view.y}</span>
+            <button type="button" aria-label="Bulan berikutnya" onClick={() => shift(1)} style={navBtn}><ChevronRight size={16} /></button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+            {WEEKDAYS.map(w => (
+              <span key={w} style={{ textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', padding: '4px 0' }}>{w}</span>
+            ))}
+            {cells.map((d, i) => {
+              if (d === null) return <span key={`e${i}`} />;
+              const ymd = `${view.y}-${pad(view.m + 1)}-${pad(d)}`;
+              const active = ymd === value;
+              const isToday = ymd === todayYmd;
+              return (
+                <button
+                  key={ymd}
+                  type="button"
+                  onClick={() => pick(ymd)}
+                  style={{
+                    height: 32, borderRadius: 8, fontSize: 12.5, cursor: 'pointer', fontWeight: active || isToday ? 700 : 500,
+                    border: isToday && !active ? '1.5px solid var(--accent)' : '1.5px solid transparent',
+                    background: active ? 'var(--accent)' : 'transparent',
+                    color: active ? '#fff' : isToday ? 'var(--accent)' : 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-2)' }}>
+            <button type="button" onClick={() => pick(todayYmd)} style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 8px' }}>
+              Hari ini
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+function TimeColumn({ items, selected, onPick }: { items: string[]; selected: string; onPick: (v: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Gulir ke nilai terpilih saat popup dibuka.
+  useEffect(() => {
+    const el = ref.current?.querySelector<HTMLElement>('[data-selected="true"]');
+    if (el && ref.current) ref.current.scrollTop = el.offsetTop - ref.current.clientHeight / 2 + el.clientHeight / 2;
+  }, []);
+  return (
+    <div ref={ref} className="thin-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 2, position: 'relative' }}>
+      {items.map(v => {
+        const active = v === selected;
+        return (
+          <button
+            key={v}
+            type="button"
+            data-selected={active}
+            onClick={() => onPick(v)}
+            style={{
+              flexShrink: 0, height: 30, borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500, border: 'none', cursor: 'pointer',
+              background: active ? 'var(--accent)' : 'transparent',
+              color: active ? '#fff' : 'var(--text-secondary)',
+            }}
+            onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--surface-2)'; }}
+            onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+          >
+            {v}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TimePicker({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { btnRef, panelRef, pos } = usePopover(open, setOpen, PANEL_W, PANEL_H);
+  const [hh = '', mm = ''] = value.split(':');
+
+  const pick = (h: string, m: string) => onChange(`${h || '00'}:${m || '00'}`);
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className="input disabled:opacity-50"
+        style={{ width: 120, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left' }}
+      >
+        <span className="tabular" style={{ color: value ? 'var(--text-primary)' : 'var(--text-muted)' }}>{value ? `${hh}:${mm}` : '--:--'}</span>
+        <Clock size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </button>
+      {open && pos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed', top: pos.top, left: pos.left, width: PANEL_W, height: PANEL_H, zIndex: 10000,
+            background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.22)', overflow: 'hidden', display: 'flex',
+          }}
+        >
+          <TimeColumn items={HOURS} selected={hh} onPick={h => pick(h, mm)} />
+          <div style={{ width: 1, background: 'var(--border-2)' }} />
+          <TimeColumn items={MINUTES} selected={mm} onPick={m => pick(hh, m)} />
+        </div>,
+        document.body
+      )}
+    </>
+  );
 }
 
 export default function DateTimeInput({ value, onChange, disabled }: DateTimeInputProps) {
@@ -16,10 +228,8 @@ export default function DateTimeInput({ value, onChange, disabled }: DateTimeInp
   const emit = (d: string, t: string) => onChange(d ? `${d}T${t || '00:00'}` : '');
   return (
     <div className="flex gap-2">
-      <input type="date" value={date} disabled={disabled} onChange={e => emit(e.target.value, time)}
-        className="input" style={{ flex: 1, minWidth: 0 }} />
-      <input type="time" value={time.slice(0, 5)} disabled={disabled} onChange={e => emit(date, e.target.value)}
-        className="input" style={{ width: 120, flexShrink: 0 }} />
+      <DatePicker value={date} disabled={disabled} onChange={d => emit(d, time)} />
+      <TimePicker value={time.slice(0, 5)} disabled={disabled} onChange={t => emit(date, t)} />
     </div>
   );
 }

@@ -358,7 +358,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
 
           <div className="card p-4">
             <p className="section-label mb-3">Catatan (opsional)</p>
-            <input className="input" value={note} maxLength={200} placeholder="Catatan tambahan" onChange={e => setNote(e.target.value)} />
+            <textarea rows={3} className="input" value={note} maxLength={200} placeholder="Catatan tambahan" onChange={e => setNote(e.target.value)} style={{ resize: 'vertical' }} />
           </div>
           <ErrorBox message={error} />
         </>

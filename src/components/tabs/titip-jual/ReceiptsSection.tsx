@@ -356,7 +356,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
             </div>
 
             <Field label="Catatan">
-              <input className="input" type="text" value={editing.note} placeholder="Catatan tambahan (opsional)" onChange={e => setEditing({ ...editing, note: e.target.value })} />
+              <textarea rows={3} className="input" value={editing.note} placeholder="Catatan tambahan (opsional)" onChange={e => setEditing({ ...editing, note: e.target.value })} style={{ resize: 'vertical' }} />
             </Field>
 
             <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
