@@ -488,7 +488,7 @@ export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: 
         )}
       </div>
 
-      {/* Closing HPP — di luar blok loading supaya tidak ikut ter-unmount tiap ganti periode */}
+      {/* Closing HPP — di atas, bisa di-collapse; di luar blok loading supaya tidak ikut ter-unmount tiap ganti periode */}
       <ClosingPanel creds={creds} can={can} isSuperAdmin={isSuperAdmin} onChanged={load} />
 
       {loading ? (

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
+import Pagination from '@/components/Pagination';
 import { useToast } from '@/components/Toast';
 import { DateInput } from '@/components/DateTimeInput';
 import type { Action } from '@/types/rbac';
@@ -49,6 +50,17 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
   const [showDetail, setShowDetail] = useState(false);
   const [detailTab, setDetailTab] = useState<'paid' | 'receivable'>('paid');
   const [showHistory, setShowHistory] = useState(false);
+  const [detailPage, setDetailPage] = useState(1);
+  const [detailPageSize, setDetailPageSize] = useState(10);
+  const [histPage, setHistPage] = useState(1);
+  const [histPageSize, setHistPageSize] = useState(10);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return typeof window !== 'undefined' && window.localStorage.getItem('closing-panel-collapsed') === '1'; } catch { return false; }
+  });
+  const toggleCollapsed = (next: boolean) => {
+    setCollapsed(next);
+    try { window.localStorage.setItem('closing-panel-collapsed', next ? '1' : '0'); } catch { /* abaikan */ }
+  };
 
   // Dialog Closing
   const [closeOpen, setCloseOpen] = useState(false);
@@ -150,6 +162,16 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
   };
 
   const detail = pending ? (detailTab === 'paid' ? pending.paid : pending.receivable) : null;
+
+  // Paginasi (client-side) untuk tabel rincian & riwayat.
+  const paginate = <T,>(items: T[], page: number, size: number) => {
+    const totalPages = size === Infinity ? 1 : Math.max(1, Math.ceil(items.length / size));
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    const rows = size === Infinity ? items : items.slice((safePage - 1) * size, safePage * size);
+    return { rows, totalPages, safePage, offset: size === Infinity ? 0 : (safePage - 1) * size };
+  };
+  const dPg = paginate(detail?.lines ?? [], detailPage, detailPageSize);
+  const hPg = paginate(closings, histPage, histPageSize);
   const closable = preview?.paid.closable;
   const cell = 'px-3 py-2 whitespace-nowrap';
   const th = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
@@ -158,19 +180,27 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
   return (
     <div className="card p-5 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2.5">
+        <div
+          className="flex items-center gap-2.5 cursor-pointer select-none"
+          role="button" tabIndex={0} aria-expanded={!collapsed}
+          onClick={() => toggleCollapsed(!collapsed)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapsed(!collapsed); } }}
+        >
           <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
             <Lock size={16} />
           </div>
           <div>
             <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Closing HPP</p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {pending?.lastClosingTo ? `Closing terakhir sampai ${fmtDay(pending.lastClosingTo)}` : 'Belum ada closing aktif'} · tidak mengikuti filter periode
+              {collapsed && pending
+                ? `Belum closing: HPP ${formatRp(pending.paid.totals.cogs)} · piutang ${formatRp(pending.receivable.totals.cogs)}`
+                : `${pending?.lastClosingTo ? `Closing terakhir sampai ${fmtDay(pending.lastClosingTo)}` : 'Belum ada closing aktif'} · tidak mengikuti filter periode`}
             </p>
           </div>
+          <ChevronDown size={16} style={{ color: 'var(--text-muted)', transform: collapsed ? undefined : 'rotate(180deg)', transition: 'transform 0.15s' }} />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowHistory(v => !v)} className="btn-ghost flex items-center gap-1.5" style={{ height: 34 }}>
+          <button onClick={() => { toggleCollapsed(false); setShowHistory(v => !v); }} className="btn-ghost flex items-center gap-1.5" style={{ height: 34 }}>
             <HistoryIcon size={14} /> Riwayat
           </button>
           {can('close') && (
@@ -181,7 +211,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
         </div>
       </div>
 
-      {loading && !pending ? (
+      {!collapsed && (loading && !pending ? (
         <p className="text-xs flex items-center gap-2" style={{ color: 'var(--text-muted)' }}><Loader2 size={13} className="animate-spin" /> Memuat…</p>
       ) : pending && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -200,9 +230,9 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
             </p>
           </div>
         </div>
-      )}
+      ))}
 
-      {pending && (
+      {!collapsed && pending && (
         <div>
           <button onClick={() => setShowDetail(v => !v)} className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
             <ChevronDown size={13} style={{ transform: showDetail ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
@@ -212,7 +242,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2">
                 {([['paid', 'Sudah dibayar'], ['receivable', 'Belum dibayar']] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => setDetailTab(id)} className="px-3 py-1.5 rounded-xl text-xs font-bold"
+                  <button key={id} onClick={() => { setDetailTab(id); setDetailPage(1); }} className="px-3 py-1.5 rounded-xl text-xs font-bold"
                     style={detailTab === id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                     {label}
                   </button>
@@ -225,6 +255,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                   <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--surface-2)' }}>
+                        <th className={`${th} text-left`} style={thStyle}>No</th>
                         <th className={`${th} text-left`} style={thStyle}>Invoice</th>
                         <th className={`${th} text-left`} style={thStyle}>Tgl Transaksi</th>
                         <th className={`${th} text-left`} style={thStyle}>Tgl Bayar</th>
@@ -233,8 +264,9 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                       </tr>
                     </thead>
                     <tbody>
-                      {detail.lines.slice(0, DETAIL_LIMIT).map(l => (
+                      {dPg.rows.map((l, i) => (
                         <tr key={l.key} style={{ borderBottom: '1px solid var(--border-2)' }}>
+                          <td className={`${cell} tabular`} style={{ color: 'var(--text-muted)' }}>{dPg.offset + i + 1}</td>
                           <td className={cell} style={{ color: 'var(--text-primary)' }}>
                             <span className="font-semibold">{l.invoiceNo || '–'}</span>
                             <span className="ml-1.5" style={{ color: 'var(--text-muted)' }}>{l.party}{l.note ? ` · ${l.note}` : ''}</span>
@@ -249,6 +281,8 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                   </table>
                 </div>
               )}
+              <Pagination total={detail.lines.length} safePage={dPg.safePage} totalPages={dPg.totalPages} pageSize={detailPageSize}
+                onPageSize={n => { setDetailPageSize(n); setDetailPage(1); }} onGoPage={setDetailPage} unit="baris" />
               {(detail.lines.length > DETAIL_LIMIT || detail.truncated) && (
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   Menampilkan {Math.min(detail.lines.length, DETAIL_LIMIT)} baris pertama dari {detail.totals.count}; total di atas mencakup semuanya.
@@ -259,7 +293,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
         </div>
       )}
 
-      {showHistory && (
+      {!collapsed && showHistory && (
         <div className="space-y-2">
           <p className="field-label">Riwayat closing</p>
           {closings.length === 0 ? (
@@ -269,6 +303,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
               <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)' }}>
+                    <th className={`${th} text-left`} style={thStyle}>No</th>
                     <th className={`${th} text-left`} style={thStyle}>Periode</th>
                     <th className={`${th} text-left`} style={thStyle}>Ditutup</th>
                     <th className={`${th} text-right`} style={thStyle}>Transaksi</th>
@@ -279,10 +314,11 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                   </tr>
                 </thead>
                 <tbody>
-                  {closings.map(c => {
+                  {hPg.rows.map((c, i) => {
                     const canReopen = can('reopen') && c.status === 'aktif' && c.id === latestActiveId && (!c.isOpeningBalance || isSuperAdmin);
                     return (
                       <tr key={c.id} style={{ borderBottom: '1px solid var(--border-2)' }}>
+                        <td className={`${cell} tabular`} style={{ color: 'var(--text-muted)' }}>{hPg.offset + i + 1}</td>
                         <td className={cell} style={{ color: 'var(--text-primary)' }}>
                           <span className="font-semibold">{c.periodFrom && c.periodFrom !== c.periodTo ? `${fmtDay(c.periodFrom)} – ${fmtDay(c.periodTo)}` : fmtDay(c.periodTo)}</span>
                           {c.isOpeningBalance && <span className="badge badge-blue ml-1.5" style={{ fontSize: 10 }}>Saldo awal</span>}
@@ -315,6 +351,8 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
               </table>
             </div>
           )}
+          <Pagination total={closings.length} safePage={hPg.safePage} totalPages={hPg.totalPages} pageSize={histPageSize}
+            onPageSize={n => { setHistPageSize(n); setHistPage(1); }} onGoPage={setHistPage} unit="closing" />
         </div>
       )}
 
