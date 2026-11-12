@@ -19,11 +19,13 @@ export async function GET(req: NextRequest) {
   const sql = getSql();
   const pool = await loadPool(sql, false);
   const latest = await latestActiveClosing(sql);
-  const byPaid = (a: { paidDate: string | null; txDate: string }, b: { paidDate: string | null; txDate: string }) =>
-    (a.paidDate ?? a.txDate).localeCompare(b.paidDate ?? b.txDate);
-  const paid = [...pool.paid].sort(byPaid);
-  // Piutang: terbaru di atas (tanggal transaksi menurun). Dipotong MAX_LINES dari yang terbaru.
-  const receivable = [...pool.receivable].sort((a, b) => b.txDate.localeCompare(a.txDate) || b.invoiceNo.localeCompare(a.invoiceNo));
+  // Rincian: terbaru di atas (tanggal bayar menurun; piutang belum punya tanggal bayar → tanggal transaksi).
+  // Dipotong MAX_LINES dari yang terbaru. Total/closable tidak bergantung urutan.
+  type L = { paidDate: string | null; txDate: string; invoiceNo: string };
+  const newestFirst = (a: L, b: L) =>
+    (b.paidDate ?? b.txDate).localeCompare(a.paidDate ?? a.txDate) || b.txDate.localeCompare(a.txDate) || b.invoiceNo.localeCompare(a.invoiceNo);
+  const paid = [...pool.paid].sort(newestFirst);
+  const receivable = [...pool.receivable].sort(newestFirst);
 
   return Response.json({
     upTo, today: todayWib(), lastClosingTo: latest?.period_to ?? null,
