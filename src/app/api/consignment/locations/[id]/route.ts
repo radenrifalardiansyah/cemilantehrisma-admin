@@ -4,9 +4,10 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { parseMembers } from '../route';
 
 type Ctx = { params: Promise<{ id: string }> };
-interface LocationRow { name: string; code: string | null; contact_name: string | null; contact_phone: string | null; address: string | null; note: string | null; logo_url: string | null; is_active: boolean }
+interface LocationRow { name: string; code: string | null; contact_name: string | null; contact_phone: string | null; address: string | null; note: string | null; logo_url: string | null; members: unknown; is_active: boolean }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'edit');
@@ -22,11 +23,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       return Response.json({ error: `Kode "${codeTrim}" sudah digunakan lokasi lain.` }, { status: 409 });
     }
   }
-  const [before] = await sql<LocationRow[]>`select name, code, contact_name, contact_phone, address, note, logo_url, is_active from consignment_locations where id = ${id}`;
+  const [before] = await sql<LocationRow[]>`select name, code, contact_name, contact_phone, address, note, logo_url, members, is_active from consignment_locations where id = ${id}`;
   const payload = {
     name: data.name as string, code: codeTrim,
     contactName: (data.contactName as string) ?? '', contactPhone: (data.contactPhone as string) ?? '',
     address: (data.address as string) ?? '', note: (data.note as string) ?? '', logoUrl: (data.logoUrl as string) ?? '',
+    // Tidak dikirim = daftar anggota lama dipertahankan (klien lama / edit parsial).
+    members: data.members === undefined ? parseMembers(before?.members) : parseMembers(data.members),
     // Tidak dikirim = status lama dipertahankan (klien lama / edit parsial).
     isActive: typeof data.isActive === 'boolean' ? data.isActive : (before?.is_active ?? true),
   };
@@ -34,7 +37,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     update consignment_locations set
       name = ${payload.name}, code = ${payload.code}, contact_name = ${payload.contactName},
       contact_phone = ${payload.contactPhone}, address = ${payload.address}, note = ${payload.note},
-      logo_url = ${payload.logoUrl}, is_active = ${payload.isActive}, updated_at = now()
+      logo_url = ${payload.logoUrl}, members = ${JSON.stringify(payload.members)}::jsonb, is_active = ${payload.isActive}, updated_at = now()
     where id = ${id}
   `;
   try {

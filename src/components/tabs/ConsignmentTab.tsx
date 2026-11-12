@@ -109,10 +109,51 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'analitik', label: 'Analitik',  Icon: PieChart },
 ];
 
+interface LocationMember { name: string; phone: string }
+
 interface ConsignmentLocation {
   id: string; name: string; contactName: string; contactPhone: string; address: string; note: string; code?: string; logoUrl?: string;
+  members?: LocationMember[]; // crew/anggota selain kontak utama
   waGroup?: string | null; // grup WA yang dipasangkan di Teruskan Stok WA
   isActive?: boolean; // undefined/true = aktif; nonaktif tidak muncul di pilihan form Kirim Stok & Rekap
+}
+
+function LocationDetail({ l }: { l: ConsignmentLocation }) {
+  const members = l.members ?? [];
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: 'var(--text-muted)' }}>{children}</p>
+  );
+  const val = { color: 'var(--text-secondary)' };
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <div className="min-w-0"><Label>Kode</Label><p className="text-xs font-medium break-words" style={val}>{l.code || '–'}</p></div>
+        <div className="min-w-0"><Label>Status</Label><p className="text-xs font-medium" style={val}>{l.isActive === false ? 'Nonaktif' : 'Aktif'}</p></div>
+        <div className="min-w-0"><Label>Nama Kontak</Label><p className="text-xs font-medium break-words" style={val}>{l.contactName || '–'}</p></div>
+        <div className="min-w-0"><Label>Telepon</Label><p className="text-xs font-medium break-words" style={val}>{l.contactPhone || '–'}</p></div>
+        <div className="col-span-2 min-w-0"><Label>Alamat</Label><p className="text-xs font-medium break-words" style={val}>{l.address || '–'}</p></div>
+        {l.waGroup && <div className="col-span-2 min-w-0"><Label>Grup WA</Label><p className="text-xs font-medium break-words" style={val}>{l.waGroup}</p></div>}
+        {l.note && <div className="col-span-2 min-w-0"><Label>Catatan</Label><p className="text-xs font-medium break-words whitespace-pre-line" style={val}>{l.note}</p></div>}
+        <div className="col-span-2 min-w-0">
+          <Label>Crew / Anggota{members.length > 0 ? ` (${members.length})` : ''}</Label>
+          {members.length === 0 ? (
+            <p className="text-xs font-medium" style={val}>–</p>
+          ) : (
+            <div className="space-y-1">
+              {members.map((m, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 text-xs font-medium" style={val}>
+                  <span className="min-w-0 break-words">{m.name || '–'}</span>
+                  <span className="flex items-center gap-1 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                    {m.phone && <><Phone size={10} /> {m.phone}</>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function LocationLogo({ location, size }: { location: { name: string; logoUrl?: string }; size: number }) {
@@ -131,8 +172,8 @@ function LocationLogo({ location, size }: { location: { name: string; logoUrl?: 
     </div>
   );
 }
-type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string; logoUrl: string; isActive: boolean };
-const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '', logoUrl: '', isActive: true };
+type LocationForm = { name: string; contactName: string; contactPhone: string; address: string; note: string; code: string; logoUrl: string; members: LocationMember[]; isActive: boolean };
+const EMPTY_LOCATION: LocationForm = { name: '', contactName: '', contactPhone: '', address: '', note: '', code: '', logoUrl: '', members: [], isActive: true };
 
 const LOCATION_CODE_PREFIX = 'MTR';
 
@@ -352,6 +393,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   // Beda dengan `historyLocation` di bawah (riwayat bisnis kirim/rekap per lokasi, modal) —
   // ini adalah audit trail siapa membuat/mengubah/menghapus record itu sendiri (collapse inline).
   const [auditHistoryId, setAuditHistoryId] = useState<string | null>(null);
+  const [expandedLocId, setExpandedLocId] = useState<string | null>(null);
   const toggleAuditHistory = (id: string) => setAuditHistoryId(cur => cur === id ? null : id);
 
   // Datang dari klik "Lihat" di modal detail notifikasi (consignment_send / consignment_overdue/recap).
@@ -504,7 +546,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
 
   const openCreateL = () => { setEditingL(null); setLForm({ ...EMPTY_LOCATION, code: nextLocationCode(locations) }); setShowLForm(true); };
   const openEditL = (l: ConsignmentLocation) => {
-    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '', logoUrl: l.logoUrl ?? '', isActive: l.isActive !== false }); setShowLForm(true);
+    setEditingL(l); setLForm({ name: l.name, contactName: l.contactName, contactPhone: l.contactPhone, address: l.address, note: l.note, code: l.code ?? '', logoUrl: l.logoUrl ?? '', members: l.members ?? [], isActive: l.isActive !== false }); setShowLForm(true);
   };
   const uploadLocationLogo = async (file?: File) => {
     if (!file) return;
@@ -869,7 +911,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
           raw[field] = cellText(cell.value);
         });
         if (!raw.name.trim()) return;
-        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '', logoUrl: '', isActive: true });
+        rows.push({ name: raw.name, contactName: raw.contactName, contactPhone: raw.contactPhone, address: raw.address, note: raw.note, code: '', logoUrl: '', members: [], isActive: true });
       });
 
       if (rows.length === 0) {
@@ -2679,10 +2721,16 @@ _${storeHeader.name}_`.trim();
                                 {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                               </button>
                             </Tooltip>
+                            <Tooltip label="Lihat detail">
+                              <button onClick={() => setExpandedLocId(expandedLocId === l.id ? null : l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Lihat detail">
+                                <ChevronRight size={13} style={{ transform: expandedLocId === l.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                              </button>
+                            </Tooltip>
                           </div>
                           </div>
                           <LocationStatTiles stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                           </div>
+                          {expandedLocId === l.id && <LocationDetail l={l} />}
                           {auditHistoryId === l.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={l.id} />}
                         </div>
                       );
@@ -2733,6 +2781,11 @@ _${storeHeader.name}_`.trim();
                                   {deletingLId === l.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                 </button>
                               </Tooltip>
+                              <Tooltip label="Lihat detail">
+                                <button onClick={() => setExpandedLocId(expandedLocId === l.id ? null : l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Lihat detail">
+                                  <ChevronRight size={13} style={{ transform: expandedLocId === l.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                                </button>
+                              </Tooltip>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -2777,6 +2830,7 @@ _${storeHeader.name}_`.trim();
                             <LocationStatTiles dense stockQty={totalQty} stockValue={totalValue} stats={locationStatsFor(l.id)} />
                           </div>
                           </div>
+                          {expandedLocId === l.id && <LocationDetail l={l} />}
                           {auditHistoryId === l.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={l.id} />}
                         </div>
                       );
@@ -3352,6 +3406,30 @@ _${storeHeader.name}_`.trim();
                   <label className="field-label">Catatan</label>
                   <textarea rows={3} value={lForm.note} onChange={e => setLForm({ ...lForm, note: e.target.value })}
                     placeholder="Catatan tambahan (opsional)" className="input resize-none" />
+                </div>
+                <div>
+                  <label className="field-label">Crew / Anggota</label>
+                  <div className="space-y-2">
+                    {lForm.members.map((m, i) => (
+                      <div key={i} className="flex gap-2 items-center">
+                        <input type="text" value={m.name} placeholder="Nama" className="input" style={{ flex: 1, minWidth: 0 }}
+                          onChange={e => setLForm({ ...lForm, members: lForm.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
+                        <input type="tel" value={m.phone} placeholder="No. HP" className="input" style={{ flex: 1, minWidth: 0 }}
+                          onChange={e => setLForm({ ...lForm, members: lForm.members.map((x, j) => j === i ? { ...x, phone: e.target.value } : x) })} />
+                        <Tooltip label="Hapus anggota">
+                          <button type="button" aria-label="Hapus anggota" onClick={() => setLForm({ ...lForm, members: lForm.members.filter((_, j) => j !== i) })}
+                            className="flex items-center justify-center flex-shrink-0"
+                            style={{ width: 42, height: 42, borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--danger)', cursor: 'pointer' }}>
+                            <Trash2 size={15} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setLForm({ ...lForm, members: [...lForm.members, { name: '', phone: '' }] })}
+                      className="w-full text-[13px] font-bold flex items-center justify-center gap-1.5" style={{ height: 42, borderRadius: 10, color: 'var(--accent)', background: 'transparent', border: '1.5px dashed var(--accent-light)', cursor: 'pointer' }}>
+                      <Plus size={14} /> Tambah anggota
+                    </button>
+                  </div>
                 </div>
                 <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input type="checkbox" checked={lForm.isActive} onChange={e => setLForm({ ...lForm, isActive: e.target.checked })} style={{ marginTop: 3 }} />
