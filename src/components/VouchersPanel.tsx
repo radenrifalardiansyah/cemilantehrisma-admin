@@ -8,6 +8,7 @@ import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import EmptyAddCard from '@/components/EmptyAddCard';
+import { DateInput } from '@/components/DateTimeInput';
 
 interface Voucher {
   code: string; description: string; type: 'percent' | 'nominal'; value: number;
@@ -184,11 +185,11 @@ export default function VouchersPanel({ creds }: { creds: string }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="field-label">Berlaku Mulai</label>
-                  <input type="date" value={form.validFrom} onChange={e => set('validFrom', e.target.value)} className="input" />
+                  <DateInput value={form.validFrom} onChange={v => set('validFrom', v)} />
                 </div>
                 <div>
                   <label className="field-label">Berlaku Sampai</label>
-                  <input type="date" value={form.validUntil} onChange={e => set('validUntil', e.target.value)} className="input" />
+                  <DateInput value={form.validUntil} onChange={v => set('validUntil', v)} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">

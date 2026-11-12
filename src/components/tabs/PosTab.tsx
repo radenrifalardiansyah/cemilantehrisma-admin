@@ -34,7 +34,7 @@ import {
   PosProduct, PosCategory_Entry, PosReseller, PosCustomer, PosBank,
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
-import DateTimeInput from '@/components/DateTimeInput';
+import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 
 // /api/products is Postgres-backed and cached 15s server-side, so polling here just keeps
 // the register's stock/harga fresh while Kasir stays open — no Firestore quota to worry about.
@@ -1380,7 +1380,7 @@ export default function PosTab({
                           {d} hari
                         </button>
                       ))}
-                      <input type="date" value={dueDate} min={addDaysWib(0)} onChange={e => setDueDate(e.target.value)} className="input text-sm" style={{ width: 'auto' }} />
+                      <DateInput value={dueDate} min={addDaysWib(0)} onChange={setDueDate} style={{ width: 160 }} />
                     </div>
                   </div>
                   <div className="mt-3">

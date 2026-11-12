@@ -23,6 +23,7 @@ import ProductReportPDF from '@/lib/pdf/ProductReportPDF';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { toDataUri } from '@/lib/pdf/logo';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -479,9 +480,9 @@ export default function ProductReportTab({ creds }: { creds: string }) {
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPage(1); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customFrom} onChange={v => { setCustomFrom(v); setPage(1); }} height={36} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPage(1); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customTo} onChange={v => { setCustomTo(v); setPage(1); }} height={36} />
           </div>
         )}
       </div>

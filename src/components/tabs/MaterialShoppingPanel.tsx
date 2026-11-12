@@ -18,6 +18,7 @@ import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 
@@ -836,7 +837,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label style={fieldLabel}>Tanggal</label>
-                        <input type="date" value={dDate} onChange={e => setDDate(e.target.value)} className="input" />
+                        <DateInput value={dDate} onChange={setDDate} />
                       </div>
                       <div>
                         <label style={fieldLabel}>Supplier</label>
@@ -945,7 +946,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label style={fieldLabel}>Tanggal Pembelian</label>
-                        <input type="date" value={pDate} onChange={e => setPDate(e.target.value)} className="input" />
+                        <DateInput value={pDate} onChange={setPDate} />
                       </div>
                       <div>
                         <label style={fieldLabel}>Dompet Utama <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -1022,7 +1023,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="date" value={fDate} onChange={e => setFDate(e.target.value)} className="input" />
+                    <DateInput value={fDate} onChange={setFDate} />
                   </div>
                   <div>
                     <label style={fieldLabel}>Supplier</label>

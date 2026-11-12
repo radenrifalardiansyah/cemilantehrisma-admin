@@ -27,6 +27,7 @@ import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWal
 import PageLoader from '@/components/PageLoader';
 import MaterialShoppingPanel from '@/components/tabs/MaterialShoppingPanel';
 import EmptyAddCard from '@/components/EmptyAddCard';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1928,7 +1929,7 @@ ${pdfUrl}`.trim();
 
                 <div>
                   <label style={fieldLabel}>Tanggal Pembelian <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="input" style={{ maxWidth: 220 }} />
+                  <DateInput value={purchaseDate} onChange={setPurchaseDate} style={{ maxWidth: 220 }} />
                 </div>
 
                 <div>

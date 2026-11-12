@@ -1,6 +1,7 @@
 'use client';
 
 import { PERIOD_OPTIONS, type PeriodKey } from '@/lib/period';
+import { DateInput } from '@/components/DateTimeInput';
 
 // Tombol periode (Hari Ini, 7 Hari, 30 Hari, Bulan Ini, Tahun Ini, Custom) — gaya yang sama dengan
 // filter periode di Mitra. Mode Custom menampilkan pemilih tanggal dari–sampai.
@@ -18,9 +19,9 @@ export default function PeriodBar({ period, onPeriod, from, to, onFrom, onTo }: 
       ))}
       {period === 'custom' && (
         <div className="flex items-center gap-2 w-full min-w-0">
-          <input type="date" value={from} onChange={e => onFrom(e.target.value)} className="input flex-1 min-w-0" style={{ height: 36 }} />
+          <DateInput value={from} onChange={onFrom} height={36} className="flex-1 min-w-0" />
           <span className="text-xs whitespace-nowrap shrink-0" style={{ color: 'var(--text-muted)' }}>s/d</span>
-          <input type="date" value={to} onChange={e => onTo(e.target.value)} className="input flex-1 min-w-0" style={{ height: 36 }} />
+          <DateInput value={to} onChange={onTo} height={36} className="flex-1 min-w-0" />
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@ import {
   type AuditEntry, ACTION_META, DIRECTION_COLOR, directionFor, avatarIconFor,
   formatDateTime, HistoryEntryDetail,
 } from '@/lib/history-format';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -124,9 +125,9 @@ export default function HistoryTab({ creds }: { creds: string }) {
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); resetPage(); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customFrom} onChange={v => { setCustomFrom(v); resetPage(); }} height={36} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); resetPage(); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customTo} onChange={v => { setCustomTo(v); resetPage(); }} height={36} />
           </div>
         )}
       </div>

@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast';
 import { ModalShell, Badge, Field, ErrorBox, rupiah } from '../titip-jual/shared';
 import { PAY_LABEL, type PosStall, type Sale } from './types';
 import ReturnModal from './ReturnModal';
+import { DateInput } from '@/components/DateTimeInput';
 
 const todayKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 
@@ -68,7 +69,7 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
         footer={<button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="flex items-center gap-3 flex-wrap">
-            <input type="date" className="input" style={{ height: 36, width: 'auto' }} value={date} onChange={e => setDate(e.target.value)} />
+            <DateInput value={date} onChange={setDate} height={36} style={{ width: 150 }} />
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{paid.length} transaksi · <b style={{ color: 'var(--text-primary)' }}>{rupiah(total)}</b></p>
           </div>
           {sales === null ? <PageLoader /> : sales.length === 0 ? (

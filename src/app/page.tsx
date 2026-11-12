@@ -73,6 +73,7 @@ const ConsignmentAnalyticsSection = dynamic(() => import('@/components/dashboard
 const LapakAnalyticsSection = dynamic(() => import('@/components/dashboard/LapakAnalyticsSection'), { loading: () => <PageLoader compact /> });
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -1171,9 +1172,9 @@ export default function AdminPage() {
           </div>
           {sumPeriod === 'custom' && (
             <div className="flex items-center gap-2">
-              <input type="date" value={sumCustomFrom} onChange={e => setSumCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+              <DateInput value={sumCustomFrom} onChange={setSumCustomFrom} height={36} />
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-              <input type="date" value={sumCustomTo} onChange={e => setSumCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+              <DateInput value={sumCustomTo} onChange={setSumCustomTo} height={36} />
             </div>
           )}
           {sumError && (

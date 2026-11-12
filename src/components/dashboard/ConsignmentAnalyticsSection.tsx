@@ -14,6 +14,7 @@ import PageLoader from '@/components/PageLoader';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
 import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { DateInput } from '@/components/DateTimeInput';
 
 export interface ConsignmentAnalyticsData {
   period: { from: string; to: string };
@@ -334,9 +335,9 @@ export default function ConsignmentAnalyticsSection({
 
       {period === 'custom' && (
         <div className="flex items-center gap-2">
-          <input type="date" value={customFrom} onChange={e => onCustomFromChange(e.target.value)} className="input" style={{ height: 36 }} />
+          <DateInput value={customFrom} onChange={onCustomFromChange} height={36} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-          <input type="date" value={customTo} onChange={e => onCustomToChange(e.target.value)} className="input" style={{ height: 36 }} />
+          <DateInput value={customTo} onChange={onCustomToChange} height={36} />
         </div>
       )}
 

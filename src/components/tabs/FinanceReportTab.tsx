@@ -23,6 +23,7 @@ import type { InstallmentPayment } from '@/lib/installment-payments-report';
 import type { WalletDoc } from '@/lib/useWallets';
 import { resolveIcon } from '@/lib/icon-registry';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 
@@ -908,9 +909,9 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+            <DateInput value={customFrom} onChange={setCustomFrom} height={36} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+            <DateInput value={customTo} onChange={setCustomTo} height={36} />
           </div>
         )}
       </div>

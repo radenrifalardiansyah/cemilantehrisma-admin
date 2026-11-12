@@ -23,6 +23,7 @@ import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -672,7 +673,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
 
                 <div>
                   <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="date" value={editing.date} onChange={e => setEditing({ ...editing, date: e.target.value })} className="input" />
+                  <DateInput value={editing.date} onChange={v => setEditing({ ...editing, date: v })} />
                 </div>
 
                 <div>

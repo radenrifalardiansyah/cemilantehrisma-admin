@@ -15,6 +15,7 @@ import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 type Channel = 'online' | 'kasir' | 'consignment' | 'lapak';
 type FeeType = 'percent' | 'fixed' | 'monthly';
@@ -451,9 +452,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
                   </div>
                   <div className="w-full sm:w-[150px] flex-shrink-0">
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Efektif Sejak</label>
-                    <input type="date" value={forms[channel].effectiveFrom} max={todayIso}
-                      onChange={e => setForms(f => ({ ...f, [channel]: { ...f[channel], effectiveFrom: e.target.value } }))}
-                      className="input" style={{ width: '100%', height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+                    <DateInput value={forms[channel].effectiveFrom} onChange={v => setForms(f => ({ ...f, [channel]: { ...f[channel], effectiveFrom: v } }))} max={todayIso} height={FORM_CTRL_H} />
                   </div>
                   <button onClick={() => saveRate(channel)} disabled={savingChannel === channel} className="btn-primary px-4 text-xs"
                     style={{ height: FORM_CTRL_H }}>
@@ -572,11 +571,11 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
             <div className="flex items-end gap-3 flex-wrap">
               <div className="w-full sm:w-[160px] flex-shrink-0">
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Dari</label>
-                <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="input" style={{ width: '100%', height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+                <DateInput value={from} onChange={setFrom} height={FORM_CTRL_H} />
               </div>
               <div className="w-full sm:w-[160px] flex-shrink-0">
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Sampai</label>
-                <input type="date" value={to} onChange={e => setTo(e.target.value)} className="input" style={{ width: '100%', height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+                <DateInput value={to} onChange={setTo} height={FORM_CTRL_H} />
               </div>
               <button onClick={loadReport} disabled={loadingReport} className="btn-ghost px-4 text-xs flex items-center gap-1.5" style={{ height: FORM_CTRL_H }}>
                 {loadingReport ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Tampilkan
@@ -872,7 +871,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
               </p>
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Jatuh Tempo</label>
-                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="input" style={{ width: '100%', maxWidth: 160, height: FORM_CTRL_H, boxSizing: 'border-box' }} />
+                <DateInput value={dueDate} onChange={setDueDate} height={FORM_CTRL_H} style={{ maxWidth: 160 }} />
               </div>
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Catatan untuk Admin (opsional)</label>

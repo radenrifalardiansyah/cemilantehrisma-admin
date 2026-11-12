@@ -61,7 +61,15 @@ function usePopover(open: boolean, setOpen: (v: boolean) => void, w: number, h: 
   return { btnRef, panelRef, pos };
 }
 
-function DatePicker({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+function DatePicker({ value, onChange, disabled, min, max, height, clearable }: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  min?: string;
+  max?: string;
+  height?: number | string;
+  clearable?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { btnRef, panelRef, pos } = usePopover(open, setOpen, CAL_W, CAL_H);
   const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
@@ -77,6 +85,7 @@ function DatePicker({ value, onChange, disabled }: { value: string; onChange: (v
   const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
   const cells: (number | null)[] = [...Array(offset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
   const todayYmd = toYmd(new Date());
+  const todayBlocked = (!!min && todayYmd < min) || (!!max && todayYmd > max);
   const pick = (ymd: string) => { onChange(ymd); setOpen(false); };
 
   const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
@@ -89,7 +98,7 @@ function DatePicker({ value, onChange, disabled }: { value: string; onChange: (v
         disabled={disabled}
         onClick={toggle}
         className="input disabled:opacity-50"
-        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left' }}
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left', ...(height != null ? { height, boxSizing: 'border-box' as const, paddingTop: 0, paddingBottom: 0 } : null) }}
       >
         <span className="tabular" style={{ color: parsed ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           {parsed ? `${pad(parsed.getDate())}/${pad(parsed.getMonth() + 1)}/${parsed.getFullYear()}` : 'dd/mm/yyyy'}
@@ -119,18 +128,20 @@ function DatePicker({ value, onChange, disabled }: { value: string; onChange: (v
               const ymd = `${view.y}-${pad(view.m + 1)}-${pad(d)}`;
               const active = ymd === value;
               const isToday = ymd === todayYmd;
+              const blocked = (!!min && ymd < min) || (!!max && ymd > max);
               return (
                 <button
                   key={ymd}
                   type="button"
+                  disabled={blocked}
                   onClick={() => pick(ymd)}
                   style={{
-                    height: 32, borderRadius: 8, fontSize: 12.5, cursor: 'pointer', fontWeight: active || isToday ? 700 : 500,
+                    height: 32, borderRadius: 8, fontSize: 12.5, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.35 : 1, fontWeight: active || isToday ? 700 : 500,
                     border: isToday && !active ? '1.5px solid var(--accent)' : '1.5px solid transparent',
                     background: active ? 'var(--accent)' : 'transparent',
                     color: active ? '#fff' : isToday ? 'var(--accent)' : 'var(--text-secondary)',
                   }}
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                  onMouseEnter={e => { if (!active && !blocked) e.currentTarget.style.background = 'var(--surface-2)'; }}
                   onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                 >
                   {d}
@@ -138,8 +149,13 @@ function DatePicker({ value, onChange, disabled }: { value: string; onChange: (v
               );
             })}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-2)' }}>
-            <button type="button" onClick={() => pick(todayYmd)} style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 8px' }}>
+          <div style={{ display: 'flex', justifyContent: clearable ? 'space-between' : 'flex-end', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-2)' }}>
+            {clearable && (
+              <button type="button" disabled={!value} onClick={() => pick('')} style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: value ? 'pointer' : 'default', padding: '4px 8px', opacity: value ? 1 : 0.35 }}>
+                Hapus
+              </button>
+            )}
+            <button type="button" disabled={todayBlocked} onClick={() => pick(todayYmd)} style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: todayBlocked ? 'not-allowed' : 'pointer', padding: '4px 8px', opacity: todayBlocked ? 0.35 : 1 }}>
               Hari ini
             </button>
           </div>
@@ -219,6 +235,29 @@ function TimePicker({ value, onChange, disabled }: { value: string; onChange: (v
         document.body
       )}
     </>
+  );
+}
+
+// Pengganti <input type="date"> dengan kalender kustom yang sama seperti DateTimeInput.
+// Value & onChange berformat "YYYY-MM-DD" (sama dengan type="date"). `min` opsional ("YYYY-MM-DD"):
+// tanggal sebelumnya tidak bisa dipilih. `style` dipakai di pembungkus (mis. untuk lebar tetap).
+// Default lebar 100% seperti `.input`; ubah lewat `style`/`className` pembungkus. `height` mengatur tinggi tombol.
+// Tanggal bisa dikosongkan lewat tombol "Hapus" (sama seperti input native), kecuali `clearable={false}`.
+export function DateInput({ value, onChange, disabled, min, max, height, clearable = true, className, style }: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  min?: string;
+  max?: string;
+  height?: number | string;
+  clearable?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div className={className} style={{ display: 'flex', width: '100%', minWidth: 0, ...style }}>
+      <DatePicker value={value} onChange={onChange} disabled={disabled} min={min} max={max} height={height} clearable={clearable} />
+    </div>
   );
 }
 

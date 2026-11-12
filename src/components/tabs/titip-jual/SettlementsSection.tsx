@@ -17,6 +17,7 @@ import PeriodBar from './PeriodBar';
 import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
 import { downloadSettlementPdf, type Settlement, type SettlementItem, type SettlementConsignor } from './settlementPdf';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, qtyText, uploadImage, type SectionProps } from './shared';
+import { DateInput } from '@/components/DateTimeInput';
 
 interface Payable { stallId: string; consignorId: string; consignorName: string; amount: number; lines: number; firstDate: string; lastDate: string }
 interface Result { settlements: Settlement[]; payables: Payable[] }
@@ -466,7 +467,7 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
         </div>
         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Ini hanya mencatat pembayaran. Transfer/penyerahan uang ke penitip Anda lakukan sendiri, lalu isi rinciannya di bawah untuk bukti pembayaran.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Tanggal bayar" required><input className="input" type="date" value={payDate} max={todayKey()} onChange={e => setPayDate(e.target.value)} /></Field>
+          <Field label="Tanggal bayar" required><DateInput value={payDate} onChange={setPayDate} max={todayKey()} /></Field>
           <Field label="Metode">
             <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
               {(['transfer', 'tunai'] as const).map(m => (
@@ -590,7 +591,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Tanggal bayar" required><input className="input" type="date" value={payDate} max={todayKey()} onChange={e => setPayDate(e.target.value)} /></Field>
+          <Field label="Tanggal bayar" required><DateInput value={payDate} onChange={setPayDate} max={todayKey()} /></Field>
           <Field label="Metode">
             <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
               {(['transfer', 'tunai'] as const).map(m => (

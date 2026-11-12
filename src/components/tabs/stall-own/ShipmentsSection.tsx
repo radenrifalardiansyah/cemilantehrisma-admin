@@ -12,6 +12,7 @@ import { useConfirm } from '@/components/Confirm';
 import DataList, { DetailPanel, type ExportCol } from '../titip-jual/DataList';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, HEADER_BTN_H, rupiah, qtyText } from '../titip-jual/shared';
 import { KIND_LABEL, dt, todayKey, type OwnSectionProps, type Shipment, type PriceItem } from './types';
+import { DateInput } from '@/components/DateTimeInput';
 
 interface Line { productId: string; qty: string; price: string }
 interface Draft { kind: Shipment['kind']; stallId: string; warehouseId: string; docDate: string; note: string; lines: Line[] }
@@ -220,7 +221,7 @@ export default function ShipmentsSection({ creds, stalls, warehouses, can }: Own
             </div>
             {stall && !stall.warehouseId && <ErrorBox message="Lapak ini belum punya gudang terkait. Atur dulu di menu Titip Jual → Lapak." />}
             {stall?.warehouseId && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Gudang lapak: <strong>{stallWarehouse?.name ?? '-'}</strong></p>}
-            <Field label="Tanggal"><input className="input" type="date" value={draft.docDate} onChange={e => setDraft({ ...draft, docDate: e.target.value })} /></Field>
+            <Field label="Tanggal"><DateInput value={draft.docDate} onChange={v => setDraft({ ...draft, docDate: v })} /></Field>
 
             <div>
               <label className="field-label" style={{ marginBottom: 0 }}>Produk</label>

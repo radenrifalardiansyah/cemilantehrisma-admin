@@ -16,6 +16,7 @@ import AnalyticsPdfButton from './AnalyticsPdfButton';
 import MonthlyFinanceSection from './MonthlyFinanceSection';
 import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { DateInput } from '@/components/DateTimeInput';
 
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };
@@ -277,9 +278,9 @@ export default function BusinessAnalyticsSection({
 
       {period === 'custom' && (
         <div className="flex items-center gap-2">
-          <input type="date" value={customFrom} onChange={e => onCustomFromChange(e.target.value)} className="input" style={{ height: 36 }} />
+          <DateInput value={customFrom} onChange={onCustomFromChange} height={36} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-          <input type="date" value={customTo} onChange={e => onCustomToChange(e.target.value)} className="input" style={{ height: 36 }} />
+          <DateInput value={customTo} onChange={onCustomToChange} height={36} />
         </div>
       )}
 

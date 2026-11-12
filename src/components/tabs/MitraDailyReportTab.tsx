@@ -17,6 +17,7 @@ import Tooltip from '@/components/Tooltip';
 import TopbarPortal from '@/components/TopbarPortal';
 import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
+import { DateInput } from '@/components/DateTimeInput';
 
 const HEADER_BTN_H = 34;
 
@@ -382,9 +383,9 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+            <DateInput value={customFrom} onChange={setCustomFrom} height={36} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+            <DateInput value={customTo} onChange={setCustomTo} height={36} />
           </div>
         )}
       </div>

@@ -26,6 +26,7 @@ import { useConfirm } from '@/components/Confirm';
 import { resolveIcon } from '@/lib/icon-registry';
 import { activeWalletOptions, type WalletDoc } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1157,7 +1158,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
                 <div>
                   <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input type="date" value={transferEditing.date} onChange={e => setTransferEditing({ ...transferEditing, date: e.target.value })} className="input" />
+                  <DateInput value={transferEditing.date} onChange={v => setTransferEditing({ ...transferEditing, date: v })} />
                 </div>
 
                 <div>

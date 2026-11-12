@@ -24,6 +24,7 @@ import EmptyAddCard from '@/components/EmptyAddCard';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
+import { DateInput } from '@/components/DateTimeInput';
 
 // Purchase Order (PO) & Penerimaan Barang (GR/DO) Bahan Baku. PO tidak mengubah stok/keuangan;
 // pembelian baru masuk ke tab Pembelian saat GR di-approve (lihat api/goods-receipts/[id]/approve).
@@ -1018,11 +1019,11 @@ ${pdfUrl}`.trim();
                   </div>
                   <div>
                     <label style={fieldLabel}>Tanggal PO <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="date" value={fDate} onChange={e => setFDate(e.target.value)} className="input" />
+                    <DateInput value={fDate} onChange={setFDate} />
                   </div>
                   <div>
                     <label style={fieldLabel}>Estimasi Tiba</label>
-                    <input type="date" value={fExpected} onChange={e => setFExpected(e.target.value)} className="input" />
+                    <DateInput value={fExpected} onChange={setFExpected} />
                   </div>
                 </div>
 
@@ -1117,7 +1118,7 @@ ${pdfUrl}`.trim();
                   </div>
                   <div>
                     <label style={fieldLabel}>Tanggal Terima <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="date" value={gDate} onChange={e => setGDate(e.target.value)} className="input" />
+                    <DateInput value={gDate} onChange={setGDate} />
                   </div>
                 </div>
 

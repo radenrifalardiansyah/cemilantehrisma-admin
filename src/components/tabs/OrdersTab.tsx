@@ -29,7 +29,7 @@ import PageLoader from '@/components/PageLoader';
 import { dueInfo, formatDueDate } from '@/lib/receivable';
 import { computeReturn } from '@/lib/order-return';
 import { paymentProblem } from '@/lib/installment';
-import DateTimeInput from '@/components/DateTimeInput';
+import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1699,7 +1699,7 @@ _${storeName}_`.trim();
                 </div>
                 <div>
                   <label className="field-label">Tanggal</label>
-                  <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className="input" />
+                  <DateInput value={payDate} onChange={setPayDate} />
                 </div>
               </div>
               <div>
@@ -2018,7 +2018,7 @@ _${storeName}_`.trim();
                 {editPaymentMethod === 'kredit' && editPaymentStatus === 'belum_lunas' && (
                   <div>
                     <label className="field-label">Jatuh Tempo</label>
-                    <input type="date" value={editDueDate} onChange={e => setEditDueDate(e.target.value)} className="input" />
+                    <DateInput value={editDueDate} onChange={setEditDueDate} />
                   </div>
                 )}
 

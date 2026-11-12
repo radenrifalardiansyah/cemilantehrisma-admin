@@ -25,6 +25,7 @@ import { useConfirm } from '@/components/Confirm';
 import type { PosProduct } from '@/lib/pos-types';
 import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -909,7 +910,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label style={fieldLabel}>Tanggal Produksi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input" />
+                    <DateInput value={date} onChange={setDate} />
                   </div>
                   <div>
                     <label style={fieldLabel}>Gudang Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>

@@ -15,6 +15,7 @@ import {
   API, HEADER_BTN_H, Badge, Field, ModalShell, ModalFooter, ErrorBox, qtyText, rupiah, effectiveFor,
   type SectionProps, type Receipt,
 } from './shared';
+import { DateInput } from '@/components/DateTimeInput';
 
 interface Line { productId: string; qty: string }
 type Kind = 'in' | 'return' | 'transfer';
@@ -288,7 +289,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
               </Field>
             )}
             <Field label="Tanggal">
-              <input className="input" type="date" value={editing.docDate} onChange={e => setEditing({ ...editing, docDate: e.target.value })} />
+              <DateInput value={editing.docDate} onChange={v => setEditing({ ...editing, docDate: v })} />
             </Field>
 
             <div>

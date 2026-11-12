@@ -17,6 +17,7 @@ import { useToast } from '@/components/Toast';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import { exportSheet } from '@/components/tabs/purchase-flow-io';
 import type { PoReportRow, GrReportRow, OpnameReportRow, SupplierBreakdown, summarizePo, summarizeGr, summarizeOpname } from '@/lib/procurement-report';
+import { DateInput } from '@/components/DateTimeInput';
 
 // Tiga laporan Operasional > Laporan dengan kerangka yang sama: Laporan PO, Laporan GR, Laporan Stok
 // Opname. Data diambil per periode dari /api/reports/* (hanya baris periode itu, bukan seluruh
@@ -232,9 +233,9 @@ export default function ProcurementReportTab({ creds, kind }: { creds: string; k
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPage(1); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customFrom} onChange={v => { setCustomFrom(v); setPage(1); }} height={36} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPage(1); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customTo} onChange={v => { setCustomTo(v); setPage(1); }} height={36} />
           </div>
         )}
       </div>

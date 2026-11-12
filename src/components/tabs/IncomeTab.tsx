@@ -24,6 +24,7 @@ import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -501,9 +502,9 @@ export default function IncomeTab({ creds }: { creds: string }) {
         ))}
         {period === 'custom' && (
           <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); resetPage(); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customFrom} onChange={v => { setCustomFrom(v); resetPage(); }} height={36} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); resetPage(); }} className="input" style={{ height: 36 }} />
+            <DateInput value={customTo} onChange={v => { setCustomTo(v); resetPage(); }} height={36} />
           </div>
         )}
       </div>
@@ -806,7 +807,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                   </div>
                   <div>
                     <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="date" value={editing.date} onChange={e => setEditing({ ...editing, date: e.target.value })} className="input" />
+                    <DateInput value={editing.date} onChange={v => setEditing({ ...editing, date: v })} />
                   </div>
                 </div>
 

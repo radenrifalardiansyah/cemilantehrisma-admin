@@ -47,7 +47,7 @@ import { toDataUri } from '@/lib/pdf/logo';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
-import DateTimeInput from '@/components/DateTimeInput';
+import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -2536,9 +2536,9 @@ _${storeHeader.name}_`.trim();
                 ))}
                 {locationPeriod === 'custom' && (
                   <div className="flex items-center gap-2">
-                    <input type="date" value={locationCustomFrom} onChange={e => setLocationCustomFrom(e.target.value)} className="input" style={{ height: 36 }} />
+                    <DateInput value={locationCustomFrom} onChange={setLocationCustomFrom} height={36} />
                     <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-                    <input type="date" value={locationCustomTo} onChange={e => setLocationCustomTo(e.target.value)} className="input" style={{ height: 36 }} />
+                    <DateInput value={locationCustomTo} onChange={setLocationCustomTo} height={36} />
                   </div>
                 )}
               </div>
@@ -2860,9 +2860,9 @@ _${storeHeader.name}_`.trim();
               ))}
               {shipmentPeriod === 'custom' && (
                 <div className="flex items-center gap-2">
-                  <input type="date" value={shipmentCustomFrom} onChange={e => { setShipmentCustomFrom(e.target.value); resetShipmentPage(); }} className="input" style={{ height: 36 }} />
+                  <DateInput value={shipmentCustomFrom} onChange={v => { setShipmentCustomFrom(v); resetShipmentPage(); }} height={36} />
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-                  <input type="date" value={shipmentCustomTo} onChange={e => { setShipmentCustomTo(e.target.value); resetShipmentPage(); }} className="input" style={{ height: 36 }} />
+                  <DateInput value={shipmentCustomTo} onChange={v => { setShipmentCustomTo(v); resetShipmentPage(); }} height={36} />
                 </div>
               )}
             </div>
@@ -3094,9 +3094,9 @@ _${storeHeader.name}_`.trim();
               ))}
               {recapPeriod === 'custom' && (
                 <div className="flex items-center gap-2">
-                  <input type="date" value={recapCustomFrom} onChange={e => { setRecapCustomFrom(e.target.value); resetRecapPage(); }} className="input" style={{ height: 36 }} />
+                  <DateInput value={recapCustomFrom} onChange={v => { setRecapCustomFrom(v); resetRecapPage(); }} height={36} />
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-                  <input type="date" value={recapCustomTo} onChange={e => { setRecapCustomTo(e.target.value); resetRecapPage(); }} className="input" style={{ height: 36 }} />
+                  <DateInput value={recapCustomTo} onChange={v => { setRecapCustomTo(v); resetRecapPage(); }} height={36} />
                 </div>
               )}
             </div>
@@ -3959,9 +3959,9 @@ _${storeHeader.name}_`.trim();
             <div className="modal-body">
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode:</span>
-                <input type="date" value={invoiceFrom} onChange={e => setInvoiceFrom(e.target.value)} className="input" style={{ height: 32, width: 140 }} />
+                <DateInput value={invoiceFrom} onChange={setInvoiceFrom} height={32} style={{ width: 140 }} />
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
-                <input type="date" value={invoiceTo} onChange={e => setInvoiceTo(e.target.value)} className="input" style={{ height: 32, width: 140 }} />
+                <DateInput value={invoiceTo} onChange={setInvoiceTo} height={32} style={{ width: 140 }} />
                 {(invoiceFrom || invoiceTo) && (
                   <button onClick={() => { setInvoiceFrom(''); setInvoiceTo(''); }} style={{ fontSize: 11, color: 'var(--text-secondary)', textDecoration: 'underline' }}>Semua</button>
                 )}

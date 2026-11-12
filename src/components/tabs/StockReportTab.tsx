@@ -22,6 +22,7 @@ import StockReportPDF from '@/lib/pdf/StockReportPDF';
 import StockCardPDF from '@/lib/pdf/StockCardPDF';
 import { toDataUri } from '@/lib/pdf/logo';
 import PageLoader from '@/components/PageLoader';
+import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -1001,9 +1002,9 @@ export default function StockReportTab({
         ))}
         {reportPeriod === 'custom' && (
           <div className="flex items-center gap-2 flex-wrap">
-            <input type="date" value={reportCustomFrom} onChange={e => setReportCustomFrom(e.target.value)} className="input" style={{ height: 36, width: 'auto' }} />
+            <DateInput value={reportCustomFrom} onChange={setReportCustomFrom} height={36} style={{ width: 150 }} />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <input type="date" value={reportCustomTo} onChange={e => setReportCustomTo(e.target.value)} className="input" style={{ height: 36, width: 'auto' }} />
+            <DateInput value={reportCustomTo} onChange={setReportCustomTo} height={36} style={{ width: 150 }} />
           </div>
         )}
       </div>
