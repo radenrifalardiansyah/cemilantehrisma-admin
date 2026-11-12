@@ -214,7 +214,9 @@ export default function AppShell({
 
   // Desktop sidebar search — filters the nested NAV_GROUPS tree by label, keeping a
   // parent tab whenever it or any of its children match so results stay navigable.
-  const sq = sidebarQuery.trim().toLowerCase();
+  // Kolom cari disembunyikan saat sidebar collapsed — abaikan query supaya menu tidak
+  // tetap terfilter tanpa ada input untuk menghapusnya.
+  const sq = collapsed ? '' : sidebarQuery.trim().toLowerCase();
   const isSidebarSearching = sq.length > 0;
   const filterNavTab = (tab: NavTab): NavTab | null => {
     if (tab.label.toLowerCase().includes(sq)) return tab;
