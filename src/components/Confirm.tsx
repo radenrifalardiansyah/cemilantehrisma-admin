@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useState } from 'react';
 import { AlertTriangle, HelpCircle, Loader2 } from 'lucide-react';
+import Modal from '@/components/Modal';
 
 interface ConfirmOptions {
   title?: string;
@@ -64,55 +65,49 @@ export default function ConfirmProvider({ children }: { children: React.ReactNod
     <ConfirmContext.Provider value={confirm}>
       {children}
       {state && (
-        <div
-          className="modal-overlay confirm-overlay"
-          onClick={() => !confirming && close(false)}
-          style={{ zIndex: 10000 }}
-        >
-          <div className="modal-sheet confirm-sheet modal-sm" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <div className="modal-accent" style={state.danger ? { background: 'var(--danger)' } : undefined} />
+        <Modal role="alertdialog" onClose={() => !confirming && close(false)} overlayClassName="confirm-overlay" overlayStyle={{ zIndex: 10000 }} className="confirm-sheet modal-sm" style={{ maxWidth: 400 }}>
+          <div className="modal-accent" style={state.danger ? { background: 'var(--danger)' } : undefined} />
 
-            <div style={{ padding: '20px 22px 4px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-              <div
-                className="modal-icon"
-                style={state.danger ? { background: 'var(--danger-bg)', color: 'var(--danger)' } : undefined}
-              >
-                {state.danger ? <AlertTriangle size={17} /> : <HelpCircle size={17} />}
-              </div>
-              <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
-                <p className="modal-title">{state.title ?? (state.danger ? 'Konfirmasi Hapus' : 'Konfirmasi')}</p>
-                <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.5 }}>
-                  {state.message}
-                </p>
-              </div>
+          <div style={{ padding: '20px 22px 4px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <div
+              className="modal-icon"
+              style={state.danger ? { background: 'var(--danger-bg)', color: 'var(--danger)' } : undefined}
+            >
+              {state.danger ? <AlertTriangle size={17} /> : <HelpCircle size={17} />}
             </div>
-
-            <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 18 }}>
-              <button
-                onClick={() => close(false)}
-                className="btn-ghost"
-                disabled={confirming}
-                style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: confirming ? 0.5 : 1 }}
-              >
-                {state.cancelLabel ?? 'Batal'}
-              </button>
-              <button
-                onClick={handleConfirm}
-                className="btn-primary"
-                disabled={confirming}
-                style={{
-                  flex: 1, justifyContent: 'center', padding: '10px 0',
-                  ...(state.danger ? { background: 'var(--danger)', boxShadow: 'none' } : {}),
-                  ...(confirming ? { opacity: 0.75, cursor: 'default' } : {}),
-                }}
-              >
-                {confirming
-                  ? <Loader2 size={15} className="animate-spin" />
-                  : (state.confirmLabel ?? (state.danger ? 'Hapus' : 'Ya, Lanjutkan'))}
-              </button>
+            <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+              <p className="modal-title">{state.title ?? (state.danger ? 'Konfirmasi Hapus' : 'Konfirmasi')}</p>
+              <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 5, lineHeight: 1.5 }}>
+                {state.message}
+              </p>
             </div>
           </div>
-        </div>
+
+          <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 18 }}>
+            <button
+              onClick={() => close(false)}
+              className="btn-ghost"
+              disabled={confirming}
+              style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: confirming ? 0.5 : 1 }}
+            >
+              {state.cancelLabel ?? 'Batal'}
+            </button>
+            <button
+              onClick={handleConfirm}
+              className="btn-primary"
+              disabled={confirming}
+              style={{
+                flex: 1, justifyContent: 'center', padding: '10px 0',
+                ...(state.danger ? { background: 'var(--danger)', boxShadow: 'none' } : {}),
+                ...(confirming ? { opacity: 0.75, cursor: 'default' } : {}),
+              }}
+            >
+              {confirming
+                ? <Loader2 size={15} className="animate-spin" />
+                : (state.confirmLabel ?? (state.danger ? 'Hapus' : 'Ya, Lanjutkan'))}
+            </button>
+          </div>
+        </Modal>
       )}
     </ConfirmContext.Provider>
   );

@@ -5,10 +5,12 @@ import { Loader2, Check, X } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import NumberInput from '@/components/NumberInput';
 import SearchSelect from '@/components/SearchSelect';
+import { formatRp } from '@/lib/format';
 import { resolveScheme, calcShare, schemeText, SCHEME_LABEL, type ShareScheme } from '@/lib/consign';
+import Modal from '@/components/Modal';
 
 export const API = '';
-export const HEADER_BTN_H = 34;
+export { HEADER_BTN_H } from '@/lib/ui-constants';
 
 export interface Stall {
   id: string; code: string; name: string; address: string; warehouseId: string; note: string; isActive: boolean;
@@ -52,7 +54,7 @@ export interface SectionProps {
   openJournal?: (stallId: string) => void;               // pindah ke tab Jurnal Kas untuk lapak tertentu // pindah sub-tab
 }
 
-export const rupiah = (n: number) => `Rp${Math.round(n).toLocaleString('id-ID')}`;
+export const rupiah = (n: number) => formatRp(Math.round(n));
 export const qtyText = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 3 });
 
 // Harga jual & skema yang berlaku untuk produk di satu lapak (lapak → produk → penitip).
@@ -94,17 +96,19 @@ export function Badge({ children, tone = 'muted' }: { children: React.ReactNode;
 }
 
 // Input skema bagi hasil. `allowInherit`: tampilkan opsi "Ikut default" (value = null).
-export function SchemeFields({ scheme, value, onChange, allowInherit, inheritLabel, price }: {
+export function SchemeFields({ scheme, value, onChange, allowInherit, inheritLabel, price, id }: {
   scheme: ShareScheme | null; value: number | null;
   onChange: (scheme: ShareScheme | null, value: number | null) => void;
   allowInherit?: boolean; inheritLabel?: string; price?: number;
+  /** Diteruskan ke pemilih skema, supaya `Field` yang membungkus bisa melabelinya. */
+  id?: string;
 }) {
   const share = scheme && price && price > 0 ? calcShare(price, { scheme, value: value ?? 0 }) : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <div style={{ flex: 2, minWidth: 0 }}>
-          <SearchSelect value={scheme ?? ''} searchPlaceholder="Cari skema…"
+          <SearchSelect id={id} value={scheme ?? ''} searchPlaceholder="Cari skema…"
             onChange={v => {
               // Nilai dikosongkan saat skema diganti: 15 (%) tidak sepadan dengan Rp15.
               onChange(v === '' ? null : v as ShareScheme, null);
@@ -141,24 +145,22 @@ export function ModalShell({ title, subtitle, icon, onClose, children, footer, s
   // Dirender lewat portal ke <body>: area konten tab memakai animasi (transform) dan scroll sendiri,
   // yang membuat `position: fixed` menempel ke area itu — modal jadi terpotong di bawah header.
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div className={`modal-sheet ${size}`} onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon">{icon}</div>
-            <div>
-              <p className="modal-title">{title}</p>
-              {subtitle && <p className="modal-subtitle">{subtitle}</p>}
-            </div>
+    <Modal onClose={onClose} className={`${size}`}>
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon">{icon}</div>
+          <div>
+            <p className="modal-title">{title}</p>
+            {subtitle && <p className="modal-subtitle">{subtitle}</p>}
           </div>
-          <Tooltip label="Tutup"><button onClick={onClose} className="modal-close"><X size={14} /></button></Tooltip>
         </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-footer">{footer}</div>
+        <Tooltip label="Tutup"><button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
       </div>
-    </div>,
+      <div className="modal-body">{children}</div>
+      <div className="modal-footer">{footer}</div>
+    </Modal>,
     document.body,
   );
 }

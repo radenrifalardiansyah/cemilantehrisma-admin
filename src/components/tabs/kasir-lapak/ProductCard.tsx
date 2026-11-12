@@ -55,12 +55,12 @@ export default function StallProductCard({ item, qty, disabled, onAdd, onMinus }
           {qty > 0 && (
             <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
               <Tooltip label="Kurangi jumlah">
-                <button onClick={e => { e.stopPropagation(); onMinus(); }} className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+                <button aria-label="Kurangi jumlah" onClick={e => { e.stopPropagation(); onMinus(); }} className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
                   style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}><Minus size={10} strokeWidth={2.5} /></button>
               </Tooltip>
               <span className="text-[13px] font-black w-5 text-center tabular" style={{ color: 'var(--text-primary)' }}>{qtyText(qty)}</span>
               <Tooltip label="Tambah jumlah">
-                <button onClick={e => { e.stopPropagation(); onAdd(); }} disabled={qty >= item.stock} className="w-6 h-6 rounded-full text-white flex items-center justify-center disabled:opacity-40"
+                <button aria-label="Tambah jumlah" onClick={e => { e.stopPropagation(); onAdd(); }} disabled={qty >= item.stock} className="w-6 h-6 rounded-full text-white flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--accent)' }}><Plus size={10} strokeWidth={2.5} /></button>
               </Tooltip>
             </div>

@@ -198,7 +198,7 @@ export default function ConsignorsSection({ creds, data, reload, can }: SectionP
           );
         }}
         actions={c => (<>
-          <Tooltip label="Riwayat & ringkasan"><button onClick={() => setHistoryFor(c)} className="btn-ghost p-2"><History size={13} /></button></Tooltip>
+          <Tooltip label="Riwayat & ringkasan"><button aria-label="Riwayat & ringkasan" onClick={() => setHistoryFor(c)} className="btn-ghost p-2"><History size={13} /></button></Tooltip>
           <RowActions onEdit={can('edit') ? () => { setError(''); setEditing({ ...c }); } : undefined}
           onDelete={can('delete') ? () => del(c) : undefined} deleting={deletingId === c.id} />
         </>)}

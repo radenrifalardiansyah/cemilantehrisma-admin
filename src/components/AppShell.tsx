@@ -622,7 +622,7 @@ export default function AppShell({
                 </Tooltip>
               </div>
               <Tooltip label="Keluar" side="top">
-                <button
+                <button aria-label="Keluar"
                   onClick={handleLogout}
                   style={{
                     width: 28, height: 28, borderRadius: 7, flexShrink: 0,
@@ -643,7 +643,7 @@ export default function AppShell({
           {/* User card — collapsed: logout icon */}
           {collapsed && (
             <Tooltip label="Keluar" side="top">
-              <button
+              <button aria-label="Keluar"
                 onClick={handleLogout}
                 className="sidebar-nav-item w-full mt-0.5"
                 style={{ justifyContent: 'center' }}

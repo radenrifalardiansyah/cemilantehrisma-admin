@@ -275,14 +275,14 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
                     <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{rupiah(l.item.price)} / {l.item.unit}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                    <button aria-label="Kurangi jumlah" className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
                       onClick={() => setQty(l.key, l.qty - 1, l.item.stock)}><Minus size={11} strokeWidth={2.5} /></button>
                     <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{qtyText(l.qty)}</span>
-                    <button className="w-7 h-7 rounded-full text-white flex items-center justify-center disabled:opacity-40" style={{ background: 'var(--accent)' }}
+                    <button aria-label="Tambah jumlah" className="w-7 h-7 rounded-full text-white flex items-center justify-center disabled:opacity-40" style={{ background: 'var(--accent)' }}
                       onClick={() => setQty(l.key, l.qty + 1, l.item.stock)} disabled={l.qty >= l.item.stock}><Plus size={11} strokeWidth={2.5} /></button>
                   </div>
                   <span className="text-sm font-bold tabular w-16 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>{rupiah(l.item.price * l.qty)}</span>
-                  <button className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}
+                  <button aria-label="Hapus dari keranjang" className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}
                     onClick={() => setQty(l.key, 0, l.item.stock)}><Trash2 size={12} /></button>
                 </div>
               ))}
@@ -378,7 +378,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
     <div className="flex flex-col h-full">
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => { reloadAll(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center"><RefreshCw size={14} /></button>
+          <button aria-label="Refresh" onClick={() => { reloadAll(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center"><RefreshCw size={14} /></button>
         </Tooltip>
       </TopbarPortal>
 
@@ -394,7 +394,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
             )}
           </div>
           <div className="flex items-center gap-2 text-xs min-w-0">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: stall?.shift ? '#059669' : 'var(--danger)' }} />
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: stall?.shift ? 'var(--success)' : 'var(--danger)' }} />
             <span style={{ color: 'var(--text-secondary)' }}>
               {stall?.shift ? <>Kasir buka · kas awal <b>{rupiah(stall.shift.openingBalance)}</b> · saldo Dompet Lapak <b>{rupiah(stall.walletBalance)}</b></> : 'Kasir belum dibuka'}
             </span>
@@ -429,7 +429,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
                 <input className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }} placeholder="Cari barang atau penitip…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
               <Tooltip label="Scan barcode / QR produk">
-                <button onClick={() => setScanOpen(true)} disabled={!stall?.shift} className="btn-ghost p-0 flex items-center justify-center flex-shrink-0 disabled:opacity-40" style={{ height: 34, width: 34 }}><ScanLine size={15} /></button>
+                <button aria-label="Scan barcode / QR produk" onClick={() => setScanOpen(true)} disabled={!stall?.shift} className="btn-ghost p-0 flex items-center justify-center flex-shrink-0 disabled:opacity-40" style={{ height: 34, width: 34 }}><ScanLine size={15} /></button>
               </Tooltip>
             </div>
             <div className="inline-flex rounded-xl overflow-x-auto no-scrollbar border self-start" style={{ borderColor: 'var(--border)' }}>
@@ -522,7 +522,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
               <button onClick={() => {
                 if (!done.customerPhone) toast.error('Nomor WhatsApp pelanggan tidak diisi — pilih kontaknya manual di WhatsApp.');
                 window.open(waLink(done.customerPhone, receiptMessage(done, store.name, done.customerName || undefined)), '_blank', 'noopener');
-              }} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', color: '#059669' }}><MessageCircle size={14} /> WhatsApp</button>
+              }} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', color: 'var(--success)' }}><MessageCircle size={14} /> WhatsApp</button>
               <button onClick={() => setDone(null)} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Transaksi Baru</button>
             </>
           )}>
@@ -530,7 +530,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Total</p>
             <p className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{rupiah(done.total)}</p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{PAY_LABEL[done.paymentMethod]}{done.paymentMethod === 'cash' ? ` · diterima ${rupiah(done.amountPaid)}` : ''}</p>
-            {done.paymentMethod === 'cash' && <p className="text-lg font-bold" style={{ color: '#059669' }}>Kembalian {rupiah(done.changeAmount)}</p>}
+            {done.paymentMethod === 'cash' && <p className="text-lg font-bold" style={{ color: 'var(--success)' }}>Kembalian {rupiah(done.changeAmount)}</p>}
           </div>
         </ModalShell>
       )}
@@ -548,7 +548,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{new Date(h.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · ± {rupiah(sum)}</p>
                 </div>
                 <button onClick={() => resumeHeld(h)} className="btn-primary text-xs flex-shrink-0" style={{ height: 32 }}>Lanjutkan</button>
-                <button onClick={() => dropHeld(h)} className="btn-ghost p-2 flex-shrink-0" style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
+                <button aria-label="Buang pesanan ditahan" onClick={() => dropHeld(h)} className="btn-ghost p-2 flex-shrink-0" style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
               </div>
             );
           })}

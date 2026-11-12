@@ -19,7 +19,9 @@ import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { DateInput } from '@/components/DateTimeInput';
 
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Modal from '@/components/Modal';
 
 interface ReportSection extends MitraDailyReportSection {
   code: string; contactName: string; contactPhone: string; isActive: boolean;
@@ -57,22 +59,21 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const pctText = (n: number | null) => (n === null ? '-' : `${n.toLocaleString('id-ID')}%`);
 
 function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[]; totalLabel?: string }) {
   const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
-  const th = 'px-2.5 py-2 text-[10px] font-bold uppercase text-right whitespace-nowrap';
+  const th = 'px-2.5 py-2 text-[11px] font-bold uppercase text-right whitespace-nowrap';
   const td = 'px-2.5 py-2 text-xs tabular text-right whitespace-nowrap';
   const dash = (n: number) => (n ? n : '-');
-  const dashRp = (n: number) => (n ? rupiah(n) : '-');
+  const dashRp = (n: number) => (n ? formatRp(n) : '-');
   return (
     <div className="card overflow-x-auto" style={{ borderColor: 'var(--border-2)' }}>
       <table className="w-full" style={{ minWidth: 820 }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-            <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
-            <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Produk</th>
+            <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">No</th>
+            <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">Produk</th>
             <th className={th}>Stok Awal</th><th className={th}>Harga Satuan</th><th className={th}>Kirim</th><th className={th}>Nilai Kirim</th>
             <th className={th}>Terjual</th><th className={th}>Nilai Terjual</th><th className={th}>Retur</th><th className={th}>Reject</th>
             <th className={th}>Selisih</th><th className={th}>Stok Akhir</th>
@@ -87,16 +88,16 @@ function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[];
               <td className={td}>{dash(r.jual)}</td><td className={td}>{dashRp(r.nilaiJual)}</td>
               <td className={td} style={r.retur ? { color: 'var(--info, #1D4ED8)', fontWeight: 700 } : undefined}>{dash(r.retur)}</td>
               <td className={td} style={r.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(r.reject)}</td>
-              <td className={td} style={r.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{r.selisih ? rupiah(r.selisih) : '-'}</td>
+              <td className={td} style={r.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{r.selisih ? formatRp(r.selisih) : '-'}</td>
               <td className={`${td} font-bold`}>{r.stokAkhir}</td>
             </tr>
           ))}
           <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
             <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">{totalLabel}</td><td className={`${td} font-bold`}>{sum('stokAwal')}</td><td className="px-2.5 py-2" />
-            <td className={`${td} font-bold`}>{sum('kirim')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiKirim'))}</td>
-            <td className={`${td} font-bold`}>{sum('jual')}</td><td className={`${td} font-bold`}>{rupiah(sum('nilaiJual'))}</td>
+            <td className={`${td} font-bold`}>{sum('kirim')}</td><td className={`${td} font-bold`}>{formatRp(sum('nilaiKirim'))}</td>
+            <td className={`${td} font-bold`}>{sum('jual')}</td><td className={`${td} font-bold`}>{formatRp(sum('nilaiJual'))}</td>
             <td className={`${td} font-bold`}>{sum('retur')}</td><td className={`${td} font-bold`}>{sum('reject')}</td>
-            <td className={`${td} font-bold`}>{rupiah(sum('selisih'))}</td><td className={`${td} font-bold`}>{sum('stokAkhir')}</td>
+            <td className={`${td} font-bold`}>{formatRp(sum('selisih'))}</td><td className={`${td} font-bold`}>{sum('stokAkhir')}</td>
           </tr>
         </tbody>
       </table>
@@ -317,19 +318,19 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     <div className="grid grid-cols-5 gap-2 text-center flex-shrink-0" style={{ minWidth: 290 }}>
       {([['Kirim', s.totals.kirim], ['Jual', s.totals.jual], ['Retur', s.totals.retur], ['Reject', s.totals.reject], ['Stok', s.currentStock]] as const).map(([label, val]) => (
         <div key={label}>
-          <p className="text-[9px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>{label}</p>
+          <p className="text-[11px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>{label}</p>
           <p className="text-sm font-bold tabular" style={{ color: label === 'Stok' ? 'var(--accent)' : 'var(--text-primary)' }}>{val}</p>
         </div>
       ))}
-      <p className="col-span-5 text-[10px] tabular text-left mt-0.5" style={{ color: 'var(--text-muted)' }}>
-        Kirim {rupiah(s.totals.nilaiKirim)} · Terjual {rupiah(s.totals.nilaiJual)} · Selisih <b style={{ color: s.totals.selisih < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{rupiah(s.totals.selisih)}</b>
+      <p className="col-span-5 text-[11px] tabular text-left mt-0.5" style={{ color: 'var(--text-muted)' }}>
+        Kirim {formatRp(s.totals.nilaiKirim)} · Terjual {formatRp(s.totals.nilaiJual)} · Selisih <b style={{ color: s.totals.selisih < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{formatRp(s.totals.selisih)}</b>
       </p>
     </div>
   );
   const badges = (s: ReportSection) => (
     <>
       {s.code && (
-        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
+        <span className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded"
           style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{s.code}</span>
       )}
       {!s.isActive && <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }}>Nonaktif</span>}
@@ -338,7 +339,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
   );
   const previewButton = (s: ReportSection) => (
     <Tooltip label="Lihat laporan">
-      <button onClick={() => setPreviewId(s.locationId)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Eye size={14} /></button>
+      <button aria-label="Lihat laporan" onClick={() => setPreviewId(s.locationId)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Eye size={14} /></button>
     </Tooltip>
   );
 
@@ -357,9 +358,9 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       {/* Ringkasan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { icon: <Send size={16} />, label: `Total Kirim · ${sum('kirim')} pcs`, val: rupiah(sum('nilaiKirim')), color: 'var(--accent)', bg: 'var(--accent-bg)' },
-          { icon: <ShoppingBag size={16} />, label: `Total Terjual · ${sum('jual')} pcs`, val: rupiah(sum('nilaiJual')), color: 'var(--success)', bg: 'var(--success-bg)' },
-          { icon: <Scale size={16} />, label: `Selisih (Kirim - Terjual) · ${pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)} terealisasi`, val: rupiah(sum('selisih')), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
+          { icon: <Send size={16} />, label: `Total Kirim · ${sum('kirim')} pcs`, val: formatRp(sum('nilaiKirim')), color: 'var(--accent)', bg: 'var(--accent-bg)' },
+          { icon: <ShoppingBag size={16} />, label: `Total Terjual · ${sum('jual')} pcs`, val: formatRp(sum('nilaiJual')), color: 'var(--success)', bg: 'var(--success-bg)' },
+          { icon: <Scale size={16} />, label: `Selisih (Kirim - Terjual) · ${pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)} terealisasi`, val: formatRp(sum('selisih')), color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
           { icon: <CalendarCheck size={16} />, label: 'Mitra Ada Aktivitas', val: `${activeCount} / ${filtered.length}`, color: 'var(--text-secondary)', bg: 'var(--surface-2)' },
         ].map((c, i) => (
           <div key={i} className="card p-4 flex items-center gap-3">
@@ -393,13 +394,13 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
         <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}><CalendarDays size={13} /> Periode laporan</span>
         <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Dari <b style={{ color: 'var(--text-primary)' }}>{describePeriod(from, to).fromLong}</b></span>
         <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Sampai <b style={{ color: 'var(--text-primary)' }}>{describePeriod(from, to).toLong}</b></span>
-        <span className="badge badge-gray text-[10px]">{describePeriod(from, to).days} hari</span>
+        <span className="badge badge-gray text-[11px]">{describePeriod(from, to).days} hari</span>
       </div>
 
       {/* Header: filter + search + aksi */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="w-full sm:w-[170px] flex-shrink-0">
-          <FilterSelect value={statusFilter} onChange={v => { setStatusFilter(v); resetPage(); }} height={HEADER_BTN_H} searchPlaceholder="Cari status…" options={statusOptions} />
+          <FilterSelect searchable={false} value={statusFilter} onChange={v => { setStatusFilter(v); resetPage(); }} height={HEADER_BTN_H} options={statusOptions} />
         </div>
         <div className="flex flex-row items-center gap-2 sm:gap-3 sm:flex-1">
           <div className="relative flex-1 min-w-0">
@@ -466,11 +467,11 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               <table className="w-full" style={{ minWidth: 1080 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                    <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">No</th>
+                    <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">No</th>
                     <th className="px-1 py-2" style={{ width: 28 }} />
-                    <th className="px-2.5 py-2 text-[10px] font-bold uppercase text-left">Mitra</th>
+                    <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">Mitra</th>
                     {['Stok Awal', 'Kirim', 'Nilai Kirim', 'Terjual', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih', 'Stok Akhir'].map(h => (
-                      <th key={h} className="px-2.5 py-2 text-[10px] font-bold uppercase text-right whitespace-nowrap"
+                      <th key={h} className="px-2.5 py-2 text-[11px] font-bold uppercase text-right whitespace-nowrap"
                         style={h === 'Retur' ? { color: '#1D4ED8' } : h === 'Reject' ? { color: 'var(--danger)' } : undefined}>{h}</th>
                     ))}
                     <th className="px-2.5 py-2" />
@@ -497,18 +498,18 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                         </td>
                         <td className={td}>{s.stokAwalPeriode}</td>
                         <td className={td}>{dash(s.totals.kirim)}</td>
-                        <td className={td}>{s.totals.nilaiKirim ? rupiah(s.totals.nilaiKirim) : '-'}</td>
+                        <td className={td}>{s.totals.nilaiKirim ? formatRp(s.totals.nilaiKirim) : '-'}</td>
                         <td className={td}>{dash(s.totals.jual)}</td>
-                        <td className={td}>{s.totals.nilaiJual ? rupiah(s.totals.nilaiJual) : '-'}</td>
+                        <td className={td}>{s.totals.nilaiJual ? formatRp(s.totals.nilaiJual) : '-'}</td>
                         <td className={td} style={s.totals.retur ? { color: '#1D4ED8', fontWeight: 700 } : undefined}>{dash(s.totals.retur)}</td>
                         <td className={td} style={s.totals.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(s.totals.reject)}</td>
-                        <td className={td} style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? rupiah(s.totals.selisih) : '-'}</td>
+                        <td className={td} style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? formatRp(s.totals.selisih) : '-'}</td>
                         <td className={`${td} font-bold`}>{s.stokAkhirPeriode}</td>
                         <td className="px-2.5 py-2.5">
                           <div className="flex items-center gap-1 justify-end">
                             {previewButton(s)}
                             <Tooltip label="PDF mitra ini">
-                              <button onClick={() => exportPdf([s], s.locationName)} disabled={exportingPdf} className="btn-ghost p-2"><PdfIcon size={14} /></button>
+                              <button aria-label="PDF mitra ini" onClick={() => exportPdf([s], s.locationName)} disabled={exportingPdf} className="btn-ghost p-2"><PdfIcon size={14} /></button>
                             </Tooltip>
                           </div>
                         </td>
@@ -519,8 +520,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                     <td className="px-2.5 py-2.5" /><td className="px-1 py-2.5" />
                     <td className="px-2.5 py-2.5 text-xs font-bold">Total ({filtered.length} mitra)</td>
                     {[
-                      filtered.reduce((a, s) => a + s.stokAwalPeriode, 0), sum('kirim'), rupiah(sum('nilaiKirim')), sum('jual'), rupiah(sum('nilaiJual')),
-                      sum('retur'), sum('reject'), rupiah(sum('selisih')), filtered.reduce((a, s) => a + s.stokAkhirPeriode, 0),
+                      filtered.reduce((a, s) => a + s.stokAwalPeriode, 0), sum('kirim'), formatRp(sum('nilaiKirim')), sum('jual'), formatRp(sum('nilaiJual')),
+                      sum('retur'), sum('reject'), formatRp(sum('selisih')), filtered.reduce((a, s) => a + s.stokAkhirPeriode, 0),
                     ].map((v, i) => <td key={i} className="px-2.5 py-2.5 text-xs tabular text-right font-bold whitespace-nowrap">{v}</td>)}
                     <td />
                   </tr>
@@ -551,7 +552,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                       <div className="flex items-center gap-1">
                         {previewButton(s)}
                         <Tooltip label="PDF mitra ini">
-                          <button onClick={() => exportPdf([s], s.locationName)} disabled={exportingPdf} className="btn-ghost p-1.5"><PdfIcon size={14} /></button>
+                          <button aria-label="PDF mitra ini" onClick={() => exportPdf([s], s.locationName)} disabled={exportingPdf} className="btn-ghost p-1.5"><PdfIcon size={14} /></button>
                         </Tooltip>
                       </div>
                     </div>
@@ -570,7 +571,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
                   </Tooltip>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
@@ -583,7 +584,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                       : <button key={n} onClick={() => goPage(n as number)} className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
                           style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>{n}</button>)}
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
                   </Tooltip>
                 </div>
               )}
@@ -615,7 +616,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
               <thead>
                 <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                   {['No', 'Mitra', 'Total Kirim', 'Total Terjual', 'Selisih', '% Real.', 'Stok'].map((h, i) => (
-                    <th key={h} className={`px-2.5 py-2 text-[10px] font-bold uppercase ${i < 2 ? 'text-left' : 'text-right'}`}>{h}</th>
+                    <th key={h} className={`px-2.5 py-2 text-[11px] font-bold uppercase ${i < 2 ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -624,18 +625,18 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                   <tr key={s.locationId} style={{ borderTop: '1px solid var(--border-2)' }}>
                     <td className="px-2.5 py-2 text-xs tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
                     <td className="px-2.5 py-2 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</td>
-                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiKirim ? rupiah(s.totals.nilaiKirim) : '-'}</td>
-                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiJual ? rupiah(s.totals.nilaiJual) : '-'}</td>
-                    <td className="px-2.5 py-2 text-xs tabular text-right" style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? rupiah(s.totals.selisih) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiKirim ? formatRp(s.totals.nilaiKirim) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiJual ? formatRp(s.totals.nilaiJual) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right" style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? formatRp(s.totals.selisih) : '-'}</td>
                     <td className="px-2.5 py-2 text-xs tabular text-right">{pctText(s.realisasiPct)}</td>
                     <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{s.currentStock}</td>
                   </tr>
                 ))}
                 <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
                   <td className="px-2.5 py-2" /><td className="px-2.5 py-2 text-xs font-bold">Total</td>
-                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{rupiah(sum('nilaiKirim'))}</td>
-                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{rupiah(sum('nilaiJual'))}</td>
-                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{rupiah(sum('selisih'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{formatRp(sum('nilaiKirim'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{formatRp(sum('nilaiJual'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{formatRp(sum('selisih'))}</td>
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)}</td>
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{filtered.reduce((a, s) => a + s.currentStock, 0)}</td>
                 </tr>
@@ -671,99 +672,97 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
 
       {/* Preview laporan satu mitra */}
       {previewSection && (
-        <div className="modal-overlay" onClick={() => setPreviewId(null)}>
-          <div className="modal-sheet modal-lg" style={{ maxWidth: 1120 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Store size={17} /></div>
-                <div>
-                  <p className="modal-title">{previewSection.locationName}</p>
-                  <p className="modal-subtitle">Laporan harian · {periodText(from, to)}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Tooltip label="Export Excel">
-                  <button onClick={() => exportExcel([previewSection], previewSection.locationName)} disabled={exportingExcel} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
-                    {exportingExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
-                  </button>
-                </Tooltip>
-                <Tooltip label="PDF ringkasan saja">
-                  <button onClick={() => exportPdf([previewSection], previewSection.locationName, true)} disabled={exportingPdf} className="h-8 px-2 rounded-lg flex items-center gap-1 text-[11px] font-bold flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
-                    <PdfIcon size={13} /> Ringkasan
-                  </button>
-                </Tooltip>
-                <Tooltip label="Download PDF">
-                  <button onClick={() => exportPdf([previewSection], previewSection.locationName)} disabled={exportingPdf} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
-                    {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
-                  </button>
-                </Tooltip>
-                <Tooltip label="Tutup"><button onClick={() => setPreviewId(null)} className="modal-close"><X size={14} /></button></Tooltip>
+        <Modal onClose={() => setPreviewId(null)} className="modal-lg" style={{ maxWidth: 1120 }}>
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Store size={17} /></div>
+              <div>
+                <p className="modal-title">{previewSection.locationName}</p>
+                <p className="modal-subtitle">Laporan harian · {periodText(from, to)}</p>
               </div>
             </div>
-            <div className="modal-body">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
-                <div className="p-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Lokasi / Mitra</p>
-                  <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{previewSection.locationName}{previewSection.code ? ` · ${previewSection.code}` : ''}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{previewSection.days.length} hari ada aktivitas · {previewSection.products.length} produk</p>
-                </div>
-                <div className="p-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Periode Laporan</p>
-                  <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>Dari: {describePeriod(from, to).fromLong}</p>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Sampai: {describePeriod(from, to).toLong}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Lama periode: {describePeriod(from, to).days} hari</p>
-                </div>
-              </div>
-
-              <p className="text-xs font-bold mb-2" style={{ color: 'var(--accent)' }}>Rincian per hari</p>
-              <DayTables section={previewSection} />
-
-              {/* Ringkasan — bagian terpisah di paling bawah (urutan sama dengan PDF) */}
-              <button type="button" onClick={() => setPreviewSummaryOpen(o => !o)} aria-expanded={previewSummaryOpen}
-                className="mt-6 w-full rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left" style={{ background: 'var(--text-primary)', color: '#fff' }}>
-                <span className="text-xs font-bold tracking-wide flex items-center gap-2">
-                  <ChevronRight size={14} style={{ transform: previewSummaryOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
-                  RINGKASAN · {previewSection.locationName.toUpperCase()}
-                </span>
-                <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
-              </button>
-              {previewSummaryOpen && <>
-              {previewSection.days.length > 1 && (
-                <div className="mt-3">
-                  <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Produk selama periode ({previewSection.products.length} produk)</p>
-                  <ProductTable rows={previewSection.products} totalLabel="Total periode" />
-                </div>
-              )}
-              <div className="mt-4 ml-auto rounded-xl p-4" style={{ background: 'var(--accent-bg)', maxWidth: 440 }}>
-                {([
-                  ['Total Kirim', `${previewSection.totals.kirim} pcs · ${rupiah(previewSection.totals.nilaiKirim)}`, undefined],
-                  ['Total Terjual', `${previewSection.totals.jual} pcs · ${rupiah(previewSection.totals.nilaiJual)}`, 'var(--success)'],
-                  ['Total Retur', `${previewSection.totals.retur} pcs · ${rupiah(previewSection.products.reduce((a, r) => a + r.retur * r.harga, 0))}`, '#1D4ED8'],
-                  ['Total Reject', `${previewSection.totals.reject} pcs · ${rupiah(previewSection.products.reduce((a, r) => a + r.reject * r.harga, 0))}`, 'var(--danger)'],
-                  ['% Terealisasi (terjual / kirim)', pctText(previewSection.realisasiPct), undefined],
-                  ['Stok Awal Periode', `${previewSection.stokAwalPeriode} pcs`, undefined],
-                  ['Stok Akhir Periode', `${previewSection.stokAkhirPeriode} pcs`, undefined],
-                  ['Stok Saat Ini', `${previewSection.currentStock} pcs · ${rupiah(previewSection.currentStockValue)}`, undefined],
-                ] as const).map(([label, val, color]) => (
-                  <div key={label} className="flex justify-between gap-3 py-0.5 text-xs">
-                    <span style={{ color: color ?? 'var(--text-muted)' }}>{label}</span>
-                    <span className="font-bold tabular" style={{ color: color ?? 'var(--text-primary)' }}>{val}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between gap-3 mt-2 pt-2 items-baseline" style={{ borderTop: '1px solid var(--border-2)' }}>
-                  <span className="text-sm font-bold">Selisih (Kirim - Terjual)</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: previewSection.totals.selisih < 0 ? 'var(--danger)' : 'var(--accent)' }}>{rupiah(previewSection.totals.selisih)}</span>
-                </div>
-              </div>
-              </>}
-              <p className="text-[11px] mt-4" style={{ color: 'var(--text-muted)' }}>
-                Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
-              </p>
+            <div className="flex items-center gap-1.5">
+              <Tooltip label="Export Excel">
+                <button onClick={() => exportExcel([previewSection], previewSection.locationName)} disabled={exportingExcel} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
+                  {exportingExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="PDF ringkasan saja">
+                <button onClick={() => exportPdf([previewSection], previewSection.locationName, true)} disabled={exportingPdf} className="h-8 px-2 rounded-lg flex items-center gap-1 text-[11px] font-bold flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
+                  <PdfIcon size={13} /> Ringkasan
+                </button>
+              </Tooltip>
+              <Tooltip label="Download PDF">
+                <button onClick={() => exportPdf([previewSection], previewSection.locationName)} disabled={exportingPdf} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)' }}>
+                  {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="Tutup"><button onClick={() => setPreviewId(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
             </div>
           </div>
-        </div>
+          <div className="modal-body">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
+              <div className="p-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <p className="text-[11px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Lokasi / Mitra</p>
+                <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{previewSection.locationName}{previewSection.code ? ` · ${previewSection.code}` : ''}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{previewSection.days.length} hari ada aktivitas · {previewSection.products.length} produk</p>
+              </div>
+              <div className="p-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <p className="text-[11px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Periode Laporan</p>
+                <p className="text-sm font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>Dari: {describePeriod(from, to).fromLong}</p>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Sampai: {describePeriod(from, to).toLong}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Lama periode: {describePeriod(from, to).days} hari</p>
+              </div>
+            </div>
+
+            <p className="text-xs font-bold mb-2" style={{ color: 'var(--accent)' }}>Rincian per hari</p>
+            <DayTables section={previewSection} />
+
+            {/* Ringkasan — bagian terpisah di paling bawah (urutan sama dengan PDF) */}
+            <button type="button" onClick={() => setPreviewSummaryOpen(o => !o)} aria-expanded={previewSummaryOpen}
+              className="mt-6 w-full rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-left" style={{ background: 'var(--text-primary)', color: '#fff' }}>
+              <span className="text-xs font-bold tracking-wide flex items-center gap-2">
+                <ChevronRight size={14} style={{ transform: previewSummaryOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                RINGKASAN · {previewSection.locationName.toUpperCase()}
+              </span>
+              <span className="text-[11px] opacity-80">{periodText(from, to)}</span>
+            </button>
+            {previewSummaryOpen && <>
+            {previewSection.days.length > 1 && (
+              <div className="mt-3">
+                <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--accent)' }}>Produk selama periode ({previewSection.products.length} produk)</p>
+                <ProductTable rows={previewSection.products} totalLabel="Total periode" />
+              </div>
+            )}
+            <div className="mt-4 ml-auto rounded-xl p-4" style={{ background: 'var(--accent-bg)', maxWidth: 440 }}>
+              {([
+                ['Total Kirim', `${previewSection.totals.kirim} pcs · ${formatRp(previewSection.totals.nilaiKirim)}`, undefined],
+                ['Total Terjual', `${previewSection.totals.jual} pcs · ${formatRp(previewSection.totals.nilaiJual)}`, 'var(--success)'],
+                ['Total Retur', `${previewSection.totals.retur} pcs · ${formatRp(previewSection.products.reduce((a, r) => a + r.retur * r.harga, 0))}`, '#1D4ED8'],
+                ['Total Reject', `${previewSection.totals.reject} pcs · ${formatRp(previewSection.products.reduce((a, r) => a + r.reject * r.harga, 0))}`, 'var(--danger)'],
+                ['% Terealisasi (terjual / kirim)', pctText(previewSection.realisasiPct), undefined],
+                ['Stok Awal Periode', `${previewSection.stokAwalPeriode} pcs`, undefined],
+                ['Stok Akhir Periode', `${previewSection.stokAkhirPeriode} pcs`, undefined],
+                ['Stok Saat Ini', `${previewSection.currentStock} pcs · ${formatRp(previewSection.currentStockValue)}`, undefined],
+              ] as const).map(([label, val, color]) => (
+                <div key={label} className="flex justify-between gap-3 py-0.5 text-xs">
+                  <span style={{ color: color ?? 'var(--text-muted)' }}>{label}</span>
+                  <span className="font-bold tabular" style={{ color: color ?? 'var(--text-primary)' }}>{val}</span>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3 mt-2 pt-2 items-baseline" style={{ borderTop: '1px solid var(--border-2)' }}>
+                <span className="text-sm font-bold">Selisih (Kirim - Terjual)</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: previewSection.totals.selisih < 0 ? 'var(--danger)' : 'var(--accent)' }}>{formatRp(previewSection.totals.selisih)}</span>
+              </div>
+            </div>
+            </>}
+            <p className="text-[11px] mt-4" style={{ color: 'var(--text-muted)' }}>
+              Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
+            </p>
+          </div>
+        </Modal>
       )}
     </div>
   );

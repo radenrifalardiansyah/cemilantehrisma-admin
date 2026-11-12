@@ -1,5 +1,6 @@
 'use client';
 
+import BulkBar from '@/components/BulkBar';
 import { useEffect, useState } from 'react';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import {
@@ -22,7 +23,9 @@ import type { Role, Action } from '@/types/rbac';
 import PageLoader from '@/components/PageLoader';
 import ImageUploadBox from '@/components/ImageUploadBox';
 
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 interface AppUser {
   username: string; email: string | null; role: string; createdAt?: { seconds: number }; twoFactor?: boolean;
@@ -490,14 +493,14 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {can('edit') && u.twoFactor && !self && (
                           <Tooltip label="Reset 2FA">
-                            <button onClick={() => resetTwoFactor(u)} className="btn-ghost p-2" style={{ color: 'var(--text-muted)' }}>
+                            <button aria-label="Reset 2FA" onClick={() => resetTwoFactor(u)} className="btn-ghost p-2" style={{ color: 'var(--text-muted)' }}>
                               <ShieldCheck size={13} />
                             </button>
                           </Tooltip>
                         )}
                         {can('edit') && (
                           <Tooltip label="Edit">
-                            <button onClick={() => openEdit(u)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <button aria-label="Edit" onClick={() => openEdit(u)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                               <Pencil size={13} />
                             </button>
                           </Tooltip>
@@ -546,14 +549,14 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                     <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                       {can('edit') && u.twoFactor && !self && (
                         <Tooltip label="Reset 2FA">
-                          <button onClick={() => resetTwoFactor(u)} className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }}>
+                          <button aria-label="Reset 2FA" onClick={() => resetTwoFactor(u)} className="btn-ghost p-1.5" style={{ color: 'var(--text-muted)' }}>
                             <ShieldCheck size={12} />
                           </button>
                         </Tooltip>
                       )}
                       {can('edit') && (
                         <Tooltip label="Edit">
-                          <button onClick={() => openEdit(u)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEdit(u)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                             <Pencil size={12} />
                           </button>
                         </Tooltip>
@@ -584,7 +587,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -605,7 +608,7 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -618,132 +621,101 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
 
       {/* Bulk action bar */}
       {can('delete') && selected.size > 0 && (
-        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
-          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
-            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
-            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportExcel(users.filter(u => selected.has(u.username)), 'terpilih')} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
-            </button>
-            <button onClick={() => exportPdf(users.filter(u => selected.has(u.username)), 'terpilih')} disabled={exportingPdf}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
-              PDF
-            </button>
-            <button onClick={bulkDelete} disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'var(--danger)', color: '#fff' }}>
-              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Hapus
-            </button>
-            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
-              Batal
-            </button>
-          </div>
-        </div>
+        <BulkBar count={selected.size} onExportExcel={() => exportExcel(users.filter(u => selected.has(u.username)), 'terpilih')} exporting={exporting}
+          onExportPdf={() => exportPdf(users.filter(u => selected.has(u.username)), 'terpilih')} exportingPdf={exportingPdf}
+          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())} />
       )}
 
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ShieldCheck size={17} /></div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Pengguna' : 'Edit Pengguna'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Buat akun admin baru' : `Edit: ${editing.username}`}</p>
-                </div>
+        <Modal onClose={closeEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ShieldCheck size={17} /></div>
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Pengguna' : 'Edit Pengguna'}</p>
+                <p className="modal-subtitle">{isNew ? 'Buat akun admin baru' : `Edit: ${editing.username}`}</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="field-label">Username <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input value={editing.username} disabled={!isNew}
-                    onChange={e => setEditing({ ...editing, username: e.target.value })}
-                    className="input" placeholder="cth: budi" autoFocus={isNew} />
-                </div>
-                <div>
-                  <label className="field-label">Nama Lengkap</label>
-                  <input value={editing.fullName} onChange={e => setEditing({ ...editing, fullName: e.target.value })}
-                    className="input" placeholder="cth: Budi Santoso" maxLength={100} />
-                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Nama ini yang tampil di dokumen PDF (PO, GR, DO) sebagai pembuat/penyetuju. Kosong = pakai username.</p>
-                </div>
-                <div>
-                  <label className="field-label">Tanda Tangan</label>
-                  <div className="flex items-start gap-3">
-                    <ImageUploadBox
-                      src={editing.signature || undefined}
-                      alt="Tanda tangan"
-                      uploading={signatureUploading}
-                      onSelect={f => uploadSignature(f)}
-                      onRemove={() => setEditing({ ...editing, signature: '' })}
-                      fit="contain"
-                      size={80}
-                      emptyText="Upload"
-                      crop
-                      cropTitle="Edit Tanda Tangan"
-                    />
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tampil di atas nama pada kolom tanda tangan dokumen. Pakai foto/scan tanda tangan berlatar putih polos atau PNG transparan.</p>
-                  </div>
-                </div>
-                <div>
-                  <label className="field-label">Email (opsional)</label>
-                  <input value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })}
-                    className="input" placeholder="cth: budi@email.com" />
-                </div>
-                <div>
-                  <label className="field-label">Role <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchableSelect
-                    value={editing.role}
-                    disabled={isSelf(editing.username)}
-                    onChange={role => setEditing({ ...editing, role })}
-                    options={roles.map(r => ({ value: r.id, label: r.name }))}
-                    placeholder="— Pilih role —"
-                    searchPlaceholder="Cari role…"
+            <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Field label="Username" required>
+                <input value={editing.username} disabled={!isNew}
+                  onChange={e => setEditing({ ...editing, username: e.target.value })}
+                  className="input" placeholder="cth: budi" autoFocus={isNew} />
+              </Field>
+              <Field label="Nama Lengkap">
+                <input value={editing.fullName} onChange={e => setEditing({ ...editing, fullName: e.target.value })}
+                  className="input" placeholder="cth: Budi Santoso" maxLength={100} />
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Nama ini yang tampil di dokumen PDF (PO, GR, DO) sebagai pembuat/penyetuju. Kosong = pakai username.</p>
+              </Field>
+              <div>
+                <label className="field-label">Tanda Tangan</label>
+                <div className="flex items-start gap-3">
+                  <ImageUploadBox
+                    src={editing.signature || undefined}
+                    alt="Tanda tangan"
+                    uploading={signatureUploading}
+                    onSelect={f => uploadSignature(f)}
+                    onRemove={() => setEditing({ ...editing, signature: '' })}
+                    fit="contain"
+                    size={80}
+                    emptyText="Upload"
+                    crop
+                    cropTitle="Edit Tanda Tangan"
                   />
-                  {isSelf(editing.username) && (
-                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Anda tidak dapat mengubah role Anda sendiri.</p>
-                  )}
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tampil di atas nama pada kolom tanda tangan dokumen. Pakai foto/scan tanda tangan berlatar putih polos atau PNG transparan.</p>
                 </div>
-                <div>
-                  <label className="field-label">{isNew ? 'Password' : 'Password baru (opsional)'} {isNew && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
-                  <div className="relative">
-                    <input type={showPassword ? 'text' : 'password'} value={editing.password}
-                      onChange={e => setEditing({ ...editing, password: e.target.value })}
-                      className="input" style={{ paddingRight: 40 }}
-                      placeholder={isNew ? 'Password akun' : 'Kosongkan jika tidak diubah'} />
-                    <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
-                      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                {error && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {error}
-                  </p>
-                )}
               </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={save} disabled={saving}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Pengguna'}
-              </button>
+              <Field label="Email (opsional)">
+                <input value={editing.email} onChange={e => setEditing({ ...editing, email: e.target.value })}
+                  className="input" placeholder="cth: budi@email.com" />
+              </Field>
+              <Field label="Role" required>
+                <SearchableSelect
+                  value={editing.role}
+                  disabled={isSelf(editing.username)}
+                  onChange={role => setEditing({ ...editing, role })}
+                  options={roles.map(r => ({ value: r.id, label: r.name }))}
+                  placeholder="— Pilih role —"
+                  searchPlaceholder="Cari role…"
+                />
+                {isSelf(editing.username) && (
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Anda tidak dapat mengubah role Anda sendiri.</p>
+                )}
+              </Field>
+              <div>
+                <label className="field-label">{isNew ? 'Password' : 'Password baru (opsional)'} {isNew && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
+                <div className="relative">
+                  <input type={showPassword ? 'text' : 'password'} value={editing.password}
+                    onChange={e => setEditing({ ...editing, password: e.target.value })}
+                    className="input" style={{ paddingRight: 40 }}
+                    placeholder={isNew ? 'Password akun' : 'Kosongkan jika tidak diubah'} />
+                  <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+              {error && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {error}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={save} disabled={saving}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Pengguna'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

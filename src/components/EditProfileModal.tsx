@@ -6,6 +6,8 @@ import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import TwoFactorSection from '@/components/TwoFactorSection';
 import ImageUploadBox from '@/components/ImageUploadBox';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 // Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
 type SerializedTimestamp = { seconds: number; nanoseconds: number };
@@ -187,172 +189,166 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
+    <Modal onClose={onClose} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
 
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><UserCog size={17} /></div>
-            <div>
-              <p className="modal-title">Edit Profil</p>
-              <p className="modal-subtitle">{username}</p>
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><UserCog size={17} /></div>
+          <div>
+            <p className="modal-title">Edit Profil</p>
+            <p className="modal-subtitle">{username}</p>
+          </div>
+        </div>
+        <Tooltip label="Tutup"><button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+      </div>
+
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          <div className="flex justify-center">
+            <label className="relative cursor-pointer" style={{ opacity: uploading ? 0.6 : 1 }}>
+              <input
+                type="file" accept="image/*" className="hidden" disabled={uploading}
+                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAvatar(f); }}
+              />
+              <div style={{
+                width: 76, height: 76, borderRadius: '50%', overflow: 'hidden',
+                background: 'linear-gradient(135deg, var(--accent), #A84F10)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 26, fontWeight: 800, color: 'white',
+                boxShadow: '0 2px 10px rgba(212,105,30,0.30)',
+              }}>
+                {avatarUrl
+                  ? <img src={avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : username[0].toUpperCase()}
+              </div>
+              <div style={{
+                position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%',
+                background: 'var(--accent)', border: '2px solid var(--surface)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+              }}>
+                {uploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+              </div>
+            </label>
+          </div>
+
+          <Field label="Username">
+            <input value={username} disabled className="input" style={{ opacity: 0.6 }} />
+          </Field>
+
+          <Field label="Role">
+            <input value={role} disabled className="input" style={{ opacity: 0.6 }} />
+          </Field>
+
+          <Field label="Nama Lengkap">
+            <input value={fullName} onChange={e => setFullName(e.target.value)} disabled={!profileLoaded}
+              className="input" placeholder="cth: Budi Santoso" maxLength={100} />
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Tampil di dokumen PDF (PO, GR, DO) sebagai pembuat/penyetuju. Kosong = pakai username.</p>
+          </Field>
+
+          <div>
+            <label className="field-label">Tanda Tangan</label>
+            <div className="flex items-start gap-3">
+              <ImageUploadBox
+                src={signature || undefined}
+                alt="Tanda tangan"
+                uploading={signatureUploading}
+                onSelect={f => uploadSignature(f)}
+                onRemove={() => setSignature('')}
+                fit="contain"
+                size={80}
+                emptyText="Upload"
+                crop
+                cropTitle="Edit Tanda Tangan"
+              />
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tampil di atas nama pada kolom tanda tangan dokumen. Pakai foto/scan tanda tangan berlatar putih polos atau PNG transparan.</p>
             </div>
           </div>
-          <Tooltip label="Tutup"><button onClick={onClose} className="modal-close"><X size={14} /></button></Tooltip>
-        </div>
 
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="Email (opsional)">
+            <input value={emailVal} onChange={e => setEmailVal(e.target.value)}
+              className="input" placeholder="cth: budi@email.com" />
+          </Field>
 
-            <div className="flex justify-center">
-              <label className="relative cursor-pointer" style={{ opacity: uploading ? 0.6 : 1 }}>
+          <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+            <p className="field-label" style={{ marginBottom: 10 }}>Ubah Password (opsional)</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input
+                type={showPassword ? 'text' : 'password'} value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                className="input" placeholder="Password saat ini"
+              />
+              <div className="relative">
                 <input
-                  type="file" accept="image/*" className="hidden" disabled={uploading}
-                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadAvatar(f); }}
+                  type={showPassword ? 'text' : 'password'} value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="input" style={{ paddingRight: 40 }} placeholder="Password baru"
                 />
-                <div style={{
-                  width: 76, height: 76, borderRadius: '50%', overflow: 'hidden',
-                  background: 'linear-gradient(135deg, var(--accent), #A84F10)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 26, fontWeight: 800, color: 'white',
-                  boxShadow: '0 2px 10px rgba(212,105,30,0.30)',
-                }}>
-                  {avatarUrl
-                    ? <img src={avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : username[0].toUpperCase()}
-                </div>
-                <div style={{
-                  position: 'absolute', bottom: -2, right: -2, width: 26, height: 26, borderRadius: '50%',
-                  background: 'var(--accent)', border: '2px solid var(--surface)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-                }}>
-                  {uploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
-                </div>
-              </label>
-            </div>
-
-            <div>
-              <label className="field-label">Username</label>
-              <input value={username} disabled className="input" style={{ opacity: 0.6 }} />
-            </div>
-
-            <div>
-              <label className="field-label">Role</label>
-              <input value={role} disabled className="input" style={{ opacity: 0.6 }} />
-            </div>
-
-            <div>
-              <label className="field-label">Nama Lengkap</label>
-              <input value={fullName} onChange={e => setFullName(e.target.value)} disabled={!profileLoaded}
-                className="input" placeholder="cth: Budi Santoso" maxLength={100} />
-              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Tampil di dokumen PDF (PO, GR, DO) sebagai pembuat/penyetuju. Kosong = pakai username.</p>
-            </div>
-
-            <div>
-              <label className="field-label">Tanda Tangan</label>
-              <div className="flex items-start gap-3">
-                <ImageUploadBox
-                  src={signature || undefined}
-                  alt="Tanda tangan"
-                  uploading={signatureUploading}
-                  onSelect={f => uploadSignature(f)}
-                  onRemove={() => setSignature('')}
-                  fit="contain"
-                  size={80}
-                  emptyText="Upload"
-                  crop
-                  cropTitle="Edit Tanda Tangan"
-                />
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tampil di atas nama pada kolom tanda tangan dokumen. Pakai foto/scan tanda tangan berlatar putih polos atau PNG transparan.</p>
+                <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
+              <input
+                type={showPassword ? 'text' : 'password'} value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className="input" placeholder="Konfirmasi password baru"
+              />
             </div>
+          </div>
 
-            <div>
-              <label className="field-label">Email (opsional)</label>
-              <input value={emailVal} onChange={e => setEmailVal(e.target.value)}
-                className="input" placeholder="cth: budi@email.com" />
-            </div>
+          <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+            <p className="field-label" style={{ marginBottom: 10 }}>Keamanan — Autentikasi 2 Langkah</p>
+            <TwoFactorSection creds={creds} />
+          </div>
 
-            <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
-              <p className="field-label" style={{ marginBottom: 10 }}>Ubah Password (opsional)</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <input
-                  type={showPassword ? 'text' : 'password'} value={currentPassword}
-                  onChange={e => setCurrentPassword(e.target.value)}
-                  className="input" placeholder="Password saat ini"
-                />
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'} value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    className="input" style={{ paddingRight: 40 }} placeholder="Password baru"
-                  />
-                  <button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1}
-                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'} value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  className="input" placeholder="Konfirmasi password baru"
-                />
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
-              <p className="field-label" style={{ marginBottom: 10 }}>Keamanan — Autentikasi 2 Langkah</p>
-              <TwoFactorSection creds={creds} />
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
-              <p className="field-label" style={{ marginBottom: 10 }}>Aktivitas Login</p>
-              {loadingHistory ? (
-                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Memuat riwayat login…</p>
-              ) : (
-                <>
-                  <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                    Login terakhir: <strong>{formatLoginTime(loginHistory?.lastLoginAt)}</strong>
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
-                    {(loginHistory?.history.length ?? 0) === 0 && (
-                      <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Belum ada riwayat login 7 hari terakhir.</p>
-                    )}
-                    {loginHistory?.history.map(h => (
-                      <div key={h.id} style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 12, color: 'var(--text-secondary)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                          <span>{formatLoginTime(h.createdAt)}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>{h.ip ?? '-'}</span>
-                        </div>
-                        {describeUserAgent(h.userAgent) && (
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{describeUserAgent(h.userAgent)}</span>
-                        )}
+          <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+            <p className="field-label" style={{ marginBottom: 10 }}>Aktivitas Login</p>
+            {loadingHistory ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Memuat riwayat login…</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  Login terakhir: <strong>{formatLoginTime(loginHistory?.lastLoginAt)}</strong>
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
+                  {(loginHistory?.history.length ?? 0) === 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Belum ada riwayat login 7 hari terakhir.</p>
+                  )}
+                  {loginHistory?.history.map(h => (
+                    <div key={h.id} style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span>{formatLoginTime(h.createdAt)}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>{h.ip ?? '-'}</span>
                       </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {error && (
-              <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                {error}
-              </p>
+                      {describeUserAgent(h.userAgent) && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{describeUserAgent(h.userAgent)}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
-        </div>
 
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-          <button onClick={save} disabled={saving || uploading || signatureUploading}
-            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-            {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
-          </button>
+          {error && (
+            <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+              {error}
+            </p>
+          )}
         </div>
       </div>
-    </div>
+
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+        <button onClick={save} disabled={saving || uploading || signatureUploading}
+          className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+        </button>
+      </div>
+    </Modal>
   );
 }

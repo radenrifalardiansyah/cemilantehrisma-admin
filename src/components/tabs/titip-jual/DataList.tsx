@@ -57,7 +57,7 @@ export function DetailPanel({ fields, children }: { fields: { label: string; val
 export function RowActions({ onEdit, onDelete, deleting, size = 13 }: { onEdit?: () => void; onDelete?: () => void; deleting?: boolean; size?: number }) {
   return (
     <>
-      {onEdit && <Tooltip label="Edit"><button onClick={onEdit} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Pencil size={size} /></button></Tooltip>}
+      {onEdit && <Tooltip label="Edit"><button onClick={onEdit} aria-label="Edit" className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Pencil size={size} /></button></Tooltip>}
       {onDelete && (
         <Tooltip label="Hapus">
           <button onClick={onDelete} disabled={deleting} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--danger)' }}>
@@ -265,7 +265,7 @@ export default function DataList<T>(p: Props<T>) {
                     {p.actions?.(t)}
                     {p.renderDetail && (
                       <Tooltip label="Lihat detail">
-                        <button onClick={() => setExpandedId(expandedId === id ? null : id)} className="btn-ghost p-2">
+                        <button aria-label="Lihat detail" onClick={() => setExpandedId(expandedId === id ? null : id)} className="btn-ghost p-2">
                           <ChevronRight size={13} style={{ transform: expandedId === id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                         </button>
                       </Tooltip>

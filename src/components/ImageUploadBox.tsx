@@ -147,7 +147,7 @@ export default function ImageUploadBox({
           <>
             {crop && (
               <Tooltip label="Edit foto">
-                <button
+                <button aria-label="Edit foto"
                   type="button" onClick={editExisting}
                   className="absolute bottom-1 left-1 w-6 h-6 rounded-full flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
                   style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}
@@ -167,7 +167,7 @@ export default function ImageUploadBox({
             </Tooltip>
             {onRemove && (
               <Tooltip label="Hapus">
-                <button
+                <button aria-label="Hapus"
                   type="button" onClick={onRemove}
                   className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}

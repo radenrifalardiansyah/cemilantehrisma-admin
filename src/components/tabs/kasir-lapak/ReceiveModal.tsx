@@ -139,7 +139,7 @@ export default function ReceiveModal({ creds, stall, items, onClose, onDone }: {
                                 placeholder="– Produk –" searchPlaceholder="Cari produk…" />
                             </div>
                             <Tooltip label="Hapus baris">
-                              <button onClick={() => setLines(ls => ls.filter((_, i) => i !== idx))} disabled={lines.length === 1}
+                              <button aria-label="Hapus baris" onClick={() => setLines(ls => ls.filter((_, i) => i !== idx))} disabled={lines.length === 1}
                                 className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
                             </Tooltip>
                           </div>

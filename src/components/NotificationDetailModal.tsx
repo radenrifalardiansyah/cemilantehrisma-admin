@@ -2,6 +2,7 @@
 
 import { X } from 'lucide-react';
 import { TYPE_ICON, type NotificationDoc } from '@/components/NotificationBell';
+import Modal from '@/components/Modal';
 
 export const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   order_new: 'Pesanan',
@@ -34,52 +35,50 @@ export default function NotificationDetailModal({ notification, onClose, onOpen 
   const Icon = TYPE_ICON[notification.type] ?? TYPE_ICON.order_new;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
+    <Modal onClose={onClose} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
 
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><Icon size={17} /></div>
-            <div>
-              <p className="modal-title">{notification.title}</p>
-              <p className="modal-subtitle">{TYPE_LABEL[notification.type] ?? 'Notifikasi'}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="modal-close"><X size={14} /></button>
-        </div>
-
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-              {notification.message}
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14, borderRadius: 14, background: 'var(--surface-2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Dibuat oleh</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {notification.actorUsername} ({notification.actorRole})
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Waktu</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>{fullTime(notification)}</span>
-              </div>
-            </div>
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><Icon size={17} /></div>
+          <div>
+            <p className="modal-title">{notification.title}</p>
+            <p className="modal-subtitle">{TYPE_LABEL[notification.type] ?? 'Notifikasi'}</p>
           </div>
         </div>
+        <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+      </div>
 
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-ghost">Tutup</button>
-          {notification.link && (
-            <button onClick={() => onOpen(notification)} className="btn-primary">
-              Lihat {TYPE_LABEL[notification.type] ?? ''}
-            </button>
-          )}
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+            {notification.message}
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14, borderRadius: 14, background: 'var(--surface-2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Dibuat oleh</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {notification.actorUsername} ({notification.actorRole})
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Waktu</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>{fullTime(notification)}</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-ghost">Tutup</button>
+        {notification.link && (
+          <button onClick={() => onOpen(notification)} className="btn-primary">
+            Lihat {TYPE_LABEL[notification.type] ?? ''}
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }

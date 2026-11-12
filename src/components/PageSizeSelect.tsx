@@ -15,14 +15,8 @@ export default function PageSizeSelect({ value, onChange, label = 'Tampilkan' }:
       <select
         value={value === Infinity ? 'all' : value}
         onChange={e => onChange(e.target.value === 'all' ? Infinity : Number(e.target.value))}
-        className="rounded-lg text-xs font-semibold"
-        style={{
-          border: '1.5px solid var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--text-secondary)',
-          padding: '6px 8px',
-          outline: 'none',
-        }}
+        className="input text-xs font-semibold"
+        style={{ width: 'auto', padding: '6px 8px', color: 'var(--text-secondary)', cursor: 'pointer' }}
       >
         {OPTIONS.map(o => (
           <option key={o === Infinity ? 'all' : o} value={o === Infinity ? 'all' : o}>

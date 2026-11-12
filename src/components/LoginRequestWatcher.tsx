@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import type { PendingLoginRequest } from '@/components/chat/ChatWidget';
 import { useToast } from '@/components/Toast';
+import Modal from '@/components/Modal';
 
 interface Props {
   request: PendingLoginRequest | null;
@@ -46,65 +47,63 @@ export default function LoginRequestWatcher({ request, creds, onResolved }: Prop
   if (!request) return null;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 10500 }}>
-      <div className="modal-sheet modal-sm" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><ShieldAlert size={17} /></div>
-            <div>
-              <p className="modal-title">Ada Percobaan Login</p>
-              <p className="modal-subtitle">Seseorang mencoba masuk ke akun Anda</p>
-            </div>
+    <Modal overlayStyle={{ zIndex: 10500 }} className="modal-sm" style={{ maxWidth: 400 }}>
+      <div className="modal-accent" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><ShieldAlert size={17} /></div>
+          <div>
+            <p className="modal-title">Ada Percobaan Login</p>
+            <p className="modal-subtitle">Seseorang mencoba masuk ke akun Anda</p>
           </div>
-        </div>
-        <div className="modal-body">
-          <div style={{ padding: 14, borderRadius: 14, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Perangkat</span>
-              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{request.deviceLabel}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Alamat IP</span>
-              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{request.ip}</span>
-            </div>
-          </div>
-          <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.5 }}>
-            Kalau Anda terima, perangkat itu bisa login dan aktif bersamaan dengan sesi Anda di sini —
-            tidak ada yang logout. Kalau ini bukan Anda, tolak permintaan ini.
-          </p>
-          {rejecting && (
-            <textarea
-              value={rejectReason}
-              onChange={e => setRejectReason(e.target.value)}
-              placeholder="Alasan penolakan (opsional)"
-              className="input"
-              style={{ marginTop: 10, minHeight: 60, resize: 'none', width: '100%' }}
-            />
-          )}
-        </div>
-        <div className="modal-footer">
-          {!rejecting ? (
-            <>
-              <button onClick={() => setRejecting(true)} disabled={busy} className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }}>
-                Tolak
-              </button>
-              <button onClick={() => respond('approve')} disabled={busy} className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                Terima
-              </button>
-            </>
-          ) : (
-            <>
-              <button onClick={() => setRejecting(false)} disabled={busy} className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }}>
-                Batal
-              </button>
-              <button onClick={() => respond('reject')} disabled={busy} className="btn-primary" style={{ flex: 1, justifyContent: 'center', background: 'var(--danger)' }}>
-                Kirim Penolakan
-              </button>
-            </>
-          )}
         </div>
       </div>
-    </div>
+      <div className="modal-body">
+        <div style={{ padding: 14, borderRadius: 14, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Perangkat</span>
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{request.deviceLabel}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Alamat IP</span>
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{request.ip}</span>
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.5 }}>
+          Kalau Anda terima, perangkat itu bisa login dan aktif bersamaan dengan sesi Anda di sini —
+          tidak ada yang logout. Kalau ini bukan Anda, tolak permintaan ini.
+        </p>
+        {rejecting && (
+          <textarea
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            placeholder="Alasan penolakan (opsional)"
+            className="input"
+            style={{ marginTop: 10, minHeight: 60, resize: 'none', width: '100%' }}
+          />
+        )}
+      </div>
+      <div className="modal-footer">
+        {!rejecting ? (
+          <>
+            <button onClick={() => setRejecting(true)} disabled={busy} className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }}>
+              Tolak
+            </button>
+            <button onClick={() => respond('approve')} disabled={busy} className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+              Terima
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => setRejecting(false)} disabled={busy} className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }}>
+              Batal
+            </button>
+            <button onClick={() => respond('reject')} disabled={busy} className="btn-primary" style={{ flex: 1, justifyContent: 'center', background: 'var(--danger)' }}>
+              Kirim Penolakan
+            </button>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }

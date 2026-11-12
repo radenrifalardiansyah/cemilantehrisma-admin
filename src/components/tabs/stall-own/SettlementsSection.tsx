@@ -101,7 +101,7 @@ export default function SettlementsSection({ creds, stalls, can }: OwnSectionPro
         emptyHint="Setoran = ringkasan hasil jualan produk toko di lapak yang ditagih ke lapak, lalu dibayar dari dompet lapak sebagai Pemasukan toko."
         filters={(
           <>
-            <FilterSelect value={statusFilter} onChange={setStatusFilter}
+            <FilterSelect searchable={false} value={statusFilter} onChange={setStatusFilter}
               options={[{ value: '', label: 'Semua status' }, { value: 'unpaid', label: 'Belum dibayar' }, { value: 'paid', label: 'Dibayar' }]} />
             <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
               options={[{ value: '', label: 'Semua lapak' }, ...stalls.map(s => ({ value: s.id, label: s.name }))]} />
@@ -140,7 +140,7 @@ export default function SettlementsSection({ creds, stalls, can }: OwnSectionPro
           <>
             {s.status === 'unpaid' && can('edit') && (
               <Tooltip label="Bayar dari dompet lapak">
-                <button onClick={() => setPaying(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
+                <button aria-label="Bayar dari dompet lapak" onClick={() => setPaying(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
               </Tooltip>
             )}
             {s.status === 'unpaid' && can('delete') && (

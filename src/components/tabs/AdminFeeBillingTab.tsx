@@ -8,6 +8,8 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
 import PageLoader from '@/components/PageLoader';
+import { formatRp, formatDate } from '@/lib/format';
+import Modal from '@/components/Modal';
 
 type Channel = 'online' | 'kasir' | 'consignment' | 'lapak';
 type FeeType = 'percent' | 'fixed' | 'monthly';
@@ -30,8 +32,6 @@ interface InvoiceRecord {
   note: string | null; dueDate: string | null;
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const rateLabel = (rate: { type: FeeType; value: number } | null) => {
   if (!rate) return '–';
@@ -39,11 +39,9 @@ const rateLabel = (rate: { type: FeeType; value: number } | null) => {
   return rate.type === 'percent' ? `${rate.value}%` : formatRp(rate.value);
 };
 
-const fmtDate = (ts: { seconds: number } | null) =>
-  ts ? new Date(ts.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
+const fmtDate = (ts: { seconds: number } | null) => ts ? formatDate(ts.seconds * 1000, 'short') : '–';
 
-const fmtDateTime = (ts: { seconds: number } | null) =>
-  ts ? new Date(ts.seconds * 1000).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–';
+const fmtDateTime = (ts: { seconds: number } | null) => ts ? formatDate(ts.seconds * 1000, 'datetime') : '–';
 
 export default function AdminFeeBillingTab({ creds }: { creds: string }) {
   const toast = useToast();
@@ -97,7 +95,7 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
       periodFrom: inv.periodFrom,
       periodTo: inv.periodTo,
       dueDate: inv.dueDate,
-      generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      generatedAt: formatDate(new Date(), 'longDateTime'),
       status: inv.status,
       note: inv.note,
       paymentInfo,
@@ -148,7 +146,7 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
-        <button onClick={loadInvoices} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+        <button aria-label="Muat ulang" onClick={loadInvoices} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
       </TopbarPortal>
@@ -269,129 +267,125 @@ export default function AdminFeeBillingTab({ creds }: { creds: string }) {
       </div>
 
       {detail && (
-        <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Receipt size={17} /></div>
-                <div>
-                  <p className="modal-title">{detail.invoiceNo}</p>
-                  <p className="modal-subtitle">{detail.periodFrom} – {detail.periodTo}</p>
-                </div>
+        <Modal onClose={() => setDetail(null)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Receipt size={17} /></div>
+              <div>
+                <p className="modal-title">{detail.invoiceNo}</p>
+                <p className="modal-subtitle">{detail.periodFrom} – {detail.periodTo}</p>
               </div>
-              <button onClick={() => setDetail(null)} className="modal-close"><X size={14} /></button>
             </div>
-            <div className="modal-body">
-              {detail.status === 'invoiced' && detail.dueDate && (
-                <p className="text-xs mb-2 font-semibold" style={{ color: detail.dueDate < todayIso ? 'var(--danger)' : 'var(--text-muted)' }}>
-                  Jatuh tempo {fmtDate({ seconds: new Date(detail.dueDate).getTime() / 1000 })}
-                  {detail.dueDate < todayIso ? ' — Terlambat, segera bayar' : ''}
-                </p>
-              )}
-              {detail.status === 'invoiced' && paymentInfo && (paymentInfo.bankName || paymentInfo.accountNumber) && (
-                <div className="rounded-lg px-3 py-2 text-xs mb-3" style={{ background: 'var(--success-bg)', color: 'var(--text-secondary)', borderLeft: '3px solid var(--success)' }}>
-                  <span className="font-bold" style={{ color: 'var(--success)' }}>Transfer ke: </span>
-                  {paymentInfo.bankName} — {paymentInfo.accountNumber} a.n. {paymentInfo.accountHolder}
-                </div>
-              )}
-              {detail.note && (
-                <div className="rounded-lg px-3 py-2 text-xs mb-4" style={{ background: 'var(--accent-bg)', color: 'var(--text-secondary)', borderLeft: '3px solid var(--accent)' }}>
-                  <span className="font-bold" style={{ color: 'var(--accent)' }}>Catatan dari RMedia Solutions: </span>{detail.note}
-                </div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr style={{ background: 'var(--surface-2)' }}>
-                      <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Channel</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
-                      <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Transaksi</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Rate</th>
-                      <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
-                      <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Rincian</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.breakdown.map(b => (
-                      <tr key={b.channel} style={{ borderTop: '1px solid var(--border-2)' }}>
-                        <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>{b.label}</td>
-                        <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(b.revenue)}</td>
-                        <td className="px-4 py-3 text-center tabular" style={{ color: 'var(--text-muted)' }}>{b.transactionCount}</td>
-                        <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-muted)' }}>{rateLabel(b.currentRate)}</td>
-                        <td className="px-4 py-3 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(b.feeAmount)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <button onClick={() => setTxnModalChannel(b.channel)} disabled={b.transactionCount === 0}
-                            className="btn-ghost h-7 px-2.5 text-xs flex items-center gap-1.5 mx-auto" style={{ opacity: b.transactionCount === 0 ? 0.4 : 1 }}>
-                            <ListChecks size={12} /> Lihat
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    <tr style={{ borderTop: '2px solid var(--accent)', background: 'var(--accent-bg)' }}>
-                      <td className="px-4 py-3 font-extrabold" style={{ color: 'var(--text-primary)' }} colSpan={4}>TOTAL BIAYA ADMIN</td>
-                      <td className="px-4 py-3 text-right tabular font-extrabold" style={{ color: 'var(--accent)' }}>{formatRp(detail.totalFee)}</td>
-                      <td />
-                    </tr>
-                  </tbody>
-                </table>
+            <button onClick={() => setDetail(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+          </div>
+          <div className="modal-body">
+            {detail.status === 'invoiced' && detail.dueDate && (
+              <p className="text-xs mb-2 font-semibold" style={{ color: detail.dueDate < todayIso ? 'var(--danger)' : 'var(--text-muted)' }}>
+                Jatuh tempo {fmtDate({ seconds: new Date(detail.dueDate).getTime() / 1000 })}
+                {detail.dueDate < todayIso ? ' — Terlambat, segera bayar' : ''}
+              </p>
+            )}
+            {detail.status === 'invoiced' && paymentInfo && (paymentInfo.bankName || paymentInfo.accountNumber) && (
+              <div className="rounded-lg px-3 py-2 text-xs mb-3" style={{ background: 'var(--success-bg)', color: 'var(--text-secondary)', borderLeft: '3px solid var(--success)' }}>
+                <span className="font-bold" style={{ color: 'var(--success)' }}>Transfer ke: </span>
+                {paymentInfo.bankName} — {paymentInfo.accountNumber} a.n. {paymentInfo.accountHolder}
               </div>
+            )}
+            {detail.note && (
+              <div className="rounded-lg px-3 py-2 text-xs mb-4" style={{ background: 'var(--accent-bg)', color: 'var(--text-secondary)', borderLeft: '3px solid var(--accent)' }}>
+                <span className="font-bold" style={{ color: 'var(--accent)' }}>Catatan dari RMedia Solutions: </span>{detail.note}
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr style={{ background: 'var(--surface-2)' }}>
+                    <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Channel</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
+                    <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Transaksi</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Rate</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
+                    <th className="text-center px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Rincian</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.breakdown.map(b => (
+                    <tr key={b.channel} style={{ borderTop: '1px solid var(--border-2)' }}>
+                      <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text-primary)' }}>{b.label}</td>
+                      <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(b.revenue)}</td>
+                      <td className="px-4 py-3 text-center tabular" style={{ color: 'var(--text-muted)' }}>{b.transactionCount}</td>
+                      <td className="px-4 py-3 text-right tabular" style={{ color: 'var(--text-muted)' }}>{rateLabel(b.currentRate)}</td>
+                      <td className="px-4 py-3 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(b.feeAmount)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button onClick={() => setTxnModalChannel(b.channel)} disabled={b.transactionCount === 0}
+                          className="btn-ghost h-7 px-2.5 text-xs flex items-center gap-1.5 mx-auto" style={{ opacity: b.transactionCount === 0 ? 0.4 : 1 }}>
+                          <ListChecks size={12} /> Lihat
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: '2px solid var(--accent)', background: 'var(--accent-bg)' }}>
+                    <td className="px-4 py-3 font-extrabold" style={{ color: 'var(--text-primary)' }} colSpan={4}>TOTAL BIAYA ADMIN</td>
+                    <td className="px-4 py-3 text-right tabular font-extrabold" style={{ color: 'var(--accent)' }}>{formatRp(detail.totalFee)}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {txnModalChannel && detail && (() => {
         const b = detail.breakdown.find(x => x.channel === txnModalChannel);
         if (!b) return null;
         return (
-          <div className="modal-overlay" onClick={() => setTxnModalChannel(null)}>
-            <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-              <div className="modal-accent" />
-              <span className="modal-handle" />
-              <div className="modal-header">
-                <div className="modal-header-left">
-                  <div className="modal-icon"><ListChecks size={17} /></div>
-                  <div>
-                    <p className="modal-title">Transaksi — {b.label}</p>
-                    <p className="modal-subtitle">{detail.periodFrom} – {detail.periodTo} · {b.transactionCount} transaksi</p>
-                  </div>
+          <Modal onClose={() => setTxnModalChannel(null)} className="modal-lg">
+            <div className="modal-accent" />
+            <span className="modal-handle" />
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon"><ListChecks size={17} /></div>
+                <div>
+                  <p className="modal-title">Transaksi — {b.label}</p>
+                  <p className="modal-subtitle">{detail.periodFrom} – {detail.periodTo} · {b.transactionCount} transaksi</p>
                 </div>
-                <button onClick={() => setTxnModalChannel(null)} className="modal-close"><X size={14} /></button>
               </div>
-              <div className="modal-body">
-                {b.transactions.length === 0 ? (
-                  <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi di periode ini.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr style={{ background: 'var(--surface-2)' }}>
-                          <th className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>No.</th>
-                          <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tanggal</th>
-                          <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Referensi</th>
-                          <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
-                          <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.transactions.slice().sort((x, y) => (x.createdAt?.seconds ?? 0) - (y.createdAt?.seconds ?? 0)).map((t, i) => (
-                          <tr key={t.id} style={{ borderTop: '1px solid var(--border-2)' }}>
-                            <td className="px-3 py-2.5 text-center tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
-                            <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(t.createdAt)}</td>
-                            <td className="px-3 py-2.5 font-semibold truncate" style={{ color: 'var(--text-primary)', maxWidth: 180 }}>{t.label}</td>
-                            <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(t.revenue)}</td>
-                            <td className="px-3 py-2.5 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(t.feeAmount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              <button onClick={() => setTxnModalChannel(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
             </div>
-          </div>
+            <div className="modal-body">
+              {b.transactions.length === 0 ? (
+                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi di periode ini.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-sm">
+                    <thead>
+                      <tr style={{ background: 'var(--surface-2)' }}>
+                        <th className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>No.</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tanggal</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Referensi</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {b.transactions.slice().sort((x, y) => (x.createdAt?.seconds ?? 0) - (y.createdAt?.seconds ?? 0)).map((t, i) => (
+                        <tr key={t.id} style={{ borderTop: '1px solid var(--border-2)' }}>
+                          <td className="px-3 py-2.5 text-center tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(t.createdAt)}</td>
+                          <td className="px-3 py-2.5 font-semibold truncate" style={{ color: 'var(--text-primary)', maxWidth: 180 }}>{t.label}</td>
+                          <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(t.revenue)}</td>
+                          <td className="px-3 py-2.5 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(t.feeAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Modal>
         );
       })()}
     </div>

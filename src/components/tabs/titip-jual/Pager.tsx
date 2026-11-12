@@ -20,7 +20,7 @@ export default function Pager({ total, noun, page, totalPages, pageSize, onPage,
       {totalPages > 1 && (
         <div className="flex items-center gap-1">
           <Tooltip label="Halaman sebelumnya">
-            <button onClick={() => go(page - 1)} disabled={page === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+            <button aria-label="Halaman sebelumnya" onClick={() => go(page - 1)} disabled={page === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
           </Tooltip>
           {Array.from({ length: totalPages }, (_, i) => i + 1)
             .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
@@ -33,7 +33,7 @@ export default function Pager({ total, noun, page, totalPages, pageSize, onPage,
               : <button key={n} onClick={() => go(n as number)} className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
                   style={page === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>{n}</button>)}
           <Tooltip label="Halaman berikutnya">
-            <button onClick={() => go(page + 1)} disabled={page === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+            <button aria-label="Halaman berikutnya" onClick={() => go(page + 1)} disabled={page === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
           </Tooltip>
         </div>
       )}

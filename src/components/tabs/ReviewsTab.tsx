@@ -165,7 +165,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
     <div className="flex flex-col h-full">
       <TopbarPortal>
         <Tooltip label="Muat ulang">
-          <button onClick={load} className="btn-ghost p-2"><RefreshCw size={15} /></button>
+          <button onClick={load} className="btn-ghost p-2" aria-label="Muat ulang"><RefreshCw size={15} /></button>
         </Tooltip>
       </TopbarPortal>
 
@@ -240,7 +240,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
                       </button>
                     )}
                     <Tooltip label="Hapus ulasan">
-                      <button onClick={() => handleDelete(r)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                      <button aria-label="Hapus ulasan" onClick={() => handleDelete(r)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
                         <Trash2 size={14} />
                       </button>
                     </Tooltip>
@@ -318,7 +318,7 @@ export default function ReviewsTab({ creds }: { creds: string }) {
                       </button>
                     )}
                     <Tooltip label="Hapus ulasan">
-                      <button onClick={() => handleDelete(r)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                      <button aria-label="Hapus ulasan" onClick={() => handleDelete(r)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
                         <Trash2 size={14} />
                       </button>
                     </Tooltip>

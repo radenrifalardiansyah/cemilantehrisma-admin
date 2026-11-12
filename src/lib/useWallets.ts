@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatRp } from './format';
 
 export interface WalletDoc {
   id: string; name: string; type: 'cash' | 'bank' | 'ewallet' | 'other';
@@ -24,8 +25,6 @@ export function useWallets(creds: string) {
   return wallets;
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // `balances` opsional — kalau dioper (dari useWalletBalances), tiap opsi dompet di dropdown
 // ikut menampilkan saldonya (sebagai sublabel SearchSelect) supaya kelihatan langsung saat

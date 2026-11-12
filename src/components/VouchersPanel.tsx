@@ -9,6 +9,9 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import { DateInput } from '@/components/DateTimeInput';
+import { formatRp } from '@/lib/format';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 interface Voucher {
   code: string; description: string; type: 'percent' | 'nominal'; value: number;
@@ -20,7 +23,7 @@ interface Form {
   minPurchase: string; maxDiscount: string; validFrom: string; validUntil: string; usageLimit: string; perCustomerLimit: string; isActive: boolean;
 }
 
-const rp = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
+const rp = formatRp;
 const emptyForm = (): Form => ({
   code: '', isNew: true, description: '', type: 'percent', value: '', minPurchase: '', maxDiscount: '',
   validFrom: '', validUntil: '', usageLimit: '', perCustomerLimit: '', isActive: true,
@@ -123,8 +126,8 @@ export default function VouchersPanel({ creds }: { creds: string }) {
                   </p>
                   {v.description && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{v.description}</p>}
                 </div>
-                <Tooltip label="Edit"><button onClick={() => edit(v)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)' }}><Pencil size={12} /></button></Tooltip>
-                <Tooltip label="Hapus"><button onClick={() => remove(v)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}><Trash2 size={12} /></button></Tooltip>
+                <Tooltip label="Edit"><button aria-label="Edit" onClick={() => edit(v)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)' }}><Pencil size={12} /></button></Tooltip>
+                <Tooltip label="Hapus"><button aria-label="Hapus" onClick={() => remove(v)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}><Trash2 size={12} /></button></Tooltip>
               </div>
             );
           })}
@@ -132,91 +135,80 @@ export default function VouchersPanel({ creds }: { creds: string }) {
       )}
 
       {form && (
-        <div className="modal-overlay" onClick={() => !saving && setForm(null)}>
-          <div className="modal-sheet modal-md" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div>
-                  <p className="modal-title">{form.isNew ? 'Voucher Baru' : `Edit ${form.code}`}</p>
-                </div>
-              </div>
-              <button onClick={() => setForm(null)} className="modal-close"><X size={14} /></button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Modal onClose={() => !saving && setForm(null)} className="modal-md">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
               <div>
-                <label className="field-label">Kode <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <input type="text" value={form.code} disabled={!form.isNew} onChange={e => set('code', e.target.value.toUpperCase())} className="input" placeholder="HEMAT10" />
+                <p className="modal-title">{form.isNew ? 'Voucher Baru' : `Edit ${form.code}`}</p>
               </div>
-              <div>
-                <label className="field-label">Keterangan</label>
-                <input type="text" value={form.description} onChange={e => set('description', e.target.value)} className="input" placeholder="Mis. Promo Lebaran" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="field-label">Jenis</label>
-                  <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
-                    {(['percent', 'nominal'] as const).map(t => (
-                      <button key={t} type="button" onClick={() => set('type', t)} className="flex-1 px-3 py-2.5"
-                        style={form.type === t ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-                        {t === 'percent' ? 'Persen %' : 'Nominal Rp'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="field-label">Nilai <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <NumberInput value={form.value} onChange={v => set('value', v)} className="input" placeholder={form.type === 'percent' ? '10' : '5.000'} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="field-label">Min. Belanja (Rp)</label>
-                  <NumberInput value={form.minPurchase} onChange={v => set('minPurchase', v)} className="input" placeholder="0 = bebas" />
-                </div>
-                {form.type === 'percent' && (
-                  <div>
-                    <label className="field-label">Maks. Potongan (Rp)</label>
-                    <NumberInput value={form.maxDiscount} onChange={v => set('maxDiscount', v)} className="input" placeholder="0 = tanpa batas" />
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="field-label">Berlaku Mulai</label>
-                  <DateInput value={form.validFrom} onChange={v => set('validFrom', v)} />
-                </div>
-                <div>
-                  <label className="field-label">Berlaku Sampai</label>
-                  <DateInput value={form.validUntil} onChange={v => set('validUntil', v)} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="field-label">Kuota Total</label>
-                  <NumberInput value={form.usageLimit} onChange={v => set('usageLimit', v)} className="input" placeholder="0 = tanpa batas" />
-                </div>
-                <div>
-                  <label className="field-label">Maks. per Pelanggan</label>
-                  <NumberInput value={form.perCustomerLimit} onChange={v => set('perCustomerLimit', v)} className="input" placeholder="0 = tanpa batas" />
-                </div>
-              </div>
-              <p className="text-[11px]" style={{ color: 'var(--text-muted)', marginTop: -6 }}>
-                Batas per pelanggan dikenali dari akun (online) atau nomor HP / pelanggan terpilih (Kasir). Kalau diisi, voucher TIDAK bisa dipakai pada transaksi tanpa nomor HP (mis. &quot;Pelanggan Umum&quot;).
-              </p>
-              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
-                <input type="checkbox" checked={form.isActive} onChange={e => set('isActive', e.target.checked)} /> Aktif
-              </label>
             </div>
-            <div className="modal-footer">
-              <button onClick={() => setForm(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={save} disabled={saving || !form.code.trim() || !form.value} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : null} Simpan
-              </button>
-            </div>
+            <button onClick={() => setForm(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
           </div>
-        </div>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Field label="Kode" required>
+              <input type="text" value={form.code} disabled={!form.isNew} onChange={e => set('code', e.target.value.toUpperCase())} className="input" placeholder="HEMAT10" />
+            </Field>
+            <Field label="Keterangan">
+              <input type="text" value={form.description} onChange={e => set('description', e.target.value)} className="input" placeholder="Mis. Promo Lebaran" />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="field-label">Jenis</label>
+                <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
+                  {(['percent', 'nominal'] as const).map(t => (
+                    <button key={t} type="button" onClick={() => set('type', t)} className="flex-1 px-3 py-2.5"
+                      style={form.type === t ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                      {t === 'percent' ? 'Persen %' : 'Nominal Rp'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Field label="Nilai" required>
+                <NumberInput value={form.value} onChange={v => set('value', v)} className="input" placeholder={form.type === 'percent' ? '10' : '5.000'} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Min. Belanja (Rp)">
+                <NumberInput value={form.minPurchase} onChange={v => set('minPurchase', v)} className="input" placeholder="0 = bebas" />
+              </Field>
+              {form.type === 'percent' && (
+                <Field label="Maks. Potongan (Rp)">
+                  <NumberInput value={form.maxDiscount} onChange={v => set('maxDiscount', v)} className="input" placeholder="0 = tanpa batas" />
+                </Field>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Berlaku Mulai">
+                <DateInput value={form.validFrom} onChange={v => set('validFrom', v)} />
+              </Field>
+              <Field label="Berlaku Sampai">
+                <DateInput value={form.validUntil} onChange={v => set('validUntil', v)} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Kuota Total">
+                <NumberInput value={form.usageLimit} onChange={v => set('usageLimit', v)} className="input" placeholder="0 = tanpa batas" />
+              </Field>
+              <Field label="Maks. per Pelanggan">
+                <NumberInput value={form.perCustomerLimit} onChange={v => set('perCustomerLimit', v)} className="input" placeholder="0 = tanpa batas" />
+              </Field>
+            </div>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)', marginTop: -6 }}>
+              Batas per pelanggan dikenali dari akun (online) atau nomor HP / pelanggan terpilih (Kasir). Kalau diisi, voucher TIDAK bisa dipakai pada transaksi tanpa nomor HP (mis. &quot;Pelanggan Umum&quot;).
+            </p>
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={form.isActive} onChange={e => set('isActive', e.target.checked)} /> Aktif
+            </label>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setForm(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={save} disabled={saving || !form.code.trim() || !form.value} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : null} Simpan
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

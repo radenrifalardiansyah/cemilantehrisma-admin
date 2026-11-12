@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useEscapeLayer } from '@/components/Modal';
 import Image from 'next/image';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -17,9 +18,11 @@ export default function ImageLightbox({ images, index, title, onIndexChange, onC
   const prev  = () => onIndexChange((index - 1 + count) % count);
   const next  = () => onIndexChange((index + 1) % count);
 
+  // Esc lewat lapisan bersama: bila lightbox dibuka di atas modal, hanya lightbox yang menutup.
+  useEscapeLayer(onClose);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowLeft' && count > 1) prev();
       if (e.key === 'ArrowRight' && count > 1) next();
     };
@@ -35,7 +38,7 @@ export default function ImageLightbox({ images, index, title, onIndexChange, onC
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.85)' }}
     >
-      <button
+      <button aria-label="Tutup"
         onClick={onClose}
         className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
       >
@@ -49,7 +52,7 @@ export default function ImageLightbox({ images, index, title, onIndexChange, onC
       )}
 
       {count > 1 && (
-        <button
+        <button aria-label="Sebelumnya"
           onClick={e => { e.stopPropagation(); prev(); }}
           className="absolute left-3 sm:left-6 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
         >
@@ -66,7 +69,7 @@ export default function ImageLightbox({ images, index, title, onIndexChange, onC
       </div>
 
       {count > 1 && (
-        <button
+        <button aria-label="Berikutnya"
           onClick={e => { e.stopPropagation(); next(); }}
           className="absolute right-3 sm:right-6 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
         >

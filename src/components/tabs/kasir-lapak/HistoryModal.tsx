@@ -93,15 +93,15 @@ export default function HistoryModal({ creds, stall, canVoid, onClose, onChanged
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <p className="text-sm font-bold mr-1" style={{ color: 'var(--text-primary)', textDecoration: s.status === 'void' ? 'line-through' : undefined }}>{rupiah(s.total)}</p>
-                      <Tooltip label="Cetak struk"><button onClick={() => onPrint(s)} className="btn-ghost p-2"><Printer size={13} /></button></Tooltip>
+                      <Tooltip label="Cetak struk"><button aria-label="Cetak struk" onClick={() => onPrint(s)} className="btn-ghost p-2"><Printer size={13} /></button></Tooltip>
                       {canVoid && s.status === 'paid' && s.items.some(i => i.qty - (i.returnedQty ?? 0) > 0) && (
                         <Tooltip label="Retur sebagian">
-                          <button onClick={() => setReturning(s)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><RotateCcw size={13} /></button>
+                          <button aria-label="Retur sebagian" onClick={() => setReturning(s)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><RotateCcw size={13} /></button>
                         </Tooltip>
                       )}
                       {canVoid && s.status === 'paid' && s.refundTotal === 0 && (
                         <Tooltip label="Batalkan penjualan">
-                          <button onClick={() => { setVoiding(s); setReason(''); setError(''); }} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
+                          <button aria-label="Batalkan penjualan" onClick={() => { setVoiding(s); setReason(''); setError(''); }} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
                         </Tooltip>
                       )}
                     </div>

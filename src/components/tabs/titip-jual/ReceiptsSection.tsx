@@ -167,7 +167,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
         emptyHint="Catat barang titipan yang masuk ke lapak, atau retur ke penitip."
         filters={(
           <>
-            <FilterSelect value={kindFilter} onChange={setKindFilter}
+            <FilterSelect searchable={false} value={kindFilter} onChange={setKindFilter}
               options={[{ value: '', label: 'Semua jenis' }, { value: 'in', label: 'Terima' }, { value: 'return', label: 'Retur' }, { value: 'transfer', label: 'Pindah' }]} />
             <FilterSelect value={consignorFilter} onChange={setConsignorFilter} searchPlaceholder="Cari penitip…"
               options={[{ value: '', label: 'Semua penitip' }, ...data.consignors.map(c => ({ value: c.id, label: c.name }))]} />
@@ -223,7 +223,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
           <>
             {can('edit') && (
               <Tooltip label="Ubah dokumen">
-                <button onClick={() => openEdit(r)} className="btn-ghost p-2"><Pencil size={13} /></button>
+                <button aria-label="Ubah dokumen" onClick={() => openEdit(r)} className="btn-ghost p-2"><Pencil size={13} /></button>
               </Tooltip>
             )}
             {can('delete') && (
@@ -316,7 +316,7 @@ export default function ReceiptsSection({ creds, data, reload, can }: SectionPro
                                 placeholder="– Produk –" searchPlaceholder="Cari produk…" />
                             </div>
                             <Tooltip label="Hapus baris">
-                              <button onClick={() => setEditing({ ...editing, lines: editing.lines.filter((_, i) => i !== idx) })} disabled={editing.lines.length === 1}
+                              <button aria-label="Hapus baris" onClick={() => setEditing({ ...editing, lines: editing.lines.filter((_, i) => i !== idx) })} disabled={editing.lines.length === 1}
                                 className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
                             </Tooltip>
                           </div>

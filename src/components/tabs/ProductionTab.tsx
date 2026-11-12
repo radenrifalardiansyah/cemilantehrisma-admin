@@ -28,7 +28,9 @@ import EmptyAddCard from '@/components/EmptyAddCard';
 import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Modal from '@/components/Modal';
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -51,8 +53,6 @@ function Checkbox({ checked, indeterminate, onChange }: {
   );
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // Stok bahan baku dihitung dari akumulasi transaksi float, jadi kadang menyisakan noise
 // seperti 0.00009999999999993348 — dibulatkan 2 desimal supaya tampilan tetap rapi.
@@ -721,7 +721,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                               )}
                               <RecordHistoryButton open={historyId === b.id} onToggle={() => toggleHistory(b.id)} />
                               <Tooltip label="Lihat detail">
-                                <button onClick={() => setExpandedId(expandedId === b.id ? null : b.id)} className="btn-ghost p-2">
+                                <button aria-label="Lihat detail" onClick={() => setExpandedId(expandedId === b.id ? null : b.id)} className="btn-ghost p-2">
                                   <ChevronRight size={13} style={{ transform: expandedId === b.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                                 </button>
                               </Tooltip>
@@ -797,7 +797,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                         {manageable && (
                           <>
                             <Tooltip label="Edit">
-                              <button onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                              <button aria-label="Edit" onClick={() => openEdit(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                                 <Pencil size={12} />
                               </button>
                             </Tooltip>
@@ -829,7 +829,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -850,7 +850,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -885,183 +885,181 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
 
     {/* Modal tambah/edit produksi */}
     {showForm && (
-        <div className="modal-overlay" onClick={() => !submitting && closeForm()}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Factory size={17} /></div>
+        <Modal onClose={() => !submitting && closeForm()} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Factory size={17} /></div>
+              <div>
+                <p className="modal-title">{editingBatch ? 'Edit Produksi' : 'Catat Produksi Baru'}</p>
+                <p className="modal-subtitle">
+                  {editingBatch
+                    ? 'Stok bahan baku & produk akan disesuaikan ulang sesuai perubahan'
+                    : 'Bahan baku terpakai otomatis mengurangi stok, produk hasil menambah stok'}
+                </p>
+              </div>
+            </div>
+            <Tooltip label="Tutup">
+              <button onClick={closeForm} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <p className="modal-title">{editingBatch ? 'Edit Produksi' : 'Catat Produksi Baru'}</p>
-                  <p className="modal-subtitle">
-                    {editingBatch
-                      ? 'Stok bahan baku & produk akan disesuaikan ulang sesuai perubahan'
-                      : 'Bahan baku terpakai otomatis mengurangi stok, produk hasil menambah stok'}
-                  </p>
+                  <label style={fieldLabel}>Tanggal Produksi <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <DateInput value={date} onChange={setDate} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Gudang Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <SearchSelect value={warehouseId} onChange={setWarehouseId}
+                    options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                    placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
                 </div>
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={closeForm} className="modal-close"><X size={14} /></button>
-              </Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Tanggal Produksi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <DateInput value={date} onChange={setDate} />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Gudang Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={warehouseId} onChange={setWarehouseId}
-                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-                  </div>
-                </div>
-                {warehouses.length === 0 && (
-                  <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    <AlertTriangle size={12} /> Belum ada gudang — tambahkan gudang dulu di menu Gudang sebelum catat produksi.
-                  </p>
-                )}
+              {warehouses.length === 0 && (
+                <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  <AlertTriangle size={12} /> Belum ada gudang — tambahkan gudang dulu di menu Gudang sebelum catat produksi.
+                </p>
+              )}
 
-                <div>
-                  <label style={fieldLabel}>Produk Hasil <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {outputRows.map((row, i) => {
-                      // Produk yang sudah dipilih di baris LAIN disembunyikan — pilih produk yang sama
-                      // dua kali diam-diam menjumlahkan qty-nya jadi produksi ganda (lihat komentar
-                      // mergeOutputs di lib/materials-pg.ts), jadi baris yang sudah ada harus diedit
-                      // langsung angkanya, bukan ditambah baris baru untuk produk yang sama.
-                      const otherProductIds = new Set(outputRows.filter((_, idx) => idx !== i).map(r => r.productId).filter(Boolean));
-                      const rowProductOptions = productOptions.filter(o => !otherProductIds.has(o.value));
-                      return (
-                      <div key={i} className="flex items-center gap-2">
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
-                            options={rowProductOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-                        </div>
-                        {/* min="0" tidak menolak tanda minus saat diketik — tanpa kloning ke '0' di
-                            sini, baris dengan qty negatif diam-diam hilang dari total (di-filter
-                            bersama baris yang memang belum diisi) tanpa pesan apa pun. */}
-                        <input type="number" min="0" value={row.qty}
-                          onChange={e => updateOutputRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
-                          placeholder="Qty" className="input" style={{ width: 84, flexShrink: 0, textAlign: 'center' }} />
-                        <Tooltip label="Hapus baris">
-                          <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
-                            className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                            <X size={14} />
-                          </button>
-                        </Tooltip>
+              <div>
+                <label style={fieldLabel}>Produk Hasil <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {outputRows.map((row, i) => {
+                    // Produk yang sudah dipilih di baris LAIN disembunyikan — pilih produk yang sama
+                    // dua kali diam-diam menjumlahkan qty-nya jadi produksi ganda (lihat komentar
+                    // mergeOutputs di lib/materials-pg.ts), jadi baris yang sudah ada harus diedit
+                    // langsung angkanya, bukan ditambah baris baru untuk produk yang sama.
+                    const otherProductIds = new Set(outputRows.filter((_, idx) => idx !== i).map(r => r.productId).filter(Boolean));
+                    const rowProductOptions = productOptions.filter(o => !otherProductIds.has(o.value));
+                    return (
+                    <div key={i} className="flex items-center gap-2">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <SearchSelect value={row.productId} onChange={id => updateOutputRow(i, { productId: id })}
+                          options={rowProductOptions} placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
                       </div>
-                      );
-                    })}
-                  </div>
-                  <button onClick={addOutputRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
-                    <Plus size={12} /> Tambah Produk Hasil (mis. varian rasa lain)
-                  </button>
-                </div>
-
-                <div>
-                  <label style={fieldLabel}>Bahan Baku Dipakai</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {rows.map((row, i) => {
-                      const material = effectiveMaterials.find(m => m.id === row.materialId);
-                      const qty = parseFloat(row.qty) || 0;
-                      const shortage = !!material && qty > material.stockQty;
-                      // Bahan yang sudah dipilih di baris lain disembunyikan — sama alasannya dengan
-                      // produk hasil di atas, cegah qty terpisah untuk material yang sama.
-                      const otherMaterialIds = new Set(rows.filter((_, idx) => idx !== i).map(r => r.materialId).filter(Boolean));
-                      const rowMaterialOptions = materialOptions.filter(o => !otherMaterialIds.has(o.value));
-                      return (
-                        <div key={i}>
-                          <div className="flex items-center gap-2">
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
-                                options={rowMaterialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-                            </div>
-                            {/* Lihat komentar sama di input qty output di atas — cegah negatif
-                                langsung di sini, bukan hanya menyaringnya diam-diam dari total. */}
-                            <input type="number" min="0" value={row.qty}
-                              onChange={e => updateRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
-                              placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" style={{ width: 84, flexShrink: 0, textAlign: 'center' }} />
-                            <Tooltip label="Hapus baris">
-                              <button onClick={() => removeRow(i)} disabled={rows.length === 1}
-                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                                <X size={14} />
-                              </button>
-                            </Tooltip>
-                          </div>
-                          {material && (
-                            <p className="text-xs tabular mt-1.5" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
-                              {qty === 0
-                                ? `Stok tersedia: ${formatQty(material.stockQty)} ${material.unit}`
-                                : shortage
-                                ? `Stok kurang — tersedia ${formatQty(material.stockQty)} ${material.unit}`
-                                : `Biaya: ${formatRp(material.avgCost * qty)} (stok tersisa ${formatQty(material.stockQty - qty)} ${material.unit})`}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button onClick={addRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
-                    <Plus size={12} /> Tambah Baris Bahan Baku
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Biaya Lain (Tenaga Kerja/Overhead, opsional)</label>
-                    <NumberInput value={otherCost} onChange={setOtherCost} placeholder="0" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Total Hasil Produksi (pcs)</label>
-                    <input type="number" value={totalYieldQty || ''} readOnly disabled className="input" style={{ opacity: 0.7 }} placeholder="0" />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={fieldLabel}>Catatan</label>
-                  <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
-                </div>
-
-                {(materialCost > 0 || otherCostNum > 0) && (
-                  <div className="grid grid-cols-3 gap-2.5">
-                    <div className="card p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Biaya Bahan</p>
-                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(materialCost)}</p>
+                      {/* min="0" tidak menolak tanda minus saat diketik — tanpa kloning ke '0' di
+                          sini, baris dengan qty negatif diam-diam hilang dari total (di-filter
+                          bersama baris yang memang belum diisi) tanpa pesan apa pun. */}
+                      <input type="number" inputMode="numeric" min="0" value={row.qty}
+                        onChange={e => updateOutputRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
+                        placeholder="Qty" className="input" style={{ width: 84, flexShrink: 0, textAlign: 'center' }} />
+                      <Tooltip label="Hapus baris">
+                        <button onClick={() => removeOutputRow(i)} disabled={outputRows.length === 1}
+                          className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                          <X size={14} />
+                        </button>
+                      </Tooltip>
                     </div>
-                    <div className="card p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Total Biaya</p>
-                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(totalCost)}</p>
-                    </div>
-                    <div className="card p-3" style={{ background: 'var(--accent-bg)' }}>
-                      <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>HPP / pcs (semua produk hasil)</p>
-                      <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>{totalYieldQty > 0 ? formatRp(costPerPcs) : '–'}</p>
-                    </div>
-                  </div>
-                )}
-
-                {hasShortage && (
-                  <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    <AlertTriangle size={12} /> Ada bahan baku dengan stok kurang — catat pembelian dulu di menu Bahan Baku sebelum simpan produksi.
-                  </p>
-                )}
+                    );
+                  })}
+                </div>
+                <button onClick={addOutputRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                  <Plus size={12} /> Tambah Produk Hasil (mis. varian rasa lain)
+                </button>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={closeForm} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={submit} disabled={submitting || !canSubmit}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                {submitting ? 'Menyimpan…' : editingBatch ? 'Simpan Perubahan' : 'Simpan Produksi'}
-              </button>
+
+              <div>
+                <label style={fieldLabel}>Bahan Baku Dipakai</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {rows.map((row, i) => {
+                    const material = effectiveMaterials.find(m => m.id === row.materialId);
+                    const qty = parseFloat(row.qty) || 0;
+                    const shortage = !!material && qty > material.stockQty;
+                    // Bahan yang sudah dipilih di baris lain disembunyikan — sama alasannya dengan
+                    // produk hasil di atas, cegah qty terpisah untuk material yang sama.
+                    const otherMaterialIds = new Set(rows.filter((_, idx) => idx !== i).map(r => r.materialId).filter(Boolean));
+                    const rowMaterialOptions = materialOptions.filter(o => !otherMaterialIds.has(o.value));
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center gap-2">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <SearchSelect value={row.materialId} onChange={id => updateRow(i, { materialId: id })}
+                              options={rowMaterialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
+                          </div>
+                          {/* Lihat komentar sama di input qty output di atas — cegah negatif
+                              langsung di sini, bukan hanya menyaringnya diam-diam dari total. */}
+                          <input type="number" inputMode="decimal" min="0" value={row.qty}
+                            onChange={e => updateRow(i, { qty: e.target.value !== '' && Number(e.target.value) < 0 ? '0' : e.target.value })}
+                            placeholder={`Qty${material ? ` (${material.unit})` : ''}`} className="input" style={{ width: 84, flexShrink: 0, textAlign: 'center' }} />
+                          <Tooltip label="Hapus baris">
+                            <button onClick={() => removeRow(i)} disabled={rows.length === 1}
+                              className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                              <X size={14} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                        {material && (
+                          <p className="text-xs tabular mt-1.5" style={{ color: shortage ? 'var(--danger)' : 'var(--text-muted)' }}>
+                            {qty === 0
+                              ? `Stok tersedia: ${formatQty(material.stockQty)} ${material.unit}`
+                              : shortage
+                              ? `Stok kurang — tersedia ${formatQty(material.stockQty)} ${material.unit}`
+                              : `Biaya: ${formatRp(material.avgCost * qty)} (stok tersisa ${formatQty(material.stockQty - qty)} ${material.unit})`}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={addRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                  <Plus size={12} /> Tambah Baris Bahan Baku
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label style={fieldLabel}>Biaya Lain (Tenaga Kerja/Overhead, opsional)</label>
+                  <NumberInput value={otherCost} onChange={setOtherCost} placeholder="0" />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Total Hasil Produksi (pcs)</label>
+                  <input type="number" value={totalYieldQty || ''} readOnly disabled className="input" style={{ opacity: 0.7 }} placeholder="0" />
+                </div>
+              </div>
+
+              <div>
+                <label style={fieldLabel}>Catatan</label>
+                <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
+              </div>
+
+              {(materialCost > 0 || otherCostNum > 0) && (
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="card p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Biaya Bahan</p>
+                    <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(materialCost)}</p>
+                  </div>
+                  <div className="card p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Total Biaya</p>
+                    <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(totalCost)}</p>
+                  </div>
+                  <div className="card p-3" style={{ background: 'var(--accent-bg)' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>HPP / pcs (semua produk hasil)</p>
+                    <p className="text-sm font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>{totalYieldQty > 0 ? formatRp(costPerPcs) : '–'}</p>
+                  </div>
+                </div>
+              )}
+
+              {hasShortage && (
+                <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  <AlertTriangle size={12} /> Ada bahan baku dengan stok kurang — catat pembelian dulu di menu Bahan Baku sebelum simpan produksi.
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeForm} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={submit} disabled={submitting || !canSubmit}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              {submitting ? 'Menyimpan…' : editingBatch ? 'Simpan Perubahan' : 'Simpan Produksi'}
+            </button>
+          </div>
+        </Modal>
     )}
     </>
   );

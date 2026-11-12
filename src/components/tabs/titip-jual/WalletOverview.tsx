@@ -93,11 +93,11 @@ export default function WalletOverview(props: SectionProps) {
         actions={s => (
           <>
             <Tooltip label="Lihat jurnal kas">
-              <button onClick={() => setSelected(s.id)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><BookOpen size={13} /></button>
+              <button aria-label="Lihat jurnal kas" onClick={() => setSelected(s.id)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><BookOpen size={13} /></button>
             </Tooltip>
             {can('edit') && (
               <Tooltip label="Catat kas (tambah/ambil)">
-                <button onClick={() => setAdding(s.id)} className="btn-ghost p-2"><Plus size={13} /></button>
+                <button aria-label="Catat kas (tambah/ambil)" onClick={() => setAdding(s.id)} className="btn-ghost p-2"><Plus size={13} /></button>
               </Tooltip>
             )}
           </>

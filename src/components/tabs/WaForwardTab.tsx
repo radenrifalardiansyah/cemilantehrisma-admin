@@ -11,6 +11,8 @@ import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import { suggestGroup } from '@/lib/wa-forward';
 import type { Action } from '@/types/rbac';
+import { formatDate } from '@/lib/format';
+import Field from '@/components/Field';
 
 interface Overview {
   settings: { enabled: boolean; targetJid: string | null; keywords: string[]; excludeKeywords: string[]; maxPerHour: number; resyncRequested: boolean };
@@ -30,7 +32,7 @@ const STATE_LABEL: Record<string, string> = {
   stopped: 'Dimatikan dari admin', open: 'Terhubung', connecting: 'Menyambung…', qr: 'Perlu scan QR', close: 'Terputus', 'logged-out': 'Logout — perlu scan QR ulang', offline: 'Worker mati',
 };
 const groupOption = (g: { jid: string; subject: string }): SearchSelectOption => ({ value: g.jid, label: g.subject || g.jid });
-const fmtTime = (iso: string) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const fmtTime = (iso: string) => formatDate(iso, 'dayTime', 'Asia/Jakarta');
 
 // Teruskan Stok WA: worker WhatsApp (di luar Vercel) membaca grup mitra dan meneruskan pesan stok ke grup kita.
 // Halaman ini = status worker, pengaturan, pemasangan grup ↔ mitra, dan riwayat.
@@ -168,7 +170,7 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
   return (
     <div className="flex flex-col h-full">
       <TopbarPortal>
-        <Tooltip label="Muat ulang"><button onClick={() => { load(false); loadLogs(); }} className="btn-ghost p-2"><RefreshCw size={15} /></button></Tooltip>
+        <Tooltip label="Muat ulang"><button aria-label="Muat ulang" onClick={() => { load(false); loadLogs(); }} className="btn-ghost p-2"><RefreshCw size={15} /></button></Tooltip>
       </TopbarPortal>
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up space-y-5">
@@ -245,26 +247,22 @@ export default function WaForwardTab({ creds, can }: { creds: string; can: (a: A
               </div>
 
               <div className="grid gap-5 md:grid-cols-2">
-                <div>
-                  <label className="field-label">Grup tujuan (grup kita)</label>
+                <Field label="Grup tujuan (grup kita)">
                   <SearchSelect value={targetJid} onChange={setTargetJid} disabled={!canEdit} placeholder="— pilih grup —" searchPlaceholder="Cari grup…"
                     options={[{ value: '', label: '— belum dipilih —' }, ...targetOptions.map(groupOption)]} />
-                </div>
-                <div>
-                  <label className="field-label">Maksimal pesan per jam</label>
-                  <input className="input text-sm w-full" type="number" min={1} max={600} disabled={!canEdit} value={maxPerHour} onChange={e => setMaxPerHour(e.target.value)} />
+                </Field>
+                <Field label="Maksimal pesan per jam">
+                  <input className="input text-sm w-full" type="number" inputMode="numeric" min={1} max={600} disabled={!canEdit} value={maxPerHour} onChange={e => setMaxPerHour(e.target.value)} />
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Batas kirim ke grup tujuan; sisanya menunggu jam berikutnya.</p>
-                </div>
-                <div>
-                  <label className="field-label">Kata kunci (pisahkan dengan koma)</label>
+                </Field>
+                <Field label="Kata kunci (pisahkan dengan koma)">
                   <textarea className="input text-sm w-full" rows={3} disabled={!canEdit} value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="stok, sisa, mie kremes" />
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Pesan diteruskan bila memuat salah satu kata ini.</p>
-                </div>
-                <div>
-                  <label className="field-label">Kata pengecualian (opsional)</label>
+                </Field>
+                <Field label="Kata pengecualian (opsional)">
                   <textarea className="input text-sm w-full" rows={3} disabled={!canEdit} value={excludeKeywords} onChange={e => setExcludeKeywords(e.target.value)} placeholder="tolong, tanya" />
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Pesan yang memuat kata ini tidak diteruskan.</p>
-                </div>
+                </Field>
               </div>
             </div>
           </Section>

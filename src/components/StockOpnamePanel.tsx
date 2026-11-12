@@ -135,7 +135,7 @@ export default function StockOpnamePanel({ creds, warehouses, products, onDone }
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <input type="text" value={note} onChange={e => setNote(e.target.value)} className="input flex-1" placeholder="Catatan opname (opsional), mis. opname akhir bulan" />
+            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} className="input flex-1" style={{ resize: 'vertical' }} placeholder="Catatan opname (opsional), mis. opname akhir bulan" />
             <button onClick={save} disabled={saving || changed.length === 0} className="btn-primary text-xs" style={{ height: 38 }}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
               Simpan Opname{changed.length > 0 ? ` (${changed.length} selisih)` : ''}

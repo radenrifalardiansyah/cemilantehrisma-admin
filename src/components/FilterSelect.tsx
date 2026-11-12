@@ -17,10 +17,13 @@ interface FilterSelectProps {
   height?: number;
   searchPlaceholder?: string;
   emptyLabel?: string;
+  /** Tampilkan kotak cari di panel (default true). Matikan untuk daftar pendek (<= 8 opsi). */
+  searchable?: boolean;
+  id?: string;
 }
 
 export default function FilterSelect({
-  value, onChange, options, height = 34, searchPlaceholder = 'Cari…', emptyLabel = 'Tidak ditemukan',
+  value, onChange, options, height = 34, searchPlaceholder = 'Cari…', emptyLabel = 'Tidak ditemukan', searchable = true, id,
 }: FilterSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -56,9 +59,10 @@ export default function FilterSelect({
   useEffect(() => {
     if (!open) return;
     setQuery('');
+    if (!searchable) return;
     const t = setTimeout(() => searchRef.current?.focus(), 30);
     return () => clearTimeout(t);
-  }, [open]);
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -81,6 +85,7 @@ export default function FilterSelect({
       <button
         type="button"
         ref={btnRef}
+        id={id}
         onClick={() => setOpen(o => !o)}
         className="input text-xs font-semibold"
         style={{
@@ -97,6 +102,7 @@ export default function FilterSelect({
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
+          data-popover-layer=""
           style={{
             position: 'fixed', top: pos.top, left: pos.left, width: pos.width,
             zIndex: 10000, background: 'var(--surface)', border: '1.5px solid var(--border)',
@@ -104,7 +110,7 @@ export default function FilterSelect({
             display: 'flex', flexDirection: 'column', maxHeight: 320, overflow: 'hidden',
           }}
         >
-          <div style={{ padding: 8, borderBottom: '1px solid var(--border-2)', position: 'relative', flexShrink: 0 }}>
+          {searchable && <div style={{ padding: 8, borderBottom: '1px solid var(--border-2)', position: 'relative', flexShrink: 0 }}>
             <Search size={13} style={{ position: 'absolute', left: 19, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
             <input
               ref={searchRef}
@@ -114,7 +120,7 @@ export default function FilterSelect({
               className="input"
               style={{ paddingLeft: 30, fontSize: 12.5, padding: '8px 10px 8px 30px' }}
             />
-          </div>
+          </div>}
           <div className="thin-scrollbar" style={{ overflowY: 'auto', padding: 6 }}>
             {filtered.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 8px' }}>{emptyLabel}</p>

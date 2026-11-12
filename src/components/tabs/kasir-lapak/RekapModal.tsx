@@ -108,7 +108,7 @@ export default function RekapModal({ creds, stall, canCreate, ownerPhone, storeN
                 </div>
                 <p className="text-sm font-bold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{rupiah(s.totalAmount)}</p>
                 <Tooltip label="Kirim laporan ke owner lewat WhatsApp">
-                  <button onClick={() => window.open(waLink(ownerPhone, settlementMessage(s, storeName, 'owner')), '_blank', 'noopener')} className="btn-ghost p-2 flex-shrink-0" style={{ color: '#059669' }}>
+                  <button aria-label="Kirim laporan ke owner lewat WhatsApp" onClick={() => window.open(waLink(ownerPhone, settlementMessage(s, storeName, 'owner')), '_blank', 'noopener')} className="btn-ghost p-2 flex-shrink-0" style={{ color: '#059669' }}>
                     <MessageCircle size={14} />
                   </button>
                 </Tooltip>

@@ -15,6 +15,7 @@ import AnalyticsPdfButton from './AnalyticsPdfButton';
 import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { DateInput } from '@/components/DateTimeInput';
+import { formatRp } from '@/lib/format';
 
 export interface ConsignmentAnalyticsData {
   period: { from: string; to: string };
@@ -38,8 +39,6 @@ export interface ConsignmentAnalyticsData {
   dailyTrend: { date: string; kirim: number; pendapatan: number }[];
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 function compactRp(n: number): string {
   const abs = Math.abs(n);

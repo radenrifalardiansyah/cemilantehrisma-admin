@@ -1,12 +1,13 @@
 'use client';
 
+import Pagination from '@/components/Pagination';
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import {
   Loader2, RefreshCw, TrendingUp, TrendingDown, Warehouse,
-  ChevronRight, ChevronLeft, Package, ArrowLeftRight, Clock, Ban, Search,
+  ChevronRight, Package, ArrowLeftRight, Clock, Ban, Search,
   AlertTriangle, Wallet, Boxes,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
@@ -17,7 +18,6 @@ import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
 import ImageCarousel from '@/components/ImageCarousel';
 import TopbarPortal from '@/components/TopbarPortal';
-import PageSizeSelect from '@/components/PageSizeSelect';
 import StockReportPDF from '@/lib/pdf/StockReportPDF';
 import StockCardPDF from '@/lib/pdf/StockCardPDF';
 import { toDataUri } from '@/lib/pdf/logo';
@@ -25,7 +25,8 @@ import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
 
 // ── Laporan Stok — periode ────────────────────────────────────────────────────
 type ReportPeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'custom';
@@ -55,8 +56,6 @@ function reportPeriodRange(period: ReportPeriodKey, customFrom: string, customTo
   }
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // pageSize bisa Infinity (opsi "Semua" di PageSizeSelect) — (1 - 1) * Infinity = NaN di JS,
 // jadi hitung manual supaya baris pertama tetap index 0 saat seluruh data ditampilkan satu halaman.
@@ -130,50 +129,6 @@ function formatDate(entry: Pick<TxEntry, 'createdAt'>) {
       hour: '2-digit', minute: '2-digit',
     });
   return '–';
-}
-
-// ── Pagination — dipakai tabel produk & riwayat mutasi ───────────────────────
-function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPage, unit }: {
-  total: number; safePage: number; totalPages: number; pageSize: number;
-  onPageSize: (n: number) => void; onGoPage: (p: number) => void; unit: string;
-}) {
-  if (total === 0) return null;
-  return (
-    <div className="flex items-center justify-between flex-wrap gap-2">
-      <div className="flex items-center gap-3 flex-wrap">
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {total} {unit} · halaman {safePage} dari {totalPages}
-        </p>
-        <PageSizeSelect value={pageSize} onChange={onPageSize} />
-      </div>
-      {totalPages > 1 && (
-        <div className="flex items-center gap-1">
-          <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-            <ChevronLeft size={14} />
-          </button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
-            .reduce<(number | '…')[]>((acc, n, i, arr) => {
-              if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-              acc.push(n); return acc;
-            }, [])
-            .map((n, i) =>
-              n === '…'
-                ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                : <button key={n} onClick={() => onGoPage(n as number)}
-                    className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                    style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                    {n}
-                  </button>
-            )
-          }
-          <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── TxList — daftar riwayat mutasi (Tabel/Kartu) ─────────────────────────────
@@ -325,7 +280,7 @@ function TxList({
               <p className="text-xs font-extrabold tabular" style={{ color: badge.color }}>
                 {isIn ? '+' : isTransfer ? '' : '–'}{e.qty} unit
               </p>
-              <p className="text-[10px] tabular" style={{ color: 'var(--text-muted)' }}>{formatDate(e)}</p>
+              <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>{formatDate(e)}</p>
             </div>
           </div>
         </div>
@@ -483,21 +438,19 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
   });
 
   const catLabel = (id?: string) => categories.find(c => c.id === id)?.label;
-  const formatRpCell = (n: number) =>
-    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
   return (
     <div className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
       <div className="hidden lg:flex px-4 py-2.5 items-center gap-3" style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
         <span className="w-6 flex-shrink-0" />
-        <span className="flex-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Produk</span>
-        <span className="w-14 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Awal</span>
-        <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Masuk</span>
-        <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Keluar</span>
-        <span className="w-16 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Stok</span>
-        <span className="w-24 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>HPP</span>
-        <span className="w-28 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Nilai Stok</span>
-        <span className="w-20 text-right text-[10px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Status</span>
+        <span className="flex-1 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Produk</span>
+        <span className="w-14 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Awal</span>
+        <span className="w-16 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Masuk</span>
+        <span className="w-16 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Keluar</span>
+        <span className="w-16 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Stok</span>
+        <span className="w-24 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>HPP</span>
+        <span className="w-28 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Nilai Stok</span>
+        <span className="w-20 text-right text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Status</span>
         <span className="w-6 flex-shrink-0" />
       </div>
       <div className="divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
@@ -524,17 +477,17 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
                 </div>
                 <div className="grid grid-cols-3 gap-2 lg:contents">
                   <div className="lg:w-14 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Awal</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Awal</p>
                     <p className="text-sm font-bold tabular lg:text-right" style={{ color: 'var(--text-secondary)' }}>{r.stokAwal}</p>
                   </div>
                   <div className="lg:w-16 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Masuk</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Masuk</p>
                     <p className="text-sm font-bold tabular lg:text-right" style={{ color: r.masuk > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
                       {r.masuk > 0 ? `+${r.masuk}` : '–'}
                     </p>
                   </div>
                   <div className="lg:w-16 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Keluar</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Keluar</p>
                     <p className="text-sm font-bold tabular lg:text-right" style={{ color: r.keluar > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
                       {r.keluar > 0 ? `–${r.keluar}` : '–'}
                     </p>
@@ -542,27 +495,27 @@ function ReportTable({ rows, categories, warehouses, whFilter, startIndex = 0, o
                 </div>
                 <div className="grid grid-cols-3 gap-2 lg:contents">
                   <div className="lg:w-16 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Stok</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Stok</p>
                     <p className="text-sm font-bold tabular lg:text-right" style={{ color: 'var(--text-primary)' }}>{r.qty}</p>
                   </div>
                   <div className="lg:w-24 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>HPP</p>
-                    <p className="text-sm tabular truncate lg:text-right" style={{ color: 'var(--text-secondary)' }}>{formatRpCell(r.costPrice)}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>HPP</p>
+                    <p className="text-sm tabular truncate lg:text-right" style={{ color: 'var(--text-secondary)' }}>{formatRp(r.costPrice)}</p>
                   </div>
                   <div className="lg:w-28 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Nilai Stok</p>
-                    <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: 'var(--accent)' }}>{formatRpCell(r.nilai)}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Nilai Stok</p>
+                    <p className="text-sm font-bold tabular truncate lg:text-right" style={{ color: 'var(--accent)' }}>{formatRp(r.nilai)}</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-2 lg:contents">
                   <div className="lg:w-20 lg:flex-shrink-0 min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Status</p>
-                    <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full lg:ml-auto" style={{ color: st.color, background: st.bg }}>
+                    <p className="text-[11px] font-bold uppercase tracking-wide lg:hidden" style={{ color: 'var(--text-muted)' }}>Status</p>
+                    <span className="inline-flex items-center text-[11px] font-extrabold px-2 py-0.5 rounded-full lg:ml-auto" style={{ color: st.color, background: st.bg }}>
                       {st.label}
                     </span>
                   </div>
                   <Tooltip label={isOpen ? 'Tutup kartu stok' : 'Lihat kartu stok'}>
-                    <button onClick={() => toggle(r.product.id)} className="btn-ghost p-2">
+                    <button aria-label={isOpen ? 'Tutup kartu stok' : 'Lihat kartu stok'} onClick={() => toggle(r.product.id)} className="btn-ghost p-2">
                       <ChevronRight size={13} style={{ transform: isOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                     </button>
                   </Tooltip>

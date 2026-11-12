@@ -79,6 +79,7 @@ export default function ColorPicker({ value, onChange, size = 44 }: ColorPickerP
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
+          data-popover-layer=""
           style={{
             position: 'fixed', top: pos.top, left: pos.left, width: panelWidth,
             zIndex: 10000, background: 'var(--surface)', border: '1.5px solid var(--border)',

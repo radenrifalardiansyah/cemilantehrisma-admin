@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { Camera, Loader2, X } from 'lucide-react';
+import Modal from '@/components/Modal';
 
 // Tombol "Ambil foto". Di HP (pointer kasar) memakai input `capture` bawaan sehingga langsung membuka
 // aplikasi kamera. Browser desktop MENGABAIKAN `capture` dan hanya membuka pemilih file, jadi di sana
@@ -80,34 +81,32 @@ function CameraCaptureModal({ onClose, onCapture }: { onClose: () => void; onCap
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><Camera size={17} /></div>
-            <div><p className="modal-title">Ambil Foto</p><p className="modal-subtitle">Arahkan kamera lalu tekan Jepret</p></div>
-          </div>
-          <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+    <Modal onClose={onClose}>
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><Camera size={17} /></div>
+          <div><p className="modal-title">Ambil Foto</p><p className="modal-subtitle">Arahkan kamera lalu tekan Jepret</p></div>
         </div>
-        <div className="modal-body">
-          {status === 'error' ? (
-            <p className="text-sm" style={{ color: 'var(--danger)' }}>{error}</p>
-          ) : (
-            <div className="relative rounded-xl overflow-hidden" style={{ background: '#000', aspectRatio: '4 / 3' }}>
-              <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
-              {status === 'starting' && <div className="absolute inset-0 flex items-center justify-center" style={{ color: '#fff' }}><Loader2 size={22} className="animate-spin" /></div>}
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-          {status !== 'error' && (
-            <button onClick={snap} disabled={status !== 'ready'} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}><Camera size={14} /> Jepret</button>
-          )}
-        </div>
+        <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
       </div>
-    </div>
+      <div className="modal-body">
+        {status === 'error' ? (
+          <p className="text-sm" style={{ color: 'var(--danger)' }}>{error}</p>
+        ) : (
+          <div className="relative rounded-xl overflow-hidden" style={{ background: '#000', aspectRatio: '4 / 3' }}>
+            <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
+            {status === 'starting' && <div className="absolute inset-0 flex items-center justify-center" style={{ color: '#fff' }}><Loader2 size={22} className="animate-spin" /></div>}
+          </div>
+        )}
+      </div>
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+        {status !== 'error' && (
+          <button onClick={snap} disabled={status !== 'ready'} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}><Camera size={14} /> Jepret</button>
+        )}
+      </div>
+    </Modal>
   );
 }

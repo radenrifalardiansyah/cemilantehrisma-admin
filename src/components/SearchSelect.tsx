@@ -21,6 +21,7 @@ interface SearchSelectProps {
   searchPlaceholder?: string;
   emptyLabel?: string;
   disabled?: boolean;
+  id?: string;
 }
 
 function Thumb({ o, size = 20 }: { o: SearchSelectOption; size?: number }) {
@@ -37,7 +38,7 @@ function Thumb({ o, size = 20 }: { o: SearchSelectOption; size?: number }) {
 }
 
 export default function SearchSelect({
-  value, onChange, options, placeholder = '– Pilih –', searchPlaceholder = 'Cari…', emptyLabel = 'Tidak ditemukan', disabled,
+  value, onChange, options, placeholder = '– Pilih –', searchPlaceholder = 'Cari…', emptyLabel = 'Tidak ditemukan', disabled, id,
 }: SearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -98,6 +99,7 @@ export default function SearchSelect({
       <button
         type="button"
         ref={btnRef}
+        id={id}
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
         className="input disabled:opacity-50 disabled:cursor-not-allowed"
@@ -119,6 +121,7 @@ export default function SearchSelect({
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
+          data-popover-layer=""
           style={{
             position: 'fixed', top: pos.top, left: pos.left, width: pos.width, minWidth: 220,
             zIndex: 10000, background: 'var(--surface)', border: '1.5px solid var(--border)',

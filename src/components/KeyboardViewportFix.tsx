@@ -11,6 +11,17 @@ import { useEffect } from 'react';
  * and nudges the focused field into view after the keyboard finishes animating in.
  */
 export default function KeyboardViewportFix() {
+  // Cegah nilai <input type="number"> berubah tanpa sengaja saat scroll-wheel/trackpad:
+  // lepas fokus dari input angka yang sedang fokus bila wheel terjadi tepat di atasnya (halaman tetap ter-scroll).
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement && el.type === 'number' && e.target === el) el.blur();
+    };
+    document.addEventListener('wheel', onWheel, { passive: true });
+    return () => document.removeEventListener('wheel', onWheel);
+  }, []);
+
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;

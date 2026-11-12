@@ -16,6 +16,8 @@ import ViewToggle from '@/components/ViewToggle';
 import AdminFeeInvoicePDF, { type AdminFeeInvoiceData, type AdminFeePaymentInfo } from '@/lib/pdf/AdminFeeInvoicePDF';
 import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
+import { formatRp, formatDate } from '@/lib/format';
+import Modal from '@/components/Modal';
 
 type Channel = 'online' | 'kasir' | 'consignment' | 'lapak';
 type FeeType = 'percent' | 'fixed' | 'monthly';
@@ -47,8 +49,6 @@ interface InvoiceRecord {
   note: string | null; dueDate: string | null;
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // Tinggi seragam untuk semua kontrol di baris form rate (toggle tipe, input nilai, tanggal,
 // tombol simpan) — tanpa ini, `<input>`/`<button>` bawaan browser tidak selalu render dengan
@@ -61,11 +61,9 @@ const rateLabel = (rate: { type: FeeType; value: number } | null) => {
   return rate.type === 'percent' ? `${rate.value}%` : formatRp(rate.value);
 };
 
-const fmtDate = (ts: { seconds: number } | null) =>
-  ts ? new Date(ts.seconds * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
+const fmtDate = (ts: { seconds: number } | null) => ts ? formatDate(ts.seconds * 1000, 'short') : '–';
 
-const fmtTime = (ts: { seconds: number } | null) =>
-  ts ? new Date(ts.seconds * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '–';
+const fmtTime = (ts: { seconds: number } | null) => ts ? formatDate(ts.seconds * 1000, 'time') : '–';
 
 // Bila superadmin mengganti rate lebih dari sekali untuk hari efektif yang sama, entri lama
 // itu tidak pernah benar-benar berlaku (lihat rateAtTime di admin-fee.ts) — hanya entri dengan
@@ -260,7 +258,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
       periodFrom: inv.periodFrom,
       periodTo: inv.periodTo,
       dueDate: inv.dueDate,
-      generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      generatedAt: formatDate(new Date(), 'longDateTime'),
       status: inv.status,
       note: inv.note,
       paymentInfo,
@@ -376,7 +374,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
   return (
     <div className="p-4 lg:p-6 space-y-5">
       <TopbarPortal>
-        <button onClick={() => { loadRates(); loadReport(); loadInvoices(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
+        <button aria-label="Muat ulang" onClick={() => { loadRates(); loadReport(); loadInvoices(); }} className="btn-ghost h-9 w-9 p-0 flex items-center justify-center">
           <RefreshCw size={14} className={loadingReport || loadingRates || loadingInvoices ? 'animate-spin' : ''} />
         </button>
       </TopbarPortal>
@@ -613,7 +611,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
               {channelView === 'table' ? (
                 <div className="card overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[560px] text-sm">
                       <thead>
                         <tr style={{ background: 'var(--surface-2)' }}>
                           <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Channel</th>
@@ -693,7 +691,7 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
             ) : invoiceView === 'table' ? (
               <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[560px] text-sm">
                     <thead>
                       <tr style={{ background: 'var(--surface-2)' }}>
                         <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Invoice</th>
@@ -793,106 +791,102 @@ export default function AdminFeeTab({ creds }: { creds: string }) {
         const b = report.breakdown.find(x => x.channel === txnModalChannel);
         if (!b) return null;
         return (
-          <div className="modal-overlay" onClick={() => setTxnModalChannel(null)}>
-            <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-              <div className="modal-accent" />
-              <span className="modal-handle" />
-              <div className="modal-header">
-                <div className="modal-header-left">
-                  <div className="modal-icon"><ListChecks size={17} /></div>
-                  <div>
-                    <p className="modal-title">Transaksi — {b.label}</p>
-                    <p className="modal-subtitle">{from} – {to} · {b.transactionCount} transaksi</p>
-                  </div>
-                </div>
-                <button onClick={() => setTxnModalChannel(null)} className="modal-close"><X size={14} /></button>
-              </div>
-              <div className="modal-body">
-                {b.transactions.length === 0 ? (
-                  <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi di periode ini.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr style={{ background: 'var(--surface-2)' }}>
-                          <th className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>No.</th>
-                          <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tanggal</th>
-                          <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Referensi</th>
-                          <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
-                          <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
-                          <th className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.transactions.slice().sort((x, y) => (x.createdAt?.seconds ?? 0) - (y.createdAt?.seconds ?? 0)).map((t, i) => (
-                          <tr key={t.id} style={{ borderTop: '1px solid var(--border-2)' }}>
-                            <td className="px-3 py-2.5 text-center tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
-                            <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(t.createdAt)}</td>
-                            <td className="px-3 py-2.5 font-semibold truncate" style={{ color: 'var(--text-primary)', maxWidth: 180 }}>{t.label}</td>
-                            <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(t.revenue)}</td>
-                            <td className="px-3 py-2.5 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(t.feeAmount)}</td>
-                            <td className="px-3 py-2.5 text-center">
-                              {t.invoiceNo ? (
-                                <span className="badge badge-green" title={t.invoiceNo}>Sudah Ditagihkan</span>
-                              ) : (
-                                <span className="badge badge-gray">Belum Ditagihkan</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {showInvoiceModal && report && (
-        <div className="modal-overlay" onClick={() => !generating && setShowInvoiceModal(false)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+          <Modal onClose={() => setTxnModalChannel(null)} className="modal-lg">
             <div className="modal-accent" />
             <span className="modal-handle" />
             <div className="modal-header">
               <div className="modal-header-left">
-                <div className="modal-icon"><FileDown size={17} /></div>
+                <div className="modal-icon"><ListChecks size={17} /></div>
                 <div>
-                  <p className="modal-title">Buat Invoice Biaya Admin</p>
-                  <p className="modal-subtitle">{from} – {to} · {formatRp(report.totalFee)}</p>
+                  <p className="modal-title">Transaksi — {b.label}</p>
+                  <p className="modal-subtitle">{from} – {to} · {b.transactionCount} transaksi</p>
                 </div>
               </div>
-              <button onClick={() => !generating && setShowInvoiceModal(false)} className="modal-close"><X size={14} /></button>
+              <button onClick={() => setTxnModalChannel(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
             </div>
-            <div className="modal-body space-y-3">
-              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                Angka ini akan terkunci dan tidak berubah walau rate diubah kemudian.
+            <div className="modal-body">
+              {b.transactions.length === 0 ? (
+                <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi di periode ini.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-sm">
+                    <thead>
+                      <tr style={{ background: 'var(--surface-2)' }}>
+                        <th className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>No.</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tanggal</th>
+                        <th className="text-left px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Referensi</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Omzet</th>
+                        <th className="text-right px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Biaya Admin</th>
+                        <th className="text-center px-3 py-2.5 text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {b.transactions.slice().sort((x, y) => (x.createdAt?.seconds ?? 0) - (y.createdAt?.seconds ?? 0)).map((t, i) => (
+                        <tr key={t.id} style={{ borderTop: '1px solid var(--border-2)' }}>
+                          <td className="px-3 py-2.5 text-center tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(t.createdAt)}</td>
+                          <td className="px-3 py-2.5 font-semibold truncate" style={{ color: 'var(--text-primary)', maxWidth: 180 }}>{t.label}</td>
+                          <td className="px-3 py-2.5 text-right tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(t.revenue)}</td>
+                          <td className="px-3 py-2.5 text-right tabular font-bold" style={{ color: 'var(--accent)' }}>{formatRp(t.feeAmount)}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            {t.invoiceNo ? (
+                              <span className="badge badge-green" title={t.invoiceNo}>Sudah Ditagihkan</span>
+                            ) : (
+                              <span className="badge badge-gray">Belum Ditagihkan</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {showInvoiceModal && report && (
+        <Modal onClose={() => !generating && setShowInvoiceModal(false)} className="modal-sm" style={{ maxWidth: 440 }}>
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><FileDown size={17} /></div>
+              <div>
+                <p className="modal-title">Buat Invoice Biaya Admin</p>
+                <p className="modal-subtitle">{from} – {to} · {formatRp(report.totalFee)}</p>
+              </div>
+            </div>
+            <button onClick={() => !generating && setShowInvoiceModal(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+          </div>
+          <div className="modal-body space-y-3">
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              Angka ini akan terkunci dan tidak berubah walau rate diubah kemudian.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Jatuh Tempo</label>
+              <DateInput value={dueDate} onChange={setDueDate} height={FORM_CTRL_H} style={{ maxWidth: 160 }} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Catatan untuk Admin (opsional)</label>
+              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                placeholder="cth. Ada penyesuaian rate konsinyasi bulan ini, silakan hubungi kami jika ada pertanyaan."
+                className="input w-full" style={{ resize: 'vertical', boxSizing: 'border-box' }} />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Catatan ini ikut tersimpan di invoice, tampil di halaman Tagihan admin, dan tercetak di PDF.
               </p>
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Jatuh Tempo</label>
-                <DateInput value={dueDate} onChange={setDueDate} height={FORM_CTRL_H} style={{ maxWidth: 160 }} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Catatan untuk Admin (opsional)</label>
-                <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-                  placeholder="cth. Ada penyesuaian rate konsinyasi bulan ini, silakan hubungi kami jika ada pertanyaan."
-                  className="input w-full" style={{ resize: 'vertical', boxSizing: 'border-box' }} />
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  Catatan ini ikut tersimpan di invoice, tampil di halaman Tagihan admin, dan tercetak di PDF.
-                </p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowInvoiceModal(false)} disabled={generating} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: generating ? 0.5 : 1 }}>
-                Batal
-              </button>
-              <button onClick={generateInvoice} disabled={generating} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: generating ? 0.75 : 1 }}>
-                {generating ? <Loader2 size={15} className="animate-spin" /> : 'Buat Invoice'}
-              </button>
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowInvoiceModal(false)} disabled={generating} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: generating ? 0.5 : 1 }}>
+              Batal
+            </button>
+            <button onClick={generateInvoice} disabled={generating} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0', opacity: generating ? 0.75 : 1 }}>
+              {generating ? <Loader2 size={15} className="animate-spin" /> : 'Buat Invoice'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

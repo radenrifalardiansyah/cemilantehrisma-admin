@@ -65,7 +65,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
               ? <CheckCircle2 size={17} className="flex-shrink-0 mt-0.5" />
               : <XCircle size={17} className="flex-shrink-0 mt-0.5" />}
             <span className="flex-1 leading-snug">{t.message}</span>
-            <button onClick={() => dismiss(t.id)} className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
+            <button aria-label="Tutup notifikasi" onClick={() => dismiss(t.id)} className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
               <X size={14} />
             </button>
           </div>

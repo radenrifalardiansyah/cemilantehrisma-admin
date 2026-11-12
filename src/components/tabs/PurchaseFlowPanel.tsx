@@ -25,13 +25,16 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { DateInput } from '@/components/DateTimeInput';
+import FilterSelect from '@/components/FilterSelect';
 
 // Purchase Order (PO) & Penerimaan Barang (GR/DO) Bahan Baku. PO tidak mengubah stok/keuangan;
 // pembelian baru masuk ke tab Pembelian saat GR di-approve (lihat api/goods-receipts/[id]/approve).
 // Daftar dimuat hanya saat sub-tab ini dibuka & setelah aksi — tanpa polling — dan data bahan/
 // supplier/dompet/header toko dioper dari MaterialsTab supaya tidak ada fetch ganda.
 
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Modal from '@/components/Modal';
 
 export interface FlowMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
 export interface FlowSupplier { id: string; name: string; phone?: string; address?: string; pic?: string }
@@ -53,8 +56,6 @@ interface Gr {
   attachments?: string[];
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const formatQty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 const todayISO = () => {
   const d = new Date();
@@ -634,7 +635,7 @@ ${pdfUrl}`.trim();
         )}
         {p.status === 'draft' && (
           <Tooltip label="Edit PO">
-            <button onClick={() => openEditPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Pencil size={12} /></button>
+            <button aria-label="Edit PO" onClick={() => openEditPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Pencil size={12} /></button>
           </Tooltip>
         )}
         {p.status === 'draft' && (
@@ -646,17 +647,17 @@ ${pdfUrl}`.trim();
         )}
         {p.status !== 'batal' && (
           <Tooltip label="Batalkan PO">
-            <button onClick={() => askCancelPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
+            <button aria-label="Batalkan PO" onClick={() => askCancelPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
           </Tooltip>
         )}
         {(p.status === 'disetujui' || p.status === 'terkirim') && canApprovePo && (
           <Tooltip label="Rollback ke Draft (bisa diedit lagi)">
-            <button onClick={() => askRollbackPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
+            <button aria-label="Rollback ke Draft (bisa diedit lagi)" onClick={() => askRollbackPo(p)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
           </Tooltip>
         )}
         <RecordHistoryButton open={historyId === p.id} onToggle={() => setHistoryId(c => c === p.id ? null : p.id)} />
         <Tooltip label="Lihat detail">
-          <button onClick={() => setExpandedId(c => c === p.id ? null : p.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+          <button aria-label="Lihat detail" onClick={() => setExpandedId(c => c === p.id ? null : p.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
             <ChevronRight size={12} style={{ transform: expandedId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
           </button>
         </Tooltip>
@@ -689,17 +690,17 @@ ${pdfUrl}`.trim();
       )}
       {(g.status === 'draft' || (g.status === 'approved' && canApprove)) && (
         <Tooltip label={g.status === 'approved' ? 'Batalkan GR yang sudah di-approve' : 'Batalkan GR'}>
-          <button onClick={() => askCancelGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
+          <button aria-label={g.status === 'approved' ? 'Batalkan GR yang sudah di-approve' : 'Batalkan GR'} onClick={() => askCancelGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}><Ban size={12} /></button>
         </Tooltip>
       )}
       {g.status === 'approved' && canApprove && (
         <Tooltip label="Rollback ke Draft (bisa diedit lagi)">
-          <button onClick={() => askRollbackGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
+          <button aria-label="Rollback ke Draft (bisa diedit lagi)" onClick={() => askRollbackGr(g)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}><Undo2 size={12} /></button>
         </Tooltip>
       )}
       <RecordHistoryButton open={historyId === g.id} onToggle={() => setHistoryId(c => c === g.id ? null : g.id)} />
         <Tooltip label="Lihat detail">
-          <button onClick={() => setExpandedId(c => c === g.id ? null : g.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+          <button aria-label="Lihat detail" onClick={() => setExpandedId(c => c === g.id ? null : g.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
             <ChevronRight size={12} style={{ transform: expandedId === g.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
           </button>
         </Tooltip>
@@ -908,7 +909,7 @@ ${pdfUrl}`.trim();
           </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+              <button aria-label="Halaman sebelumnya" onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
                 .map((n, i, arr) => (
@@ -918,7 +919,7 @@ ${pdfUrl}`.trim();
                       style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>{n}</button>
                   </span>
                 ))}
-              <button onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+              <button aria-label="Halaman berikutnya" onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
             </div>
           )}
         </div>
@@ -980,292 +981,282 @@ ${pdfUrl}`.trim();
 
       {/* ════ MODAL: FORM PO ════ */}
       {showPoForm && (
-        <div className="modal-overlay" onClick={() => !savingPo && setShowPoForm(false)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ClipboardList size={17} /></div>
+        <Modal onClose={() => !savingPo && setShowPoForm(false)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ClipboardList size={17} /></div>
+              <div>
+                <p className="modal-title">{editingPo ? `Edit ${editingPo.poNumber}` : 'Buat Purchase Order'}</p>
+                <p className="modal-subtitle">PO belum mengubah stok — stok masuk saat GR di-approve</p>
+              </div>
+            </div>
+            <Tooltip label="Tutup"><button onClick={() => setShowPoForm(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <p className="modal-title">{editingPo ? `Edit ${editingPo.poNumber}` : 'Buat Purchase Order'}</p>
-                  <p className="modal-subtitle">PO belum mengubah stok — stok masuk saat GR di-approve</p>
+                  <label style={fieldLabel}>Supplier</label>
+                  <SearchSelect value={fSupplierId}
+                    onChange={id => {
+                      setFSupplierId(id);
+                      const s = suppliers.find(ss => ss.id === id);
+                      if (s) { setFSupplierName(s.name); setFSupplierPhone(s.phone ?? ''); }
+                    }}
+                    options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Nama Supplier <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input type="text" value={fSupplierName} onChange={e => setFSupplierName(e.target.value)} placeholder="Isi manual kalau tidak terdaftar" className="input" />
                 </div>
               </div>
-              <Tooltip label="Tutup"><button onClick={() => setShowPoForm(false)} className="modal-close"><X size={14} /></button></Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Supplier</label>
-                    <SearchSelect value={fSupplierId}
-                      onChange={id => {
-                        setFSupplierId(id);
-                        const s = suppliers.find(ss => ss.id === id);
-                        if (s) { setFSupplierName(s.name); setFSupplierPhone(s.phone ?? ''); }
-                      }}
-                      options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Nama Supplier <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="text" value={fSupplierName} onChange={e => setFSupplierName(e.target.value)} placeholder="Isi manual kalau tidak terdaftar" className="input" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label style={fieldLabel}>No. WhatsApp Supplier</label>
-                    <input type="tel" value={fSupplierPhone} onChange={e => setFSupplierPhone(e.target.value)} placeholder="08xxxxxxxxxx" className="input" />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Tanggal PO <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <DateInput value={fDate} onChange={setFDate} />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Estimasi Tiba</label>
-                    <DateInput value={fExpected} onChange={setFExpected} />
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label style={fieldLabel}>Bahan Baku Dipesan</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {fRows.map((row, i) => {
-                      const material = materials.find(m => m.id === row.materialId);
-                      const qty = parseFloat(row.qty) || 0;
-                      const price = parseFloat(row.price) || 0;
-                      return (
-                        <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <SearchSelect value={row.materialId}
-                                onChange={id => {
-                                  const m = materials.find(mm => mm.id === id);
-                                  // Harga awal = harga rata-rata saat ini sebagai patokan; boleh diubah.
-                                  updateRow(i, { materialId: id, ...(m && !row.price && m.avgCost > 0 ? { price: String(Math.round(m.avgCost)) } : {}) });
-                                }}
-                                options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
-                            </div>
-                            <Tooltip label="Hapus baris">
-                              <button onClick={() => setFRows(prev => prev.filter((_, idx) => idx !== i))} disabled={fRows.length === 1}
-                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
-                            </Tooltip>
+                  <label style={fieldLabel}>No. WhatsApp Supplier</label>
+                  <input type="tel" value={fSupplierPhone} onChange={e => setFSupplierPhone(e.target.value)} placeholder="08xxxxxxxxxx" className="input" />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Tanggal PO <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <DateInput value={fDate} onChange={setFDate} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Estimasi Tiba</label>
+                  <DateInput value={fExpected} onChange={setFExpected} />
+                </div>
+              </div>
+
+              <div>
+                <label style={fieldLabel}>Bahan Baku Dipesan</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {fRows.map((row, i) => {
+                    const material = materials.find(m => m.id === row.materialId);
+                    const qty = parseFloat(row.qty) || 0;
+                    const price = parseFloat(row.price) || 0;
+                    return (
+                      <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <SearchSelect value={row.materialId}
+                              onChange={id => {
+                                const m = materials.find(mm => mm.id === id);
+                                // Harga awal = harga rata-rata saat ini sebagai patokan; boleh diubah.
+                                updateRow(i, { materialId: id, ...(m && !row.price && m.avgCost > 0 ? { price: String(Math.round(m.avgCost)) } : {}) });
+                              }}
+                              options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label style={fieldLabel}>{`Qty${material ? ` (${material.unit})` : ''}`}</label>
-                              <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
-                            </div>
-                            <div>
-                              <label style={fieldLabel}>Harga/satuan</label>
-                              <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })} placeholder="0" />
-                            </div>
-                          </div>
-                          {qty > 0 && price > 0 && <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * price)}</p>}
+                          <Tooltip label="Hapus baris">
+                            <button aria-label="Hapus baris" onClick={() => setFRows(prev => prev.filter((_, idx) => idx !== i))} disabled={fRows.length === 1}
+                              className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
+                          </Tooltip>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <button onClick={() => setFRows(prev => [...prev, { materialId: '', qty: '', price: '' }])} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
-                    <Plus size={12} /> Tambah Baris Bahan Baku
-                  </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label style={fieldLabel}>{`Qty${material ? ` (${material.unit})` : ''}`}</label>
+                            <input type="number" inputMode="decimal" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
+                          </div>
+                          <div>
+                            <label style={fieldLabel}>Harga/satuan</label>
+                            <NumberInput value={row.price} onChange={raw => updateRow(i, { price: raw })} placeholder="0" />
+                          </div>
+                        </div>
+                        {qty > 0 && price > 0 && <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * price)}</p>}
+                      </div>
+                    );
+                  })}
                 </div>
-
-                <div>
-                  <label style={fieldLabel}>Catatan</label>
-                  <textarea rows={3} value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Catatan untuk supplier (opsional)" className="input" style={{ resize: 'vertical' }} />
-                </div>
-
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total PO</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(poTotal)}</span>
-                </div>
+                <button onClick={() => setFRows(prev => [...prev, { materialId: '', qty: '', price: '' }])} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                  <Plus size={12} /> Tambah Baris Bahan Baku
+                </button>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowPoForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={savePo} disabled={savingPo || !canSavePo} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {savingPo ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {savingPo ? 'Menyimpan…' : editingPo ? 'Simpan Perubahan' : 'Simpan PO'}
-              </button>
+
+              <div>
+                <label style={fieldLabel}>Catatan</label>
+                <textarea rows={3} value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Catatan untuk supplier (opsional)" className="input" style={{ resize: 'vertical' }} />
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total PO</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(poTotal)}</span>
+              </div>
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowPoForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={savePo} disabled={savingPo || !canSavePo} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {savingPo ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {savingPo ? 'Menyimpan…' : editingPo ? 'Simpan Perubahan' : 'Simpan PO'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* ════ MODAL: FORM GR ════ */}
       {editingGr && (
-        <div className="modal-overlay" onClick={() => !savingGr && setEditingGr(null)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><PackageCheck size={17} /></div>
+        <Modal onClose={() => !savingGr && setEditingGr(null)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><PackageCheck size={17} /></div>
+              <div>
+                <p className="modal-title">{editingGr.grNumber} <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/ {editingGr.doNumber}</span></p>
+                <p className="modal-subtitle">Dari {editingGr.poNumber} · {editingGr.supplierName}</p>
+              </div>
+            </div>
+            <Tooltip label="Tutup"><button onClick={() => setEditingGr(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <p className="modal-title">{editingGr.grNumber} <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/ {editingGr.doNumber}</span></p>
-                  <p className="modal-subtitle">Dari {editingGr.poNumber} · {editingGr.supplierName}</p>
+                  <label style={fieldLabel}>No. DO (otomatis)</label>
+                  <input type="text" value={editingGr.doNumber} readOnly className="input" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontWeight: 700 }} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Tanggal Terima <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <DateInput value={gDate} onChange={setGDate} />
                 </div>
               </div>
-              <Tooltip label="Tutup"><button onClick={() => setEditingGr(null)} className="modal-close"><X size={14} /></button></Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>No. DO (otomatis)</label>
-                    <input type="text" value={editingGr.doNumber} readOnly className="input" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontWeight: 700 }} />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Tanggal Terima <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <DateInput value={gDate} onChange={setGDate} />
-                  </div>
-                </div>
 
-                <div>
-                  <label style={fieldLabel}>Barang yang Benar-benar Datang</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {gRows.map((row, i) => (
-                      <div key={row.materialId} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                        <p className="text-sm font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-                          {row.name} <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>· sisa PO {formatQty(row.orderedQty)} {row.unit}</span>
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label style={fieldLabel}>{`Qty diterima (${row.unit})`}</label>
-                            <input type="number" min="0" value={row.qty} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} placeholder="0" className="input" />
-                          </div>
-                          <div>
-                            <label style={fieldLabel}>Harga/satuan (sesuai nota)</label>
-                            <NumberInput value={row.price} onChange={raw => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, price: raw } : r))} placeholder="0" />
-                          </div>
+              <div>
+                <label style={fieldLabel}>Barang yang Benar-benar Datang</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {gRows.map((row, i) => (
+                    <div key={row.materialId} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                      <p className="text-sm font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                        {row.name} <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>· sisa PO {formatQty(row.orderedQty)} {row.unit}</span>
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label style={fieldLabel}>{`Qty diterima (${row.unit})`}</label>
+                          <input type="number" inputMode="decimal" min="0" value={row.qty} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, qty: e.target.value } : r))} placeholder="0" className="input" />
                         </div>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                          <div>
-                            <label style={fieldLabel}>Kondisi</label>
-                            <select value={row.condition} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, condition: e.target.value } : r))} className="input">
-                              <option value="">– Pilih –</option>
-                              {GR_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label style={fieldLabel}>Keterangan</label>
-                            <input type="text" maxLength={200} value={row.itemNote} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, itemNote: e.target.value } : r))} placeholder="mis. 2 ikat sobek" className="input" />
-                          </div>
+                        <div>
+                          <label style={fieldLabel}>Harga/satuan (sesuai nota)</label>
+                          <NumberInput value={row.price} onChange={raw => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, price: raw } : r))} placeholder="0" />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Isi 0 untuk bahan yang belum datang — sisanya tetap terbuka di PO untuk GR berikutnya.</p>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div>
+                          <label style={fieldLabel}>Kondisi</label>
+                          <FilterSelect searchable={false} height={38} value={row.condition} onChange={v => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, condition: v } : r))}
+                            options={[{ value: '', label: '– Pilih –' }, ...GR_CONDITIONS.map(c => ({ value: c, label: c }))]} />
+                        </div>
+                        <div>
+                          <label style={fieldLabel}>Keterangan</label>
+                          <input type="text" maxLength={200} value={row.itemNote} onChange={e => setGRows(prev => prev.map((r, idx) => idx === i ? { ...r, itemNote: e.target.value } : r))} placeholder="mis. 2 ikat sobek" className="input" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Isi 0 untuk bahan yang belum datang — sisanya tetap terbuka di PO untuk GR berikutnya.</p>
+              </div>
 
-                <div>
-                  <label style={fieldLabel}>Catatan</label>
-                  <textarea rows={3} value={gNote} onChange={e => setGNote(e.target.value)} placeholder="Catatan penerimaan (opsional)" className="input" style={{ resize: 'vertical' }} />
-                </div>
+              <div>
+                <label style={fieldLabel}>Catatan</label>
+                <textarea rows={3} value={gNote} onChange={e => setGNote(e.target.value)} placeholder="Catatan penerimaan (opsional)" className="input" style={{ resize: 'vertical' }} />
+              </div>
 
-                <div>
-                  <label style={fieldLabel}>Lampiran Foto (opsional)</label>
-                  <GrAttachments creds={creds} urls={gAtt} onChange={setGAtt} />
-                </div>
+              <div>
+                <label style={fieldLabel}>Lampiran Foto (opsional)</label>
+                <GrAttachments creds={creds} urls={gAtt} onChange={setGAtt} />
+              </div>
 
-                <div>
-                  <label style={fieldLabel}>Dompet Sumber {canApprove && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
-                  <SearchSelect value={gWallet} onChange={setGWallet} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-                  {gWallet && <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Saldo saat ini: {formatRp(walletBalances[gWallet] ?? 0)}</p>}
-                </div>
+              <div>
+                <label style={fieldLabel}>Dompet Sumber {canApprove && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
+                <SearchSelect value={gWallet} onChange={setGWallet} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                {gWallet && <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Saldo saat ini: {formatRp(walletBalances[gWallet] ?? 0)}</p>}
+              </div>
 
-                <div>
-                  <label style={fieldLabel}>Status Pembayaran</label>
-                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                    {(['lunas', 'belum_lunas'] as const).map(s => (
-                      <button key={s} type="button" onClick={() => setGPayment(s)} className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
-                        style={gPayment === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-                        {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                    {gPayment === 'belum_lunas'
-                      ? 'Stok bertambah saat approve, tapi baru tercatat sebagai Pengeluaran saat ditandai Lunas di tab Pembelian.'
-                      : 'Saat approve, pengeluaran otomatis tercatat dari dompet ini.'}
-                  </p>
+              <div>
+                <label style={fieldLabel}>Status Pembayaran</label>
+                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                  {(['lunas', 'belum_lunas'] as const).map(s => (
+                    <button key={s} type="button" onClick={() => setGPayment(s)} className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
+                      style={gPayment === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                      {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
+                    </button>
+                  ))}
                 </div>
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  {gPayment === 'belum_lunas'
+                    ? 'Stok bertambah saat approve, tapi baru tercatat sebagai Pengeluaran saat ditandai Lunas di tab Pembelian.'
+                    : 'Saat approve, pengeluaran otomatis tercatat dari dompet ini.'}
+                </p>
+              </div>
 
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Diterima</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(grTotal)}</span>
-                </div>
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Diterima</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(grTotal)}</span>
               </div>
             </div>
-            <div className="modal-footer">
-              <button onClick={() => saveGr(false)} disabled={savingGr} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                {savingGr ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Draft
-              </button>
-              {canApprove && (
-                <button onClick={() => saveGr(true)} disabled={savingGr || !gWallet} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                  {savingGr ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Simpan & Approve
-                </button>
-              )}
-            </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => saveGr(false)} disabled={savingGr} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              {savingGr ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Draft
+            </button>
+            {canApprove && (
+              <button onClick={() => saveGr(true)} disabled={savingGr || !gWallet} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {savingGr ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Simpan & Approve
+              </button>
+            )}
+          </div>
+        </Modal>
       )}
 
       {/* ════ MODAL: ROLLBACK ════ */}
       {rbTarget && (
-        <div className="modal-overlay" onClick={() => !rollingBack && setRbTarget(null)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Undo2 size={17} /></div>
-                <div><p className="modal-title">Rollback {rbTarget.label}?</p></div>
-              </div>
-              <Tooltip label="Tutup"><button onClick={() => setRbTarget(null)} className="modal-close"><X size={14} /></button></Tooltip>
+        <Modal onClose={() => !rollingBack && setRbTarget(null)}>
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Undo2 size={17} /></div>
+              <div><p className="modal-title">Rollback {rbTarget.label}?</p></div>
             </div>
-            <div className="modal-body">
-              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>{rbTarget.warn}</p>
-              <label style={fieldLabel}>Alasan <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <textarea value={rbNote} onChange={e => setRbNote(e.target.value)} rows={3} className="input" placeholder="Mengapa perlu dikembalikan ke Draft?" />
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setRbTarget(null)} disabled={rollingBack} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Kembali</button>
-              <button onClick={doRollback} disabled={rollingBack} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {rollingBack ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />} Ya, Rollback
-              </button>
-            </div>
+            <Tooltip label="Tutup"><button onClick={() => setRbTarget(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
-        </div>
+          <div className="modal-body">
+            <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>{rbTarget.warn}</p>
+            <label style={fieldLabel}>Alasan <span style={{ color: 'var(--danger)' }}>*</span></label>
+            <textarea value={rbNote} onChange={e => setRbNote(e.target.value)} rows={3} className="input" placeholder="Mengapa perlu dikembalikan ke Draft?" />
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setRbTarget(null)} disabled={rollingBack} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Kembali</button>
+            <button onClick={doRollback} disabled={rollingBack} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {rollingBack ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />} Ya, Rollback
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* ════ MODAL: BATAL ════ */}
       {cancelTarget && (
-        <div className="modal-overlay" onClick={() => !cancelling && setCancelTarget(null)}>
-          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Ban size={17} /></div>
-                <div><p className="modal-title">Batalkan {cancelTarget.label}?</p></div>
-              </div>
-              <Tooltip label="Tutup"><button onClick={() => setCancelTarget(null)} className="modal-close"><X size={14} /></button></Tooltip>
+        <Modal onClose={() => !cancelling && setCancelTarget(null)}>
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Ban size={17} /></div>
+              <div><p className="modal-title">Batalkan {cancelTarget.label}?</p></div>
             </div>
-            <div className="modal-body">
-              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>{cancelTarget.warn}</p>
-              <label style={fieldLabel}>Alasan {cancelTarget.needReason && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
-              <textarea value={cancelNote} onChange={e => setCancelNote(e.target.value)} rows={3} className="input" placeholder="Alasan pembatalan" />
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setCancelTarget(null)} disabled={cancelling} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Kembali</button>
-              <button onClick={doCancel} disabled={cancelling} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: 'var(--danger)' }}>
-                {cancelling ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Ya, Batalkan
-              </button>
-            </div>
+            <Tooltip label="Tutup"><button onClick={() => setCancelTarget(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
-        </div>
+          <div className="modal-body">
+            <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>{cancelTarget.warn}</p>
+            <label style={fieldLabel}>Alasan {cancelTarget.needReason && <span style={{ color: 'var(--danger)' }}>*</span>}</label>
+            <textarea value={cancelNote} onChange={e => setCancelNote(e.target.value)} rows={3} className="input" placeholder="Alasan pembatalan" />
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setCancelTarget(null)} disabled={cancelling} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Kembali</button>
+            <button onClick={doCancel} disabled={cancelling} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: 'var(--danger)' }}>
+              {cancelling ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Ya, Batalkan
+            </button>
+          </div>
+        </Modal>
       )}
     </>
   );

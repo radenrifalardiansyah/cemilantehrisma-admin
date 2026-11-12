@@ -17,7 +17,7 @@ import {
 import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
 
 type PeriodKey = 'today' | '7d' | '30d' | 'month' | 'year' | 'custom';
 const PERIOD_OPTIONS: { id: PeriodKey; label: string }[] = [
@@ -138,7 +138,7 @@ export default function HistoryTab({ creds }: { creds: string }) {
           <FilterSelect value={entityFilter} onChange={v => { setEntityFilter(v); resetPage(); }} height={HEADER_BTN_H} options={entityOptions} searchPlaceholder="Cari modul…" />
         </div>
         <div className="w-full sm:w-[160px] flex-shrink-0">
-          <FilterSelect value={actionFilter} onChange={v => { setActionFilter(v); resetPage(); }} height={HEADER_BTN_H} options={actionOptions} searchPlaceholder="Cari aksi…" />
+          <FilterSelect searchable={false} value={actionFilter} onChange={v => { setActionFilter(v); resetPage(); }} height={HEADER_BTN_H} options={actionOptions} searchPlaceholder="Cari aksi…" />
         </div>
       </div>
 
@@ -191,7 +191,7 @@ export default function HistoryTab({ creds }: { creds: string }) {
                     </p>
                   </div>
                   <Tooltip label={expanded ? 'Tutup detail' : 'Lihat detail'}>
-                    <button onClick={() => toggleExpanded(e.id)} className="btn-ghost p-2 flex-shrink-0">
+                    <button aria-label={expanded ? 'Tutup detail' : 'Lihat detail'} onClick={() => toggleExpanded(e.id)} className="btn-ghost p-2 flex-shrink-0">
                       <ChevronRight size={13} style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                     </button>
                   </Tooltip>
@@ -249,7 +249,7 @@ export default function HistoryTab({ creds }: { creds: string }) {
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
               <Tooltip label="Halaman sebelumnya">
-                <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                   <ChevronLeft size={14} />
                 </button>
               </Tooltip>
@@ -270,7 +270,7 @@ export default function HistoryTab({ creds }: { creds: string }) {
                 )
               }
               <Tooltip label="Halaman berikutnya">
-                <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                   <ChevronRight size={14} />
                 </button>
               </Tooltip>

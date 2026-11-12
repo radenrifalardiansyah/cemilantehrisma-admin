@@ -13,6 +13,7 @@ interface DateTimeInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  id?: string;
 }
 
 const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
@@ -61,7 +62,8 @@ function usePopover(open: boolean, setOpen: (v: boolean) => void, w: number, h: 
   return { btnRef, panelRef, pos };
 }
 
-function DatePicker({ value, onChange, disabled, min, max, height, clearable }: {
+function DatePicker({ value, onChange, disabled, min, max, height, clearable, id }: {
+  id?: string;
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
@@ -95,6 +97,7 @@ function DatePicker({ value, onChange, disabled, min, max, height, clearable }: 
       <button
         type="button"
         ref={btnRef}
+        id={id}
         disabled={disabled}
         onClick={toggle}
         className="input disabled:opacity-50"
@@ -108,6 +111,7 @@ function DatePicker({ value, onChange, disabled, min, max, height, clearable }: 
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
+          data-popover-layer=""
           style={{
             position: 'fixed', top: pos.top, left: pos.left, width: CAL_W, zIndex: 10000, padding: 12,
             background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14,
@@ -222,6 +226,7 @@ function TimePicker({ value, onChange, disabled }: { value: string; onChange: (v
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
+          data-popover-layer=""
           style={{
             position: 'fixed', top: pos.top, left: pos.left, width: PANEL_W, height: PANEL_H, zIndex: 10000,
             background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14,
@@ -243,7 +248,8 @@ function TimePicker({ value, onChange, disabled }: { value: string; onChange: (v
 // tanggal sebelumnya tidak bisa dipilih. `style` dipakai di pembungkus (mis. untuk lebar tetap).
 // Default lebar 100% seperti `.input`; ubah lewat `style`/`className` pembungkus. `height` mengatur tinggi tombol.
 // Tanggal bisa dikosongkan lewat tombol "Hapus" (sama seperti input native), kecuali `clearable={false}`.
-export function DateInput({ value, onChange, disabled, min, max, height, clearable = true, className, style }: {
+export function DateInput({ value, onChange, disabled, min, max, height, clearable = true, className, style, id }: {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -256,18 +262,121 @@ export function DateInput({ value, onChange, disabled, min, max, height, clearab
 }) {
   return (
     <div className={className} style={{ display: 'flex', width: '100%', minWidth: 0, ...style }}>
-      <DatePicker value={value} onChange={onChange} disabled={disabled} min={min} max={max} height={height} clearable={clearable} />
+      <DatePicker id={id} value={value} onChange={onChange} disabled={disabled} min={min} max={max} height={height} clearable={clearable} />
     </div>
   );
 }
 
-export default function DateTimeInput({ value, onChange, disabled }: DateTimeInputProps) {
+// Pengganti <input type="month">: popup grid 12 bulan + navigasi tahun, tampilan seragam dengan DateInput.
+// Value & onChange berformat "YYYY-MM"; `min`/`max` juga "YYYY-MM". Tidak ada tombol hapus (sama seperti pemakaian type="month" di sini).
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTH_W = 260;
+const MONTH_H = 220;
+
+export function MonthInput({ value, onChange, disabled, min, max, height, className, style, id }: {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  min?: string;
+  max?: string;
+  height?: number | string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen] = useState(false);
+  const { btnRef, panelRef, pos } = usePopover(open, setOpen, MONTH_W, MONTH_H);
+  const parsed = /^\d{4}-\d{2}$/.test(value) ? { y: Number(value.slice(0, 4)), m: Number(value.slice(5, 7)) - 1 } : null;
+  const [year, setYear] = useState(() => parsed?.y ?? new Date().getFullYear());
+
+  const toggle = () => {
+    if (!open) setYear(parsed?.y ?? new Date().getFullYear());
+    setOpen(o => !o);
+  };
+  const now = new Date();
+  const thisYm = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const isBlocked = (ym: string) => (!!min && ym < min) || (!!max && ym > max);
+  const pick = (ym: string) => { onChange(ym); setOpen(false); };
+  const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+  const prevBlocked = !!min && year <= Number(min.slice(0, 4));
+  const nextBlocked = !!max && year >= Number(max.slice(0, 4));
+
+  return (
+    <div className={className} style={{ display: 'flex', width: '100%', minWidth: 0, ...style }}>
+      <button
+        type="button"
+        ref={btnRef}
+        id={id}
+        disabled={disabled}
+        onClick={toggle}
+        className="input disabled:opacity-50"
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left', ...(height != null ? { height, boxSizing: 'border-box' as const, paddingTop: 0, paddingBottom: 0 } : null) }}
+      >
+        <span className="tabular" style={{ color: parsed ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          {parsed ? `${MONTHS[parsed.m]} ${parsed.y}` : 'Pilih bulan'}
+        </span>
+        <Calendar size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </button>
+      {open && pos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          data-popover-layer=""
+          style={{
+            position: 'fixed', top: pos.top, left: pos.left, width: MONTH_W, zIndex: 10000, padding: 12,
+            background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <button type="button" aria-label="Tahun sebelumnya" disabled={prevBlocked} onClick={() => setYear(y => y - 1)} style={{ ...navBtn, opacity: prevBlocked ? 0.35 : 1, cursor: prevBlocked ? 'not-allowed' : 'pointer' }}><ChevronLeft size={16} /></button>
+            <span className="tabular" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{year}</span>
+            <button type="button" aria-label="Tahun berikutnya" disabled={nextBlocked} onClick={() => setYear(y => y + 1)} style={{ ...navBtn, opacity: nextBlocked ? 0.35 : 1, cursor: nextBlocked ? 'not-allowed' : 'pointer' }}><ChevronRight size={16} /></button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+            {MONTHS_SHORT.map((label, i) => {
+              const ym = `${year}-${pad(i + 1)}`;
+              const active = ym === value;
+              const isNow = ym === thisYm;
+              const blocked = isBlocked(ym);
+              return (
+                <button
+                  key={ym}
+                  type="button"
+                  disabled={blocked}
+                  onClick={() => pick(ym)}
+                  style={{
+                    height: 36, borderRadius: 8, fontSize: 12.5, cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.35 : 1, fontWeight: active || isNow ? 700 : 500,
+                    border: isNow && !active ? '1.5px solid var(--accent)' : '1.5px solid transparent',
+                    background: active ? 'var(--accent)' : 'transparent',
+                    color: active ? '#fff' : isNow ? 'var(--accent)' : 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={e => { if (!active && !blocked) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-2)' }}>
+            <button type="button" disabled={isBlocked(thisYm)} onClick={() => pick(thisYm)} style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: isBlocked(thisYm) ? 'not-allowed' : 'pointer', padding: '4px 8px', opacity: isBlocked(thisYm) ? 0.35 : 1 }}>
+              Bulan ini
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+export default function DateTimeInput({ value, onChange, disabled, id }: DateTimeInputProps) {
   const [date = '', time = ''] = (value || '').split('T');
   // Kalau jam dikosongkan, pakai 00:00 supaya value tetap valid; kalau tanggal dikosongkan, kosongkan semuanya.
   const emit = (d: string, t: string) => onChange(d ? `${d}T${t || '00:00'}` : '');
   return (
     <div className="flex gap-2">
-      <DatePicker value={date} disabled={disabled} onChange={d => emit(d, time)} />
+      <DatePicker id={id} value={date} disabled={disabled} onChange={d => emit(d, time)} />
       <TimePicker value={time.slice(0, 5)} disabled={disabled} onChange={t => emit(date, t)} />
     </div>
   );

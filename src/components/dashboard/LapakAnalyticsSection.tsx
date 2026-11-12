@@ -15,6 +15,7 @@ import AnalyticsPdfButton from './AnalyticsPdfButton';
 import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { periodRange, type PeriodKey } from '@/lib/period';
+import { formatRp } from '@/lib/format';
 
 interface LapakAnalytics {
   period: { from: string; to: string; prevFrom: string; prevTo: string; days: number };
@@ -38,7 +39,6 @@ interface LapakAnalytics {
 interface StockRow { stallName: string; productId: string; name: string; consignorName: string; stock: number; price: number; minStock: number; sold: number; value?: number }
 
 const todayKey = () => new Date().toLocaleDateString('en-CA');
-const formatRp = (n: number) => `Rp${Math.round(n).toLocaleString('id-ID')}`;
 const compactRp = (n: number) => {
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}jt`;

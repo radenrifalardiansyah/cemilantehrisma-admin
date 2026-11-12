@@ -18,6 +18,7 @@ import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import { exportSheet } from '@/components/tabs/purchase-flow-io';
 import type { PoReportRow, GrReportRow, OpnameReportRow, SupplierBreakdown, summarizePo, summarizeGr, summarizeOpname } from '@/lib/procurement-report';
 import { DateInput } from '@/components/DateTimeInput';
+import FilterSelect from '@/components/FilterSelect';
 
 // Tiga laporan Operasional > Laporan dengan kerangka yang sama: Laporan PO, Laporan GR, Laporan Stok
 // Opname. Data diambil per periode dari /api/reports/* (hanya baris periode itu, bukan seluruh
@@ -25,9 +26,8 @@ import { DateInput } from '@/components/DateTimeInput';
 
 export type ReportKind = 'po' | 'gr' | 'opname';
 
-const HEADER_BTN_H = 34;
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
 const formatQty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 const dateDisplay = (iso?: string | null) =>
   iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
@@ -284,9 +284,10 @@ export default function ProcurementReportTab({ creds, kind }: { creds: string; k
                   <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="input text-sm w-full" style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder={meta.searchPlaceholder} />
                 </div>
                 {statusOptions.length > 0 && (
-                  <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="input text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, width: 'auto' }}>
-                    {statusOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                  </select>
+                  <div className="flex-shrink-0" style={{ width: 170 }}>
+                    <FilterSelect searchable={false} height={HEADER_BTN_H} value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
+                      options={statusOptions.map(o => ({ value: o.id, label: o.label }))} />
+                  </div>
                 )}
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <Tooltip label="Export Excel">
@@ -394,8 +395,8 @@ export default function ProcurementReportTab({ creds, kind }: { creds: string; k
                 </div>
                 {totalPages > 1 && (
                   <div className="flex items-center gap-1">
-                    <button onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
-                    <button onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+                    <button aria-label="Halaman sebelumnya" onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+                    <button aria-label="Halaman berikutnya" onClick={() => setPage(Math.min(totalPages, safePage + 1))} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
                   </div>
                 )}
               </div>

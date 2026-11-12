@@ -1,5 +1,6 @@
 'use client';
 
+import BulkBar from '@/components/BulkBar';
 import { isValidIdMobile, PHONE_FORMAT_HINT } from '@/lib/phone';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -23,7 +24,9 @@ import FilterSelect from '@/components/FilterSelect';
 import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 const TEMPLATE_COLS = [
   { header: 'Kode',                       key: 'code',    width: 12 },
@@ -708,7 +711,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
 
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <Tooltip label="Edit">
-                          <button onClick={() => openEdit(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEdit(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                             <Pencil size={13} />
                           </button>
                         </Tooltip>
@@ -719,7 +722,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
                           </button>
                         </Tooltip>
                         <Tooltip label="Lihat detail">
-                          <button onClick={() => setExpandedId(expandedId === c.id ? null : c.id)} className="btn-ghost p-2">
+                          <button aria-label="Lihat detail" onClick={() => setExpandedId(expandedId === c.id ? null : c.id)} className="btn-ghost p-2">
                             <ChevronRight size={13} style={{ transform: expandedId === c.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                           </button>
                         </Tooltip>
@@ -772,7 +775,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
                       </button>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <Tooltip label="Edit">
-                          <button onClick={() => openEdit(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEdit(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                             <Pencil size={12} />
                           </button>
                         </Tooltip>
@@ -804,7 +807,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -827,7 +830,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -840,178 +843,143 @@ export default function CustomersTab({ creds }: { creds: string }) {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
-          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
-            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
-            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportExcel(customers.filter(c => selected.has(c.id)), 'terpilih')} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
-            </button>
-            <button onClick={() => exportPdf(customers.filter(c => selected.has(c.id)), 'terpilih')} disabled={exportingPdf}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
-              PDF
-            </button>
-            <button onClick={bulkDelete} disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'var(--danger)', color: '#fff' }}>
-              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Hapus
-            </button>
-            <button onClick={() => setSelected(new Set())}
-              className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
-              Batal
-            </button>
-          </div>
-        </div>
+        <BulkBar count={selected.size} onExportExcel={() => exportExcel(customers.filter(c => selected.has(c.id)), 'terpilih')} exporting={exporting}
+          onExportPdf={() => exportPdf(customers.filter(c => selected.has(c.id)), 'terpilih')} exportingPdf={exportingPdf}
+          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())} />
       )}
 
       {/* Add/Edit modal */}
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
+        <Modal onClose={closeEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
 
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon">
-                  <Contact size={17} />
-                </div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Pelanggan' : 'Edit Pelanggan'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Simpan data pelanggan baru' : `Edit: ${editing.name}`}</p>
-                </div>
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon">
+                <Contact size={17} />
               </div>
-              <Tooltip label="Tutup" side="bottom">
-                <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
-              </Tooltip>
-            </div>
-
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="field-label">Jenis Pelanggan</label>
-                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                    {(['personal', 'company'] as const).map(t => {
-                      const T = CUSTOMER_TYPE_MAP[t].icon;
-                      const active = (editing.type ?? 'personal') === t;
-                      return (
-                        <button key={t} type="button" onClick={() => setEditing({ ...editing, type: t })}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 transition-all"
-                          style={{
-                            height: 38, fontSize: 13, fontWeight: 600,
-                            ...(active ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-muted)' }),
-                          }}>
-                          <T size={14} /> {CUSTOMER_TYPE_MAP[t].label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ width: 110, flexShrink: 0 }}>
-                    <label className="field-label">Kode {isNew ? '(otomatis)' : '(opsional)'}</label>
-                    <input
-                      value={editing.code ?? ''}
-                      onChange={e => setEditing({ ...editing, code: e.target.value })}
-                      className="input"
-                      placeholder="PLG001"
-                      readOnly={isNew}
-                      style={isNew ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Nama <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input
-                      value={editing.name}
-                      onChange={e => setEditing({ ...editing, name: e.target.value })}
-                      className="input"
-                      placeholder="Nama pelanggan"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="field-label">No. HP / WhatsApp (opsional)</label>
-                  <input
-                    value={editing.phone}
-                    onChange={e => setEditing({ ...editing, phone: e.target.value })}
-                    className="input"
-                    placeholder="Contoh: 081234567890"
-                  />
-                </div>
-
-                <div>
-                  <label className="field-label">Email (opsional)</label>
-                  <input
-                    value={editing.email ?? ''}
-                    onChange={e => setEditing({ ...editing, email: e.target.value })}
-                    className="input"
-                    placeholder="nama@email.com"
-                  />
-                </div>
-
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Kota (opsional)</label>
-                    <input
-                      value={editing.city ?? ''}
-                      onChange={e => setEditing({ ...editing, city: e.target.value })}
-                      className="input"
-                      placeholder="Contoh: Bandung"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="field-label">Alamat (opsional)</label>
-                  <input
-                    value={editing.address ?? ''}
-                    onChange={e => setEditing({ ...editing, address: e.target.value })}
-                    className="input"
-                    placeholder="Alamat lengkap"
-                  />
-                </div>
-
-                <div>
-                  <label className="field-label">Catatan (opsional)</label>
-                  <textarea
-                    value={editing.notes ?? ''}
-                    onChange={e => setEditing({ ...editing, notes: e.target.value })}
-                    className="input"
-                    style={{ resize: 'vertical', minHeight: 70 }}
-                    placeholder="Catatan tambahan tentang pelanggan"
-                  />
-                </div>
-
-                {error && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {error}
-                  </p>
-                )}
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Pelanggan' : 'Edit Pelanggan'}</p>
+                <p className="modal-subtitle">{isNew ? 'Simpan data pelanggan baru' : `Edit: ${editing.name}`}</p>
               </div>
             </div>
+            <Tooltip label="Tutup" side="bottom">
+              <button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
 
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={save} disabled={saving || !editing.name.trim()}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Pelanggan'}
-              </button>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label className="field-label">Jenis Pelanggan</label>
+                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                  {(['personal', 'company'] as const).map(t => {
+                    const T = CUSTOMER_TYPE_MAP[t].icon;
+                    const active = (editing.type ?? 'personal') === t;
+                    return (
+                      <button key={t} type="button" onClick={() => setEditing({ ...editing, type: t })}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 transition-all"
+                        style={{
+                          height: 38, fontSize: 13, fontWeight: 600,
+                          ...(active ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-muted)' }),
+                        }}>
+                        <T size={14} /> {CUSTOMER_TYPE_MAP[t].label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Field label={<>Kode {isNew ? '(otomatis)' : '(opsional)'}</>} style={{ width: 110, flexShrink: 0 }}>
+                  <input
+                    value={editing.code ?? ''}
+                    onChange={e => setEditing({ ...editing, code: e.target.value })}
+                    className="input"
+                    placeholder="PLG001"
+                    readOnly={isNew}
+                    style={isNew ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined}
+                  />
+                </Field>
+                <Field label="Nama" required style={{ flex: 1 }}>
+                  <input
+                    value={editing.name}
+                    onChange={e => setEditing({ ...editing, name: e.target.value })}
+                    className="input"
+                    placeholder="Nama pelanggan"
+                    autoFocus
+                  />
+                </Field>
+              </div>
+
+              <Field label="No. HP / WhatsApp (opsional)">
+                <input
+                  value={editing.phone}
+                  onChange={e => setEditing({ ...editing, phone: e.target.value })}
+                  className="input"
+                  placeholder="Contoh: 081234567890"
+                />
+              </Field>
+
+              <Field label="Email (opsional)">
+                <input
+                  value={editing.email ?? ''}
+                  onChange={e => setEditing({ ...editing, email: e.target.value })}
+                  className="input"
+                  placeholder="nama@email.com"
+                />
+              </Field>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Field label="Kota (opsional)" style={{ flex: 1 }}>
+                  <input
+                    value={editing.city ?? ''}
+                    onChange={e => setEditing({ ...editing, city: e.target.value })}
+                    className="input"
+                    placeholder="Contoh: Bandung"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Alamat (opsional)">
+                <input
+                  value={editing.address ?? ''}
+                  onChange={e => setEditing({ ...editing, address: e.target.value })}
+                  className="input"
+                  placeholder="Alamat lengkap"
+                />
+              </Field>
+
+              <Field label="Catatan (opsional)">
+                <textarea
+                  value={editing.notes ?? ''}
+                  onChange={e => setEditing({ ...editing, notes: e.target.value })}
+                  className="input"
+                  style={{ resize: 'vertical', minHeight: 70 }}
+                  placeholder="Catatan tambahan tentang pelanggan"
+                />
+              </Field>
+
+              {error && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {error}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={save} disabled={saving || !editing.name.trim()}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Pelanggan'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

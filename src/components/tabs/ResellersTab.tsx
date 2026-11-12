@@ -24,7 +24,9 @@ import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API       = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -871,7 +873,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
                           </>
                         )}
                         <Tooltip label="Edit">
-                          <button onClick={() => openEdit(r)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEdit(r)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                             <Pencil size={13} />
                           </button>
                         </Tooltip>
@@ -882,7 +884,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
                           </button>
                         </Tooltip>
                         <Tooltip label={expandedId === r.id ? 'Sembunyikan detail' : 'Lihat detail'}>
-                          <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} className="btn-ghost p-2">
+                          <button aria-label={expandedId === r.id ? 'Sembunyikan detail' : 'Lihat detail'} onClick={() => setExpandedId(expandedId === r.id ? null : r.id)} className="btn-ghost p-2">
                             <ChevronRight size={13} style={{ transform: expandedId === r.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                           </button>
                         </Tooltip>
@@ -946,7 +948,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
                           </>
                         )}
                         <Tooltip label="Edit">
-                          <button onClick={() => openEdit(r)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEdit(r)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                             <Pencil size={12} />
                           </button>
                         </Tooltip>
@@ -978,7 +980,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -1001,7 +1003,7 @@ export default function ResellersTab({ creds }: { creds: string }) {
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -1060,245 +1062,241 @@ export default function ResellersTab({ creds }: { creds: string }) {
 
       {/* Add/Edit modal */}
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
+        <Modal onClose={closeEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
 
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon">
-                  <Users size={17} />
-                </div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Reseller' : 'Edit Reseller'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Jadikan pelanggan sebagai reseller' : `Edit: ${editing.customerLabel}`}</p>
-                </div>
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon">
+                <Users size={17} />
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={closeEdit} className="modal-close"><X size={14} /></button>
-              </Tooltip>
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Reseller' : 'Edit Reseller'}</p>
+                <p className="modal-subtitle">{isNew ? 'Jadikan pelanggan sebagai reseller' : `Edit: ${editing.customerLabel}`}</p>
+              </div>
             </div>
+            <Tooltip label="Tutup">
+              <button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
 
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                {/* Customer picker / manual entry */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="field-label" style={{ marginBottom: 0 }}>Pelanggan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <button type="button" onClick={() => toggleManual(!editing.manual)}
-                      className="text-[11px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                      <UserSearch size={11} />
-                      {editing.manual ? 'Pilih dari pelanggan existing' : 'Tidak ditemukan? Input manual'}
-                    </button>
+              {/* Customer picker / manual entry */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="field-label" style={{ marginBottom: 0 }}>Pelanggan <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <button type="button" onClick={() => toggleManual(!editing.manual)}
+                    className="text-[11px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                    <UserSearch size={11} />
+                    {editing.manual ? 'Pilih dari pelanggan existing' : 'Tidak ditemukan? Input manual'}
+                  </button>
+                </div>
+
+                {editing.manual ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <input
+                      value={editing.manualCustomer.name}
+                      onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, name: e.target.value } })}
+                      className="input" placeholder="Nama pelanggan baru" autoFocus
+                    />
+                    <input
+                      value={editing.manualCustomer.phone}
+                      onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, phone: e.target.value } })}
+                      className="input" placeholder="No. HP / WhatsApp (opsional)"
+                    />
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <input
+                        value={editing.manualCustomer.city}
+                        onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, city: e.target.value } })}
+                        className="input" style={{ flex: 1 }} placeholder="Kota (opsional)"
+                      />
+                    </div>
+                    <input
+                      value={editing.manualCustomer.address}
+                      onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, address: e.target.value } })}
+                      className="input" placeholder="Alamat (opsional)"
+                    />
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Data ini akan otomatis dibuat sebagai pelanggan baru.
+                    </p>
                   </div>
-
-                  {editing.manual ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <input
-                        value={editing.manualCustomer.name}
-                        onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, name: e.target.value } })}
-                        className="input" placeholder="Nama pelanggan baru" autoFocus
-                      />
-                      <input
-                        value={editing.manualCustomer.phone}
-                        onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, phone: e.target.value } })}
-                        className="input" placeholder="No. HP / WhatsApp (opsional)"
-                      />
-                      <div style={{ display: 'flex', gap: 10 }}>
-                        <input
-                          value={editing.manualCustomer.city}
-                          onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, city: e.target.value } })}
-                          className="input" style={{ flex: 1 }} placeholder="Kota (opsional)"
-                        />
+                ) : (
+                  <div style={{ position: 'relative' }}>
+                    {editing.customerId ? (
+                      <div className="flex items-center justify-between gap-2 px-3.5 rounded-xl"
+                        style={{ height: 42, background: 'var(--accent-bg)', border: '1.5px solid var(--accent-light)' }}>
+                        <span className="text-sm font-semibold truncate" style={{ color: 'var(--accent)' }}>{editing.customerLabel}</span>
+                        <button type="button" onClick={() => setEditing({ ...editing, customerId: '', customerLabel: '' })}
+                          className="text-[11px] font-semibold flex-shrink-0" style={{ color: 'var(--accent)' }}>
+                          Ganti
+                        </button>
                       </div>
-                      <input
-                        value={editing.manualCustomer.address}
-                        onChange={e => setEditing({ ...editing, manualCustomer: { ...editing.manualCustomer, address: e.target.value } })}
-                        className="input" placeholder="Alamat (opsional)"
-                      />
-                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        Data ini akan otomatis dibuat sebagai pelanggan baru.
-                      </p>
-                    </div>
-                  ) : (
-                    <div style={{ position: 'relative' }}>
-                      {editing.customerId ? (
-                        <div className="flex items-center justify-between gap-2 px-3.5 rounded-xl"
-                          style={{ height: 42, background: 'var(--accent-bg)', border: '1.5px solid var(--accent-light)' }}>
-                          <span className="text-sm font-semibold truncate" style={{ color: 'var(--accent)' }}>{editing.customerLabel}</span>
-                          <button type="button" onClick={() => setEditing({ ...editing, customerId: '', customerLabel: '' })}
-                            className="text-[11px] font-semibold flex-shrink-0" style={{ color: 'var(--accent)' }}>
-                            Ganti
-                          </button>
+                    ) : (
+                      <>
+                        <div className="relative">
+                          <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                          <input
+                            value={customerQuery}
+                            onChange={e => { setCustomerQuery(e.target.value); setPickerOpen(true); }}
+                            onFocus={() => setPickerOpen(true)}
+                            onBlur={() => setTimeout(() => setPickerOpen(false), 150)}
+                            className="input text-sm w-full" style={{ paddingLeft: 34 }}
+                            placeholder="Cari nama, No. HP, atau kode pelanggan…"
+                            autoFocus
+                          />
                         </div>
-                      ) : (
-                        <>
-                          <div className="relative">
-                            <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                            <input
-                              value={customerQuery}
-                              onChange={e => { setCustomerQuery(e.target.value); setPickerOpen(true); }}
-                              onFocus={() => setPickerOpen(true)}
-                              onBlur={() => setTimeout(() => setPickerOpen(false), 150)}
-                              className="input text-sm w-full" style={{ paddingLeft: 34 }}
-                              placeholder="Cari nama, No. HP, atau kode pelanggan…"
-                              autoFocus
-                            />
+                        {pickerOpen && (
+                          <div className="absolute left-0 right-0 mt-1 rounded-xl z-10"
+                            style={{
+                              background: 'var(--surface)', border: '1.5px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                              maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
+                            }}>
+                            {filteredCustomerOptions.length === 0 ? (
+                              <p className="text-xs px-3.5 py-3" style={{ color: 'var(--text-muted)' }}>Tidak ada pelanggan yang cocok.</p>
+                            ) : filteredCustomerOptions.map(c => (
+                              <button key={c.id} type="button" onMouseDown={() => pickCustomer(c)}
+                                className="w-full text-left px-3.5 py-2.5 flex items-center gap-2 transition-colors"
+                                style={{ borderTop: '1px solid var(--border-2)' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                              >
+                                {c.code && (
+                                  <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                                    {c.code}
+                                  </span>
+                                )}
+                                <span className="text-sm font-semibold truncate flex-1" style={{ color: 'var(--text-primary)' }}>{c.name}</span>
+                                <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{c.phone}</span>
+                              </button>
+                            ))}
                           </div>
-                          {pickerOpen && (
-                            <div className="absolute left-0 right-0 mt-1 rounded-xl z-10"
-                              style={{
-                                background: 'var(--surface)', border: '1.5px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                                maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
-                              }}>
-                              {filteredCustomerOptions.length === 0 ? (
-                                <p className="text-xs px-3.5 py-3" style={{ color: 'var(--text-muted)' }}>Tidak ada pelanggan yang cocok.</p>
-                              ) : filteredCustomerOptions.map(c => (
-                                <button key={c.id} type="button" onMouseDown={() => pickCustomer(c)}
-                                  className="w-full text-left px-3.5 py-2.5 flex items-center gap-2 transition-colors"
-                                  style={{ borderTop: '1px solid var(--border-2)' }}
-                                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                >
-                                  {c.code && (
-                                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
-                                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                                      {c.code}
-                                    </span>
-                                  )}
-                                  <span className="text-sm font-semibold truncate flex-1" style={{ color: 'var(--text-primary)' }}>{c.name}</span>
-                                  <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{c.phone}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="field-label">Status</label>
-                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                    {(['pending', 'approved', 'rejected'] as const).map(s => {
-                      const S = STATUS_MAP[s].icon;
-                      const active = editing.status === s;
-                      return (
-                        <button key={s} type="button" onClick={() => setEditing({ ...editing, status: s })}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 transition-all"
-                          style={{
-                            height: 38, fontSize: 13, fontWeight: 600,
-                            ...(active ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-muted)' }),
-                          }}>
-                          <S size={14} /> {STATUS_MAP[s].label}
-                        </button>
-                      );
-                    })}
+                        )}
+                      </>
+                    )}
                   </div>
-                </div>
-
-                <div style={{ position: 'relative' }}>
-                  <label className="field-label">Metode Pembayaran (opsional)</label>
-                  <div className="flex rounded-xl overflow-hidden border mb-2" style={{ borderColor: 'var(--border)' }}>
-                    {([
-                      { key: 'bank' as const,    label: 'Bank',     Icon: Landmark },
-                      { key: 'ewallet' as const, label: 'E-Wallet', Icon: Wallet },
-                    ]).map(({ key, label, Icon }) => {
-                      const active = bankKind === key;
-                      return (
-                        <button key={key} type="button"
-                          onClick={() => { setBankKind(key); setEditing({ ...editing, bankName: '' }); setBankPickerOpen(true); }}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 transition-all"
-                          style={{
-                            height: 38, fontSize: 13, fontWeight: 600,
-                            ...(active ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-muted)' }),
-                          }}>
-                          <Icon size={14} /> {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <input
-                    value={editing.bankName}
-                    onChange={e => { setEditing({ ...editing, bankName: e.target.value }); setBankPickerOpen(true); }}
-                    onFocus={() => setBankPickerOpen(true)}
-                    onBlur={() => setTimeout(() => setBankPickerOpen(false), 150)}
-                    className="input"
-                    placeholder={bankKind === 'ewallet' ? 'Cari atau ketik nama e-wallet…' : 'Cari atau ketik nama bank…'}
-                  />
-                  {bankPickerOpen && filteredBankOptions.length > 0 && (
-                    <div className="absolute left-0 right-0 mt-1 rounded-xl z-10"
-                      style={{
-                        background: 'var(--surface)', border: '1.5px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                        maxHeight: 200, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
-                      }}>
-                      {filteredBankOptions.map(b => (
-                        <button key={b.id} type="button"
-                          onMouseDown={() => { setEditing({ ...editing, bankName: b.name }); setBankPickerOpen(false); }}
-                          className="w-full text-left px-3.5 py-2.5 text-sm font-medium transition-colors flex items-center gap-2"
-                          style={{ borderTop: '1px solid var(--border-2)', color: 'var(--text-primary)' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                        >
-                          {b.logoUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={b.logoUrl} alt="" className="w-5 h-5 rounded flex-shrink-0" style={{ objectFit: 'contain', background: 'var(--surface-2)' }} />
-                          ) : null}
-                          {b.bankCode && (
-                            <span className="text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded"
-                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                              {b.bankCode}
-                            </span>
-                          )}
-                          {b.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">No. Rekening (opsional)</label>
-                    <input
-                      value={editing.bankAccount}
-                      onChange={e => setEditing({ ...editing, bankAccount: e.target.value })}
-                      className="input" placeholder="1234567890"
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Atas Nama (opsional)</label>
-                    <input
-                      value={editing.bankHolder}
-                      onChange={e => setEditing({ ...editing, bankHolder: e.target.value })}
-                      className="input" placeholder="Nama pemilik rekening"
-                    />
-                  </div>
-                </div>
-
-                {error && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {error}
-                  </p>
                 )}
               </div>
-            </div>
 
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={save} disabled={saving}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Reseller'}
-              </button>
+              <div>
+                <label className="field-label">Status</label>
+                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                  {(['pending', 'approved', 'rejected'] as const).map(s => {
+                    const S = STATUS_MAP[s].icon;
+                    const active = editing.status === s;
+                    return (
+                      <button key={s} type="button" onClick={() => setEditing({ ...editing, status: s })}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 transition-all"
+                        style={{
+                          height: 38, fontSize: 13, fontWeight: 600,
+                          ...(active ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-muted)' }),
+                        }}>
+                        <S size={14} /> {STATUS_MAP[s].label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ position: 'relative' }}>
+                <label className="field-label">Metode Pembayaran (opsional)</label>
+                <div className="flex rounded-xl overflow-hidden border mb-2" style={{ borderColor: 'var(--border)' }}>
+                  {([
+                    { key: 'bank' as const,    label: 'Bank',     Icon: Landmark },
+                    { key: 'ewallet' as const, label: 'E-Wallet', Icon: Wallet },
+                  ]).map(({ key, label, Icon }) => {
+                    const active = bankKind === key;
+                    return (
+                      <button key={key} type="button"
+                        onClick={() => { setBankKind(key); setEditing({ ...editing, bankName: '' }); setBankPickerOpen(true); }}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 transition-all"
+                        style={{
+                          height: 38, fontSize: 13, fontWeight: 600,
+                          ...(active ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-muted)' }),
+                        }}>
+                        <Icon size={14} /> {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <input
+                  value={editing.bankName}
+                  onChange={e => { setEditing({ ...editing, bankName: e.target.value }); setBankPickerOpen(true); }}
+                  onFocus={() => setBankPickerOpen(true)}
+                  onBlur={() => setTimeout(() => setBankPickerOpen(false), 150)}
+                  className="input"
+                  placeholder={bankKind === 'ewallet' ? 'Cari atau ketik nama e-wallet…' : 'Cari atau ketik nama bank…'}
+                />
+                {bankPickerOpen && filteredBankOptions.length > 0 && (
+                  <div className="absolute left-0 right-0 mt-1 rounded-xl z-10"
+                    style={{
+                      background: 'var(--surface)', border: '1.5px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                      maxHeight: 200, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain',
+                    }}>
+                    {filteredBankOptions.map(b => (
+                      <button key={b.id} type="button"
+                        onMouseDown={() => { setEditing({ ...editing, bankName: b.name }); setBankPickerOpen(false); }}
+                        className="w-full text-left px-3.5 py-2.5 text-sm font-medium transition-colors flex items-center gap-2"
+                        style={{ borderTop: '1px solid var(--border-2)', color: 'var(--text-primary)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {b.logoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={b.logoUrl} alt="" className="w-5 h-5 rounded flex-shrink-0" style={{ objectFit: 'contain', background: 'var(--surface-2)' }} />
+                        ) : null}
+                        {b.bankCode && (
+                          <span className="text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded"
+                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                            {b.bankCode}
+                          </span>
+                        )}
+                        {b.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Field label="No. Rekening (opsional)" style={{ flex: 1 }}>
+                  <input
+                    value={editing.bankAccount}
+                    onChange={e => setEditing({ ...editing, bankAccount: e.target.value })}
+                    className="input" placeholder="1234567890"
+                  />
+                </Field>
+                <Field label="Atas Nama (opsional)" style={{ flex: 1 }}>
+                  <input
+                    value={editing.bankHolder}
+                    onChange={e => setEditing({ ...editing, bankHolder: e.target.value })}
+                    className="input" placeholder="Nama pemilik rekening"
+                  />
+                </Field>
+              </div>
+
+              {error && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {error}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={save} disabled={saving}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Reseller'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

@@ -1,10 +1,11 @@
 'use client';
 
+import Pagination from '@/components/Pagination';
 import { useState, useEffect, useRef } from 'react';
 import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
-  Search, ChevronLeft, ChevronRight, Upload,
+  Search, ChevronRight, Upload,
   History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
@@ -23,7 +24,6 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { useViewMode } from '@/lib/useViewMode';
 import ViewToggle from '@/components/ViewToggle';
-import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import type { PosProduct } from '@/lib/pos-types';
@@ -48,9 +48,13 @@ import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
+import FilterSelect from '@/components/FilterSelect';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 // Locations' load also re-fetches per-location stock (N+1, uncached) — longer than Kasir/
 // Pesanan's interval since this one is pricier per tick.
 const CONSIGNMENT_POLL_MS = 45_000;
@@ -76,8 +80,6 @@ function Checkbox({ checked, indeterminate, onChange }: {
   );
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 function formatDate(seconds?: number) {
   if (!seconds) return '–';
@@ -230,54 +232,6 @@ function detectLocationColumn(header: string): LocationTemplateKey | null {
   if (h.includes('catatan') || h.includes('note')) return 'note';
   if (h.includes('nama')) return 'name';
   return null;
-}
-
-// Pagination bar (shared markup across the three lists in this tab)
-function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPage, unit }: {
-  total: number; safePage: number; totalPages: number; pageSize: number;
-  onPageSize: (n: number) => void; onGoPage: (p: number) => void; unit: string;
-}) {
-  if (total === 0) return null;
-  return (
-    <div className="flex items-center justify-between flex-wrap gap-2">
-      <div className="flex items-center gap-3 flex-wrap">
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {total} {unit} · halaman {safePage} dari {totalPages}
-        </p>
-        <PageSizeSelect value={pageSize} onChange={onPageSize} />
-      </div>
-      {totalPages > 1 && (
-        <div className="flex items-center gap-1">
-          <Tooltip label="Halaman sebelumnya">
-            <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-              <ChevronLeft size={14} />
-            </button>
-          </Tooltip>
-          {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
-            .reduce<(number | '…')[]>((acc, n, i, arr) => {
-              if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-              acc.push(n); return acc;
-            }, [])
-            .map((n, i) =>
-              n === '…'
-                ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                : <button key={n} onClick={() => onGoPage(n as number)}
-                    className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                    style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                    {n}
-                  </button>
-            )
-          }
-          <Tooltip label="Halaman berikutnya">
-            <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-              <ChevronRight size={14} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
-    </div>
-  );
 }
 
 interface LocationStats { totalKirim: number; totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number }
@@ -2572,12 +2526,14 @@ _${storeHeader.name}_`.trim();
                 </button>
               )}
               {locations.length > 0 && (
-                <select value={locationStatus} onChange={e => { setLocationStatus(e.target.value as typeof locationStatus); resetLocationPage(); }}
-                  aria-label="Filter status mitra" className="input text-xs flex-shrink-0" style={{ height: HEADER_BTN_H, width: 'auto', paddingRight: 28 }}>
-                  <option value="semua">Semua status ({locations.length})</option>
-                  <option value="aktif">Aktif ({locations.filter(l => l.isActive !== false).length})</option>
-                  <option value="nonaktif">Nonaktif ({locations.filter(l => l.isActive === false).length})</option>
-                </select>
+                <div className="flex-shrink-0" style={{ width: 180 }} aria-label="Filter status mitra">
+                  <FilterSelect searchable={false} height={HEADER_BTN_H} value={locationStatus} onChange={v => { setLocationStatus(v as typeof locationStatus); resetLocationPage(); }}
+                    options={[
+                      { value: 'semua', label: 'Semua status', count: locations.length },
+                      { value: 'aktif', label: 'Aktif', count: locations.filter(l => l.isActive !== false).length },
+                      { value: 'nonaktif', label: 'Nonaktif', count: locations.filter(l => l.isActive === false).length },
+                    ]} />
+                </div>
               )}
               <div className="flex items-center gap-2 justify-end flex-shrink-0">
                 <Tooltip label="Unduh Template">
@@ -3345,231 +3301,218 @@ _${storeHeader.name}_`.trim();
       </div>
 
       {showLForm && (
-        <div className="modal-overlay" onClick={() => !savingL && setShowLForm(false)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Store size={17} /></div>
-                <div>
-                  <p className="modal-title">{editingL ? 'Edit Lokasi' : 'Tambah Lokasi Baru'}</p>
-                  <p className="modal-subtitle">{editingL ? 'Perbarui informasi lokasi' : 'Isi detail lapak/UMKM mitra'}</p>
+        <Modal onClose={() => !savingL && setShowLForm(false)} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Store size={17} /></div>
+              <div>
+                <p className="modal-title">{editingL ? 'Edit Lokasi' : 'Tambah Lokasi Baru'}</p>
+                <p className="modal-subtitle">{editingL ? 'Perbarui informasi lokasi' : 'Isi detail lapak/UMKM mitra'}</p>
+              </div>
+            </div>
+            <Tooltip label="Tutup">
+              <button onClick={() => setShowLForm(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="flex items-center gap-3">
+                <ImageUploadBox
+                  src={lForm.logoUrl}
+                  alt={lForm.name || 'Logo mitra'}
+                  uploading={logoUploading}
+                  onSelect={f => uploadLocationLogo(f)}
+                  onRemove={() => setLForm({ ...lForm, logoUrl: '' })}
+                  icon={<Store size={18} />}
+                  fit="contain"
+                  size={56}
+                  emptyText="Logo"
+                />
+                <Field label="Nama Lokasi" required style={{ flex: 1 }}>
+                  <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
+                    placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
+                </Field>
+              </div>
+              <Field label={<>Kode {editingL ? '(opsional)' : '(otomatis)'}</>} style={{ width: 110, flexShrink: 0 }}>
+                <input type="text" value={lForm.code} onChange={e => setLForm({ ...lForm, code: e.target.value })}
+                  placeholder="MTR001" className="input" readOnly={!editingL}
+                  style={!editingL ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined} />
+              </Field>
+              <Field label="Nama Kontak">
+                <input type="text" value={lForm.contactName} onChange={e => setLForm({ ...lForm, contactName: e.target.value })}
+                  placeholder="cth: Bu Yanti" className="input" />
+              </Field>
+              <Field label="Telepon">
+                <input type="tel" value={lForm.contactPhone} onChange={e => setLForm({ ...lForm, contactPhone: e.target.value })}
+                  placeholder="cth: 08123456789" className="input" />
+              </Field>
+              <Field label="Alamat">
+                <input type="text" value={lForm.address} onChange={e => setLForm({ ...lForm, address: e.target.value })}
+                  placeholder="cth: Jl. Melati No. 3" className="input" />
+              </Field>
+              <Field label="Catatan">
+                <textarea rows={3} value={lForm.note} onChange={e => setLForm({ ...lForm, note: e.target.value })}
+                  placeholder="Catatan tambahan (opsional)" className="input resize-none" />
+              </Field>
+              <div>
+                <label className="field-label">Crew / Anggota</label>
+                <div className="space-y-2">
+                  {lForm.members.map((m, i) => (
+                    <div key={i} className="flex gap-2 items-center">
+                      <input type="text" value={m.name} placeholder="Nama" className="input" style={{ flex: 1, minWidth: 0 }}
+                        onChange={e => setLForm({ ...lForm, members: lForm.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
+                      <input type="tel" value={m.phone} placeholder="No. HP" className="input" style={{ flex: 1, minWidth: 0 }}
+                        onChange={e => setLForm({ ...lForm, members: lForm.members.map((x, j) => j === i ? { ...x, phone: e.target.value } : x) })} />
+                      <Tooltip label="Hapus anggota">
+                        <button type="button" aria-label="Hapus anggota" onClick={() => setLForm({ ...lForm, members: lForm.members.filter((_, j) => j !== i) })}
+                          className="flex items-center justify-center flex-shrink-0"
+                          style={{ width: 42, height: 42, borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--danger)', cursor: 'pointer' }}>
+                          <Trash2 size={15} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setLForm({ ...lForm, members: [...lForm.members, { name: '', phone: '' }] })}
+                    className="w-full text-[13px] font-bold flex items-center justify-center gap-1.5" style={{ height: 42, borderRadius: 10, color: 'var(--accent)', background: 'transparent', border: '1.5px dashed var(--accent-light)', cursor: 'pointer' }}>
+                    <Plus size={14} /> Tambah anggota
+                  </button>
                 </div>
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={() => setShowLForm(false)} className="modal-close"><X size={14} /></button>
-              </Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="flex items-center gap-3">
-                  <ImageUploadBox
-                    src={lForm.logoUrl}
-                    alt={lForm.name || 'Logo mitra'}
-                    uploading={logoUploading}
-                    onSelect={f => uploadLocationLogo(f)}
-                    onRemove={() => setLForm({ ...lForm, logoUrl: '' })}
-                    icon={<Store size={18} />}
-                    fit="contain"
-                    size={56}
-                    emptyText="Logo"
-                  />
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Nama Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input type="text" value={lForm.name} onChange={e => setLForm({ ...lForm, name: e.target.value })}
-                      placeholder="cth: Warung Bu Yanti" autoFocus className="input" />
-                  </div>
-                </div>
-                <div style={{ width: 110, flexShrink: 0 }}>
-                  <label className="field-label">Kode {editingL ? '(opsional)' : '(otomatis)'}</label>
-                  <input type="text" value={lForm.code} onChange={e => setLForm({ ...lForm, code: e.target.value })}
-                    placeholder="MTR001" className="input" readOnly={!editingL}
-                    style={!editingL ? { background: 'var(--surface-2)', color: 'var(--text-muted)', cursor: 'not-allowed' } : undefined} />
-                </div>
-                <div>
-                  <label className="field-label">Nama Kontak</label>
-                  <input type="text" value={lForm.contactName} onChange={e => setLForm({ ...lForm, contactName: e.target.value })}
-                    placeholder="cth: Bu Yanti" className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Telepon</label>
-                  <input type="tel" value={lForm.contactPhone} onChange={e => setLForm({ ...lForm, contactPhone: e.target.value })}
-                    placeholder="cth: 08123456789" className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Alamat</label>
-                  <input type="text" value={lForm.address} onChange={e => setLForm({ ...lForm, address: e.target.value })}
-                    placeholder="cth: Jl. Melati No. 3" className="input" />
-                </div>
-                <div>
-                  <label className="field-label">Catatan</label>
-                  <textarea rows={3} value={lForm.note} onChange={e => setLForm({ ...lForm, note: e.target.value })}
-                    placeholder="Catatan tambahan (opsional)" className="input resize-none" />
-                </div>
-                <div>
-                  <label className="field-label">Crew / Anggota</label>
-                  <div className="space-y-2">
-                    {lForm.members.map((m, i) => (
-                      <div key={i} className="flex gap-2 items-center">
-                        <input type="text" value={m.name} placeholder="Nama" className="input" style={{ flex: 1, minWidth: 0 }}
-                          onChange={e => setLForm({ ...lForm, members: lForm.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
-                        <input type="tel" value={m.phone} placeholder="No. HP" className="input" style={{ flex: 1, minWidth: 0 }}
-                          onChange={e => setLForm({ ...lForm, members: lForm.members.map((x, j) => j === i ? { ...x, phone: e.target.value } : x) })} />
-                        <Tooltip label="Hapus anggota">
-                          <button type="button" aria-label="Hapus anggota" onClick={() => setLForm({ ...lForm, members: lForm.members.filter((_, j) => j !== i) })}
-                            className="flex items-center justify-center flex-shrink-0"
-                            style={{ width: 42, height: 42, borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--danger)', cursor: 'pointer' }}>
-                            <Trash2 size={15} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                    ))}
-                    <button type="button" onClick={() => setLForm({ ...lForm, members: [...lForm.members, { name: '', phone: '' }] })}
-                      className="w-full text-[13px] font-bold flex items-center justify-center gap-1.5" style={{ height: 42, borderRadius: 10, color: 'var(--accent)', background: 'transparent', border: '1.5px dashed var(--accent-light)', cursor: 'pointer' }}>
-                      <Plus size={14} /> Tambah anggota
-                    </button>
-                  </div>
-                </div>
-                <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                  <input type="checkbox" checked={lForm.isActive} onChange={e => setLForm({ ...lForm, isActive: e.target.checked })} style={{ marginTop: 3 }} />
-                  <span>
-                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Mitra aktif</span>
-                    <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      Nonaktif = tidak muncul di pilihan Kirim Stok & Rekap. Riwayat dan laporannya tetap ada.
-                    </span>
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input type="checkbox" checked={lForm.isActive} onChange={e => setLForm({ ...lForm, isActive: e.target.checked })} style={{ marginTop: 3 }} />
+                <span>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Mitra aktif</span>
+                  <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Nonaktif = tidak muncul di pilihan Kirim Stok & Rekap. Riwayat dan laporannya tetap ada.
                   </span>
-                </label>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowLForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={saveLocation} disabled={savingL || !lForm.name.trim()} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {savingL ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                {savingL ? 'Menyimpan…' : editingL ? 'Simpan Perubahan' : 'Tambah Lokasi'}
-              </button>
+                </span>
+              </label>
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowLForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={saveLocation} disabled={savingL || !lForm.name.trim()} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {savingL ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              {savingL ? 'Menyimpan…' : editingL ? 'Simpan Perubahan' : 'Tambah Lokasi'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {showSendForm && (
-        <div className="modal-overlay" onClick={() => !sending && setShowSendForm(false)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Send size={17} /></div>
-                <div>
-                  <p className="modal-title">{editingShipment ? 'Edit Kirim Stok' : 'Kirim Stok Konsinyasi'}</p>
-                  <p className="modal-subtitle">Stok gudang & stok toko berkurang, stok titip di lokasi bertambah</p>
-                </div>
+        <Modal onClose={() => !sending && setShowSendForm(false)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Send size={17} /></div>
+              <div>
+                <p className="modal-title">{editingShipment ? 'Edit Kirim Stok' : 'Kirim Stok Konsinyasi'}</p>
+                <p className="modal-subtitle">Stok gudang & stok toko berkurang, stok titip di lokasi bertambah</p>
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={() => setShowSendForm(false)} className="modal-close"><X size={14} /></button>
-              </Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="field-label">Lokasi Tujuan <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptionsFor(sendLocationId)}
-                      placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
-                  </div>
-                  <div>
-                    <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Warehouse size={11} /> Gudang Asal <span style={{ color: 'var(--danger)' }}>*</span>
-                    </label>
-                    <SearchSelect value={sendWarehouseId} onChange={setSendWarehouseId}
-                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-                  </div>
-                  <div>
-                    <label className="field-label">Tanggal &amp; Jam Kirim</label>
-                    <DateTimeInput value={sendDate} onChange={setSendDate} />
-                  </div>
-                </div>
-
+            <Tooltip label="Tutup">
+              <button onClick={() => setShowSendForm(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Lokasi Tujuan" required>
+                  <SearchSelect value={sendLocationId} onChange={setSendLocationId} options={locationOptionsFor(sendLocationId)}
+                    placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                </Field>
                 <div>
-                  <div className="flex items-center justify-between">
-                    <label className="field-label" style={{ marginBottom: 0 }}>Produk Dikirim</label>
-                    <button onClick={() => setShowSendScanner(true)} type="button"
-                      className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                      <ScanLine size={13} /> Scan Produk
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
-                    {sendRows.map((row, i) => {
-                      const qty = parseFloat(row.qty) || 0;
-                      const harga = parseFloat(row.hargaTitip) || 0;
-                      return (
-                        <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
-                                options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
-                            </div>
-                            <Tooltip label="Hapus baris">
-                              <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
-                                className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
-                                <X size={14} />
-                              </button>
-                            </Tooltip>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label style={fieldLabel}>Qty (pcs)</label>
-                              <input type="number" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
-                                placeholder="0" className="input" />
-                            </div>
-                            <div>
-                              <label style={fieldLabel}>Harga Titip</label>
-                              <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
-                                placeholder="0" style={{ textAlign: 'right' }} />
-                            </div>
-                          </div>
-                          {qty > 0 && harga > 0 && (
-                            <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button onClick={addSendRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
-                    <Plus size={12} /> Tambah Baris Produk
+                  <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Warehouse size={11} /> Gudang Asal <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <SearchSelect value={sendWarehouseId} onChange={setSendWarehouseId}
+                    options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                    placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+                </div>
+                <Field label="Tanggal &amp; Jam Kirim">
+                  <DateTimeInput value={sendDate} onChange={setSendDate} />
+                </Field>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="field-label" style={{ marginBottom: 0 }}>Produk Dikirim</label>
+                  <button onClick={() => setShowSendScanner(true)} type="button"
+                    className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                    <ScanLine size={13} /> Scan Produk
                   </button>
                 </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                  {sendRows.map((row, i) => {
+                    const qty = parseFloat(row.qty) || 0;
+                    const harga = parseFloat(row.hargaTitip) || 0;
+                    return (
+                      <div key={i} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <SearchSelect value={row.productId} onChange={id => updateSendRow(i, { productId: id })}
+                              options={productOptions} placeholder="– Produk –" searchPlaceholder="Cari produk…" />
+                          </div>
+                          <Tooltip label="Hapus baris">
+                            <button onClick={() => removeSendRow(i)} disabled={sendRows.length === 1}
+                              className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }} title="Hapus baris">
+                              <X size={14} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label style={fieldLabel}>Qty (pcs)</label>
+                            <input type="number" inputMode="numeric" min="0" value={row.qty} onChange={e => updateSendRow(i, { qty: e.target.value })}
+                              placeholder="0" className="input" />
+                          </div>
+                          <div>
+                            <label style={fieldLabel}>Harga Titip</label>
+                            <NumberInput value={row.hargaTitip} onChange={raw => updateSendRow(i, { hargaTitip: raw })}
+                              placeholder="0" style={{ textAlign: 'right' }} />
+                          </div>
+                        </div>
+                        {qty > 0 && harga > 0 && (
+                          <p className="text-xs tabular mt-2" style={{ color: 'var(--text-muted)' }}>Subtotal: {formatRp(qty * harga)}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={addSendRow} className="flex items-center gap-1 text-xs font-bold mt-2.5" style={{ color: 'var(--accent)' }}>
+                  <Plus size={12} /> Tambah Baris Produk
+                </button>
+              </div>
 
-                <div>
-                  <label className="field-label">Catatan</label>
-                  <textarea rows={4} value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
-                </div>
+              <Field label="Catatan">
+                <textarea rows={4} value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
+              </Field>
 
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{sendTotalQty} pcs</span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Nilai Titip</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(sendTotal)}</span>
-                </div>
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{sendTotalQty} pcs</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Nilai Titip</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(sendTotal)}</span>
               </div>
             </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowSendForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={submitSend} disabled={sending || !canSubmitSend} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                {sending ? 'Menyimpan…' : editingShipment ? 'Simpan Perubahan' : 'Kirim Stok'}
-              </button>
-            </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowSendForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={submitSend} disabled={sending || !canSubmitSend} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              {sending ? 'Menyimpan…' : editingShipment ? 'Simpan Perubahan' : 'Kirim Stok'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {showSendScanner && (
@@ -3582,297 +3525,285 @@ _${storeHeader.name}_`.trim();
       )}
 
       {markLunasRecap && (
-        <div className="modal-overlay" onClick={() => setMarkLunasRecap(null)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><PackageCheck size={17} /></div>
-                <div>
-                  <p className="modal-title">Tandai Lunas</p>
-                  <p className="modal-subtitle">Rekap {markLunasRecap.locationName}</p>
-                </div>
+        <Modal onClose={() => setMarkLunasRecap(null)} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><PackageCheck size={17} /></div>
+              <div>
+                <p className="modal-title">Tandai Lunas</p>
+                <p className="modal-subtitle">Rekap {markLunasRecap.locationName}</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={() => setMarkLunasRecap(null)} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <SearchSelect value={markLunasRecapWalletId} onChange={setMarkLunasRecapWalletId}
-                options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-              {markLunasRecapWalletId && (
-                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                  Saldo saat ini: {formatRp(walletBalances[markLunasRecapWalletId] ?? 0)}
-                </p>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setMarkLunasRecap(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={confirmMarkRecapLunas} disabled={!markLunasRecapWalletId || markingRecapId === markLunasRecap.id}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {markingRecapId === markLunasRecap.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                Tandai Lunas
-              </button>
-            </div>
+            <Tooltip label="Tutup"><button onClick={() => setMarkLunasRecap(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
-        </div>
+          <Field label="Uang masuk ke dompet mana?" required className="modal-body">
+            <SearchSelect value={markLunasRecapWalletId} onChange={setMarkLunasRecapWalletId}
+              options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+            {markLunasRecapWalletId && (
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Saldo saat ini: {formatRp(walletBalances[markLunasRecapWalletId] ?? 0)}
+              </p>
+            )}
+          </Field>
+          <div className="modal-footer">
+            <button onClick={() => setMarkLunasRecap(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={confirmMarkRecapLunas} disabled={!markLunasRecapWalletId || markingRecapId === markLunasRecap.id}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {markingRecapId === markLunasRecap.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              Tandai Lunas
+            </button>
+          </div>
+        </Modal>
       )}
 
       {showBulkMarkLunasRecaps && (
-        <div className="modal-overlay" onClick={() => !bulkMarkingLunasRecaps && setShowBulkMarkLunasRecaps(false)}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><PackageCheck size={17} /></div>
-                <div>
-                  <p className="modal-title">Tandai Lunas</p>
-                  <p className="modal-subtitle">{belumLunasSelectedRecaps.length} rekap terpilih</p>
-                </div>
+        <Modal onClose={() => !bulkMarkingLunasRecaps && setShowBulkMarkLunasRecaps(false)} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><PackageCheck size={17} /></div>
+              <div>
+                <p className="modal-title">Tandai Lunas</p>
+                <p className="modal-subtitle">{belumLunasSelectedRecaps.length} rekap terpilih</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={() => setShowBulkMarkLunasRecaps(false)} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <SearchSelect value={bulkMarkLunasWalletId} onChange={setBulkMarkLunasWalletId}
-                options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-              {bulkMarkLunasWalletId && (
-                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                  Saldo saat ini: {formatRp(walletBalances[bulkMarkLunasWalletId] ?? 0)}
-                </p>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowBulkMarkLunasRecaps(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={confirmBulkMarkRecapsLunas} disabled={!bulkMarkLunasWalletId || bulkMarkingLunasRecaps}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {bulkMarkingLunasRecaps ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                Tandai Lunas ({belumLunasSelectedRecaps.length})
-              </button>
-            </div>
+            <Tooltip label="Tutup"><button onClick={() => setShowBulkMarkLunasRecaps(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
-        </div>
+          <Field label="Uang masuk ke dompet mana?" required className="modal-body">
+            <SearchSelect value={bulkMarkLunasWalletId} onChange={setBulkMarkLunasWalletId}
+              options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+            {bulkMarkLunasWalletId && (
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Saldo saat ini: {formatRp(walletBalances[bulkMarkLunasWalletId] ?? 0)}
+              </p>
+            )}
+          </Field>
+          <div className="modal-footer">
+            <button onClick={() => setShowBulkMarkLunasRecaps(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={confirmBulkMarkRecapsLunas} disabled={!bulkMarkLunasWalletId || bulkMarkingLunasRecaps}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {bulkMarkingLunasRecaps ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              Tandai Lunas ({belumLunasSelectedRecaps.length})
+            </button>
+          </div>
+        </Modal>
       )}
 
       {showRecapForm && (
-        <div className="modal-overlay" onClick={() => !submittingRecap && setShowRecapForm(false)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ClipboardList size={17} /></div>
-                <div>
-                  <p className="modal-title">{editingRecap ? 'Edit Rekap Harian' : 'Rekap Harian'}</p>
-                  <p className="modal-subtitle">Catat qty terjual & retur — sisanya tetap tertahan di lokasi</p>
-                </div>
+        <Modal onClose={() => !submittingRecap && setShowRecapForm(false)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ClipboardList size={17} /></div>
+              <div>
+                <p className="modal-title">{editingRecap ? 'Edit Rekap Harian' : 'Rekap Harian'}</p>
+                <p className="modal-subtitle">Catat qty terjual & retur — sisanya tetap tertahan di lokasi</p>
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={() => setShowRecapForm(false)} className="modal-close"><X size={14} /></button>
-              </Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="field-label">Lokasi <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={recapLocationId} disabled={!!editingRecap}
-                      onChange={id => { setRecapLocationId(id); loadRecapStock(id); }}
-                      options={locationOptionsFor(recapLocationId)} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
-                  </div>
-                  <div>
-                    <label className="field-label">Tanggal &amp; Jam</label>
-                    <DateTimeInput value={recapDate} onChange={setRecapDate} />
-                  </div>
-                </div>
+            <Tooltip label="Tutup">
+              <button onClick={() => setShowRecapForm(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Lokasi" required>
+                  <SearchSelect value={recapLocationId} disabled={!!editingRecap}
+                    onChange={id => { setRecapLocationId(id); loadRecapStock(id); }}
+                    options={locationOptionsFor(recapLocationId)} placeholder="– Pilih Lokasi –" searchPlaceholder="Cari lokasi…" />
+                </Field>
+                <Field label="Tanggal &amp; Jam">
+                  <DateTimeInput value={recapDate} onChange={setRecapDate} />
+                </Field>
+              </div>
 
-                {recapLocationId && (
-                  recapStockLoading ? (
-                    <PageLoader compact />
-                  ) : recapStock.length === 0 ? (
-                    <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Tidak ada stok titip di lokasi ini.</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-                          {(['sold', 'retur', 'reject'] as const).map(mode => (
-                            <button key={mode} type="button" onClick={() => setRecapScanMode(mode)}
-                              className="text-[11px] font-bold px-2 py-1 rounded-md" style={{
-                                background: recapScanMode === mode ? 'var(--accent)' : 'transparent',
-                                color: recapScanMode === mode ? '#fff' : 'var(--text-muted)',
-                              }}>
-                              {recapScanModeLabel[mode]}
-                            </button>
-                          ))}
-                        </div>
-                        <button onClick={() => setShowRecapScanner(true)} type="button"
-                          className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                          <ScanLine size={13} /> Scan Produk
-                        </button>
+              {recapLocationId && (
+                recapStockLoading ? (
+                  <PageLoader compact />
+                ) : recapStock.length === 0 ? (
+                  <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Tidak ada stok titip di lokasi ini.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                        {(['sold', 'retur', 'reject'] as const).map(mode => (
+                          <button key={mode} type="button" onClick={() => setRecapScanMode(mode)}
+                            className="text-[11px] font-bold px-2 py-1 rounded-md" style={{
+                              background: recapScanMode === mode ? 'var(--accent)' : 'transparent',
+                              color: recapScanMode === mode ? '#fff' : 'var(--text-muted)',
+                            }}>
+                            {recapScanModeLabel[mode]}
+                          </button>
+                        ))}
                       </div>
-                      {recapRows.map(({ item, sold, sisa, exceeds }) => (
-                        <div key={item.productId} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <p className="text-sm font-bold flex-1 min-w-0 truncate" style={{ color: 'var(--text-primary)' }}>{item.productName}</p>
-                            <span className="text-xs tabular flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
-                              Stok di lokasi: {item.stockQty} pcs · {formatRp(item.hargaTitip)}/pcs
-                            </span>
+                      <button onClick={() => setShowRecapScanner(true)} type="button"
+                        className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                        <ScanLine size={13} /> Scan Produk
+                      </button>
+                    </div>
+                    {recapRows.map(({ item, sold, sisa, exceeds }) => (
+                      <div key={item.productId} className="p-3 rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <p className="text-sm font-bold flex-1 min-w-0 truncate" style={{ color: 'var(--text-primary)' }}>{item.productName}</p>
+                          <span className="text-xs tabular flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Stok di lokasi: {item.stockQty} pcs · {formatRp(item.hargaTitip)}/pcs
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label style={fieldLabel}>Qty Terjual</label>
+                            <input type="number" inputMode="numeric" min="0" value={recapInputs[item.productId]?.sold ?? ''}
+                              onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: e.target.value, retur: prev[item.productId]?.retur ?? '', reject: prev[item.productId]?.reject ?? '' } }))}
+                              placeholder="0" className="input" />
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label style={fieldLabel}>Qty Terjual</label>
-                              <input type="number" min="0" value={recapInputs[item.productId]?.sold ?? ''}
-                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: e.target.value, retur: prev[item.productId]?.retur ?? '', reject: prev[item.productId]?.reject ?? '' } }))}
-                                placeholder="0" className="input" />
-                            </div>
-                            <div>
-                              <label style={fieldLabel}>Qty Retur</label>
-                              <input type="number" min="0" value={recapInputs[item.productId]?.retur ?? ''}
-                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: e.target.value, reject: prev[item.productId]?.reject ?? '' } }))}
-                                placeholder="0" className="input" />
-                            </div>
-                            <div>
-                              <label style={fieldLabel}>Qty Reject</label>
-                              <input type="number" min="0" value={recapInputs[item.productId]?.reject ?? ''}
-                                onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: prev[item.productId]?.retur ?? '', reject: e.target.value } }))}
-                                placeholder="0" className="input" />
-                            </div>
+                          <div>
+                            <label style={fieldLabel}>Qty Retur</label>
+                            <input type="number" inputMode="numeric" min="0" value={recapInputs[item.productId]?.retur ?? ''}
+                              onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: e.target.value, reject: prev[item.productId]?.reject ?? '' } }))}
+                              placeholder="0" className="input" />
                           </div>
-                          <p className="text-xs mt-2 tabular" style={{ color: exceeds ? 'var(--danger)' : 'var(--text-muted)' }}>
-                            {exceeds
-                              ? `Melebihi stok di lokasi (tersedia ${item.stockQty} pcs)`
-                              : `Sisa tetap di lokasi: ${sisa} pcs${sold > 0 ? ` · Pendapatan: ${formatRp(sold * item.hargaTitip)}` : ''}`}
-                          </p>
+                          <div>
+                            <label style={fieldLabel}>Qty Reject</label>
+                            <input type="number" inputMode="numeric" min="0" value={recapInputs[item.productId]?.reject ?? ''}
+                              onChange={e => setRecapInputs(prev => ({ ...prev, [item.productId]: { sold: prev[item.productId]?.sold ?? '', retur: prev[item.productId]?.retur ?? '', reject: e.target.value } }))}
+                              placeholder="0" className="input" />
+                          </div>
+                        </div>
+                        <p className="text-xs mt-2 tabular" style={{ color: exceeds ? 'var(--danger)' : 'var(--text-muted)' }}>
+                          {exceeds
+                            ? `Melebihi stok di lokasi (tersedia ${item.stockQty} pcs)`
+                            : `Sisa tetap di lokasi: ${sisa} pcs${sold > 0 ? ` · Pendapatan: ${formatRp(sold * item.hargaTitip)}` : ''}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {recapNeedsWarehouse && (
+                <div>
+                  <label style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Warehouse size={11} /> Gudang Tujuan Retur/Reject <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <SearchSelect value={recapWarehouseId} onChange={setRecapWarehouseId}
+                    options={warehouses.map(w => ({ value: w.id, label: w.name }))}
+                    placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Retur (kondisi baik) menambah stok jual di gudang ini. Reject (rusak/tidak layak jual) hanya tercatat sebagai kerugian, tidak menambah stok jual.
+                  </p>
+                </div>
+              )}
+
+              <Field label="Catatan">
+                <textarea rows={3} value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="cth: kemasan penyok, expired, komplain pelanggan…" className="input" style={{ resize: 'vertical' }} />
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Dipakai juga sebagai keterangan retur/reject di riwayat &amp; catatan gudang.
+                </p>
+              </Field>
+
+              {recapLocationId && recapStock.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="field-label" style={{ marginBottom: 0 }}>Biaya Lain-lain <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(opsional)</span></label>
+                    <button type="button" onClick={() => setRecapOtherCosts(prev => [...prev, { label: '', amount: '' }])}
+                      className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                      <Plus size={13} /> Tambah Biaya
+                    </button>
+                  </div>
+                  {recapOtherCosts.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {recapOtherCosts.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <input type="text" value={c.label} placeholder="cth: Biaya admin, ongkir…" className="input" style={{ flex: 2 }}
+                            onChange={e => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+                          <NumberInput value={c.amount} placeholder="Rp 0" className="input" style={{ flex: 1, textAlign: 'right' }}
+                            onChange={raw => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, amount: raw } : x))} />
+                          <button type="button" onClick={() => setRecapOtherCosts(prev => prev.filter((_, j) => j !== i))}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--danger)' }} title="Hapus biaya">
+                            <X size={13} />
+                          </button>
                         </div>
                       ))}
                     </div>
-                  )
-                )}
-
-                {recapNeedsWarehouse && (
-                  <div>
-                    <label style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Warehouse size={11} /> Gudang Tujuan Retur/Reject <span style={{ color: 'var(--danger)' }}>*</span>
-                    </label>
-                    <SearchSelect value={recapWarehouseId} onChange={setRecapWarehouseId}
-                      options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-                      placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                      Retur (kondisi baik) menambah stok jual di gudang ini. Reject (rusak/tidak layak jual) hanya tercatat sebagai kerugian, tidak menambah stok jual.
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="field-label">Catatan</label>
-                  <textarea rows={3} value={recapNote} onChange={e => setRecapNote(e.target.value)} placeholder="cth: kemasan penyok, expired, komplain pelanggan…" className="input" style={{ resize: 'vertical' }} />
-                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                    Dipakai juga sebagai keterangan retur/reject di riwayat &amp; catatan gudang.
+                  )}
+                  <p className="text-[11px] mt-1.5" style={{ color: recapCostsExceed ? 'var(--danger)' : 'var(--text-muted)' }}>
+                    {recapCostsExceed ? 'Biaya lain-lain melebihi pendapatan rekap.' : 'Biaya ini memotong jumlah rekap (yang masuk ke dompet & laporan keuangan).'}
                   </p>
                 </div>
+              )}
 
-                {recapLocationId && recapStock.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="field-label" style={{ marginBottom: 0 }}>Biaya Lain-lain <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(opsional)</span></label>
-                      <button type="button" onClick={() => setRecapOtherCosts(prev => [...prev, { label: '', amount: '' }])}
-                        className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
-                        <Plus size={13} /> Tambah Biaya
-                      </button>
-                    </div>
-                    {recapOtherCosts.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {recapOtherCosts.map((c, i) => (
-                          <div key={i} className="flex items-center gap-2">
-                            <input type="text" value={c.label} placeholder="cth: Biaya admin, ongkir…" className="input" style={{ flex: 2 }}
-                              onChange={e => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
-                            <NumberInput value={c.amount} placeholder="Rp 0" className="input" style={{ flex: 1, textAlign: 'right' }}
-                              onChange={raw => setRecapOtherCosts(prev => prev.map((x, j) => j === i ? { ...x, amount: raw } : x))} />
-                            <button type="button" onClick={() => setRecapOtherCosts(prev => prev.filter((_, j) => j !== i))}
-                              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--danger)' }} title="Hapus biaya">
-                              <X size={13} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-[11px] mt-1.5" style={{ color: recapCostsExceed ? 'var(--danger)' : 'var(--text-muted)' }}>
-                      {recapCostsExceed ? 'Biaya lain-lain melebihi pendapatan rekap.' : 'Biaya ini memotong jumlah rekap (yang masuk ke dompet & laporan keuangan).'}
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="field-label">Status Pembayaran</label>
-                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                    {(['lunas', 'belum_lunas'] as const).map(s => (
-                      <button key={s} type="button" onClick={() => setRecapPaymentStatus(s)}
-                        className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
-                        style={recapPaymentStatus === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-                        {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
-                      </button>
-                    ))}
-                  </div>
-                  {recapPaymentStatus === 'belum_lunas' && (
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                      Belum ikut dihitung sebagai pendapatan di Laporan Keuangan sampai ditandai Lunas (mitra sudah setor).
-                    </p>
-                  )}
+              <div>
+                <label className="field-label">Status Pembayaran</label>
+                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                  {(['lunas', 'belum_lunas'] as const).map(s => (
+                    <button key={s} type="button" onClick={() => setRecapPaymentStatus(s)}
+                      className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
+                      style={recapPaymentStatus === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                      {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
+                    </button>
+                  ))}
                 </div>
-
-                {recapPaymentStatus === 'lunas' && (
-                  <div>
-                    <label className="field-label">Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchSelect value={recapWalletId} onChange={setRecapWalletId}
-                      options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-                    {recapWalletId && (
-                      <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                        Saldo saat ini: {formatRp(walletBalances[recapWalletId] ?? 0)}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {recapTotalRevenue > 0 && (
-                  <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
-                    {recapTotalOtherCosts > 0 && (
-                      <div className="text-xs tabular mb-2" style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div className="flex justify-between"><span>Pendapatan kotor</span><span>{formatRp(recapTotalRevenue)}</span></div>
-                        {recapOtherCostsClean.map((c, i) => (
-                          <div key={i} className="flex justify-between"><span>− {c.label || 'Biaya lain'}</span><span>{formatRp(c.amount)}</span></div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{recapTotalOtherCosts > 0 ? 'Total Setelah Biaya' : 'Total Pendapatan'}</span>
-                      <span className="text-lg font-extrabold tabular" style={{ color: recapCostsExceed ? 'var(--danger)' : 'var(--success)' }}>{formatRp(recapNetRevenue)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {recapHasExceeds && (
-                  <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    <AlertTriangle size={12} /> Ada qty yang melebihi stok di lokasi — periksa kembali sebelum simpan.
+                {recapPaymentStatus === 'belum_lunas' && (
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Belum ikut dihitung sebagai pendapatan di Laporan Keuangan sampai ditandai Lunas (mitra sudah setor).
                   </p>
                 )}
               </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowRecapForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={submitRecap} disabled={submittingRecap || !canSubmitRecap} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {submittingRecap ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
-                {submittingRecap ? 'Menyimpan…' : editingRecap ? 'Simpan Perubahan' : 'Simpan Rekap'}
-              </button>
+
+              {recapPaymentStatus === 'lunas' && (
+                <Field label="Dompet" required>
+                  <SearchSelect value={recapWalletId} onChange={setRecapWalletId}
+                    options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                  {recapWalletId && (
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Saldo saat ini: {formatRp(walletBalances[recapWalletId] ?? 0)}
+                    </p>
+                  )}
+                </Field>
+              )}
+
+              {recapTotalRevenue > 0 && (
+                <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
+                  {recapTotalOtherCosts > 0 && (
+                    <div className="text-xs tabular mb-2" style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div className="flex justify-between"><span>Pendapatan kotor</span><span>{formatRp(recapTotalRevenue)}</span></div>
+                      {recapOtherCostsClean.map((c, i) => (
+                        <div key={i} className="flex justify-between"><span>− {c.label || 'Biaya lain'}</span><span>{formatRp(c.amount)}</span></div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{recapTotalOtherCosts > 0 ? 'Total Setelah Biaya' : 'Total Pendapatan'}</span>
+                    <span className="text-lg font-extrabold tabular" style={{ color: recapCostsExceed ? 'var(--danger)' : 'var(--success)' }}>{formatRp(recapNetRevenue)}</span>
+                  </div>
+                </div>
+              )}
+
+              {recapHasExceeds && (
+                <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  <AlertTriangle size={12} /> Ada qty yang melebihi stok di lokasi — periksa kembali sebelum simpan.
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowRecapForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={submitRecap} disabled={submittingRecap || !canSubmitRecap} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {submittingRecap ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
+              {submittingRecap ? 'Menyimpan…' : editingRecap ? 'Simpan Perubahan' : 'Simpan Rekap'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {showRecapScanner && (
@@ -3916,146 +3847,144 @@ _${storeHeader.name}_`.trim();
       )}
 
       {historyLocation && (
-        <div className="modal-overlay" onClick={closeLocationHistory}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><History size={17} /></div>
-                <div>
-                  <p className="modal-title">Riwayat {historyLocation.name}</p>
-                  <p className="modal-subtitle">
-                    {[historyLocation.contactName, historyLocation.contactPhone].filter(Boolean).join(' · ') || 'Riwayat kirim & rekap lokasi ini'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Tooltip label="Export Excel">
-                  <button onClick={exportHistoryExcel} disabled={exportingHistoryExcel || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                    {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
-                  </button>
-                </Tooltip>
-                <Tooltip label="Kirim Invoice via WhatsApp">
-                  <button onClick={sendInvoiceWhatsApp} disabled={historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                    <MessageCircle size={14} />
-                  </button>
-                </Tooltip>
-                <Tooltip label="Invoice Tagihan">
-                  <button onClick={exportInvoicePdf} disabled={exportingInvoice || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                    {exportingInvoice ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                  </button>
-                </Tooltip>
-                <Tooltip label="Export PDF">
-                  <button onClick={exportHistoryPdf} disabled={exportingHistoryPdf || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
-                    {exportingHistoryPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
-                  </button>
-                </Tooltip>
-                <Tooltip label="Tutup">
-                  <button onClick={closeLocationHistory} className="modal-close"><X size={14} /></button>
-                </Tooltip>
+        <Modal onClose={closeLocationHistory} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><History size={17} /></div>
+              <div>
+                <p className="modal-title">Riwayat {historyLocation.name}</p>
+                <p className="modal-subtitle">
+                  {[historyLocation.contactName, historyLocation.contactPhone].filter(Boolean).join(' · ') || 'Riwayat kirim & rekap lokasi ini'}
+                </p>
               </div>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode:</span>
-                <DateInput value={invoiceFrom} onChange={setInvoiceFrom} height={32} style={{ width: 140 }} />
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
-                <DateInput value={invoiceTo} onChange={setInvoiceTo} height={32} style={{ width: 140 }} />
-                {(invoiceFrom || invoiceTo) && (
-                  <button onClick={() => { setInvoiceFrom(''); setInvoiceTo(''); }} style={{ fontSize: 11, color: 'var(--text-secondary)', textDecoration: 'underline' }}>Semua</button>
-                )}
-                <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>(kosong = seluruh riwayat · berlaku untuk layar, PDF, Excel & invoice)</span>
-              </div>
-              {historyLoading ? (
-                <PageLoader compact />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
-                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--accent)' }}>
-                        {locationStockTotals(historyLocation.id).qty} pcs
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Total Dikirim</p>
-                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>{formatRp(historyTotalKirim)}</p>
-                    </div>
-                    <div className="p-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
-                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Total Pendapatan</p>
-                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--success)' }}>{formatRp(historyTotalRevenue)}</p>
-                    </div>
-                    <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                      <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Jual / Retur / Reject</p>
-                      <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>
-                        {historyTotalSold} / {historyTotalRetur} / {historyTotalReject}
-                      </p>
-                    </div>
-                  </div>
-
-                  {historyBelumLunas > 0 && (
-                    <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                      <AlertTriangle size={12} /> {historyBelumLunas} rekap belum lunas di lokasi ini.
-                    </p>
-                  )}
-
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                      <Clock size={11} /> Linimasa ({historyTimeline.length})
-                    </p>
-                    {historyTimeline.length === 0 ? (
-                      <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat untuk lokasi ini.</p>
-                    ) : (
-                      <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                        {historyTimeline.map(entry => entry.kind === 'kirim' ? (
-                          <div key={`s-${entry.shipment.id}`} className="px-4 py-3">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="badge badge-blue" style={{ gap: 4 }}><Send size={10} /> Kirim</span>
-                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(entry.shipment.createdAt?.seconds)}</p>
-                              <span className="text-sm font-bold tabular ml-auto" style={{ color: 'var(--accent)' }}>
-                                {formatRp(entry.shipment.items.reduce((s, it) => s + it.subtotal, 0))}
-                              </span>
-                            </div>
-                            <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                              {entry.shipment.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
-                            </p>
-                          </div>
-                        ) : (
-                          <div key={`r-${entry.recap.id}`} className="px-4 py-3">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="badge badge-green" style={{ gap: 4 }}><ClipboardList size={10} /> Rekap</span>
-                              {entry.recap.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
-                              {entry.recap.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {entry.recap.totalReject} pcs reject</span>}
-                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(entry.recap.createdAt?.seconds)}</p>
-                              <span className="text-sm font-bold tabular ml-auto" style={{ color: 'var(--success)' }}>
-                                {formatRp(entry.recap.totalRevenue)}
-                              </span>
-                            </div>
-                            <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
-                              {entry.recap.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
-                            </p>
-                            {entry.recap.warehouseName && (
-                              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Retur/reject ke gudang: {entry.recap.warehouseName}</p>
-                            )}
-                            {entry.recap.note && (
-                              <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{entry.recap.note}&rdquo;</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button onClick={closeLocationHistory} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Tutup
-              </button>
+            <div className="flex items-center gap-1.5">
+              <Tooltip label="Export Excel">
+                <button onClick={exportHistoryExcel} disabled={exportingHistoryExcel || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  {exportingHistoryExcel ? <Loader2 size={14} className="animate-spin" /> : <ExcelIcon size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="Kirim Invoice via WhatsApp">
+                <button aria-label="Kirim Invoice via WhatsApp" onClick={sendInvoiceWhatsApp} disabled={historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  <MessageCircle size={14} />
+                </button>
+              </Tooltip>
+              <Tooltip label="Invoice Tagihan">
+                <button onClick={exportInvoicePdf} disabled={exportingInvoice || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  {exportingInvoice ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="Export PDF">
+                <button onClick={exportHistoryPdf} disabled={exportingHistoryPdf || historyLoading} className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  {exportingHistoryPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+                </button>
+              </Tooltip>
+              <Tooltip label="Tutup">
+                <button onClick={closeLocationHistory} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+              </Tooltip>
             </div>
           </div>
-        </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode:</span>
+              <DateInput value={invoiceFrom} onChange={setInvoiceFrom} height={32} style={{ width: 140 }} />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
+              <DateInput value={invoiceTo} onChange={setInvoiceTo} height={32} style={{ width: 140 }} />
+              {(invoiceFrom || invoiceTo) && (
+                <button onClick={() => { setInvoiceFrom(''); setInvoiceTo(''); }} style={{ fontSize: 11, color: 'var(--text-secondary)', textDecoration: 'underline' }}>Semua</button>
+              )}
+              <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>(kosong = seluruh riwayat · berlaku untuk layar, PDF, Excel & invoice)</span>
+            </div>
+            {historyLoading ? (
+              <PageLoader compact />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+                    <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Stok Saat Ini</p>
+                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--accent)' }}>
+                      {locationStockTotals(historyLocation.id).qty} pcs
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+                    <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Total Dikirim</p>
+                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>{formatRp(historyTotalKirim)}</p>
+                  </div>
+                  <div className="p-3 rounded-xl" style={{ background: 'var(--success-bg)' }}>
+                    <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Total Pendapatan</p>
+                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--success)' }}>{formatRp(historyTotalRevenue)}</p>
+                  </div>
+                  <div className="p-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
+                    <p className="text-[10px] font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>Jual / Retur / Reject</p>
+                    <p className="text-sm font-bold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>
+                      {historyTotalSold} / {historyTotalRetur} / {historyTotalReject}
+                    </p>
+                  </div>
+                </div>
+
+                {historyBelumLunas > 0 && (
+                  <p className="text-xs flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                    <AlertTriangle size={12} /> {historyBelumLunas} rekap belum lunas di lokasi ini.
+                  </p>
+                )}
+
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                    <Clock size={11} /> Linimasa ({historyTimeline.length})
+                  </p>
+                  {historyTimeline.length === 0 ? (
+                    <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Belum ada riwayat untuk lokasi ini.</p>
+                  ) : (
+                    <div className="card overflow-hidden divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                      {historyTimeline.map(entry => entry.kind === 'kirim' ? (
+                        <div key={`s-${entry.shipment.id}`} className="px-4 py-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="badge badge-blue" style={{ gap: 4 }}><Send size={10} /> Kirim</span>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(entry.shipment.createdAt?.seconds)}</p>
+                            <span className="text-sm font-bold tabular ml-auto" style={{ color: 'var(--accent)' }}>
+                              {formatRp(entry.shipment.items.reduce((s, it) => s + it.subtotal, 0))}
+                            </span>
+                          </div>
+                          <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                            {entry.shipment.items.map(it => `${it.productName} (${it.qty} pcs)`).join(', ')}
+                          </p>
+                        </div>
+                      ) : (
+                        <div key={`r-${entry.recap.id}`} className="px-4 py-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="badge badge-green" style={{ gap: 4 }}><ClipboardList size={10} /> Rekap</span>
+                            {entry.recap.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                            {entry.recap.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {entry.recap.totalReject} pcs reject</span>}
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(entry.recap.createdAt?.seconds)}</p>
+                            <span className="text-sm font-bold tabular ml-auto" style={{ color: 'var(--success)' }}>
+                              {formatRp(entry.recap.totalRevenue)}
+                            </span>
+                          </div>
+                          <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                            {entry.recap.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
+                          </p>
+                          {entry.recap.warehouseName && (
+                            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Retur/reject ke gudang: {entry.recap.warehouseName}</p>
+                          )}
+                          {entry.recap.note && (
+                            <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{entry.recap.note}&rdquo;</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button onClick={closeLocationHistory} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Tutup
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Bulk action bar — Lokasi */}

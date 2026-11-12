@@ -17,6 +17,7 @@ import MonthlyFinanceSection from './MonthlyFinanceSection';
 import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { DateInput } from '@/components/DateTimeInput';
+import { formatRp } from '@/lib/format';
 
 export interface BusinessAnalyticsData {
   period: { from: string; to: string };
@@ -33,8 +34,6 @@ export interface BusinessAnalyticsData {
   dailyTrend: { date: string; online: number; pos: number; consignment: number; incomeLain: number; expense: number; pendapatan: number }[];
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const formatQty = (n: number) =>
   new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);

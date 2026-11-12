@@ -157,7 +157,7 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
     <div className="animate-fade-up">
       <div className="flex items-center gap-3 mb-6">
         <Tooltip label="Kembali">
-          <button onClick={() => setStallId(null)} className="btn-ghost p-2 flex-shrink-0"><ArrowLeft size={16} /></button>
+          <button aria-label="Kembali" onClick={() => setStallId(null)} className="btn-ghost p-2 flex-shrink-0"><ArrowLeft size={16} /></button>
         </Tooltip>
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-extrabold truncate" style={{ color: 'var(--text-primary)' }}>{stall.name}</h2>
@@ -254,7 +254,7 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
                       <div className="flex items-center justify-between gap-1.5 mt-1.5">
                         <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{l.p.code}</span>
                         <Tooltip label="Riwayat stok">
-                          <button className="btn-ghost p-1 flex-shrink-0" onClick={() => setHistory({ title: `${l.p.name} — ${stall.name}`, productId: l.item.productId, stallId: l.item.stallId })}>
+                          <button aria-label="Riwayat stok" className="btn-ghost p-1 flex-shrink-0" onClick={() => setHistory({ title: `${l.p.name} — ${stall.name}`, productId: l.item.productId, stallId: l.item.stallId })}>
                             <History size={12} />
                           </button>
                         </Tooltip>

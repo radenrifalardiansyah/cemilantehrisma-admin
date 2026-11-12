@@ -14,7 +14,7 @@ import { useToast } from '@/components/Toast';
 import { TYPE_ICON, READ_FILTERS, markAllNotificationsRead, timeAgo, type NotificationDoc, type ReadFilter } from '@/components/NotificationBell';
 import PageLoader from '@/components/PageLoader';
 
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
 
 // Riwayat lengkap notifikasi — beda dengan dropdown lonceng (NotificationBell) yang cuma
 // menampilkan 50 terakhir tanpa pagination. Tab ini dipaginasi di client, pola yang sama
@@ -153,7 +153,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
                       <div className="flex items-center gap-1 flex-shrink-0 pt-1">
                         {!isRead && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--accent)' }} />}
                         <Tooltip label={expanded ? 'Tutup detail' : 'Lihat detail'}>
-                          <button onClick={() => handleClick(n)} className="btn-ghost p-2">
+                          <button aria-label={expanded ? 'Tutup detail' : 'Lihat detail'} onClick={() => handleClick(n)} className="btn-ghost p-2">
                             <ChevronRight size={13} style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                           </button>
                         </Tooltip>
@@ -207,7 +207,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -228,7 +228,7 @@ export default function NotificationsTab({ creds, username, onOpenNotification }
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>

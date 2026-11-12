@@ -61,7 +61,10 @@ const STOCK_MAP = {
   open_po: { label: 'Open PO',  cls: 'badge-amber' },
 };
 const BADGE_OPTS = ['', 'Best Seller', 'Popular', 'New'];
-const HEADER_BTN_H = 34; // samakan tinggi semua tombol di header Produk
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 // Status stok dihitung dari total qty gudang (menu Stok), kecuali "Buka PO" diaktifkan manual.
 const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
   p.openPO ? STOCK_MAP.open_po : (p.stockQty ?? 0) > 0 ? STOCK_MAP.ready : STOCK_MAP.habis;
@@ -69,8 +72,6 @@ const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
 export const isLowStock = (p: Pick<FireProduct, 'stockQty' | 'openPO' | 'minStock'>) =>
   !p.openPO && (p.minStock ?? 0) > 0 && (p.stockQty ?? 0) > 0 && (p.stockQty ?? 0) <= (p.minStock ?? 0);
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 // ─── Excel import ─────────────────────────────────────────────────────────────
 const PRODUCT_TEMPLATE_COLS = [
@@ -810,7 +811,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
       {p.imageUrls?.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {p.imageUrls.map((u, i) => (
-            <button key={i} onClick={() => openLightbox(p.imageUrls, i, p.name)}
+            <button key={i} aria-label={`Lihat gambar ${i + 1}`} onClick={() => openLightbox(p.imageUrls, i, p.name)}
               className="w-16 h-16 rounded-xl overflow-hidden relative" style={{ background: 'var(--surface-2)' }}>
               <Image src={u} alt="" fill className="object-contain" sizes="64px" unoptimized />
             </button>
@@ -1029,22 +1030,22 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <Tooltip label="QR Code">
-                              <button onClick={() => setQrProduct(p)} className="btn-ghost p-2" style={{ color: 'var(--text-secondary)' }}>
+                              <button aria-label="QR Code" onClick={() => setQrProduct(p)} className="btn-ghost p-2" style={{ color: 'var(--text-secondary)' }}>
                                 <QrCode size={13} />
                               </button>
                             </Tooltip>
                             <Tooltip label="Edit">
-                              <button onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                              <button aria-label="Edit" onClick={() => openEdit(p)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                                 <Pencil size={13} />
                               </button>
                             </Tooltip>
                             <Tooltip label="Hapus">
-                              <button onClick={() => del(p.id, p.name)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
+                              <button aria-label="Hapus" onClick={() => del(p.id, p.name)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
                                 <Trash2 size={13} />
                               </button>
                             </Tooltip>
                             <Tooltip label="Lihat detail">
-                              <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
+                              <button aria-label="Lihat detail" onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="btn-ghost p-2">
                                 <ChevronRight size={13} style={{ transform: expandedId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
                               </button>
                             </Tooltip>
@@ -1123,17 +1124,17 @@ export default function ProductsTab({ creds }: { creds: string }) {
                             </button>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <Tooltip label="QR Code">
-                                <button onClick={() => setQrProduct(p)} className="btn-ghost p-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                <button aria-label="QR Code" onClick={() => setQrProduct(p)} className="btn-ghost p-1.5" style={{ color: 'var(--text-secondary)' }}>
                                   <QrCode size={12} />
                                 </button>
                               </Tooltip>
                               <Tooltip label="Edit">
-                                <button onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                                <button aria-label="Edit" onClick={() => openEdit(p)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                                   <Pencil size={12} />
                                 </button>
                               </Tooltip>
                               <Tooltip label="Hapus">
-                                <button onClick={() => del(p.id, p.name)} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
+                                <button aria-label="Hapus" onClick={() => del(p.id, p.name)} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
                                   <Trash2 size={12} />
                                 </button>
                               </Tooltip>
@@ -1160,7 +1161,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                   {totalPages > 1 && (
                     <div className="flex items-center gap-1">
                       <Tooltip label="Halaman sebelumnya">
-                        <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                        <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                           <ChevronLeft size={14} />
                         </button>
                       </Tooltip>
@@ -1183,7 +1184,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
                         )
                       }
                       <Tooltip label="Halaman berikutnya">
-                        <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                        <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                           <ChevronRight size={14} />
                         </button>
                       </Tooltip>
@@ -1241,248 +1242,240 @@ export default function ProductsTab({ creds }: { creds: string }) {
 
       {/* ── Product edit modal ── */}
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
+        <Modal onClose={closeEdit} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
 
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon">
-                  {editing.emoji
-                    ? <span style={{ fontSize: 17, lineHeight: 1 }}>{editing.emoji}</span>
-                    : <Package size={17} />}
-                </div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Produk' : 'Edit Produk'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Isi detail produk baru' : editing.name || 'Produk'}</p>
-                </div>
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon">
+                {editing.emoji
+                  ? <span style={{ fontSize: 17, lineHeight: 1 }}>{editing.emoji}</span>
+                  : <Package size={17} />}
               </div>
-              <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close"><X size={14} /></button></Tooltip>
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Produk' : 'Edit Produk'}</p>
+                <p className="modal-subtitle">{isNew ? 'Isi detail produk baru' : editing.name || 'Produk'}</p>
+              </div>
             </div>
+            <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
 
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-                {/* Images */}
-                <div>
-                  <p className="section-label" style={{ marginBottom: 10 }}>
-                    Foto Produk <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>— geser untuk ubah urutan, foto pertama jadi sampul</span>
-                  </p>
-                  <Reorder.Group as="div" axis="x" values={editing.imageUrls}
-                    onReorder={newOrder => setEditing({ ...editing, imageUrls: newOrder })}
-                    style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {editing.imageUrls.map((u, i) => (
-                      <Reorder.Item key={u} value={u} as="div"
-                        className="relative w-20 h-20 rounded-xl overflow-hidden group cursor-grab active:cursor-grabbing"
-                        style={{ background: 'var(--surface-2)' }}>
-                        <Image src={u} alt="" fill className="object-contain pointer-events-none" sizes="80px" unoptimized draggable={false} />
-                        {i === 0 && (
-                          <span className="absolute bottom-1 left-1 badge badge-gray" style={{ fontSize: 9, padding: '1px 6px' }}>Sampul</span>
-                        )}
-                        <Tooltip label="Hapus foto">
-                          <button onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
-                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <X size={11} />
-                          </button>
-                        </Tooltip>
-                      </Reorder.Item>
-                    ))}
-                    <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                      className="w-20 h-20 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors"
-                      style={{ border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                      {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
-                      {uploading ? 'Upload…' : 'Tambah'}
-                    </button>
-                  </Reorder.Group>
-                  <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0])} />
-                </div>
+              {/* Images */}
+              <div>
+                <p className="section-label" style={{ marginBottom: 10 }}>
+                  Foto Produk <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>— geser untuk ubah urutan, foto pertama jadi sampul</span>
+                </p>
+                <Reorder.Group as="div" axis="x" values={editing.imageUrls}
+                  onReorder={newOrder => setEditing({ ...editing, imageUrls: newOrder })}
+                  style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {editing.imageUrls.map((u, i) => (
+                    <Reorder.Item key={u} value={u} as="div"
+                      className="relative w-20 h-20 rounded-xl overflow-hidden group cursor-grab active:cursor-grabbing"
+                      style={{ background: 'var(--surface-2)' }}>
+                      <Image src={u} alt="" fill className="object-contain pointer-events-none" sizes="80px" unoptimized draggable={false} />
+                      {i === 0 && (
+                        <span className="absolute bottom-1 left-1 badge badge-gray" style={{ fontSize: 9, padding: '1px 6px' }}>Sampul</span>
+                      )}
+                      <Tooltip label="Hapus foto">
+                        <button aria-label="Hapus foto" onClick={() => setEditing({ ...editing, imageUrls: editing.imageUrls.filter((_, j) => j !== i) })}
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X size={11} />
+                        </button>
+                      </Tooltip>
+                    </Reorder.Item>
+                  ))}
+                  <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                    className="w-20 h-20 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors"
+                    style={{ border: '2px dashed var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                    {uploading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+                    {uploading ? 'Upload…' : 'Tambah'}
+                  </button>
+                </Reorder.Group>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0])} />
+              </div>
 
-                {/* 2-column grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Col 1 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {/* Emoji + Name */}
-                    <div style={{ display: 'flex', gap: 12 }}>
-                      <div style={{ flexShrink: 0 }}>
-                        <label className="field-label">Emoji</label>
-                        <EmojiPicker
-                          value={editing.emoji}
-                          onChange={emoji => setEditing({ ...editing, emoji })}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <label className="field-label">Nama Produk *</label>
-                        <input
-                          value={editing.name}
-                          onChange={e => setEditing({ ...editing, name: e.target.value })}
-                          className="input"
-                        />
-                      </div>
-                    </div>
-
-                    {([
-                      { label: 'Kode Produk',    key: 'code'   as const, type: 'text' },
-                      { label: 'Berat / Ukuran', key: 'weight' as const, type: 'text' },
-                    ] as const).map(f => (
-                      <div key={f.key}>
-                        <label className="field-label">{f.label}</label>
-                        <input type={f.type} value={(editing[f.key] as string) ?? ''}
-                          onChange={e => setEditing({ ...editing, [f.key]: e.target.value })}
-                          className="input" />
-                      </div>
-                    ))}
-
-                    <div>
-                      <label className="field-label">Warna & Gradient</label>
-                      <ColorThemePicker
-                        bgColor={editing.bgColor}
-                        gradient={editing.gradient}
-                        onChange={theme => setEditing({ ...editing, ...theme })}
+              {/* 2-column grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Col 1 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Emoji + Name */}
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{ flexShrink: 0 }}>
+                      <label className="field-label">Emoji</label>
+                      <EmojiPicker
+                        value={editing.emoji}
+                        onChange={emoji => setEditing({ ...editing, emoji })}
                       />
                     </div>
+                    <Field label="Nama Produk *" style={{ flex: 1 }}>
+                      <input
+                        value={editing.name}
+                        onChange={e => setEditing({ ...editing, name: e.target.value })}
+                        className="input"
+                      />
+                    </Field>
                   </div>
 
-                  {/* Col 2 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {([
-                      { label: 'Harga (Rp)',                       key: 'price'         as const },
-                      { label: 'Harga Modal / HPP (Rp, opsional)', key: 'costPrice'     as const },
-                      { label: 'Harga Coret (Rp, opsional)',       key: 'originalPrice' as const },
-                    ] as const).map(f => (
-                      <div key={f.key}>
-                        <label className="field-label">{f.label}</label>
-                        {/* costPrice bisa desimal — HPP dihitung ulang otomatis dari rata-rata bergerak
-                            tiap ada Produksi (lihat production/route.ts), jadi harus dibulatkan dulu
-                            sebelum ditaruh di NumberInput (dia buang titik desimal & gabung digit,
-                            sama seperti bug avgCost di Bahan Baku). */}
-                        <NumberInput value={(() => { const v = editing[f.key] as number | undefined; return v ? Math.round(v) : ''; })()}
-                          onChange={raw => setEditing({ ...editing, [f.key]: raw ? Number(raw) : 0 })}
-                        />
-                      </div>
-                    ))}
-                    {!!editing.costPrice && editing.price > 0 && (
-                      <p style={{ fontSize: 10.5, marginTop: -8, color: 'var(--text-muted)' }}>
-                        Margin: {formatRp(editing.price - editing.costPrice)} / pcs ({Math.round(((editing.price - editing.costPrice) / editing.price) * 100)}%)
-                      </p>
-                    )}
-                    {!isNew && (
-                      <div>
-                        <button type="button" onClick={() => recalculateHpp(editing.id, editing.name, editing.costPrice ?? 0)}
-                          disabled={recalculatingHpp} className="btn-ghost text-xs font-semibold"
-                          style={{ height: 32, padding: '0 10px' }}>
-                          {recalculatingHpp ? <Loader2 size={13} className="animate-spin" /> : null}
-                          Timpa HPP ke Semua Transaksi Lama
-                        </button>
-                        <p style={{ fontSize: 10, marginTop: 4, color: 'var(--text-muted)' }}>
-                          Pakai kalau Harga Modal di atas adalah koreksi HPP yang salah tersimpan sejak dulu — semua order & rekap konsinyasi lama produk ini akan ditimpa dengan angka ini (bukan cuma yang belum terisi).
-                        </p>
-                      </div>
-                    )}
+                  {([
+                    { label: 'Kode Produk',    key: 'code'   as const, type: 'text' },
+                    { label: 'Berat / Ukuran', key: 'weight' as const, type: 'text' },
+                  ] as const).map(f => (
+                    <Field label={<>{f.label}</>} key={f.key}>
+                      <input type={f.type} value={(editing[f.key] as string) ?? ''}
+                        onChange={e => setEditing({ ...editing, [f.key]: e.target.value })}
+                        className="input" />
+                    </Field>
+                  ))}
 
-                    {/* Selects */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="field-label">Kategori</label>
-                        <SearchSelect value={editing.category}
-                          onChange={v => setEditing({ ...editing, category: v })}
-                          options={categories.map(c => ({ value: c.id, label: `${c.emoji} ${c.name}` }))}
-                          placeholder="— Belum ada —" searchPlaceholder="Cari kategori…" />
-                      </div>
-                      <div>
-                        <label className="field-label">Badge</label>
-                        <SearchSelect value={editing.badge ?? ''}
-                          onChange={v => setEditing({ ...editing, badge: v })}
-                          options={BADGE_OPTS.map(o => ({ value: o, label: o || '–' }))}
-                          placeholder="–" searchPlaceholder="Cari badge…" />
-                      </div>
-                    </div>
-
-                    {/* Status stok — read-only, dihitung dari data gudang (kecuali PO diaktifkan) */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                      <div>
-                        <p className="field-label" style={{ marginBottom: 2 }}>Status Stok</p>
-                        <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Otomatis dari data gudang & transaksi di menu Stok</p>
-                      </div>
-                      <span className={`badge ${stockStatus(editing).cls}`}>
-                        {stockStatus(editing).label} · {editing.stockQty ?? 0} pcs
-                      </span>
-                    </div>
-
-                    <div>
-                      <label className="field-label">Stok Minimum (peringatan &quot;Stok Menipis&quot;)</label>
-                      <NumberInput value={editing.minStock ?? 0}
-                        onChange={raw => setEditing({ ...editing, minStock: Number(raw) || 0 })}
-                        placeholder="0 = tidak ada peringatan" />
-                    </div>
-
-                    {/* Toggle Open PO */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                      <div>
-                        <p className="field-label" style={{ marginBottom: 2 }}>Buka Pre-Order (PO)</p>
-                        <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Aktifkan untuk tetap menerima pesanan walau stok gudang 0</p>
-                      </div>
-                      <Switch checked={!!editing.openPO} onChange={() => setEditing({ ...editing, openPO: !editing.openPO })} />
-                    </div>
-
-                    {/* Toggle Publish */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                      <div>
-                        <p className="field-label" style={{ marginBottom: 2 }}>Publish ke Frontend</p>
-                        <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Nonaktifkan untuk menyembunyikan produk ini dari toko online</p>
-                      </div>
-                      <Switch checked={editing.published !== false} onChange={() => setEditing({ ...editing, published: !(editing.published !== false) })} />
-                    </div>
-
-                    {/* Description */}
-                    <div>
-                      <label className="field-label">Deskripsi</label>
-                      <textarea rows={4} value={editing.description}
-                        onChange={e => setEditing({ ...editing, description: e.target.value })}
-                        className="input resize-none" />
-                    </div>
+                  <div>
+                    <label className="field-label">Warna & Gradient</label>
+                    <ColorThemePicker
+                      bgColor={editing.bgColor}
+                      gradient={editing.gradient}
+                      onChange={theme => setEditing({ ...editing, ...theme })}
+                    />
                   </div>
                 </div>
 
-                {/* Detail points */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <label className="field-label" style={{ marginBottom: 0 }}>Detail Produk</label>
-                    <button onClick={addDetail} style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                      <Plus size={11} /> Tambah baris
-                    </button>
+                {/* Col 2 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {([
+                    { label: 'Harga (Rp)',                       key: 'price'         as const },
+                    { label: 'Harga Modal / HPP (Rp, opsional)', key: 'costPrice'     as const },
+                    { label: 'Harga Coret (Rp, opsional)',       key: 'originalPrice' as const },
+                  ] as const).map(f => (
+                    <div key={f.key}>
+                      <label className="field-label">{f.label}</label>
+                      {/* costPrice bisa desimal — HPP dihitung ulang otomatis dari rata-rata bergerak
+                          tiap ada Produksi (lihat production/route.ts), jadi harus dibulatkan dulu
+                          sebelum ditaruh di NumberInput (dia buang titik desimal & gabung digit,
+                          sama seperti bug avgCost di Bahan Baku). */}
+                      <NumberInput value={(() => { const v = editing[f.key] as number | undefined; return v ? Math.round(v) : ''; })()}
+                        onChange={raw => setEditing({ ...editing, [f.key]: raw ? Number(raw) : 0 })}
+                      />
+                    </div>
+                  ))}
+                  {!!editing.costPrice && editing.price > 0 && (
+                    <p style={{ fontSize: 10.5, marginTop: -8, color: 'var(--text-muted)' }}>
+                      Margin: {formatRp(editing.price - editing.costPrice)} / pcs ({Math.round(((editing.price - editing.costPrice) / editing.price) * 100)}%)
+                    </p>
+                  )}
+                  {!isNew && (
+                    <div>
+                      <button type="button" onClick={() => recalculateHpp(editing.id, editing.name, editing.costPrice ?? 0)}
+                        disabled={recalculatingHpp} className="btn-ghost text-xs font-semibold"
+                        style={{ height: 32, padding: '0 10px' }}>
+                        {recalculatingHpp ? <Loader2 size={13} className="animate-spin" /> : null}
+                        Timpa HPP ke Semua Transaksi Lama
+                      </button>
+                      <p style={{ fontSize: 10, marginTop: 4, color: 'var(--text-muted)' }}>
+                        Pakai kalau Harga Modal di atas adalah koreksi HPP yang salah tersimpan sejak dulu — semua order & rekap konsinyasi lama produk ini akan ditimpa dengan angka ini (bukan cuma yang belum terisi).
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Selects */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Field label="Kategori">
+                      <SearchSelect value={editing.category}
+                        onChange={v => setEditing({ ...editing, category: v })}
+                        options={categories.map(c => ({ value: c.id, label: `${c.emoji} ${c.name}` }))}
+                        placeholder="— Belum ada —" searchPlaceholder="Cari kategori…" />
+                    </Field>
+                    <Field label="Badge">
+                      <SearchSelect value={editing.badge ?? ''}
+                        onChange={v => setEditing({ ...editing, badge: v })}
+                        options={BADGE_OPTS.map(o => ({ value: o, label: o || '–' }))}
+                        placeholder="–" searchPlaceholder="Cari badge…" />
+                    </Field>
                   </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                    {editing.details.map((d, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 8 }}>
-                        <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1" style={{ fontSize: 13 }} />
-                        {editing.details.length > 1 && (
-                          <Tooltip label="Hapus baris">
-                            <button onClick={() => removeDetail(i)} className="btn-ghost" style={{ padding: '8px', color: 'var(--danger)', flexShrink: 0 }}>
-                              <X size={13} />
-                            </button>
-                          </Tooltip>
-                        )}
-                      </div>
-                    ))}
+
+                  {/* Status stok — read-only, dihitung dari data gudang (kecuali PO diaktifkan) */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <p className="field-label" style={{ marginBottom: 2 }}>Status Stok</p>
+                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Otomatis dari data gudang & transaksi di menu Stok</p>
+                    </div>
+                    <span className={`badge ${stockStatus(editing).cls}`}>
+                      {stockStatus(editing).label} · {editing.stockQty ?? 0} pcs
+                    </span>
                   </div>
+
+                  <Field label="Stok Minimum (peringatan &quot;Stok Menipis&quot;)">
+                    <NumberInput value={editing.minStock ?? 0}
+                      onChange={raw => setEditing({ ...editing, minStock: Number(raw) || 0 })}
+                      placeholder="0 = tidak ada peringatan" />
+                  </Field>
+
+                  {/* Toggle Open PO */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <p className="field-label" style={{ marginBottom: 2 }}>Buka Pre-Order (PO)</p>
+                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Aktifkan untuk tetap menerima pesanan walau stok gudang 0</p>
+                    </div>
+                    <Switch checked={!!editing.openPO} onChange={() => setEditing({ ...editing, openPO: !editing.openPO })} />
+                  </div>
+
+                  {/* Toggle Publish */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <p className="field-label" style={{ marginBottom: 2 }}>Publish ke Frontend</p>
+                      <p style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Nonaktifkan untuk menyembunyikan produk ini dari toko online</p>
+                    </div>
+                    <Switch checked={editing.published !== false} onChange={() => setEditing({ ...editing, published: !(editing.published !== false) })} />
+                  </div>
+
+                  {/* Description */}
+                  <Field label="Deskripsi">
+                    <textarea rows={4} value={editing.description}
+                      onChange={e => setEditing({ ...editing, description: e.target.value })}
+                      className="input resize-none" />
+                  </Field>
+                </div>
+              </div>
+
+              {/* Detail points */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <label className="field-label" style={{ marginBottom: 0 }}>Detail Produk</label>
+                  <button onClick={addDetail} style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                    <Plus size={11} /> Tambah baris
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                  {editing.details.map((d, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8 }}>
+                      <input value={d} onChange={e => handleDetailChange(i, e.target.value)} className="input flex-1" style={{ fontSize: 13 }} />
+                      {editing.details.length > 1 && (
+                        <Tooltip label="Hapus baris">
+                          <button aria-label="Hapus baris" onClick={() => removeDetail(i)} className="btn-ghost" style={{ padding: '8px', color: 'var(--danger)', flexShrink: 0 }}>
+                            <X size={13} />
+                          </button>
+                        </Tooltip>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={save} disabled={saving || !editing.name}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Produk'}
-              </button>
-            </div>
           </div>
-        </div>
+
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={save} disabled={saving || !editing.name}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Produk'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* ── QR Code modal ── */}

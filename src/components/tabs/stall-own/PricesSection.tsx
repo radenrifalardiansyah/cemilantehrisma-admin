@@ -99,7 +99,7 @@ export default function PricesSection({ creds, stalls, can }: OwnSectionProps) {
                         </button>
                       </Tooltip>
                       <Tooltip label="Kembali ke harga toko">
-                        <button onClick={() => put(p.productId, null)} disabled={p.stallPrice === null || busyId === p.productId} className="btn-ghost p-0 flex items-center justify-center disabled:opacity-30" style={{ width: HEADER_BTN_H, height: HEADER_BTN_H }}>
+                        <button aria-label="Kembali ke harga toko" onClick={() => put(p.productId, null)} disabled={p.stallPrice === null || busyId === p.productId} className="btn-ghost p-0 flex items-center justify-center disabled:opacity-30" style={{ width: HEADER_BTN_H, height: HEADER_BTN_H }}>
                           <RotateCcw size={13} />
                         </button>
                       </Tooltip>

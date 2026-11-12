@@ -242,7 +242,7 @@ export default function ShipmentsSection({ creds, stalls, warehouses, can }: Own
                                   .map(p => ({ value: p.productId, label: p.name, sublabel: draft.kind === 'send' ? `Stok gudang: ${qtyText(p.otherStock)}` : `Stok lapak: ${qtyText(p.stock)}` }))} />
                             </div>
                             <Tooltip label="Hapus baris">
-                              <button onClick={() => setDraft({ ...draft, lines: draft.lines.filter((_, i) => i !== idx) })} disabled={draft.lines.length === 1}
+                              <button aria-label="Hapus baris" onClick={() => setDraft({ ...draft, lines: draft.lines.filter((_, i) => i !== idx) })} disabled={draft.lines.length === 1}
                                 className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
                             </Tooltip>
                           </div>

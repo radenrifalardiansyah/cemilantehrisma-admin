@@ -15,6 +15,8 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import PageLoader from '@/components/PageLoader';
 import VouchersPanel from '@/components/VouchersPanel';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 const API = '';
 
@@ -500,7 +502,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                               </div>
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              <button onClick={() => openEditBank(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                              <button aria-label="Edit rekening" onClick={() => openEditBank(b)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                                 <Pencil size={14} />
                               </button>
                               <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}>
@@ -526,7 +528,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                               </p>
                             </div>
                             <div className="flex items-center justify-center gap-1 px-3 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
-                              <button onClick={() => openEditBank(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                              <button aria-label="Edit rekening" onClick={() => openEditBank(b)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                                 <Pencil size={12} />
                               </button>
                               <button onClick={() => deleteBank(b)} disabled={deletingBankCode === b.code} className="btn-ghost p-1.5" style={{ color: 'var(--danger)' }}>
@@ -548,7 +550,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                       {bankTotalPages > 1 && (
                         <div className="flex items-center gap-1">
                           <Tooltip label="Halaman sebelumnya">
-                            <button onClick={() => goBankPage(bankSafePage - 1)} disabled={bankSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                            <button aria-label="Halaman sebelumnya" onClick={() => goBankPage(bankSafePage - 1)} disabled={bankSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                               <ChevronLeft size={14} />
                             </button>
                           </Tooltip>
@@ -569,7 +571,7 @@ export default function SettingsTab({ creds }: { creds: string }) {
                             )
                           }
                           <Tooltip label="Halaman berikutnya">
-                            <button onClick={() => goBankPage(bankSafePage + 1)} disabled={bankSafePage === bankTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                            <button aria-label="Halaman berikutnya" onClick={() => goBankPage(bankSafePage + 1)} disabled={bankSafePage === bankTotalPages} className="btn-ghost p-2 disabled:opacity-30">
                               <ChevronRight size={14} />
                             </button>
                           </Tooltip>
@@ -793,82 +795,78 @@ export default function SettingsTab({ creds }: { creds: string }) {
 
       {/* Add/Edit master bank modal */}
       {bankModal && (
-        <div className="modal-overlay" onClick={closeBankModal}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><Landmark size={17} /></div>
-                <div>
-                  <p className="modal-title">{bankModal.code === null ? 'Tambah Bank' : 'Edit Bank'}</p>
-                  <p className="modal-subtitle">{bankModal.code === null ? 'Tambah bank/e-wallet baru ke master data' : `Edit: ${bankModal.name}`}</p>
-                </div>
+        <Modal onClose={closeBankModal} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Landmark size={17} /></div>
+              <div>
+                <p className="modal-title">{bankModal.code === null ? 'Tambah Bank' : 'Edit Bank'}</p>
+                <p className="modal-subtitle">{bankModal.code === null ? 'Tambah bank/e-wallet baru ke master data' : `Edit: ${bankModal.name}`}</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={closeBankModal} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div className="flex items-center gap-3">
-                  <ImageUploadBox
-                    src={bankModal.logoUrl}
-                    alt={bankModal.name || 'Logo bank'}
-                    uploading={bankLogoUploading}
-                    onSelect={f => uploadBankLogo(f)}
-                    onRemove={() => setBankModal({ ...bankModal, logoUrl: '' })}
-                    icon={<Landmark size={18} />}
-                    fit="contain"
-                    size={56}
-                    emptyText="Logo"
+            <Tooltip label="Tutup"><button onClick={closeBankModal} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="flex items-center gap-3">
+                <ImageUploadBox
+                  src={bankModal.logoUrl}
+                  alt={bankModal.name || 'Logo bank'}
+                  uploading={bankLogoUploading}
+                  onSelect={f => uploadBankLogo(f)}
+                  onRemove={() => setBankModal({ ...bankModal, logoUrl: '' })}
+                  icon={<Landmark size={18} />}
+                  fit="contain"
+                  size={56}
+                  emptyText="Logo"
+                />
+                <Field label="Nama Bank / E-Wallet" required style={{ flex: 1 }}>
+                  <input value={bankModal.name} onChange={e => setBankModal({ ...bankModal, name: e.target.value })}
+                    className="input" placeholder="cth: Bank ABC, DanaKu" autoFocus />
+                </Field>
+              </div>
+
+              <Field label="Kode Kliring (opsional)">
+                <input value={bankModal.bankCode} onChange={e => setBankModal({ ...bankModal, bankCode: e.target.value })}
+                  className="input" placeholder="cth: 014" />
+              </Field>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>E-Wallet</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Dompet digital tanpa kode kliring baku</p>
+                </div>
+                <button
+                  onClick={() => setBankModal({ ...bankModal, ewallet: !bankModal.ewallet })}
+                  className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                  style={{ background: bankModal.ewallet ? 'var(--accent)' : 'var(--border)' }}
+                >
+                  <span
+                    className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                    style={{ transform: bankModal.ewallet ? 'translateX(20px)' : 'translateX(2px)' }}
                   />
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Nama Bank / E-Wallet <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input value={bankModal.name} onChange={e => setBankModal({ ...bankModal, name: e.target.value })}
-                      className="input" placeholder="cth: Bank ABC, DanaKu" autoFocus />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="field-label">Kode Kliring (opsional)</label>
-                  <input value={bankModal.bankCode} onChange={e => setBankModal({ ...bankModal, bankCode: e.target.value })}
-                    className="input" placeholder="cth: 014" />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>E-Wallet</p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Dompet digital tanpa kode kliring baku</p>
-                  </div>
-                  <button
-                    onClick={() => setBankModal({ ...bankModal, ewallet: !bankModal.ewallet })}
-                    className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                    style={{ background: bankModal.ewallet ? 'var(--accent)' : 'var(--border)' }}
-                  >
-                    <span
-                      className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
-                      style={{ transform: bankModal.ewallet ? 'translateX(20px)' : 'translateX(2px)' }}
-                    />
-                  </button>
-                </div>
-
-                {bankError && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {bankError}
-                  </p>
-                )}
+                </button>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={closeBankModal} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={saveBank} disabled={savingBank} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {savingBank ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {savingBank ? 'Menyimpan…' : 'Simpan Bank'}
-              </button>
+
+              {bankError && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {bankError}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeBankModal} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={saveBank} disabled={savingBank} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {savingBank ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {savingBank ? 'Menyimpan…' : 'Simpan Bank'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

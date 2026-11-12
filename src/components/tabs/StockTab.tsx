@@ -1,11 +1,13 @@
 'use client';
 
+import Pagination from '@/components/Pagination';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Modal from '@/components/Modal';
 import { createPortal } from 'react-dom';
 import {
   Loader2, RefreshCw, Plus, TrendingUp, TrendingDown, Warehouse,
-  X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, ChevronLeft, Package,
+  X, ArrowLeft, Pencil, Trash2, MapPin, ChevronRight, Package,
   ArrowLeftRight, Clock, ImageIcon, Ban, Search, ClipboardCheck,
 } from 'lucide-react';
 import { useViewMode, type ViewMode } from '@/lib/useViewMode';
@@ -16,7 +18,6 @@ import { useConfirm } from '@/components/Confirm';
 import SearchSelect, { type SearchSelectOption } from '@/components/SearchSelect';
 import ImageCarousel from '@/components/ImageCarousel';
 import TopbarPortal from '@/components/TopbarPortal';
-import PageSizeSelect from '@/components/PageSizeSelect';
 import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
@@ -25,7 +26,8 @@ import StockOpnamePanel from '@/components/StockOpnamePanel';
 import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import Field from '@/components/Field';
 // Warehouse list's active-count check also re-fetches per-warehouse stock (N+1, uncached) —
 // longer interval than Kasir/Pesanan since this one is pricier per tick.
 const STOCK_POLL_MS = 45_000;
@@ -116,57 +118,52 @@ function WarehouseModal({
 }) {
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><Warehouse size={17} /></div>
-            <div>
-              <p className="modal-title">{title}</p>
-              <p className="modal-subtitle">{subtitle}</p>
-            </div>
-          </div>
-          <Tooltip label="Tutup">
-            <button onClick={onClose} className="modal-close"><X size={14} /></button>
-          </Tooltip>
-        </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {([
-              { key: 'name',        label: 'Nama Gudang',     required: true,  placeholder: 'cth: Gudang Utama' },
-              { key: 'location',    label: 'Lokasi / Alamat', required: false, placeholder: 'cth: Jl. Mawar No. 5, Bogor' },
-              { key: 'description', label: 'Keterangan',      required: false, placeholder: 'cth: Gudang untuk produk kering (opsional)' },
-            ] as const).map(f => (
-              <div key={f.key}>
-                <label className="field-label">
-                  {f.label}{f.required && <span style={{ color: 'var(--danger)' }}> *</span>}
-                </label>
-                <input
-                  type="text"
-                  placeholder={f.placeholder}
-                  value={form[f.key]}
-                  onChange={e => onChange({ ...form, [f.key]: e.target.value })}
-                  autoFocus={f.key === 'name'}
-                  className="input"
-                />
-              </div>
-            ))}
+    <Modal onClose={onClose} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><Warehouse size={17} /></div>
+          <div>
+            <p className="modal-title">{title}</p>
+            <p className="modal-subtitle">{subtitle}</p>
           </div>
         </div>
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-            Batal
-          </button>
-          <button onClick={onSave} disabled={saving || !form.name.trim()}
-            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {submitLabel}
-          </button>
+        <Tooltip label="Tutup">
+          <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+        </Tooltip>
+      </div>
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {([
+            { key: 'name',        label: 'Nama Gudang',     required: true,  placeholder: 'cth: Gudang Utama' },
+            { key: 'location',    label: 'Lokasi / Alamat', required: false, placeholder: 'cth: Jl. Mawar No. 5, Bogor' },
+            { key: 'description', label: 'Keterangan',      required: false, placeholder: 'cth: Gudang untuk produk kering (opsional)' },
+          ] as const).map(f => (
+            <Field label={<>{f.label}{f.required && <span style={{ color: 'var(--danger)' }}> *</span>}</>} key={f.key}>
+              <input
+                type="text"
+                placeholder={f.placeholder}
+                value={form[f.key]}
+                onChange={e => onChange({ ...form, [f.key]: e.target.value })}
+                autoFocus={f.key === 'name'}
+                className="input"
+              />
+            </Field>
+          ))}
         </div>
       </div>
-    </div>,
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+          Batal
+        </button>
+        <button onClick={onSave} disabled={saving || !form.name.trim()}
+          className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+          {saving && <Loader2 size={14} className="animate-spin" />}
+          {submitLabel}
+        </button>
+      </div>
+    </Modal>,
     document.body,
   );
 }
@@ -191,68 +188,62 @@ function TxModal({
   const isIn = type === 'in';
   const canSubmit = !!wId && !!pId && !!qty && Number(qty) > 0;
   return createPortal(
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon" style={isIn ? undefined : { background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-              {isIn ? <TrendingUp size={17} /> : <TrendingDown size={17} />}
-            </div>
-            <div>
-              <p className="modal-title">{isIn ? 'Catat Stok Masuk' : 'Catat Stok Keluar'}</p>
-              <p className="modal-subtitle">
-                {isIn ? 'Penerimaan barang dari supplier atau penambahan stok' : 'Pengurangan stok — rusak, terpakai, retur, dll.'}
-              </p>
-            </div>
+    <Modal onClose={() => !submitting && onClose()} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon" style={isIn ? undefined : { background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+            {isIn ? <TrendingUp size={17} /> : <TrendingDown size={17} />}
           </div>
-          <Tooltip label="Tutup">
-            <button onClick={onClose} className="modal-close"><X size={14} /></button>
-          </Tooltip>
-        </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
-                  placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
-              </div>
-              <div>
-                <label className="field-label">Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <SearchSelect value={pId} onChange={onPId} options={productOptions}
-                  placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <input type="number" min={1} placeholder={isIn ? 'cth: 50' : 'cth: 10'} value={qty}
-                  onChange={e => onQty(e.target.value)} className="input" autoFocus />
-              </div>
-              <div>
-                <label className="field-label">Keterangan</label>
-                <input type="text" placeholder={isIn ? 'cth: Restock dari supplier (opsional)' : 'cth: Barang rusak saat pengiriman (opsional)'}
-                  value={note} onChange={e => onNote(e.target.value)} className="input" />
-              </div>
-            </div>
+          <div>
+            <p className="modal-title">{isIn ? 'Catat Stok Masuk' : 'Catat Stok Keluar'}</p>
+            <p className="modal-subtitle">
+              {isIn ? 'Penerimaan barang dari supplier atau penambahan stok' : 'Pengurangan stok — rusak, terpakai, retur, dll.'}
+            </p>
           </div>
         </div>
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-            Batal
-          </button>
-          <button onClick={onSubmit} disabled={submitting || !canSubmit}
-            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: isIn ? undefined : 'linear-gradient(135deg,#DC2626,#B91C1C)' }}>
-            {submitting
-              ? <Loader2 size={14} className="animate-spin" />
-              : isIn ? <Plus size={14} /> : <TrendingDown size={14} />}
-            {submitting ? 'Menyimpan…' : isIn ? 'Tambah Stok Masuk' : 'Kurangi Stok'}
-          </button>
+        <Tooltip label="Tutup">
+          <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+        </Tooltip>
+      </div>
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Gudang" required>
+              <SearchSelect value={wId} onChange={onWId} options={warehouseOptions}
+                placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+            </Field>
+            <Field label="Produk" required>
+              <SearchSelect value={pId} onChange={onPId} options={productOptions}
+                placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Jumlah Unit" required>
+              <input type="number" inputMode="numeric" min={1} placeholder={isIn ? 'cth: 50' : 'cth: 10'} value={qty}
+                onChange={e => onQty(e.target.value)} className="input" autoFocus />
+            </Field>
+            <Field label="Keterangan">
+              <input type="text" placeholder={isIn ? 'cth: Restock dari supplier (opsional)' : 'cth: Barang rusak saat pengiriman (opsional)'}
+                value={note} onChange={e => onNote(e.target.value)} className="input" />
+            </Field>
+          </div>
         </div>
       </div>
-    </div>,
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+          Batal
+        </button>
+        <button onClick={onSubmit} disabled={submitting || !canSubmit}
+          className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: isIn ? undefined : 'linear-gradient(135deg,#DC2626,#B91C1C)' }}>
+          {submitting
+            ? <Loader2 size={14} className="animate-spin" />
+            : isIn ? <Plus size={14} /> : <TrendingDown size={14} />}
+          {submitting ? 'Menyimpan…' : isIn ? 'Tambah Stok Masuk' : 'Kurangi Stok'}
+        </button>
+      </div>
+    </Modal>,
     document.body,
   );
 }
@@ -277,124 +268,69 @@ function TransferModal({
   const sameWarehouse = !!fromWId && !!toWId && fromWId === toWId;
   const canSubmit = !!fromWId && !!toWId && !!pId && !!qty && Number(qty) > 0 && !sameWarehouse;
   return createPortal(
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon" style={{ background: '#EFF6FF', color: '#0284C7' }}>
-              <ArrowLeftRight size={17} />
-            </div>
-            <div>
-              <p className="modal-title">Transfer Antar Gudang</p>
-              <p className="modal-subtitle">Pindahkan stok dari satu gudang ke gudang lain</p>
-            </div>
+    <Modal onClose={() => !submitting && onClose()} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon" style={{ background: '#EFF6FF', color: '#0284C7' }}>
+            <ArrowLeftRight size={17} />
           </div>
-          <Tooltip label="Tutup">
-            <button onClick={onClose} className="modal-close"><X size={14} /></button>
-          </Tooltip>
-        </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Dari Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <SearchSelect value={fromWId} onChange={onFromWId} options={warehouseOptions}
-                  placeholder="– Pilih Asal –" searchPlaceholder="Cari gudang…" />
-              </div>
-              <div>
-                <label className="field-label">Ke Gudang <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <SearchSelect value={toWId} onChange={onToWId}
-                  options={warehouseOptions.filter(o => o.value !== fromWId)}
-                  placeholder="– Pilih Tujuan –" searchPlaceholder="Cari gudang…" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Produk <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <SearchSelect value={pId} onChange={onPId} options={productOptions}
-                  placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
-              </div>
-              <div>
-                <label className="field-label">Jumlah Unit <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <input type="number" min={1} placeholder="cth: 20" value={qty}
-                  onChange={e => onQty(e.target.value)} className="input" />
-              </div>
-            </div>
-            <div>
-              <label className="field-label">Keterangan</label>
-              <textarea rows={3} placeholder="cth: Redistribusi stok akhir bulan (opsional)" value={note}
-                onChange={e => onNote(e.target.value)} className="input" style={{ resize: 'vertical' }} />
-            </div>
-            {sameWarehouse && (
-              <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>
-                Gudang asal dan tujuan tidak boleh sama.
-              </p>
-            )}
+          <div>
+            <p className="modal-title">Transfer Antar Gudang</p>
+            <p className="modal-subtitle">Pindahkan stok dari satu gudang ke gudang lain</p>
           </div>
         </div>
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-            Batal
-          </button>
-          <button onClick={onSubmit} disabled={submitting || !canSubmit}
-            className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: 'linear-gradient(135deg,#0284C7,#0369A1)' }}>
-            {submitting ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-            {submitting ? 'Memproses…' : 'Proses Transfer'}
-          </button>
+        <Tooltip label="Tutup">
+          <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+        </Tooltip>
+      </div>
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Dari Gudang" required>
+              <SearchSelect value={fromWId} onChange={onFromWId} options={warehouseOptions}
+                placeholder="– Pilih Asal –" searchPlaceholder="Cari gudang…" />
+            </Field>
+            <Field label="Ke Gudang" required>
+              <SearchSelect value={toWId} onChange={onToWId}
+                options={warehouseOptions.filter(o => o.value !== fromWId)}
+                placeholder="– Pilih Tujuan –" searchPlaceholder="Cari gudang…" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Produk" required>
+              <SearchSelect value={pId} onChange={onPId} options={productOptions}
+                placeholder="– Pilih Produk –" searchPlaceholder="Cari produk…" />
+            </Field>
+            <Field label="Jumlah Unit" required>
+              <input type="number" inputMode="numeric" min={1} placeholder="cth: 20" value={qty}
+                onChange={e => onQty(e.target.value)} className="input" />
+            </Field>
+          </div>
+          <Field label="Keterangan">
+            <textarea rows={3} placeholder="cth: Redistribusi stok akhir bulan (opsional)" value={note}
+              onChange={e => onNote(e.target.value)} className="input" style={{ resize: 'vertical' }} />
+          </Field>
+          {sameWarehouse && (
+            <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>
+              Gudang asal dan tujuan tidak boleh sama.
+            </p>
+          )}
         </div>
       </div>
-    </div>,
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+          Batal
+        </button>
+        <button onClick={onSubmit} disabled={submitting || !canSubmit}
+          className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: 'linear-gradient(135deg,#0284C7,#0369A1)' }}>
+          {submitting ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
+          {submitting ? 'Memproses…' : 'Proses Transfer'}
+        </button>
+      </div>
+    </Modal>,
     document.body,
-  );
-}
-
-// ── Pagination — shared bar across the tx lists in this tab ──────────────────
-function Pagination({ total, safePage, totalPages, pageSize, onPageSize, onGoPage, unit }: {
-  total: number; safePage: number; totalPages: number; pageSize: number;
-  onPageSize: (n: number) => void; onGoPage: (p: number) => void; unit: string;
-}) {
-  if (total === 0) return null;
-  return (
-    <div className="flex items-center justify-between flex-wrap gap-2">
-      <div className="flex items-center gap-3 flex-wrap">
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {total} {unit} · halaman {safePage} dari {totalPages}
-        </p>
-        <PageSizeSelect value={pageSize} onChange={onPageSize} />
-      </div>
-      {totalPages > 1 && (
-        <div className="flex items-center gap-1">
-          <Tooltip label="Halaman sebelumnya">
-            <button onClick={() => onGoPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
-              <ChevronLeft size={14} />
-            </button>
-          </Tooltip>
-          {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
-            .reduce<(number | '…')[]>((acc, n, i, arr) => {
-              if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push('…');
-              acc.push(n); return acc;
-            }, [])
-            .map((n, i) =>
-              n === '…'
-                ? <span key={`e${i}`} className="px-1 text-xs" style={{ color: 'var(--text-muted)' }}>…</span>
-                : <button key={n} onClick={() => onGoPage(n as number)}
-                    className="w-8 h-8 rounded-lg text-xs font-semibold transition-colors"
-                    style={safePage === n ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'var(--surface)' }}>
-                    {n}
-                  </button>
-            )
-          }
-          <Tooltip label="Halaman berikutnya">
-            <button onClick={() => onGoPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
-              <ChevronRight size={14} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
-    </div>
   );
 }
 

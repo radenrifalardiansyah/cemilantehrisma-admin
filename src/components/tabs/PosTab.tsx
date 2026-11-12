@@ -35,6 +35,8 @@ import {
   POS_CAT_ALL, POS_STOCK_MAP, posStockStatus,
 } from '@/lib/pos-types';
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 // /api/products is Postgres-backed and cached 15s server-side, so polling here just keeps
 // the register's stock/harga fresh while Kasir stays open — no Firestore quota to worry about.
@@ -231,9 +233,9 @@ function ConsignGrid({ items, qtyOf, onAdd, onMinus }: {
               <div className="mt-auto pt-1 flex items-center justify-between">
                 {qty > 0 ? (
                   <div className="flex items-center gap-2">
-                    <button onClick={() => onMinus(i.productId)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}><Minus size={11} strokeWidth={2.5} /></button>
+                    <button aria-label="Kurangi jumlah" onClick={() => onMinus(i.productId)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}><Minus size={11} strokeWidth={2.5} /></button>
                     <span className="w-5 text-center text-sm font-black tabular">{qty}</span>
-                    <button onClick={() => onAdd(i.productId)} className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}><Plus size={11} strokeWidth={2.5} /></button>
+                    <button aria-label="Tambah jumlah" onClick={() => onAdd(i.productId)} className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}><Plus size={11} strokeWidth={2.5} /></button>
                   </div>
                 ) : (
                   <button onClick={() => onAdd(i.productId)} disabled={empty || !!i.blocked} className="btn-primary text-xs w-full justify-center disabled:opacity-40" style={{ height: 30 }}>
@@ -300,7 +302,7 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
           {qty > 0 ? (
             <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
               <Tooltip label="Kurangi jumlah">
-                <button onClick={e => { e.stopPropagation(); onMinus(); }}
+                <button aria-label="Kurangi jumlah" onClick={e => { e.stopPropagation(); onMinus(); }}
                   className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
                   style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
                   <Minus size={10} strokeWidth={2.5} />
@@ -308,7 +310,7 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
               </Tooltip>
               <span className="text-[13px] font-black w-4 text-center tabular" style={{ color: 'var(--text-primary)' }}>{qty}</span>
               <Tooltip label="Tambah jumlah">
-                <button onClick={e => { e.stopPropagation(); onAdd(); }}
+                <button aria-label="Tambah jumlah" onClick={e => { e.stopPropagation(); onAdd(); }}
                   className="w-6 h-6 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
                   <Plus size={10} strokeWidth={2.5} />
                 </button>
@@ -995,7 +997,7 @@ export default function PosTab({
               className="input" style={{ paddingLeft: 38 }} placeholder="Cari produk…" />
           </div>
           <Tooltip label="Scan Produk">
-            <button onClick={() => setShowPosScanner(true)} type="button"
+            <button aria-label="Scan Produk" onClick={() => setShowPosScanner(true)} type="button"
               className="btn-ghost p-2.5 flex-shrink-0" style={{ color: 'var(--accent)' }}>
               <ScanLine size={18} />
             </button>
@@ -1114,7 +1116,7 @@ export default function PosTab({
                       </div>
                       <div className="flex items-center gap-2">
                         <Tooltip label="Kurangi jumlah">
-                          <button onClick={() => removeFromCart(item.productId)}
+                          <button aria-label="Kurangi jumlah" onClick={() => removeFromCart(item.productId)}
                             className="w-7 h-7 rounded-full flex items-center justify-center"
                             style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                             <Minus size={11} strokeWidth={2.5} />
@@ -1122,7 +1124,7 @@ export default function PosTab({
                         </Tooltip>
                         <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
                         <Tooltip label="Tambah jumlah">
-                          <button onClick={() => addToCart(item.productId)}
+                          <button aria-label="Tambah jumlah" onClick={() => addToCart(item.productId)}
                             className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
                             <Plus size={11} strokeWidth={2.5} />
                           </button>
@@ -1149,7 +1151,7 @@ export default function PosTab({
                     </div>
                     <div className="flex items-center gap-2">
                       <Tooltip label="Kurangi jumlah">
-                        <button onClick={() => removeCustomItemQty(item.id)}
+                        <button aria-label="Kurangi jumlah" onClick={() => removeCustomItemQty(item.id)}
                           className="w-7 h-7 rounded-full flex items-center justify-center"
                           style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                           <Minus size={11} strokeWidth={2.5} />
@@ -1157,7 +1159,7 @@ export default function PosTab({
                       </Tooltip>
                       <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
                       <Tooltip label="Tambah jumlah">
-                        <button onClick={() => addCustomItemQty(item.id)}
+                        <button aria-label="Tambah jumlah" onClick={() => addCustomItemQty(item.id)}
                           className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}>
                           <Plus size={11} strokeWidth={2.5} />
                         </button>
@@ -1167,7 +1169,7 @@ export default function PosTab({
                       {formatCurrency(item.price * item.qty)}
                     </span>
                     <Tooltip label="Hapus item">
-                      <button onClick={() => removeCustomItem(item.id)}
+                      <button aria-label="Hapus item" onClick={() => removeCustomItem(item.id)}
                         className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
                         <Trash2 size={12} />
                       </button>
@@ -1186,9 +1188,9 @@ export default function PosTab({
                       <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>{formatCurrency(l.item.price)} / {l.item.unit} · {l.item.consignorName}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => removeConsign(l.productId)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}><Minus size={11} strokeWidth={2.5} /></button>
+                      <button aria-label="Kurangi jumlah" onClick={() => removeConsign(l.productId)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}><Minus size={11} strokeWidth={2.5} /></button>
                       <span className="w-5 text-center text-sm font-black tabular" style={{ color: 'var(--text-primary)' }}>{l.qty}</span>
-                      <button onClick={() => addConsign(l.productId)} className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}><Plus size={11} strokeWidth={2.5} /></button>
+                      <button aria-label="Tambah jumlah" onClick={() => addConsign(l.productId)} className="w-7 h-7 rounded-full text-white flex items-center justify-center" style={{ background: 'var(--accent)' }}><Plus size={11} strokeWidth={2.5} /></button>
                     </div>
                     <span className="text-sm font-bold tabular w-16 text-right flex-shrink-0" style={{ color: 'var(--accent-dark)' }}>{formatCurrency(l.item.price * l.qty)}</span>
                   </div>
@@ -1281,8 +1283,8 @@ export default function PosTab({
                 </span>
               </label>
               {isFreeTx && (
-                <input type="text" value={freeReason} onChange={e => setFreeReason(e.target.value)} maxLength={200}
-                  className="input mt-3" placeholder="Alasan gratis (wajib), mis. sample, kompensasi, tester" />
+                <textarea rows={2} value={freeReason} onChange={e => setFreeReason(e.target.value)} maxLength={200}
+                  className="input mt-3" style={{ resize: 'vertical' }} placeholder="Alasan gratis (wajib), mis. sample, kompensasi, tester" />
               )}
             </div>
 
@@ -1311,7 +1313,7 @@ export default function PosTab({
                   ))}
                 </div>
                 {discountType === 'percent' ? (
-                  <input type="number" min="0" value={discountRaw} onChange={e => setDiscountRaw(e.target.value)}
+                  <input type="number" inputMode="decimal" min="0" value={discountRaw} onChange={e => setDiscountRaw(e.target.value)}
                     className="input flex-1" placeholder="Contoh: 10" />
                 ) : (
                   <NumberInput value={discountRaw} onChange={setDiscountRaw}
@@ -1383,8 +1385,7 @@ export default function PosTab({
                       <DateInput value={dueDate} min={addDaysWib(0)} onChange={setDueDate} style={{ width: 160 }} />
                     </div>
                   </div>
-                  <div className="mt-3">
-                    <label className="field-label">{consignTotal > 0 ? `DP / Bayar di Muka (minimal ${formatCurrency(consignTotal)} untuk barang titipan)` : 'DP / Bayar di Muka (opsional)'}</label>
+                  <Field label={<>{consignTotal > 0 ? `DP / Bayar di Muka (minimal ${formatCurrency(consignTotal)} untuk barang titipan)` : 'DP / Bayar di Muka (opsional)'}</>} className="mt-3">
                     <NumberInput value={dpRaw} onChange={setDpRaw} className="input" placeholder={consignTotal > 0 ? formatCurrency(consignTotal) : '0 = tanpa DP'} />
                     {consignTotal > 0 && dpNum < consignTotal && (
                       <p className="text-[11px] mt-1.5" style={{ color: 'var(--danger)' }}>Barang titipan wajib lunas sekarang. DP minimal {formatCurrency(consignTotal)}; kelebihannya jadi DP produk toko.</p>
@@ -1404,7 +1405,7 @@ export default function PosTab({
                         )}
                       </>
                     )}
-                  </div>
+                  </Field>
                 </>
               )}
               {paymentMethod !== 'kredit' && (
@@ -1644,183 +1645,177 @@ export default function PosTab({
   );
 
   const heldModalContent = heldModalOpen && (
-    <div className="modal-overlay" onClick={() => setHeldModalOpen(false)}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><PauseCircle size={17} /></div>
-            <div>
-              <p className="modal-title">Transaksi Tertahan</p>
-              <p className="modal-subtitle flex items-center gap-1.5">
-                {heldLoading && <Loader2 size={11} className="animate-spin" />}
-                {heldTransactions.length} transaksi menunggu dilanjutkan
-              </p>
-            </div>
+    <Modal onClose={() => setHeldModalOpen(false)} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><PauseCircle size={17} /></div>
+          <div>
+            <p className="modal-title">Transaksi Tertahan</p>
+            <p className="modal-subtitle flex items-center gap-1.5">
+              {heldLoading && <Loader2 size={11} className="animate-spin" />}
+              {heldTransactions.length} transaksi menunggu dilanjutkan
+            </p>
           </div>
-          <Tooltip label="Tutup"><button onClick={() => setHeldModalOpen(false)} className="modal-close"><X size={14} /></button></Tooltip>
         </div>
-        <div className="modal-body">
-          {heldTransactions.length === 0 ? (
-            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi tertahan.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {heldTransactions.slice().reverse().map(h => (
-                <div key={h.id} className="card p-3 flex items-center gap-2.5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{h.label}</p>
-                    <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
-                      {heldItemCount(h)} pcs · {formatCurrency(heldTotal(h))}
-                    </p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      Ditahan {new Date(h.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                  <Tooltip label="Hapus transaksi tertahan">
-                    <button onClick={() => deleteHeldTransaction(h.id)}
-                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
-                      <Trash2 size={14} />
-                    </button>
-                  </Tooltip>
-                  <button onClick={() => resumeHeldTransaction(h)} className="btn-primary px-3 py-2 text-xs flex-shrink-0 whitespace-nowrap">
-                    Lanjutkan
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <Tooltip label="Tutup"><button onClick={() => setHeldModalOpen(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
       </div>
-    </div>
+      <div className="modal-body">
+        {heldTransactions.length === 0 ? (
+          <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>Tidak ada transaksi tertahan.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {heldTransactions.slice().reverse().map(h => (
+              <div key={h.id} className="card p-3 flex items-center gap-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{h.label}</p>
+                  <p className="text-xs tabular" style={{ color: 'var(--text-muted)' }}>
+                    {heldItemCount(h)} pcs · {formatCurrency(heldTotal(h))}
+                  </p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    Ditahan {new Date(h.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <Tooltip label="Hapus transaksi tertahan">
+                  <button aria-label="Hapus transaksi tertahan" onClick={() => deleteHeldTransaction(h.id)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ color: 'var(--danger)' }}>
+                    <Trash2 size={14} />
+                  </button>
+                </Tooltip>
+                <button onClick={() => resumeHeldTransaction(h)} className="btn-primary px-3 py-2 text-xs flex-shrink-0 whitespace-nowrap">
+                  Lanjutkan
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 
   const reportModalContent = reportOpen && (
-    <div className="modal-overlay" onClick={() => setReportOpen(false)}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><BarChart2 size={17} /></div>
-            <div>
-              <p className="modal-title">Laporan Penjualan</p>
-              <p className="modal-subtitle">
-                {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Tooltip label="Refresh laporan">
-              <button onClick={fetchSalesReport} disabled={reportLoading} className="btn-ghost h-8 w-8 p-0 flex items-center justify-center" title="Refresh">
-                <Loader2 size={14} className={reportLoading ? 'animate-spin' : 'hidden'} />
-                {!reportLoading && <TrendingUp size={14} />}
-              </button>
-            </Tooltip>
-            <Tooltip label="Tutup"><button onClick={() => setReportOpen(false)} className="modal-close"><X size={14} /></button></Tooltip>
+    <Modal onClose={() => setReportOpen(false)} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><BarChart2 size={17} /></div>
+          <div>
+            <p className="modal-title">Laporan Penjualan</p>
+            <p className="modal-subtitle">
+              {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
           </div>
         </div>
-        <div className="modal-body">
-          {reportLoading && !reportData ? (
-            <PageLoader compact />
-          ) : !reportData || reportData.count === 0 ? (
-            <div className="py-10 text-center">
-              <BarChart2 size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transaksi hari ini.</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="card p-3.5" style={{ background: 'var(--success-bg)' }}>
-                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--success)' }}>Omzet Hari Ini</p>
-                  <p className="text-lg font-extrabold tabular mt-1" style={{ color: 'var(--success)' }}>{formatCurrency(reportData.omzet)}</p>
-                </div>
-                <div className="card p-3.5" style={{ background: 'var(--accent-bg)' }}>
-                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>Transaksi</p>
-                  <p className="text-lg font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>{reportData.count}</p>
-                </div>
-                <div className="card p-3.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Rata-rata / Transaksi</p>
-                  <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatCurrency(reportData.avg)}</p>
-                </div>
-                <div className="card p-3.5" style={{ background: '#F5F3FF' }}>
-                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Laba Hari Ini</p>
-                  <p className="text-base font-extrabold tabular mt-1" style={{ color: '#7C3AED' }}>{formatCurrency(reportData.profit)}</p>
-                </div>
-              </div>
-
-              {!reportData.hasCostData && (
-                <p className="text-[11px] px-3 py-2 rounded-xl" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                  Harga modal belum diisi untuk produk yang terjual hari ini — isi di menu Produk agar laba lebih akurat.
-                </p>
-              )}
-
-              <div>
-                <p className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
-                  <Award size={13} style={{ color: 'var(--accent)' }} /> Produk Terlaris Hari Ini
-                </p>
-                <div className="card divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
-                  {reportData.topProducts.map((p, i) => (
-                    <div key={p.name} className="px-3.5 py-2.5 flex items-center gap-2.5">
-                      <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--surface-2)', color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        {i + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
-                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{p.qty} pcs terjual</p>
-                      </div>
-                      <span className="text-xs font-bold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>
-                        {formatCurrency(p.revenue)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="flex items-center gap-1.5">
+          <Tooltip label="Refresh laporan">
+            <button onClick={fetchSalesReport} disabled={reportLoading} className="btn-ghost h-8 w-8 p-0 flex items-center justify-center" title="Refresh">
+              <Loader2 size={14} className={reportLoading ? 'animate-spin' : 'hidden'} />
+              {!reportLoading && <TrendingUp size={14} />}
+            </button>
+          </Tooltip>
+          <Tooltip label="Tutup"><button onClick={() => setReportOpen(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
         </div>
       </div>
-    </div>
+      <div className="modal-body">
+        {reportLoading && !reportData ? (
+          <PageLoader compact />
+        ) : !reportData || reportData.count === 0 ? (
+          <div className="py-10 text-center">
+            <BarChart2 size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Belum ada transaksi hari ini.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="card p-3.5" style={{ background: 'var(--success-bg)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--success)' }}>Omzet Hari Ini</p>
+                <p className="text-lg font-extrabold tabular mt-1" style={{ color: 'var(--success)' }}>{formatCurrency(reportData.omzet)}</p>
+              </div>
+              <div className="card p-3.5" style={{ background: 'var(--accent-bg)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>Transaksi</p>
+                <p className="text-lg font-extrabold tabular mt-1" style={{ color: 'var(--accent)' }}>{reportData.count}</p>
+              </div>
+              <div className="card p-3.5">
+                <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Rata-rata / Transaksi</p>
+                <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatCurrency(reportData.avg)}</p>
+              </div>
+              <div className="card p-3.5" style={{ background: '#F5F3FF' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Laba Hari Ini</p>
+                <p className="text-base font-extrabold tabular mt-1" style={{ color: '#7C3AED' }}>{formatCurrency(reportData.profit)}</p>
+              </div>
+            </div>
+
+            {!reportData.hasCostData && (
+              <p className="text-[11px] px-3 py-2 rounded-xl" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                Harga modal belum diisi untuk produk yang terjual hari ini — isi di menu Produk agar laba lebih akurat.
+              </p>
+            )}
+
+            <div>
+              <p className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                <Award size={13} style={{ color: 'var(--accent)' }} /> Produk Terlaris Hari Ini
+              </p>
+              <div className="card divide-y divide-[var(--border-2)]" style={{ borderColor: 'var(--border-2)' }}>
+                {reportData.topProducts.map((p, i) => (
+                  <div key={p.name} className="px-3.5 py-2.5 flex items-center gap-2.5">
+                    <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--surface-2)', color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{p.qty} pcs terjual</p>
+                    </div>
+                    <span className="text-xs font-bold tabular flex-shrink-0" style={{ color: 'var(--success)' }}>
+                      {formatCurrency(p.revenue)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 
   const shiftModalContent = shiftModal && (
-    <div className="modal-overlay" onClick={() => !shiftSubmitting && setShiftModal(null)}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><Wallet size={17} /></div>
-            <div>
-              <p className="modal-title">{shiftModal === 'open' ? 'Buka Sesi Kasir' : 'Tutup Sesi Kasir'}</p>
-              <p className="modal-subtitle">
-                {shiftModal === 'open' ? 'Catat kas awal sebelum mulai transaksi' : 'Hitung kas fisik untuk rekonsiliasi'}
-              </p>
-            </div>
+    <Modal onClose={() => !shiftSubmitting && setShiftModal(null)} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><Wallet size={17} /></div>
+          <div>
+            <p className="modal-title">{shiftModal === 'open' ? 'Buka Sesi Kasir' : 'Tutup Sesi Kasir'}</p>
+            <p className="modal-subtitle">
+              {shiftModal === 'open' ? 'Catat kas awal sebelum mulai transaksi' : 'Hitung kas fisik untuk rekonsiliasi'}
+            </p>
           </div>
-          <Tooltip label="Tutup"><button onClick={() => setShiftModal(null)} className="modal-close"><X size={14} /></button></Tooltip>
         </div>
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <p className="section-label mb-1.5">{shiftModal === 'open' ? 'Kas Awal (Rp)' : 'Kas Aktual Dihitung (Rp)'}</p>
-              <NumberInput value={shiftInputRaw} onChange={setShiftInputRaw} placeholder="0" autoFocus />
-            </div>
-            <div>
-              <p className="section-label mb-1.5">Catatan (opsional)</p>
-              <textarea rows={3} value={shiftNote} onChange={e => setShiftNote(e.target.value)}
-                className="input" placeholder="Catatan tambahan" style={{ resize: 'vertical' }} />
-            </div>
-            <button
-              onClick={shiftModal === 'open' ? openShift : closeShift}
-              disabled={shiftSubmitting}
-              className="btn-primary w-full py-3 mt-1 disabled:opacity-50">
-              {shiftSubmitting ? <Loader2 size={15} className="animate-spin mx-auto" /> : (shiftModal === 'open' ? 'Buka Kasir' : 'Tutup Kasir')}
-            </button>
+        <Tooltip label="Tutup"><button onClick={() => setShiftModal(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+      </div>
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <p className="section-label mb-1.5">{shiftModal === 'open' ? 'Kas Awal (Rp)' : 'Kas Aktual Dihitung (Rp)'}</p>
+            <NumberInput value={shiftInputRaw} onChange={setShiftInputRaw} placeholder="0" autoFocus />
           </div>
+          <div>
+            <p className="section-label mb-1.5">Catatan (opsional)</p>
+            <textarea rows={3} value={shiftNote} onChange={e => setShiftNote(e.target.value)}
+              className="input" placeholder="Catatan tambahan" style={{ resize: 'vertical' }} />
+          </div>
+          <button
+            onClick={shiftModal === 'open' ? openShift : closeShift}
+            disabled={shiftSubmitting}
+            className="btn-primary w-full py-3 mt-1 disabled:opacity-50">
+            {shiftSubmitting ? <Loader2 size={15} className="animate-spin mx-auto" /> : (shiftModal === 'open' ? 'Buka Kasir' : 'Tutup Kasir')}
+          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 
   // ─── Struk cetak (tersembunyi di layar, tampil hanya saat print) ──────────
@@ -1887,7 +1882,7 @@ export default function PosTab({
   const mobileCartHeader = (
     <div className="px-4 pt-4 pb-3 flex items-center gap-3 flex-shrink-0">
       <Tooltip label="Kembali">
-        <button onClick={() => { setPosView('products'); setProcessErr(''); }} className="btn-ghost p-2.5">
+        <button aria-label="Kembali" onClick={() => { setPosView('products'); setProcessErr(''); }} className="btn-ghost p-2.5">
           <ChevronLeft size={16} />
         </button>
       </Tooltip>

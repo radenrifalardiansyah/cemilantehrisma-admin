@@ -50,8 +50,6 @@ interface ShoppingGroup {
   total: number; notes: string[]; walletIds: string[]; unpaid: boolean; imported: boolean; status: 'menunggu' | 'belanja' | 'sebagian' | 'selesai';
 }
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const formatQty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 const todayISO = () => {
   const d = new Date();
@@ -60,7 +58,9 @@ const todayISO = () => {
 const formatDateLong = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const NO_SUPPLIER = 'Tanpa supplier';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Modal from '@/components/Modal';
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' };
 const thCls = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
@@ -535,7 +535,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     options={materialOptions} placeholder="– Bahan baku –" searchPlaceholder="Cari bahan baku…" />
                 </div>
                 <Tooltip label="Hapus baris">
-                  <button onClick={() => setRows(prev => prev.filter((_, idx) => idx !== i))} disabled={rows.length === 1}
+                  <button aria-label="Hapus baris" onClick={() => setRows(prev => prev.filter((_, idx) => idx !== i))} disabled={rows.length === 1}
                     className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}>
                     <X size={14} />
                   </button>
@@ -544,7 +544,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label style={fieldLabel}>{`Qty${mat ? ` (${mat.unit})` : ''}`}</label>
-                  <input type="number" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
+                  <input type="number" inputMode="decimal" min="0" value={row.qty} onChange={e => updateRow(i, { qty: e.target.value })} placeholder="0" className="input" />
                 </div>
                 <div>
                   <label style={fieldLabel}>Perkiraan harga/satuan</label>
@@ -678,7 +678,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
-                                  <button onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                                  <button aria-label="Hapus daftar" onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
                                 </Tooltip>
                             )}
                           </div>
@@ -721,7 +721,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
-                                  <button onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                                  <button aria-label="Hapus daftar" onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
                                 </Tooltip>
                             )}
                           </div>
@@ -749,7 +749,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
                   </Tooltip>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
@@ -766,7 +766,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                           </button>
                     )}
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30"><ChevronRight size={14} /></button>
                   </Tooltip>
                 </div>
               )}
@@ -799,272 +799,268 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
 
       {/* Detail daftar: info + centang item + tambah item, dalam satu modal */}
       {detail && (
-        <div className="modal-overlay" onClick={() => !processing && setDetailKey(null)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ShoppingCart size={17} /></div>
-                <div>
-                  <p className="modal-title">{supplierLabel(detail)}</p>
-                  <p className="modal-subtitle">{formatDateLong(detail.date)} · {detail.items.length - detail.pending.length}/{detail.items.length} item dibeli{detail.walletIds.length > 0 ? ` · Dompet: ${walletLabel(detail)}${detail.unpaid ? ' (belum lunas)' : ''}` : ''}</p>
-                </div>
+        <Modal onClose={() => !processing && setDetailKey(null)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ShoppingCart size={17} /></div>
+              <div>
+                <p className="modal-title">{supplierLabel(detail)}</p>
+                <p className="modal-subtitle">{formatDateLong(detail.date)} · {detail.items.length - detail.pending.length}/{detail.items.length} item dibeli{detail.walletIds.length > 0 ? ` · Dompet: ${walletLabel(detail)}${detail.unpaid ? ' (belum lunas)' : ''}` : ''}</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={() => setDetailKey(null)} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* Hasil proses terakhir */}
-                {processResult && (
-                  <div className="p-3 rounded-xl space-y-1.5" style={{ background: 'var(--success-bg)', border: '1px solid var(--success)' }}>
-                    <p className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
-                      <Check size={15} /> {processResult.length > 1 ? `${processResult.length} pembelian berhasil dibuat` : 'Pembelian berhasil dibuat'}
-                    </p>
-                    {processResult.map(r => (
-                      <div key={r.walletId} className="flex justify-between gap-3 text-xs">
-                        <span style={{ color: 'var(--text-secondary)' }}>{r.count} item · Dompet {walletNames[r.walletId] ?? '-'} · {r.status === 'lunas' ? 'Lunas' : 'Belum Lunas'}</span>
-                        <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(r.total)}</span>
-                      </div>
-                    ))}
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Stok dan harga rata-rata bahan baku sudah diperbarui. Lihat di tab Pembelian.</p>
-                  </div>
-                )}
-
-                {/* Info daftar */}
-                {detail.pending.length > 0 ? (
-                  <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--border-2)' }}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label style={fieldLabel}>Tanggal</label>
-                        <DateInput value={dDate} onChange={setDDate} />
-                      </div>
-                      <div>
-                        <label style={fieldLabel}>Supplier</label>
-                        <SearchSelect value={dSupplierId}
-                          onChange={id => { setDSupplierId(id); const sp = suppliers.find(x => x.id === id); if (sp) setDSupplierName(sp.name); }}
-                          options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
-                      </div>
-                    </div>
-                    <div>
-                      <label style={fieldLabel}>Nama Toko / Supplier</label>
-                      <input type="text" value={dSupplierName} maxLength={120}
-                        onChange={e => { setDSupplierName(e.target.value); if (suppliers.find(x => x.id === dSupplierId)?.name !== e.target.value) setDSupplierId(''); }}
-                        placeholder="Ketik manual untuk toko/warung lain" className="input" />
-                    </div>
-                    <div>
-                      <label style={fieldLabel}>Catatan</label>
-                      <textarea rows={3} value={dNote} onChange={e => setDNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
-                    </div>
-                    {(dDate !== detail.date || dSupplierId !== (detail.supplierId ?? '') || dSupplierName !== detail.supplierName || dNote !== detail.notes.join(' · ')) && (
-                      <button onClick={saveInfo} disabled={savingInfo || !dDate} className="btn-primary text-xs" style={{ height: 34 }}>
-                        {savingInfo ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Simpan Info
-                      </button>
-                    )}
-                  </div>
-                ) : detail.notes.length > 0 && (
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Catatan: {detail.notes.join(' · ')}</p>
-                )}
-
-                {/* Checklist item */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div className="flex items-center justify-between gap-3">
-                    <label style={{ ...fieldLabel, marginBottom: 0 }}>{detail.pending.length > 0 ? 'Item Belanja — centang yang sudah dibeli, sesuaikan qty & harga dengan nota' : 'Item Belanja — semua sudah dibeli'}</label>
-                    {detail.items.some(i => i.status === 'done') && !detail.imported && (
-                      <button onClick={() => reopenGroup(detail)} disabled={reopening} className="flex items-center gap-1 text-xs font-bold flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--danger)' }}>
-                        {reopening ? <Loader2 size={12} className="animate-spin" /> : <Undo2 size={12} />} Kembalikan ke Menunggu
-                      </button>
-                    )}
-                  </div>
-                  {detail.items.map(i => i.status === 'done' ? (
-                    <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                      <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
-                      <span className="tabular">{formatRp(i.qty * (i.price ?? 0))}</span>
-                    </div>
-                  ) : (
-                    // Desktop: satu baris (centang · nama · qty & harga · dompet · hapus). Mobile: baris 1 = centang, nama, hapus;
-                    // baris 2 = qty & harga berdampingan; baris 3 = dompet penuh.
-                    <div key={i.id} className="p-3 rounded-xl flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2.5" style={{ border: '1px solid var(--border-2)' }}>
-                      <button onClick={() => toggle(i)} aria-label={i.checked ? 'Batal centang' : 'Centang sudah dibeli'}
-                        className="flex-shrink-0 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center transition-colors order-1"
-                        style={{ background: i.checked ? 'var(--accent)' : 'transparent', borderColor: i.checked ? 'var(--accent)' : 'var(--border)' }}>
-                        {i.checked && <Check size={13} color="#fff" strokeWidth={3} />}
-                      </button>
-                      <div className="flex-1 min-w-0 order-2">
-                        <p className="text-sm font-semibold break-words" style={{ color: 'var(--text-primary)', textDecoration: i.checked ? 'line-through' : 'none' }}>{i.materialName}</p>
-                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Satuan: {i.unit}</p>
-                      </div>
-                      <div className="order-3 md:order-5 flex-shrink-0">
-                        <Tooltip label="Hapus dari daftar">
-                          <button onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
-                        </Tooltip>
-                      </div>
-                      <div className="order-4 md:order-3 w-full md:w-auto flex items-center gap-2">
-                        <div className="flex items-center gap-1.5 flex-1 md:flex-none">
-                          <input type="number" min="0" value={i.qty} onChange={e => setLocal(i.id, { qty: parseFloat(e.target.value) || 0 })}
-                            onBlur={() => { if (i.qty > 0) patch(i.id, { qty: i.qty }); else load(); }}
-                            className="input text-right w-full md:w-[72px]" />
-                          <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{i.unit}</span>
-                        </div>
-                        <div className="flex-1 md:flex-none md:w-[112px]" onBlur={() => patch(i.id, { price: i.price })}>
-                          <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
-                            onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
-                        </div>
-                      </div>
-                      {i.checked && (
-                        <div className="order-5 md:order-4 w-full md:w-[190px] md:flex-shrink-0">
-                          <SearchSelect value={itemWallets[i.id] ?? ''} onChange={w => setItemWallets(prev => ({ ...prev, [i.id]: w }))}
-                            options={[{ value: '', label: walletId ? 'Ikut dompet utama' : '– Pilih dompet –' }, ...walletOptions]}
-                            placeholder="Dompet" searchPlaceholder="Cari dompet…" />
-                        </div>
-                      )}
+            <Tooltip label="Tutup"><button onClick={() => setDetailKey(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Hasil proses terakhir */}
+              {processResult && (
+                <div className="p-3 rounded-xl space-y-1.5" style={{ background: 'var(--success-bg)', border: '1px solid var(--success)' }}>
+                  <p className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
+                    <Check size={15} /> {processResult.length > 1 ? `${processResult.length} pembelian berhasil dibuat` : 'Pembelian berhasil dibuat'}
+                  </p>
+                  {processResult.map(r => (
+                    <div key={r.walletId} className="flex justify-between gap-3 text-xs">
+                      <span style={{ color: 'var(--text-secondary)' }}>{r.count} item · Dompet {walletNames[r.walletId] ?? '-'} · {r.status === 'lunas' ? 'Lunas' : 'Belum Lunas'}</span>
+                      <span className="font-bold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(r.total)}</span>
                     </div>
                   ))}
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Stok dan harga rata-rata bahan baku sudah diperbarui. Lihat di tab Pembelian.</p>
                 </div>
+              )}
 
-                {/* Tambah item ke daftar ini */}
-                {detail.pending.length > 0 && (
-                <div className="p-3 rounded-xl space-y-3" style={{ border: '1px dashed var(--border)' }}>
-                  {rowsEditor}
-                  <button onClick={addToDetail} disabled={saving || validRows.length === 0} className="btn-ghost text-xs w-full justify-center py-2.5">
-                    {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                    {validRows.length > 1 ? `Tambah ${validRows.length} Item ke Daftar` : 'Tambah ke Daftar'}
-                  </button>
-                </div>
-                )}
-
-                {/* Pembayaran — muncul setelah ada item yang dicentang, jadi tidak perlu modal kedua */}
-                {detail.checked.length > 0 && (
-                  <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--accent)', background: 'var(--surface)' }}>
-                    <p className="text-xs font-bold" style={{ color: 'var(--accent)' }}>Pembayaran — {detail.checked.length} item dicentang · {formatRp(checkedTotal)}</p>
-                    {missingPrice.length > 0 && (
-                      <p className="text-xs" style={{ color: 'var(--danger)' }}>Isi harga sebenarnya untuk: {missingPrice.map(i => i.materialName).join(', ')}.</p>
-                    )}
-                    {!detail.supplierName.trim() && (
-                      <p className="text-xs" style={{ color: 'var(--danger)' }}>Daftar ini belum punya nama toko/supplier. Isi dulu di bagian info di atas, lalu Simpan Info.</p>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label style={fieldLabel}>Tanggal Pembelian</label>
-                        <DateInput value={pDate} onChange={setPDate} />
-                      </div>
-                      <div>
-                        <label style={fieldLabel}>Dompet Utama <span style={{ color: 'var(--danger)' }}>*</span></label>
-                        <SearchSelect value={walletId} onChange={setWalletId} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-                        {walletId && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Saldo: {formatRp(walletBalances[walletId] ?? 0)} · dipakai item yang tidak dipilih dompetnya</p>}
-                      </div>
-                    </div>
-                    {walletTotals.size > 0 && (
-                      <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: 'var(--accent-bg)' }}>
-                        <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan per dompet — {walletTotals.size} pembelian akan dibuat</p>
-                        {[...walletTotals.entries()].map(([w, total]) => (
-                          <div key={w} className="flex justify-between gap-3">
-                            <span style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
-                            <span className="font-bold tabular" style={{ color: paymentStatus === 'lunas' && total > (walletBalances[w] ?? 0) ? 'var(--danger)' : 'var(--text-primary)' }}>{formatRp(total)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+              {/* Info daftar */}
+              {detail.pending.length > 0 ? (
+                <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--border-2)' }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label style={fieldLabel}>Status Pembayaran</label>
-                      <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                        {(['lunas', 'belum_lunas'] as const).map(st => (
-                          <button key={st} type="button" onClick={() => setPaymentStatus(st)} className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
-                            style={paymentStatus === st ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-                            {st === 'lunas' ? 'Lunas' : 'Belum Lunas'}
-                          </button>
-                        ))}
-                      </div>
+                      <label style={fieldLabel}>Tanggal</label>
+                      <DateInput value={dDate} onChange={setDDate} />
                     </div>
                     <div>
-                      <label style={fieldLabel}>Catatan Pembelian</label>
-                      <textarea rows={3} value={pNote} onChange={e => setPNote(e.target.value)} className="input" placeholder="Opsional (default: Dari Daftar Belanja)" style={{ resize: 'vertical' }} />
+                      <label style={fieldLabel}>Supplier</label>
+                      <SearchSelect value={dSupplierId}
+                        onChange={id => { setDSupplierId(id); const sp = suppliers.find(x => x.id === id); if (sp) setDSupplierName(sp.name); }}
+                        options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
                     </div>
                   </div>
-                )}
-
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Daftar</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(detail.total)}</span>
+                  <div>
+                    <label style={fieldLabel}>Nama Toko / Supplier</label>
+                    <input type="text" value={dSupplierName} maxLength={120}
+                      onChange={e => { setDSupplierName(e.target.value); if (suppliers.find(x => x.id === dSupplierId)?.name !== e.target.value) setDSupplierId(''); }}
+                      placeholder="Ketik manual untuk toko/warung lain" className="input" />
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Catatan</label>
+                    <textarea rows={3} value={dNote} onChange={e => setDNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
+                  </div>
+                  {(dDate !== detail.date || dSupplierId !== (detail.supplierId ?? '') || dSupplierName !== detail.supplierName || dNote !== detail.notes.join(' · ')) && (
+                    <button onClick={saveInfo} disabled={savingInfo || !dDate} className="btn-primary text-xs" style={{ height: 34 }}>
+                      {savingInfo ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Simpan Info
+                    </button>
+                  )}
                 </div>
+              ) : detail.notes.length > 0 && (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Catatan: {detail.notes.join(' · ')}</p>
+              )}
+
+              {/* Checklist item */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="flex items-center justify-between gap-3">
+                  <label style={{ ...fieldLabel, marginBottom: 0 }}>{detail.pending.length > 0 ? 'Item Belanja — centang yang sudah dibeli, sesuaikan qty & harga dengan nota' : 'Item Belanja — semua sudah dibeli'}</label>
+                  {detail.items.some(i => i.status === 'done') && !detail.imported && (
+                    <button onClick={() => reopenGroup(detail)} disabled={reopening} className="flex items-center gap-1 text-xs font-bold flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--danger)' }}>
+                      {reopening ? <Loader2 size={12} className="animate-spin" /> : <Undo2 size={12} />} Kembalikan ke Menunggu
+                    </button>
+                  )}
+                </div>
+                {detail.items.map(i => i.status === 'done' ? (
+                  <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                    <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
+                    <span className="tabular">{formatRp(i.qty * (i.price ?? 0))}</span>
+                  </div>
+                ) : (
+                  // Desktop: satu baris (centang · nama · qty & harga · dompet · hapus). Mobile: baris 1 = centang, nama, hapus;
+                  // baris 2 = qty & harga berdampingan; baris 3 = dompet penuh.
+                  <div key={i.id} className="p-3 rounded-xl flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2.5" style={{ border: '1px solid var(--border-2)' }}>
+                    <button onClick={() => toggle(i)} aria-label={i.checked ? 'Batal centang' : 'Centang sudah dibeli'}
+                      className="flex-shrink-0 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center transition-colors order-1"
+                      style={{ background: i.checked ? 'var(--accent)' : 'transparent', borderColor: i.checked ? 'var(--accent)' : 'var(--border)' }}>
+                      {i.checked && <Check size={13} color="#fff" strokeWidth={3} />}
+                    </button>
+                    <div className="flex-1 min-w-0 order-2">
+                      <p className="text-sm font-semibold break-words" style={{ color: 'var(--text-primary)', textDecoration: i.checked ? 'line-through' : 'none' }}>{i.materialName}</p>
+                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Satuan: {i.unit}</p>
+                    </div>
+                    <div className="order-3 md:order-5 flex-shrink-0">
+                      <Tooltip label="Hapus dari daftar">
+                        <button aria-label="Hapus dari daftar" onClick={() => removeItem(i)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                      </Tooltip>
+                    </div>
+                    <div className="order-4 md:order-3 w-full md:w-auto flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-1 md:flex-none">
+                        <input type="number" inputMode="decimal" min="0" value={i.qty} onChange={e => setLocal(i.id, { qty: parseFloat(e.target.value) || 0 })}
+                          onBlur={() => { if (i.qty > 0) patch(i.id, { qty: i.qty }); else load(); }}
+                          className="input text-right w-full md:w-[72px]" />
+                        <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{i.unit}</span>
+                      </div>
+                      <div className="flex-1 md:flex-none md:w-[112px]" onBlur={() => patch(i.id, { price: i.price })}>
+                        <NumberInput value={i.price != null ? String(Math.round(i.price)) : ''} placeholder="Harga/satuan"
+                          onChange={raw => setLocal(i.id, { price: raw ? parseFloat(raw) : null })} />
+                      </div>
+                    </div>
+                    {i.checked && (
+                      <div className="order-5 md:order-4 w-full md:w-[190px] md:flex-shrink-0">
+                        <SearchSelect value={itemWallets[i.id] ?? ''} onChange={w => setItemWallets(prev => ({ ...prev, [i.id]: w }))}
+                          options={[{ value: '', label: walletId ? 'Ikut dompet utama' : '– Pilih dompet –' }, ...walletOptions]}
+                          placeholder="Dompet" searchPlaceholder="Cari dompet…" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Tambah item ke daftar ini */}
+              {detail.pending.length > 0 && (
+              <div className="p-3 rounded-xl space-y-3" style={{ border: '1px dashed var(--border)' }}>
+                {rowsEditor}
+                <button onClick={addToDetail} disabled={saving || validRows.length === 0} className="btn-ghost text-xs w-full justify-center py-2.5">
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                  {validRows.length > 1 ? `Tambah ${validRows.length} Item ke Daftar` : 'Tambah ke Daftar'}
+                </button>
+              </div>
+              )}
+
+              {/* Pembayaran — muncul setelah ada item yang dicentang, jadi tidak perlu modal kedua */}
+              {detail.checked.length > 0 && (
+                <div className="p-3 rounded-xl space-y-3" style={{ border: '1px solid var(--accent)', background: 'var(--surface)' }}>
+                  <p className="text-xs font-bold" style={{ color: 'var(--accent)' }}>Pembayaran — {detail.checked.length} item dicentang · {formatRp(checkedTotal)}</p>
+                  {missingPrice.length > 0 && (
+                    <p className="text-xs" style={{ color: 'var(--danger)' }}>Isi harga sebenarnya untuk: {missingPrice.map(i => i.materialName).join(', ')}.</p>
+                  )}
+                  {!detail.supplierName.trim() && (
+                    <p className="text-xs" style={{ color: 'var(--danger)' }}>Daftar ini belum punya nama toko/supplier. Isi dulu di bagian info di atas, lalu Simpan Info.</p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label style={fieldLabel}>Tanggal Pembelian</label>
+                      <DateInput value={pDate} onChange={setPDate} />
+                    </div>
+                    <div>
+                      <label style={fieldLabel}>Dompet Utama <span style={{ color: 'var(--danger)' }}>*</span></label>
+                      <SearchSelect value={walletId} onChange={setWalletId} options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
+                      {walletId && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Saldo: {formatRp(walletBalances[walletId] ?? 0)} · dipakai item yang tidak dipilih dompetnya</p>}
+                    </div>
+                  </div>
+                  {walletTotals.size > 0 && (
+                    <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ background: 'var(--accent-bg)' }}>
+                      <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan per dompet — {walletTotals.size} pembelian akan dibuat</p>
+                      {[...walletTotals.entries()].map(([w, total]) => (
+                        <div key={w} className="flex justify-between gap-3">
+                          <span style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
+                          <span className="font-bold tabular" style={{ color: paymentStatus === 'lunas' && total > (walletBalances[w] ?? 0) ? 'var(--danger)' : 'var(--text-primary)' }}>{formatRp(total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div>
+                    <label style={fieldLabel}>Status Pembayaran</label>
+                    <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                      {(['lunas', 'belum_lunas'] as const).map(st => (
+                        <button key={st} type="button" onClick={() => setPaymentStatus(st)} className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
+                          style={paymentStatus === st ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                          {st === 'lunas' ? 'Lunas' : 'Belum Lunas'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={fieldLabel}>Catatan Pembelian</label>
+                    <textarea rows={3} value={pNote} onChange={e => setPNote(e.target.value)} className="input" placeholder="Opsional (default: Dari Daftar Belanja)" style={{ resize: 'vertical' }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Daftar</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(detail.total)}</span>
               </div>
             </div>
-            <div className="modal-footer">
-              <button onClick={() => setDetailKey(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
-              {detail.pending.length > 0 && (
-                <button onClick={submitProcess} disabled={processing || !canProcess} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                  {processing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                  {processing ? 'Memproses…' : detail.checked.length > 0 ? `Simpan Pembelian (${detail.checked.length})` : 'Centang item untuk diproses'}
-                </button>
-              )}
-            </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setDetailKey(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
+            {detail.pending.length > 0 && (
+              <button onClick={submitProcess} disabled={processing || !canProcess} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {processing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {processing ? 'Memproses…' : detail.checked.length > 0 ? `Simpan Pembelian (${detail.checked.length})` : 'Centang item untuk diproses'}
+              </button>
+            )}
+          </div>
+        </Modal>
       )}
 
       {/* Buat daftar belanja baru */}
       {showCreate && (
-        <div className="modal-overlay" onClick={() => !saving && setShowCreate(false)}>
-          <div className="modal-sheet modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ShoppingCart size={17} /></div>
-                <div>
-                  <p className="modal-title">Buat Daftar Belanja</p>
-                  <p className="modal-subtitle">Belum mengubah stok — baru jadi pembelian setelah dicentang &amp; diproses</p>
-                </div>
-              </div>
-              <Tooltip label="Tutup"><button onClick={() => setShowCreate(false)} className="modal-close"><X size={14} /></button></Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label style={fieldLabel}>Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <DateInput value={fDate} onChange={setFDate} />
-                  </div>
-                  <div>
-                    <label style={fieldLabel}>Supplier</label>
-                    <SearchSelect value={fSupplierId}
-                      onChange={id => { setFSupplierId(id); const sp = suppliers.find(x => x.id === id); if (sp) setFSupplierName(sp.name); }}
-                      options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
-                  </div>
-                </div>
-                <div>
-                  <label style={fieldLabel}>Nama Toko / Supplier</label>
-                  <input type="text" value={fSupplierName} maxLength={120}
-                    onChange={e => { setFSupplierName(e.target.value); if (suppliers.find(x => x.id === fSupplierId)?.name !== e.target.value) setFSupplierId(''); }}
-                    placeholder="Terisi dari supplier yang dipilih; ketik manual untuk toko/warung lain" className="input" />
-                </div>
-
-                {rowsEditor}
-
-                <div>
-                  <label style={fieldLabel}>Catatan</label>
-                  <textarea rows={3} value={fNote} onChange={e => setFNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
-                </div>
-
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{validRows.length} item</span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
-                  <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perkiraan Total</span>
-                  <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(formTotal)}</span>
-                </div>
+        <Modal onClose={() => !saving && setShowCreate(false)} className="modal-lg">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ShoppingCart size={17} /></div>
+              <div>
+                <p className="modal-title">Buat Daftar Belanja</p>
+                <p className="modal-subtitle">Belum mengubah stok — baru jadi pembelian setelah dicentang &amp; diproses</p>
               </div>
             </div>
-            <div className="modal-footer">
-              <button onClick={() => setShowCreate(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={saveForm} disabled={saving || !canSave} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : validRows.length > 1 ? `Simpan (${validRows.length} item)` : 'Simpan'}
-              </button>
+            <Tooltip label="Tutup"><button onClick={() => setShowCreate(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label style={fieldLabel}>Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <DateInput value={fDate} onChange={setFDate} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Supplier</label>
+                  <SearchSelect value={fSupplierId}
+                    onChange={id => { setFSupplierId(id); const sp = suppliers.find(x => x.id === id); if (sp) setFSupplierName(sp.name); }}
+                    options={supplierOptions} placeholder="– Pilih Supplier –" searchPlaceholder="Cari supplier…" />
+                </div>
+              </div>
+              <div>
+                <label style={fieldLabel}>Nama Toko / Supplier</label>
+                <input type="text" value={fSupplierName} maxLength={120}
+                  onChange={e => { setFSupplierName(e.target.value); if (suppliers.find(x => x.id === fSupplierId)?.name !== e.target.value) setFSupplierId(''); }}
+                  placeholder="Terisi dari supplier yang dipilih; ketik manual untuk toko/warung lain" className="input" />
+              </div>
+
+              {rowsEditor}
+
+              <div>
+                <label style={fieldLabel}>Catatan</label>
+                <textarea rows={3} value={fNote} onChange={e => setFNote(e.target.value)} maxLength={200} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Item</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{validRows.length} item</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Perkiraan Total</span>
+                <span className="text-lg font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(formTotal)}</span>
+              </div>
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={() => setShowCreate(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={saveForm} disabled={saving || !canSave} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : validRows.length > 1 ? `Simpan (${validRows.length} item)` : 'Simpan'}
+            </button>
+          </div>
+        </Modal>
       )}
     </>
   );

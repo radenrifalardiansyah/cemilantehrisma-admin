@@ -1,5 +1,6 @@
 'use client';
 
+import BulkBar from '@/components/BulkBar';
 import { useState, useEffect, useRef } from 'react';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import {
@@ -29,12 +30,13 @@ import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 // wallets/balances/transfers are all Postgres-backed and cheap to re-fetch — safe to poll.
 const WALLETS_POLL_MS = 30_000;
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 function todayISO() {
   const d = new Date();
@@ -761,7 +763,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                       </span>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <Tooltip label="Edit">
-                          <button onClick={() => openEdit(w)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEdit(w)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                             <Pencil size={13} />
                           </button>
                         </Tooltip>
@@ -816,7 +818,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                     </div>
                     <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                       <Tooltip label="Edit">
-                        <button onClick={() => openEdit(w)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                        <button aria-label="Edit" onClick={() => openEdit(w)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                           <Pencil size={12} />
                         </button>
                       </Tooltip>
@@ -848,7 +850,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -869,7 +871,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -882,34 +884,9 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
       {/* Bulk action bar — dompet */}
       {selected.size > 0 && (
-        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
-          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
-            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
-            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportExcel(wallets.filter(w => selected.has(w.id)), 'terpilih')} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
-            </button>
-            <button onClick={() => exportPdf(wallets.filter(w => selected.has(w.id)), 'terpilih')} disabled={exportingPdf}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
-              PDF
-            </button>
-            <button onClick={bulkDelete} disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'var(--danger)', color: '#fff' }}>
-              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Hapus
-            </button>
-            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
-              Batal
-            </button>
-          </div>
-        </div>
+        <BulkBar count={selected.size} onExportExcel={() => exportExcel(wallets.filter(w => selected.has(w.id)), 'terpilih')} exporting={exporting}
+          onExportPdf={() => exportPdf(wallets.filter(w => selected.has(w.id)), 'terpilih')} exportingPdf={exportingPdf}
+          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())} />
       )}
 
       {/* Riwayat transfer antar dompet */}
@@ -992,7 +969,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                         <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{formatRp(t.amount)}</span>
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <Tooltip label="Edit">
-                            <button onClick={() => openEditTransfer(t)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                            <button aria-label="Edit" onClick={() => openEditTransfer(t)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                               <Pencil size={13} />
                             </button>
                           </Tooltip>
@@ -1029,7 +1006,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                       </div>
                       <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                         <Tooltip label="Edit">
-                          <button onClick={() => openEditTransfer(t)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEditTransfer(t)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                             <Pencil size={12} />
                           </button>
                         </Tooltip>
@@ -1056,7 +1033,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                 {transferTotalPages > 1 && (
                   <div className="flex items-center gap-1">
                     <Tooltip label="Halaman sebelumnya">
-                      <button onClick={() => transferGoPage(transferSafePage - 1)} disabled={transferSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                      <button aria-label="Halaman sebelumnya" onClick={() => transferGoPage(transferSafePage - 1)} disabled={transferSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                         <ChevronLeft size={14} />
                       </button>
                     </Tooltip>
@@ -1077,7 +1054,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                       )
                     }
                     <Tooltip label="Halaman berikutnya">
-                      <button onClick={() => transferGoPage(transferSafePage + 1)} disabled={transferSafePage === transferTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                      <button aria-label="Halaman berikutnya" onClick={() => transferGoPage(transferSafePage + 1)} disabled={transferSafePage === transferTotalPages} className="btn-ghost p-2 disabled:opacity-30">
                         <ChevronRight size={14} />
                       </button>
                     </Tooltip>
@@ -1123,154 +1100,142 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
       {/* Transfer modal */}
       {transferEditing && (
-        <div className="modal-overlay" onClick={closeTransferEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ArrowRightLeft size={17} /></div>
-                <div>
-                  <p className="modal-title">{transferIsNew ? 'Transfer Antar Dompet' : 'Edit Transfer'}</p>
-                  <p className="modal-subtitle">{transferIsNew ? 'Pindahkan saldo dari satu dompet ke dompet lain' : 'Perbarui catatan transfer'}</p>
-                </div>
+        <Modal onClose={closeTransferEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ArrowRightLeft size={17} /></div>
+              <div>
+                <p className="modal-title">{transferIsNew ? 'Transfer Antar Dompet' : 'Edit Transfer'}</p>
+                <p className="modal-subtitle">{transferIsNew ? 'Pindahkan saldo dari satu dompet ke dompet lain' : 'Perbarui catatan transfer'}</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={closeTransferEdit} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="field-label">Dari Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={transferEditing.fromWalletId} onChange={v => setTransferEditing({ ...transferEditing, fromWalletId: v })}
-                    options={walletOptions} placeholder="– Pilih Dompet Asal –" searchPlaceholder="Cari dompet…" />
-                  {transferEditing.fromWalletId && (
-                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                      Saldo tersedia: {formatRp(transferFromAvailable)}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="field-label">Ke Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <SearchSelect value={transferEditing.toWalletId} onChange={v => setTransferEditing({ ...transferEditing, toWalletId: v })}
-                    options={walletOptions.filter(o => o.value !== transferEditing.fromWalletId)} placeholder="– Pilih Dompet Tujuan –" searchPlaceholder="Cari dompet…" />
-                </div>
-
-                <div>
-                  <label className="field-label">Tanggal <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <DateInput value={transferEditing.date} onChange={v => setTransferEditing({ ...transferEditing, date: v })} />
-                </div>
-
-                <div>
-                  <label className="field-label">Jumlah (Rp) <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <NumberInput value={transferEditing.amount} onChange={raw => setTransferEditing({ ...transferEditing, amount: raw })} placeholder="0" />
-                </div>
-
-                <div>
-                  <label className="field-label">Catatan (opsional)</label>
-                  <textarea value={transferEditing.note} onChange={e => setTransferEditing({ ...transferEditing, note: e.target.value })}
-                    className="input" style={{ resize: 'vertical', minHeight: 60 }} placeholder="cth: Tarik tunai dari BCA" />
-                </div>
-
-                {transferError && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {transferError}
+            <Tooltip label="Tutup"><button onClick={closeTransferEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Field label="Dari Dompet" required>
+                <SearchSelect value={transferEditing.fromWalletId} onChange={v => setTransferEditing({ ...transferEditing, fromWalletId: v })}
+                  options={walletOptions} placeholder="– Pilih Dompet Asal –" searchPlaceholder="Cari dompet…" />
+                {transferEditing.fromWalletId && (
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Saldo tersedia: {formatRp(transferFromAvailable)}
                   </p>
                 )}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={closeTransferEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={saveTransfer}
-                disabled={transferSaving || !transferEditing.fromWalletId || !transferEditing.toWalletId || (parseFloat(transferEditing.amount) || 0) > transferFromAvailable}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {transferSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {transferSaving ? 'Menyimpan…' : 'Simpan Transfer'}
-              </button>
+              </Field>
+
+              <Field label="Ke Dompet" required>
+                <SearchSelect value={transferEditing.toWalletId} onChange={v => setTransferEditing({ ...transferEditing, toWalletId: v })}
+                  options={walletOptions.filter(o => o.value !== transferEditing.fromWalletId)} placeholder="– Pilih Dompet Tujuan –" searchPlaceholder="Cari dompet…" />
+              </Field>
+
+              <Field label="Tanggal" required>
+                <DateInput value={transferEditing.date} onChange={v => setTransferEditing({ ...transferEditing, date: v })} />
+              </Field>
+
+              <Field label="Jumlah (Rp)" required>
+                <NumberInput value={transferEditing.amount} onChange={raw => setTransferEditing({ ...transferEditing, amount: raw })} placeholder="0" />
+              </Field>
+
+              <Field label="Catatan (opsional)">
+                <textarea value={transferEditing.note} onChange={e => setTransferEditing({ ...transferEditing, note: e.target.value })}
+                  className="input" style={{ resize: 'vertical', minHeight: 60 }} placeholder="cth: Tarik tunai dari BCA" />
+              </Field>
+
+              {transferError && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {transferError}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeTransferEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={saveTransfer}
+              disabled={transferSaving || !transferEditing.fromWalletId || !transferEditing.toWalletId || (parseFloat(transferEditing.amount) || 0) > transferFromAvailable}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {transferSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {transferSaving ? 'Menyimpan…' : 'Simpan Transfer'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Add/Edit modal */}
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><WalletIcon size={17} /></div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Dompet' : 'Edit Dompet'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Buat dompet/sumber dana baru' : `Edit: ${editing.name}`}</p>
-                </div>
-              </div>
-              <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close"><X size={14} /></button></Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div className="flex items-center gap-3">
-                  <IconPicker value={editing.icon} onChange={icon => setEditing({ ...editing, icon })} />
-                  <ColorPicker value={editing.color} onChange={color => setEditing({ ...editing, color })} />
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Nama Dompet <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
-                      className="input" placeholder="cth: Kas Tunai, BCA, OVO" autoFocus />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="field-label">Tipe</label>
-                  <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                    {WALLET_TYPES.map(t => (
-                      <button key={t} type="button" onClick={() => setEditing({ ...editing, type: t })}
-                        className="flex-1 px-2 py-2.5 text-xs font-bold transition-all"
-                        style={editing.type === t ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
-                        {WALLET_TYPE_LABEL[t]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {editing.type === 'bank' && (
-                  <div>
-                    <label className="field-label">Bank</label>
-                    <SearchSelect
-                      value={editing.bankName}
-                      onChange={v => setEditing({ ...editing, bankName: v })}
-                      options={bankOptions.map(b => ({ value: b.name, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
-                      placeholder="– Pilih bank –"
-                      searchPlaceholder="Cari bank…"
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label className="field-label">Saldo Awal (Rp)</label>
-                  <NumberInput value={editing.initialBalance} onChange={raw => setEditing({ ...editing, initialBalance: raw })} placeholder="0" />
-                </div>
-
-                {error && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {error}
-                  </p>
-                )}
+        <Modal onClose={closeEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><WalletIcon size={17} /></div>
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Dompet' : 'Edit Dompet'}</p>
+                <p className="modal-subtitle">{isNew ? 'Buat dompet/sumber dana baru' : `Edit: ${editing.name}`}</p>
               </div>
             </div>
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={save} disabled={saving} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Dompet'}
-              </button>
+            <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="flex items-center gap-3">
+                <IconPicker value={editing.icon} onChange={icon => setEditing({ ...editing, icon })} />
+                <ColorPicker value={editing.color} onChange={color => setEditing({ ...editing, color })} />
+                <Field label="Nama Dompet" required style={{ flex: 1 }}>
+                  <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
+                    className="input" placeholder="cth: Kas Tunai, BCA, OVO" autoFocus />
+                </Field>
+              </div>
+
+              <div>
+                <label className="field-label">Tipe</label>
+                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                  {WALLET_TYPES.map(t => (
+                    <button key={t} type="button" onClick={() => setEditing({ ...editing, type: t })}
+                      className="flex-1 px-2 py-2.5 text-xs font-bold transition-all"
+                      style={editing.type === t ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+                      {WALLET_TYPE_LABEL[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {editing.type === 'bank' && (
+                <Field label="Bank">
+                  <SearchSelect
+                    value={editing.bankName}
+                    onChange={v => setEditing({ ...editing, bankName: v })}
+                    options={bankOptions.map(b => ({ value: b.name, label: b.name, sublabel: b.bankCode ? `Kode: ${b.bankCode}` : undefined, imageUrl: b.logoUrl }))}
+                    placeholder="– Pilih bank –"
+                    searchPlaceholder="Cari bank…"
+                  />
+                </Field>
+              )}
+
+              <Field label="Saldo Awal (Rp)">
+                <NumberInput value={editing.initialBalance} onChange={raw => setEditing({ ...editing, initialBalance: raw })} placeholder="0" />
+              </Field>
+
+              {error && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {error}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={save} disabled={saving} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Dompet'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
     </>

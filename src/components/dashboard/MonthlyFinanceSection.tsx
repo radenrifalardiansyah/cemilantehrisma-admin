@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 import { CalendarRange, Trophy, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
+import { MonthInput } from '@/components/DateTimeInput';
 import AnalyticsPdfButton from './AnalyticsPdfButton';
 import { pdfRp, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
+import { formatRp } from '@/lib/format';
 
 interface MonthRow {
   month: string; // yyyy-mm
@@ -21,8 +23,6 @@ const METRICS = [
 ] as const;
 type MetricKey = typeof METRICS[number]['key'];
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 function compactRp(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}jt`;
@@ -176,9 +176,9 @@ export default function MonthlyFinanceSection({ creds }: { creds: string }) {
         </div>
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
-          <input type="month" value={fromM} max={toM || undefined} onChange={e => { startLoading(); setFromM(e.target.value); }} className="input" style={{ height: 36 }} />
+          <MonthInput value={fromM} max={toM || undefined} onChange={v => { startLoading(); setFromM(v); }} height={34} style={{ width: 160 }} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-          <input type="month" value={toM} min={fromM || undefined} onChange={e => { startLoading(); setToM(e.target.value); }} className="input" style={{ height: 36 }} />
+          <MonthInput value={toM} min={fromM || undefined} onChange={v => { startLoading(); setToM(v); }} height={34} style={{ width: 160 }} />
           {!validRange && <span className="text-xs" style={{ color: 'var(--danger)' }}>Pilih bulan awal dan akhir yang valid.</span>}
         </div>
       )}

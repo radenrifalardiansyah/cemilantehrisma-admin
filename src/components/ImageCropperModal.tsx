@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, PointerEvent as ReactPointerEvent } from 'react';
 import { Check, Loader2, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import Modal from '@/components/Modal';
 
 interface ImageCropperModalProps {
   file: File;
@@ -108,95 +109,93 @@ export default function ImageCropperModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div>
-              <p className="modal-title">{title}</p>
-              <p className="modal-subtitle">{subtitle}</p>
-            </div>
+    <Modal onClose={onCancel} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div>
+            <p className="modal-title">{title}</p>
+            <p className="modal-subtitle">{subtitle}</p>
           </div>
-          <button onClick={onCancel} className="modal-close"><X size={14} /></button>
         </div>
+        <button onClick={onCancel} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+      </div>
 
-        <div className="modal-body flex flex-col items-center gap-4">
-          <div
-            className="relative select-none touch-none rounded-2xl"
-            style={{ width: stageW, height: stageH, overflow: 'hidden', background: 'var(--surface-2)', cursor: dragging ? 'grabbing' : 'grab' }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-          >
-            {imgUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={imgUrl}
-                alt=""
-                draggable={false}
-                style={{
-                  position: 'absolute', left: '50%', top: '50%',
-                  width: natural.w, height: natural.h, maxWidth: 'none',
-                  transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px) rotate(${rotation}deg) scale(${scale})`,
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
-            {/* Cincin bingkai crop — box-shadow menggelapkan area di luar bingkai */}
-            <div
-              className="absolute rounded-xl"
+      <div className="modal-body flex flex-col items-center gap-4">
+        <div
+          className="relative select-none touch-none rounded-2xl"
+          style={{ width: stageW, height: stageH, overflow: 'hidden', background: 'var(--surface-2)', cursor: dragging ? 'grabbing' : 'grab' }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          {imgUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imgUrl}
+              alt=""
+              draggable={false}
               style={{
-                left: '50%', top: '50%', width: frameW, height: frameH,
-                transform: 'translate(-50%, -50%)',
-                boxShadow: '0 0 0 2000px rgba(15,8,4,0.55)',
-                border: '2px solid rgba(255,255,255,0.9)',
+                position: 'absolute', left: '50%', top: '50%',
+                width: natural.w, height: natural.h, maxWidth: 'none',
+                transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px) rotate(${rotation}deg) scale(${scale})`,
                 pointerEvents: 'none',
               }}
             />
-          </div>
-
-          <div className="w-full flex flex-col gap-3">
-            <div className="flex items-center gap-2.5">
-              <ZoomOut size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-              <input
-                type="range" min={1} max={4} step={0.01} value={zoom}
-                onChange={e => setZoom(Number(e.target.value))}
-                className="flex-1" style={{ accentColor: 'var(--accent)' }}
-              />
-              <ZoomIn size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-            </div>
-            <div className="flex items-center gap-2.5">
-              <button type="button" onClick={() => rotateBy(-90)} className="btn-ghost p-2" title="Putar kiri 90°">
-                <RotateCcw size={14} />
-              </button>
-              <input
-                type="range" min={-180} max={180} step={1} value={rotation}
-                onChange={e => setRotation(Number(e.target.value))}
-                className="flex-1" style={{ accentColor: 'var(--accent)' }}
-              />
-              <button type="button" onClick={() => rotateBy(90)} className="btn-ghost p-2" title="Putar kanan 90°">
-                <RotateCw size={14} />
-              </button>
-            </div>
-            <button type="button" onClick={reset} className="text-[11px] font-semibold self-center" style={{ color: 'var(--text-muted)' }}>
-              Reset posisi, zoom & rotasi
-            </button>
-          </div>
+          )}
+          {/* Cincin bingkai crop — box-shadow menggelapkan area di luar bingkai */}
+          <div
+            className="absolute rounded-xl"
+            style={{
+              left: '50%', top: '50%', width: frameW, height: frameH,
+              transform: 'translate(-50%, -50%)',
+              boxShadow: '0 0 0 2000px rgba(15,8,4,0.55)',
+              border: '2px solid rgba(255,255,255,0.9)',
+              pointerEvents: 'none',
+            }}
+          />
         </div>
 
-        <div className="modal-footer">
-          <button onClick={onCancel} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-            Batal
-          </button>
-          <button onClick={confirm} disabled={saving} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-            {saving ? 'Memproses…' : 'Simpan'}
+        <div className="w-full flex flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <ZoomOut size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <input
+              type="range" min={1} max={4} step={0.01} value={zoom}
+              onChange={e => setZoom(Number(e.target.value))}
+              className="flex-1" style={{ accentColor: 'var(--accent)' }}
+            />
+            <ZoomIn size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button type="button" onClick={() => rotateBy(-90)} className="btn-ghost p-2" title="Putar kiri 90°">
+              <RotateCcw size={14} />
+            </button>
+            <input
+              type="range" min={-180} max={180} step={1} value={rotation}
+              onChange={e => setRotation(Number(e.target.value))}
+              className="flex-1" style={{ accentColor: 'var(--accent)' }}
+            />
+            <button type="button" onClick={() => rotateBy(90)} className="btn-ghost p-2" title="Putar kanan 90°">
+              <RotateCw size={14} />
+            </button>
+          </div>
+          <button type="button" onClick={reset} className="text-[11px] font-semibold self-center" style={{ color: 'var(--text-muted)' }}>
+            Reset posisi, zoom & rotasi
           </button>
         </div>
       </div>
-    </div>
+
+      <div className="modal-footer">
+        <button onClick={onCancel} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+          Batal
+        </button>
+        <button onClick={confirm} disabled={saving} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          {saving ? 'Memproses…' : 'Simpan'}
+        </button>
+      </div>
+    </Modal>
   );
 }

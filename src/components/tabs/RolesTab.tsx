@@ -1,5 +1,6 @@
 'use client';
 
+import BulkBar from '@/components/BulkBar';
 import { useEffect, useState } from 'react';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import {
@@ -20,7 +21,9 @@ import PageSizeSelect from '@/components/PageSizeSelect';
 import type { Role, Action } from '@/types/rbac';
 import PageLoader from '@/components/PageLoader';
 
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 interface EditState { id: string; name: string; description: string }
 const EMPTY: EditState = { id: '', name: '', description: '' };
@@ -431,7 +434,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {can('edit') && (
                           <Tooltip label={isSystem ? 'Role sistem tidak dapat diubah' : 'Edit'}>
-                            <button onClick={() => openEdit(r)} disabled={isSystem} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--accent)' }}>
+                            <button aria-label={isSystem ? 'Role sistem tidak dapat diubah' : 'Edit'} onClick={() => openEdit(r)} disabled={isSystem} className="btn-ghost p-2 disabled:opacity-30" style={{ color: 'var(--accent)' }}>
                               <Pencil size={13} />
                             </button>
                           </Tooltip>
@@ -475,7 +478,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
                     <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                       {can('edit') && (
                         <Tooltip label={isSystem ? 'Role sistem tidak dapat diubah' : 'Edit'}>
-                          <button onClick={() => openEdit(r)} disabled={isSystem} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--accent)' }}>
+                          <button aria-label={isSystem ? 'Role sistem tidak dapat diubah' : 'Edit'} onClick={() => openEdit(r)} disabled={isSystem} className="btn-ghost p-1.5 disabled:opacity-30" style={{ color: 'var(--accent)' }}>
                             <Pencil size={12} />
                           </button>
                         </Tooltip>
@@ -506,7 +509,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -527,7 +530,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -540,87 +543,57 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
 
       {/* Bulk action bar */}
       {can('delete') && selected.size > 0 && (
-        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
-          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
-            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
-            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportExcel(roles.filter(r => selected.has(r.id)), 'terpilih')} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
-            </button>
-            <button onClick={() => exportPdf(roles.filter(r => selected.has(r.id)), 'terpilih')} disabled={exportingPdf}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
-              PDF
-            </button>
-            <button onClick={bulkDelete} disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'var(--danger)', color: '#fff' }}>
-              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Hapus
-            </button>
-            <button onClick={() => setSelected(new Set())} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
-              Batal
-            </button>
-          </div>
-        </div>
+        <BulkBar count={selected.size} onExportExcel={() => exportExcel(roles.filter(r => selected.has(r.id)), 'terpilih')} exporting={exporting}
+          onExportPdf={() => exportPdf(roles.filter(r => selected.has(r.id)), 'terpilih')} exportingPdf={exportingPdf}
+          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())} />
       )}
 
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><IdCard size={17} /></div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Role' : 'Edit Role'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Buat role baru' : `Edit: ${editing.name}`}</p>
-                </div>
-              </div>
-              <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close"><X size={14} /></button></Tooltip>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="field-label">Nama Role <span style={{ color: 'var(--danger)' }}>*</span></label>
-                  <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
-                    className="input" placeholder="cth: Supervisor Gudang" autoFocus />
-                </div>
-                {isNew && (
-                  <div>
-                    <label className="field-label">ID (opsional, huruf kecil & tanda hubung)</label>
-                    <input value={editing.id} onChange={e => setEditing({ ...editing, id: e.target.value })}
-                      className="input" placeholder={slugify(editing.name) || 'otomatis dari nama'} />
-                  </div>
-                )}
-                <div>
-                  <label className="field-label">Deskripsi (opsional)</label>
-                  <textarea value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })}
-                    className="input" style={{ resize: 'vertical', minHeight: 70 }} placeholder="Deskripsi singkat tentang role ini" />
-                </div>
-                {error && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {error}
-                  </p>
-                )}
+        <Modal onClose={closeEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><IdCard size={17} /></div>
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Role' : 'Edit Role'}</p>
+                <p className="modal-subtitle">{isNew ? 'Buat role baru' : `Edit: ${editing.name}`}</p>
               </div>
             </div>
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={save} disabled={saving || !editing.name.trim()}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Role'}
-              </button>
+            <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Field label="Nama Role" required>
+                <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })}
+                  className="input" placeholder="cth: Supervisor Gudang" autoFocus />
+              </Field>
+              {isNew && (
+                <Field label="ID (opsional, huruf kecil & tanda hubung)">
+                  <input value={editing.id} onChange={e => setEditing({ ...editing, id: e.target.value })}
+                    className="input" placeholder={slugify(editing.name) || 'otomatis dari nama'} />
+                </Field>
+              )}
+              <Field label="Deskripsi (opsional)">
+                <textarea value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })}
+                  className="input" style={{ resize: 'vertical', minHeight: 70 }} placeholder="Deskripsi singkat tentang role ini" />
+              </Field>
+              {error && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {error}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={save} disabled={saving || !editing.name.trim()}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Role'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

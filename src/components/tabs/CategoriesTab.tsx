@@ -1,5 +1,6 @@
 'use client';
 
+import BulkBar from '@/components/BulkBar';
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
@@ -24,7 +25,9 @@ import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 
 const API       = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 interface FireCategory {
   id: string; name: string; emoji: string; description?: string; order?: number; bannerUrl?: string;
@@ -710,7 +713,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                       {/* Actions */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <Tooltip label="Edit">
-                          <button onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEditCat(c)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}>
                             <Pencil size={13} />
                           </button>
                         </Tooltip>
@@ -767,7 +770,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                       )}
                       <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                         <Tooltip label="Edit">
-                          <button onClick={() => openEditCat(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
+                          <button aria-label="Edit" onClick={() => openEditCat(c)} className="btn-ghost p-1.5" style={{ color: 'var(--accent)' }}>
                             <Pencil size={12} />
                           </button>
                         </Tooltip>
@@ -801,7 +804,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
               {catTotalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goCatPage(catSafePage - 1)} disabled={catSafePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -824,7 +827,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goCatPage(catSafePage + 1)} disabled={catSafePage === catTotalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>
@@ -837,151 +840,118 @@ export default function CategoriesTab({ creds }: { creds: string }) {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
-          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
-            style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
-            <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selected.size} dipilih</span>
-            <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportExcel(categories.filter(c => selected.has(c.id)), 'terpilih')} disabled={exporting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exporting ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
-              Export
-            </button>
-            <button onClick={() => exportPdf(categories.filter(c => selected.has(c.id)), 'terpilih')} disabled={exportingPdf}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
-              {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
-              PDF
-            </button>
-            <button onClick={bulkDelete} disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
-              style={{ background: 'var(--danger)', color: '#fff' }}>
-              {bulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Hapus
-            </button>
-            <button onClick={() => setSelected(new Set())}
-              className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity flex-shrink-0 whitespace-nowrap px-1">
-              Batal
-            </button>
-          </div>
-        </div>
+        <BulkBar count={selected.size} onExportExcel={() => exportExcel(categories.filter(c => selected.has(c.id)), 'terpilih')} exporting={exporting}
+          onExportPdf={() => exportPdf(categories.filter(c => selected.has(c.id)), 'terpilih')} exportingPdf={exportingPdf}
+          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())} />
       )}
 
       {/* Category edit modal */}
       {editingCat && (
-        <div className="modal-overlay" onClick={closeEditCat}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
+        <Modal onClose={closeEditCat} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
 
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon">
-                  <span style={{ fontSize: 17, lineHeight: 1 }}>{editingCat.emoji || '🏷️'}</span>
-                </div>
-                <div>
-                  <p className="modal-title">{isNewCat ? 'Tambah Kategori' : 'Edit Kategori'}</p>
-                  <p className="modal-subtitle">{isNewCat ? 'Buat kategori produk baru' : `Edit: ${editingCat.name}`}</p>
-                </div>
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon">
+                <span style={{ fontSize: 17, lineHeight: 1 }}>{editingCat.emoji || '🏷️'}</span>
               </div>
-              <Tooltip label="Tutup">
-                <button onClick={closeEditCat} className="modal-close"><X size={14} /></button>
-              </Tooltip>
-            </div>
-
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Emoji + Name */}
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flexShrink: 0 }}>
-                    <label className="field-label">Emoji</label>
-                    <EmojiPicker
-                      value={editingCat.emoji}
-                      onChange={emoji => setEditingCat({ ...editingCat, emoji })}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="field-label">Nama Kategori <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input
-                      value={editingCat.name}
-                      onChange={e => {
-                        const name = e.target.value;
-                        setEditingCat({ ...editingCat, name, ...(isNewCat ? { slug: slugify(name) } : {}) });
-                      }}
-                      className="input"
-                      placeholder="Contoh: Keripik"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-
-                {/* Slug / ID */}
-                <div>
-                  <label className="field-label">
-                    ID / Slug{isNewCat ? ' (auto dari nama, bisa diedit)' : ' (tidak bisa diubah)'}
-                  </label>
-                  <input
-                    value={isNewCat ? (editingCat.slug || slugify(editingCat.name)) : editingCat.id}
-                    onChange={e => isNewCat && setEditingCat({ ...editingCat, slug: slugify(e.target.value) })}
-                    readOnly={!isNewCat}
-                    className="input"
-                    style={!isNewCat ? { opacity: 0.55, cursor: 'not-allowed', fontFamily: 'monospace' } : { fontFamily: 'monospace' }}
-                    placeholder="contoh: keripik"
-                  />
-                  <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                    Digunakan sebagai referensi di data produk. Hanya huruf kecil, angka, dan tanda hubung.
-                  </p>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="field-label">Deskripsi (opsional)</label>
-                  <input
-                    value={editingCat.description ?? ''}
-                    onChange={e => setEditingCat({ ...editingCat, description: e.target.value })}
-                    className="input"
-                    placeholder="Contoh: Keripik Talas Renyah"
-                  />
-                </div>
-
-                {/* Banner */}
-                <div>
-                  <label className="field-label">Banner Kategori (opsional)</label>
-                  <ImageUploadBox
-                    src={editingCat.bannerUrl}
-                    alt="Banner kategori"
-                    uploading={uploadingBanner}
-                    onSelect={f => uploadBannerImage(f)}
-                    onRemove={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
-                    aspect="2 / 1"
-                    emptyText="Unggah Banner"
-                  />
-                  <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                    Tampil sebagai banner saat kategori ini dipilih di halaman toko (rasio 2:1).
-                  </p>
-                </div>
-
-                {catError && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {catError}
-                  </p>
-                )}
+              <div>
+                <p className="modal-title">{isNewCat ? 'Tambah Kategori' : 'Edit Kategori'}</p>
+                <p className="modal-subtitle">{isNewCat ? 'Buat kategori produk baru' : `Edit: ${editingCat.name}`}</p>
               </div>
             </div>
+            <Tooltip label="Tutup">
+              <button onClick={closeEditCat} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
 
-            <div className="modal-footer">
-              <button onClick={closeEditCat} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-                Batal
-              </button>
-              <button onClick={saveCat} disabled={savingCat || !editingCat.name.trim()}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {savingCat ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {savingCat ? 'Menyimpan…' : 'Simpan Kategori'}
-              </button>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Emoji + Name */}
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ flexShrink: 0 }}>
+                  <label className="field-label">Emoji</label>
+                  <EmojiPicker
+                    value={editingCat.emoji}
+                    onChange={emoji => setEditingCat({ ...editingCat, emoji })}
+                  />
+                </div>
+                <Field label="Nama Kategori" required style={{ flex: 1 }}>
+                  <input
+                    value={editingCat.name}
+                    onChange={e => {
+                      const name = e.target.value;
+                      setEditingCat({ ...editingCat, name, ...(isNewCat ? { slug: slugify(name) } : {}) });
+                    }}
+                    className="input"
+                    placeholder="Contoh: Keripik"
+                    autoFocus
+                  />
+                </Field>
+              </div>
+
+              {/* Slug / ID */}
+              <Field label={<>ID / Slug{isNewCat ? ' (auto dari nama, bisa diedit)' : ' (tidak bisa diubah)'}</>}>
+                <input
+                  value={isNewCat ? (editingCat.slug || slugify(editingCat.name)) : editingCat.id}
+                  onChange={e => isNewCat && setEditingCat({ ...editingCat, slug: slugify(e.target.value) })}
+                  readOnly={!isNewCat}
+                  className="input"
+                  style={!isNewCat ? { opacity: 0.55, cursor: 'not-allowed', fontFamily: 'monospace' } : { fontFamily: 'monospace' }}
+                  placeholder="contoh: keripik"
+                />
+                <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Digunakan sebagai referensi di data produk. Hanya huruf kecil, angka, dan tanda hubung.
+                </p>
+              </Field>
+
+              {/* Description */}
+              <Field label="Deskripsi (opsional)">
+                <input
+                  value={editingCat.description ?? ''}
+                  onChange={e => setEditingCat({ ...editingCat, description: e.target.value })}
+                  className="input"
+                  placeholder="Contoh: Keripik Talas Renyah"
+                />
+              </Field>
+
+              {/* Banner */}
+              <div>
+                <label className="field-label">Banner Kategori (opsional)</label>
+                <ImageUploadBox
+                  src={editingCat.bannerUrl}
+                  alt="Banner kategori"
+                  uploading={uploadingBanner}
+                  onSelect={f => uploadBannerImage(f)}
+                  onRemove={() => setEditingCat({ ...editingCat, bannerUrl: '' })}
+                  aspect="2 / 1"
+                  emptyText="Unggah Banner"
+                />
+                <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Tampil sebagai banner saat kategori ini dipilih di halaman toko (rasio 2:1).
+                </p>
+              </div>
+
+              {catError && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {catError}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+
+          <div className="modal-footer">
+            <button onClick={closeEditCat} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+              Batal
+            </button>
+            <button onClick={saveCat} disabled={savingCat || !editingCat.name.trim()}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {savingCat ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {savingCat ? 'Menyimpan…' : 'Simpan Kategori'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

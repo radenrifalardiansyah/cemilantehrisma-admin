@@ -5,7 +5,12 @@ const rpFormatter = new Intl.NumberFormat('id-ID', {
 });
 
 /** "Rp 10.000" (spasi non-breaking dari Intl). */
-export const formatRp = (n: number) => rpFormatter.format(n);
+const rpZero = rpFormatter.format(0);
+const rpNegZero = rpFormatter.format(-0); // "-Rp 0": hasil nilai negatif kecil yang dibulatkan ke nol
+export const formatRp = (n: number) => {
+  const out = rpFormatter.format(n);
+  return out === rpNegZero ? rpZero : out;
+};
 
 export type DateVariant =
   | 'short'       // 5 Nov 2026

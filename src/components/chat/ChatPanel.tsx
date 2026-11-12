@@ -83,7 +83,7 @@ export default function ChatPanel({ username, avatar, creds, canKick, accounts, 
               <p style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>Akun &amp; Chat</p>
               <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{onlineCount} sedang online</p>
             </div>
-            <button onClick={onClose} className="modal-close"><X size={14} /></button>
+            <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
           </div>
         )}
 

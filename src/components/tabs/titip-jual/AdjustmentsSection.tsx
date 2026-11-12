@@ -94,7 +94,7 @@ export default function AdjustmentsSection({ creds, data, reload, can }: Section
         emptyHint="Opname = hitung stok fisik lalu samakan dengan sistem. Selisih, barang rusak, hilang, atau kadaluarsa dicatat di sini."
         filters={(
           <>
-            <FilterSelect value={kindFilter} onChange={setKindFilter}
+            <FilterSelect searchable={false} value={kindFilter} onChange={setKindFilter}
               options={[{ value: '', label: 'Semua jenis' }, ...(Object.keys(KIND_LABEL) as Kind[]).map(k => ({ value: k, label: KIND_LABEL[k] }))]} />
             <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
               options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(s => ({ value: s.id, label: s.name }))]} />
@@ -289,7 +289,7 @@ function AdjustmentModal({ creds, data, initialKind, onClose, onDone }: {
                             .map(i => ({ value: i.productId, label: productById.get(i.productId)?.name ?? '', sublabel: `${consignorById.get(productById.get(i.productId)?.consignorId ?? '')?.name ?? ''} · stok ${qtyText(i.stockQty)}` }))}
                           placeholder="– Produk –" searchPlaceholder="Cari produk…" />
                       </div>
-                      <button onClick={() => setLossRows(rs => rs.filter((_, i) => i !== idx))} disabled={lossRows.length === 1} className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
+                      <button aria-label="Hapus baris" onClick={() => setLossRows(rs => rs.filter((_, i) => i !== idx))} disabled={lossRows.length === 1} className="btn-ghost p-2 disabled:opacity-30 flex-shrink-0" style={{ color: 'var(--danger)' }}><X size={14} /></button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>

@@ -1,5 +1,6 @@
 import type { MitraInvoiceData, MitraInvoiceRecap } from '@/lib/pdf/MitraInvoicePDF';
 import type { RecapNoteItem } from '@/lib/pdf/RecapNotePDF';
+import { formatDate } from '@/lib/format';
 
 // Penyusun data invoice tagihan mitra — dipakai di client (tombol Invoice di riwayat lokasi) dan di
 // server (link publik invoice yang dikirim ke mitra lewat WhatsApp), supaya angkanya selalu sama.
@@ -12,10 +13,8 @@ export interface InvoiceLocation { id: string; name: string; code?: string | nul
 
 const TZ = 'Asia/Jakarta';
 const sum = <T,>(rows: T[], pick: (r: T) => number) => rows.reduce((q, r) => q + pick(r), 0);
-const fmtDateTime = (sec?: number) => sec
-  ? new Date(sec * 1000).toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-  : '-';
-const fmtDate = (d: Date) => d.toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDateTime = (sec?: number) => sec ? formatDate(sec * 1000, 'datetime', TZ) : '-';
+const fmtDate = (d: Date) => formatDate(d, 'short', TZ);
 
 export function buildMitraInvoiceData(input: {
   location: InvoiceLocation; shipments: InvoiceShipment[]; recaps: InvoiceRecap[];

@@ -3,6 +3,7 @@
 // Format/tampilan bersama untuk data audit_log — dipakai oleh halaman Riwayat terpusat
 // (HistoryTab.tsx) dan tombol "Riwayat" per baris di masing-masing menu transaksi (RecordHistory.tsx).
 import type { ReactNode } from 'react';
+import { formatRp } from './format';
 import {
   PlusCircle, Pencil, Trash2,
   ShoppingCart, Factory, Truck, Boxes, Store, Warehouse, Landmark, Coins, Banknote,
@@ -82,7 +83,7 @@ export function avatarIconFor(entry: AuditEntry): ReactNode {
   return ENTITY_META[entry.entity]?.icon ?? ACTION_META[entry.action].icon;
 }
 
-export const rp = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+export const rp = formatRp;
 const MONEY_KEY_RE = /amount|total|cost|harga|revenue|balance|subtotal|omzet|modal/i;
 
 // Field teknis (foreign-key id) yang sudah terwakili oleh field `...Name` pasangannya — disembunyikan

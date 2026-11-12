@@ -28,15 +28,14 @@ import ClosingPanel from '@/components/tabs/ClosingPanel';
 import type { Action } from '@/types/rbac';
 
 const API = '';
-const HEADER_BTN_H = 34;
+import { HEADER_BTN_H } from '@/lib/ui-constants';
+import { formatRp } from '@/lib/format';
 
 // Palet kategorikal 4-slot, urutan tetap (bukan berdasar urutan seleksi) — supaya produk yang
 // tetap tampil tidak berganti warna saat produk lain di-toggle. Sudah divalidasi lolos cek CVD
 // adjacent DAN all-pairs (light & dark) via dataviz skill's validate_palette.js.
 const TREND_COLORS = ['#0284C7', '#D4691E', '#7C3AED', '#DB2777'];
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const formatQty = (n: number) => new Intl.NumberFormat('id-ID').format(n);
 // HPP per pcs = total HPP ÷ qty berbayar (qty gratis tidak dihitung, HPP-nya juga tidak masuk Total HPP).
 const hppPerPcs = (cogs: number, qty: number, qtyFree = 0) => qty - qtyFree > 0 ? Math.round(cogs / (qty - qtyFree)) : 0;
@@ -488,9 +487,9 @@ export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: 
           </div>
         )}
       </div>
+
       {/* Closing HPP — di luar blok loading supaya tidak ikut ter-unmount tiap ganti periode */}
       <ClosingPanel creds={creds} can={can} isSuperAdmin={isSuperAdmin} onChanged={load} />
-
 
       {loading ? (
         <PageLoader compact />
@@ -778,7 +777,7 @@ export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: 
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
-                    <button onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronLeft size={14} />
                     </button>
                   </Tooltip>
@@ -801,7 +800,7 @@ export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: 
                     )
                   }
                   <Tooltip label="Halaman berikutnya">
-                    <button onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
+                    <button aria-label="Halaman berikutnya" onClick={() => goPage(safePage + 1)} disabled={safePage === totalPages} className="btn-ghost p-2 disabled:opacity-30">
                       <ChevronRight size={14} />
                     </button>
                   </Tooltip>

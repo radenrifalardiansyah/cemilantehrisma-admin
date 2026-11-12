@@ -73,7 +73,9 @@ const ConsignmentAnalyticsSection = dynamic(() => import('@/components/dashboard
 const LapakAnalyticsSection = dynamic(() => import('@/components/dashboard/LapakAnalyticsSection'), { loading: () => <PageLoader compact /> });
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import PageLoader from '@/components/PageLoader';
+import { useToast } from '@/components/Toast';
 import { DateInput } from '@/components/DateTimeInput';
+import { formatRp } from '@/lib/format';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -107,8 +109,6 @@ const PAGE_LABELS: Record<string, string> = {
 };
 const pageLabel = (p: string) => PAGE_LABELS[p] ?? p;
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const formatQty = (n: number) =>
   new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
@@ -312,6 +312,7 @@ interface LoginResult {
 }
 
 export default function AdminPage() {
+  const toast = useToast();
 
   // ── Auth ─────────────────────────────────────────────────
   const [authed,   setAuthed]   = useState(false);
@@ -820,7 +821,7 @@ export default function AdminPage() {
       setTwoFactor(null); setTwoFactorCode('');
       if (data.recoveryLeft !== undefined) {
         // Kode pemulihan terpakai — ingatkan sisanya supaya bisa dibuat ulang dari Profil.
-        alert(`Anda masuk memakai kode pemulihan. Sisa kode pemulihan: ${data.recoveryLeft}. Buat kode baru dari menu Profil › Keamanan.`);
+        toast.success(`Anda masuk memakai kode pemulihan. Sisa kode pemulihan: ${data.recoveryLeft}. Buat kode baru dari menu Profil › Keamanan.`);
       }
       await handleLoginResult(data);
     } finally {
@@ -1118,7 +1119,7 @@ export default function AdminPage() {
 
       <TopbarPortal>
         <Tooltip label="Refresh">
-          <button onClick={() => {
+          <button aria-label="Refresh" onClick={() => {
             fetchDash(); fetchNewOrdersCount();
             // Refresh hanya sub-view yang sedang dibuka; sub-view lain dimuat saat dibuka.
             if (dashSubView === 'ringkasan') fetchSummary();
@@ -1394,8 +1395,8 @@ export default function AdminPage() {
               periodLabel: first && last ? `${pdfDate(first)} - ${pdfDate(last)} (${webRange} hari)` : `${webRange} hari terakhir`,
               generatedAt: pdfNow(),
               cards: [
-                { label: 'Pengunjung Unik', value: ws.visitors.toLocaleString('id') },
-                { label: 'Total Pageview', value: ws.pageViews.toLocaleString('id') },
+                { label: 'Pengunjung Unik', value: ws.visitors.toLocaleString('id-ID') },
+                { label: 'Total Pageview', value: ws.pageViews.toLocaleString('id-ID') },
                 { label: 'Halaman / Pengunjung', value: ws.visitors > 0 ? (ws.pageViews / ws.visitors).toFixed(1) : '-' },
                 { label: 'Perangkat', value: `Mobile ${pct(ws.mobile)} / Desktop ${pct(ws.desktop)}` },
               ],
@@ -1482,8 +1483,8 @@ export default function AdminPage() {
             {/* Stat cards — Perangkat gabung jadi 1 kartu (mobile/desktop split) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
-                { icon: <Users      size={15}/>, label: 'Pengunjung Unik', val: ws.visitors.toLocaleString('id'),  color: '#0284C7', bg: '#EFF6FF' },
-                { icon: <Eye        size={15}/>, label: 'Total Pageview',  val: ws.pageViews.toLocaleString('id'), color: '#7C3AED', bg: '#F5F3FF' },
+                { icon: <Users      size={15}/>, label: 'Pengunjung Unik', val: ws.visitors.toLocaleString('id-ID'),  color: '#0284C7', bg: '#EFF6FF' },
+                { icon: <Eye        size={15}/>, label: 'Total Pageview',  val: ws.pageViews.toLocaleString('id-ID'), color: '#7C3AED', bg: '#F5F3FF' },
                 { icon: <BarChart2  size={15}/>, label: 'Hlm / Pengunjung',val: avgPages,                          color: '#059669', bg: '#ECFDF5' },
               ].map((c, i) => (
                 <div key={i} className="card relative p-4 overflow-hidden">
@@ -1506,7 +1507,7 @@ export default function AdminPage() {
                     <Monitor size={13} style={{ color: '#7C3AED' }} />
                   </div>
                   <span className="text-[10px] font-semibold tabular" style={{ color: 'var(--text-muted)' }}>
-                    {devTotal.toLocaleString('id')} sesi
+                    {devTotal.toLocaleString('id-ID')} sesi
                   </span>
                 </div>
                 <p className="text-xl font-extrabold tabular leading-tight mb-2" style={{ color: 'var(--text-primary)' }}>
@@ -1567,7 +1568,7 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
-                          {p.visitors.toLocaleString('id')}
+                          {p.visitors.toLocaleString('id-ID')}
                         </span>
                       </div>
                     );

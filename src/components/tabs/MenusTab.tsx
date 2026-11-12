@@ -12,6 +12,8 @@ import { resolveIcon } from '@/lib/icon-registry';
 import { FEATURE_KEYS } from '@/lib/permissions';
 import type { ModuleDoc, MenuDoc, Action } from '@/types/rbac';
 import PageLoader from '@/components/PageLoader';
+import Field from '@/components/Field';
+import Modal from '@/components/Modal';
 
 interface EditState {
   id: string; moduleId: string; parentId: string; featureKey: string; label: string; icon: string; isActive: boolean;
@@ -187,8 +189,8 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
             {numberLabel}
           </span>
           <div className="flex flex-col flex-shrink-0">
-            <button onClick={() => move(siblings, idx, -1)} disabled={idx === 0 || reordering} className="btn-ghost p-0.5 disabled:opacity-20"><ChevronUp size={12} /></button>
-            <button onClick={() => move(siblings, idx, 1)} disabled={idx === siblings.length - 1 || reordering} className="btn-ghost p-0.5 disabled:opacity-20"><ChevronDown size={12} /></button>
+            <button aria-label="Naikkan urutan" onClick={() => move(siblings, idx, -1)} disabled={idx === 0 || reordering} className="btn-ghost p-0.5 disabled:opacity-20"><ChevronUp size={12} /></button>
+            <button aria-label="Turunkan urutan" onClick={() => move(siblings, idx, 1)} disabled={idx === siblings.length - 1 || reordering} className="btn-ghost p-0.5 disabled:opacity-20"><ChevronDown size={12} /></button>
           </div>
           <div className="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
             <Icon size={15} />
@@ -205,7 +207,7 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
           <div className="flex items-center gap-1 flex-shrink-0">
             {can('edit') && (
               <Tooltip label="Edit">
-                <button onClick={() => openEdit(m)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Pencil size={13} /></button>
+                <button aria-label="Edit" onClick={() => openEdit(m)} className="btn-ghost p-2" style={{ color: 'var(--accent)' }}><Pencil size={13} /></button>
               </Tooltip>
             )}
             {can('delete') && (
@@ -261,120 +263,114 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
       })}
 
       {editing && (
-        <div className="modal-overlay" onClick={closeEdit}>
-          <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="modal-accent" />
-            <span className="modal-handle" />
-            <div className="modal-header">
-              <div className="modal-header-left">
-                <div className="modal-icon"><ListTree size={17} /></div>
-                <div>
-                  <p className="modal-title">{isNew ? 'Tambah Menu' : 'Edit Menu'}</p>
-                  <p className="modal-subtitle">{isNew ? 'Tambahkan item menu baru' : `Edit: ${editing.label}`}</p>
-                </div>
+        <Modal onClose={closeEdit} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><ListTree size={17} /></div>
+              <div>
+                <p className="modal-title">{isNew ? 'Tambah Menu' : 'Edit Menu'}</p>
+                <p className="modal-subtitle">{isNew ? 'Tambahkan item menu baru' : `Edit: ${editing.label}`}</p>
               </div>
-              <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close"><X size={14} /></button></Tooltip>
             </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="field-label">Modul <span style={{ color: 'var(--danger)' }}>*</span></label>
+            <Tooltip label="Tutup"><button onClick={closeEdit} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <Field label="Modul" required>
+                <SearchableSelect
+                  value={editing.moduleId}
+                  onChange={moduleId => setEditing({ ...editing, moduleId, parentId: '' })}
+                  options={modules.map(mod => ({ value: mod.id, label: mod.name }))}
+                  searchPlaceholder="Cari modul…"
+                />
+              </Field>
+              <Field label="Sub-menu dari (opsional)">
+                <SearchableSelect
+                  value={editing.parentId}
+                  onChange={parentId => setEditing({ ...editing, parentId })}
+                  options={[
+                    { value: '', label: '— Menu utama —' },
+                    ...treeOf(editing.moduleId, editing.id || undefined).map(({ m, depth }) => ({ value: m.id, label: m.label, depth })),
+                  ]}
+                  placeholder="— Menu utama —"
+                  searchPlaceholder="Cari menu…"
+                />
+              </Field>
+              <div className="flex items-center gap-3">
+                <IconPicker value={editing.icon} onChange={icon => setEditing({ ...editing, icon })} />
+                <Field label="Label" required className="flex-1">
+                  <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })}
+                    className="input" placeholder="cth: Pengguna" autoFocus />
+                </Field>
+              </div>
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editing.isFolder}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    if (checked) {
+                      setEditing({ ...editing, isFolder: true, featureKey: '' });
+                      return;
+                    }
+                    const usedActive = new Set(menus.filter(m => m.isActive && m.id !== editing.id).map(m => m.featureKey));
+                    const firstFree = FEATURE_KEYS.find(f => !usedActive.has(f.key));
+                    setEditing({ ...editing, isFolder: false, featureKey: firstFree?.key ?? '', label: editing.label || (firstFree?.label ?? '') });
+                  }}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Menu folder (cuma mengelompokkan sub-menu, tanpa halaman sendiri)</span>
+              </label>
+              {editing.isFolder ? (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Menu ini tidak akan bisa diklik — cuma menampilkan/menyembunyikan sub-menu di bawahnya.
+                </p>
+              ) : isNew ? (
+                // Menu baru non-folder: screen dipilih otomatis (lihat openNew) — tidak ditampilkan
+                // sebagai dropdown supaya admin tidak perlu paham konsep screen untuk sekadar
+                // menambah menu. Tetap ditampilkan read-only supaya jelas menu ini terhubung ke fitur mana.
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Terhubung ke fitur: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{featureLabel(editing.featureKey)}</span> (dipilih otomatis).
+                </p>
+              ) : (
+                <Field label="Screen" required>
                   <SearchableSelect
-                    value={editing.moduleId}
-                    onChange={moduleId => setEditing({ ...editing, moduleId, parentId: '' })}
-                    options={modules.map(mod => ({ value: mod.id, label: mod.name }))}
-                    searchPlaceholder="Cari modul…"
-                  />
-                </div>
-                <div>
-                  <label className="field-label">Sub-menu dari (opsional)</label>
-                  <SearchableSelect
-                    value={editing.parentId}
-                    onChange={parentId => setEditing({ ...editing, parentId })}
-                    options={[
-                      { value: '', label: '— Menu utama —' },
-                      ...treeOf(editing.moduleId, editing.id || undefined).map(({ m, depth }) => ({ value: m.id, label: m.label, depth })),
-                    ]}
-                    placeholder="— Menu utama —"
-                    searchPlaceholder="Cari menu…"
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <IconPicker value={editing.icon} onChange={icon => setEditing({ ...editing, icon })} />
-                  <div className="flex-1">
-                    <label className="field-label">Label <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })}
-                      className="input" placeholder="cth: Pengguna" autoFocus />
-                  </div>
-                </div>
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editing.isFolder}
-                    onChange={e => {
-                      const checked = e.target.checked;
-                      if (checked) {
-                        setEditing({ ...editing, isFolder: true, featureKey: '' });
-                        return;
-                      }
-                      const usedActive = new Set(menus.filter(m => m.isActive && m.id !== editing.id).map(m => m.featureKey));
-                      const firstFree = FEATURE_KEYS.find(f => !usedActive.has(f.key));
-                      setEditing({ ...editing, isFolder: false, featureKey: firstFree?.key ?? '', label: editing.label || (firstFree?.label ?? '') });
+                    value={editing.featureKey}
+                    onChange={key => {
+                      const def = FEATURE_KEYS.find(f => f.key === key);
+                      setEditing({ ...editing, featureKey: key, label: editing.label || (def?.label ?? '') });
                     }}
-                    className="w-4 h-4"
+                    options={availableFeatureKeys.map(f => ({ value: f.key, label: f.label }))}
+                    placeholder="— Pilih screen —"
+                    searchPlaceholder="Cari screen…"
                   />
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Menu folder (cuma mengelompokkan sub-menu, tanpa halaman sendiri)</span>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Menentukan fitur & hak akses yang berlaku untuk menu ini.</p>
+                </Field>
+              )}
+              {!isNew && (
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={editing.isActive} onChange={e => setEditing({ ...editing, isActive: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Tampilkan menu ini di sidebar</span>
                 </label>
-                {editing.isFolder ? (
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Menu ini tidak akan bisa diklik — cuma menampilkan/menyembunyikan sub-menu di bawahnya.
-                  </p>
-                ) : isNew ? (
-                  // Menu baru non-folder: screen dipilih otomatis (lihat openNew) — tidak ditampilkan
-                  // sebagai dropdown supaya admin tidak perlu paham konsep screen untuk sekadar
-                  // menambah menu. Tetap ditampilkan read-only supaya jelas menu ini terhubung ke fitur mana.
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Terhubung ke fitur: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{featureLabel(editing.featureKey)}</span> (dipilih otomatis).
-                  </p>
-                ) : (
-                  <div>
-                    <label className="field-label">Screen <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <SearchableSelect
-                      value={editing.featureKey}
-                      onChange={key => {
-                        const def = FEATURE_KEYS.find(f => f.key === key);
-                        setEditing({ ...editing, featureKey: key, label: editing.label || (def?.label ?? '') });
-                      }}
-                      options={availableFeatureKeys.map(f => ({ value: f.key, label: f.label }))}
-                      placeholder="— Pilih screen —"
-                      searchPlaceholder="Cari screen…"
-                    />
-                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>Menentukan fitur & hak akses yang berlaku untuk menu ini.</p>
-                  </div>
-                )}
-                {!isNew && (
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input type="checkbox" checked={editing.isActive} onChange={e => setEditing({ ...editing, isActive: e.target.checked })} className="w-4 h-4" />
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Tampilkan menu ini di sidebar</span>
-                  </label>
-                )}
-                {error && (
-                  <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                    {error}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
-              <button onClick={save} disabled={saving}
-                className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {saving ? 'Menyimpan…' : 'Simpan Menu'}
-              </button>
+              )}
+              {error && (
+                <p style={{ fontSize: 12, fontWeight: 500, padding: '8px 12px', borderRadius: 10, background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                  {error}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+          <div className="modal-footer">
+            <button onClick={closeEdit} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={save} disabled={saving}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? 'Menyimpan…' : 'Simpan Menu'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

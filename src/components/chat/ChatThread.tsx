@@ -136,7 +136,7 @@ export default function ChatThread({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--border-2)', flexShrink: 0 }}>
-        <button onClick={onBack} className="modal-close" style={{ borderRadius: 9 }}><ArrowLeft size={15} /></button>
+        <button onClick={onBack} className="modal-close" style={{ borderRadius: 9 }} aria-label="Kembali" title="Kembali"><ArrowLeft size={15} /></button>
         {avatarUsername
           ? <ChatAvatar name={avatarUsername} avatar={avatarUrl ?? null} size={32} />
           : (
@@ -148,7 +148,7 @@ export default function ChatThread({
             </div>
           )}
         <p style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</p>
-        <button onClick={onClose} className="modal-close"><X size={14} /></button>
+        <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
       </div>
 
       <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--surface-2)' }}>
@@ -191,7 +191,7 @@ export default function ChatThread({
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           style={{ flex: 1 }}
         />
-        <button onClick={send} disabled={!text.trim() || sending} className="btn-primary" style={{ padding: '0 14px' }}>
+        <button aria-label="Kirim pesan" onClick={send} disabled={!text.trim() || sending} className="btn-primary" style={{ padding: '0 14px' }}>
           <Send size={15} />
         </button>
       </div>

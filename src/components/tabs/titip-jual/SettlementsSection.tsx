@@ -190,7 +190,7 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
         emptyHint="Rekap = ringkasan bagian penitip dari penjualan lapak, lalu dibayar dari dompet lapak."
         filters={(
           <>
-            <FilterSelect value={statusFilter} onChange={setStatusFilter}
+            <FilterSelect searchable={false} value={statusFilter} onChange={setStatusFilter}
               options={[{ value: '', label: 'Semua status' }, { value: 'unpaid', label: 'Belum dibayar' }, { value: 'paid', label: 'Dibayar' }]} />
             <FilterSelect value={stallFilter} onChange={setStallFilter} searchPlaceholder="Cari lapak…"
               options={[{ value: '', label: 'Semua lapak' }, ...data.stalls.map(s => ({ value: s.id, label: s.name }))]} />
@@ -236,26 +236,26 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
               </button>
             </Tooltip>
             <Tooltip label="Kirim rekap ke penitip lewat WhatsApp">
-              <button onClick={() => sendWa(s)} className="btn-ghost p-2" style={{ color: '#059669' }}><MessageCircle size={13} /></button>
+              <button aria-label="Kirim rekap ke penitip lewat WhatsApp" onClick={() => sendWa(s)} className="btn-ghost p-2" style={{ color: '#059669' }}><MessageCircle size={13} /></button>
             </Tooltip>
             {s.status === 'unpaid' && can('edit') && (
               <Tooltip label="Bayar dari dompet lapak">
-                <button onClick={() => setPayingDoc(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
+                <button aria-label="Bayar dari dompet lapak" onClick={() => setPayingDoc(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: '#059669' }}><Banknote size={13} /></button>
               </Tooltip>
             )}
             {s.status === 'unpaid' && can('edit') && (
               <Tooltip label="Ubah rekap (periode/catatan)">
-                <button onClick={() => setEditingDoc(s)} disabled={busyId === s.id} className="btn-ghost p-2"><Pencil size={13} /></button>
+                <button aria-label="Ubah rekap (periode/catatan)" onClick={() => setEditingDoc(s)} disabled={busyId === s.id} className="btn-ghost p-2"><Pencil size={13} /></button>
               </Tooltip>
             )}
             {s.status === 'unpaid' && can('delete') && (
               <Tooltip label="Hapus rekap (penjualan bisa direkap ulang)">
-                <button onClick={() => cancel(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
+                <button aria-label="Hapus rekap (penjualan bisa direkap ulang)" onClick={() => cancel(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={13} /></button>
               </Tooltip>
             )}
             {s.status === 'paid' && can('edit') && (
               <Tooltip label="Batalkan pembayaran (uang kembali ke dompet lapak)">
-                <button onClick={() => unpay(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
+                <button aria-label="Batalkan pembayaran (uang kembali ke dompet lapak)" onClick={() => unpay(s)} disabled={busyId === s.id} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Undo2 size={13} /></button>
               </Tooltip>
             )}
           </>
@@ -301,6 +301,19 @@ export default function SettlementsSection({ creds, data, reload, can, openJourn
 
 interface Preview { items: SettlementItem[]; total: number; count: number }
 
+// Seperti Field, tapi untuk isi yang tidak bisa difokus (tampilan baca-saja, grup tombol): label tanpa htmlFor.
+function StaticField({ label, required, children }: { label: React.ReactNode; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="field-label">
+        {label}
+        {required && <> <span style={{ color: 'var(--danger)' }}>*</span></>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
   creds: string; data: SectionProps['data']; initial: { stallId: string; consignorId: string }; editing?: Settlement; onClose: () => void; onCreated: (docNumber: string) => Promise<void>;
 }) {
@@ -345,18 +358,22 @@ function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
       footer={<ModalFooter onClose={onClose} onSave={create} saving={saving} disabled={!shown || shown.count === 0} label={editing ? 'Simpan Perubahan' : 'Buat Rekap'} />}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
-          <Field label="Lapak" required>
-            {editing ? <div className="input" style={{ background: 'var(--surface-2)' }}>{editing.stallName}</div> : (
+          {editing ? (
+            <StaticField label="Lapak" required><div className="input" style={{ background: 'var(--surface-2)' }}>{editing.stallName}</div></StaticField>
+          ) : (
+            <Field label="Lapak" required>
               <SearchSelect value={stallId} onChange={setStallId} placeholder="– Pilih lapak –" searchPlaceholder="Cari lapak…"
                 options={data.stalls.map(s => ({ value: s.id, label: s.name, sublabel: s.code }))} />
-            )}
-          </Field>
-          <Field label="Penitip" required>
-            {editing ? <div className="input" style={{ background: 'var(--surface-2)' }}>{editing.consignorName}</div> : (
+            </Field>
+          )}
+          {editing ? (
+            <StaticField label="Penitip" required><div className="input" style={{ background: 'var(--surface-2)' }}>{editing.consignorName}</div></StaticField>
+          ) : (
+            <Field label="Penitip" required>
               <SearchSelect value={consignorId} onChange={setConsignorId} placeholder="– Pilih penitip –" searchPlaceholder="Cari penitip…"
                 options={data.consignors.map(c => ({ value: c.id, label: c.name, sublabel: c.code, imageUrl: c.logoUrl || undefined }))} />
-            )}
-          </Field>
+            </Field>
+          )}
         </div>
 
         <div>
@@ -468,7 +485,7 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Ini hanya mencatat pembayaran. Transfer/penyerahan uang ke penitip Anda lakukan sendiri, lalu isi rinciannya di bawah untuk bukti pembayaran.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Tanggal bayar" required><DateInput value={payDate} onChange={setPayDate} max={todayKey()} /></Field>
-          <Field label="Metode">
+          <StaticField label="Metode">
             <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
               {(['transfer', 'tunai'] as const).map(m => (
                 <button key={m} type="button" onClick={() => setMethod(m)} className="flex-1 px-3 py-2.5"
@@ -477,14 +494,14 @@ function PayModal({ creds, settlement, consignor, phone, balance, storeName, onC
                 </button>
               ))}
             </div>
-          </Field>
+          </StaticField>
         </div>
-        <Field label="Sumber dana">
+        <StaticField label="Sumber dana">
           <div className="input" style={{ background: 'var(--surface-2)' }}>Dompet Lapak {settlement.stallName}</div>
           <p className="text-xs mt-1.5 tabular" style={{ color: short ? 'var(--danger)' : 'var(--text-muted)' }}>
             Saldo saat ini {rupiah(balance)} → setelah dibayar {rupiah(balance - settlement.totalAmount)}{short ? ' (saldo tidak cukup)' : ''}
           </p>
-        </Field>
+        </StaticField>
         <Field label="No. referensi / bukti transfer (opsional)">
           <input className="input" value={reference} maxLength={80} onChange={e => setReference(e.target.value)} placeholder="cth: 2610120012345" />
         </Field>
@@ -592,7 +609,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Tanggal bayar" required><DateInput value={payDate} onChange={setPayDate} max={todayKey()} /></Field>
-          <Field label="Metode">
+          <StaticField label="Metode">
             <div className="flex rounded-xl overflow-hidden border text-xs font-bold" style={{ borderColor: 'var(--border)' }}>
               {(['transfer', 'tunai'] as const).map(m => (
                 <button key={m} type="button" onClick={() => setMethod(m)} className="flex-1 px-3 py-2.5"
@@ -601,7 +618,7 @@ function BulkPayModal({ creds, list, skipped, stalls, consignors, onClose, onDon
                 </button>
               ))}
             </div>
-          </Field>
+          </StaticField>
         </div>
         <ProofField creds={creds} url={proofUrl} uploading={uploading} setUploading={setUploading} onChange={setProofUrl} hint="Foto yang sama dipakai untuk semua rekap ini." />
         <Field label="Catatan pembayaran (opsional)">
@@ -626,7 +643,7 @@ function ProofField({ creds, url, uploading, setUploading, onChange, hint }: {
   };
   const btn = 'btn-ghost text-xs flex-1 justify-center cursor-pointer';
   return (
-    <Field label="Foto bukti transfer (opsional)">
+    <StaticField label="Foto bukti transfer (opsional)">
       {url ? (
         <div className="flex items-center gap-3 p-2 rounded-xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -646,6 +663,6 @@ function ProofField({ creds, url, uploading, setUploading, onChange, hint }: {
         </div>
       )}
       {hint && <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
-    </Field>
+    </StaticField>
   );
 }

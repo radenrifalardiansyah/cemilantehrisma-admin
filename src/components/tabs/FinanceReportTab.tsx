@@ -24,11 +24,11 @@ import type { WalletDoc } from '@/lib/useWallets';
 import { resolveIcon } from '@/lib/icon-registry';
 import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
+import { formatRp } from '@/lib/format';
+import Modal from '@/components/Modal';
 
 const API = '';
 
-const formatRp = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const pct = (value: number, base: number) => (base > 0 ? (value / base) * 100 : 0);
 const formatPct = (n: number) => `${n.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -168,46 +168,44 @@ function SummaryDetailModal({ title, icon: Icon, color, rows, total, totalLabel 
   totalLabel?: string; periodLabel: string; from: string; to: string; emptyMessage: string; onClose: () => void;
 }) {
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet modal-md" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
+    <Modal onClose={onClose} className="modal-md">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
 
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><Icon size={17} /></div>
-            <div>
-              <p className="modal-title">{title}</p>
-              <p className="modal-subtitle">{periodLabel} ({from} s/d {to})</p>
-            </div>
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><Icon size={17} /></div>
+          <div>
+            <p className="modal-title">{title}</p>
+            <p className="modal-subtitle">{periodLabel} ({from} s/d {to})</p>
           </div>
-          <button onClick={onClose} className="modal-close"><X size={14} /></button>
         </div>
-
-        <div className="modal-body">
-          {rows.length === 0 ? (
-            <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>{emptyMessage}</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {rows.map(r => (
-                <div key={r.key} className="flex items-center justify-between gap-3 pb-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.label}</p>
-                    {r.sub && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{r.sub}</p>}
-                  </div>
-                  <p className="text-xs font-extrabold tabular flex-shrink-0" style={{ color }}>{formatRp(r.value)}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-          <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>{totalLabel}</span>
-          <span className="text-sm font-extrabold tabular" style={{ color }}>{formatRp(total)}</span>
-        </div>
+        <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
       </div>
-    </div>
+
+      <div className="modal-body">
+        {rows.length === 0 ? (
+          <p className="text-xs text-center py-6" style={{ color: 'var(--text-muted)' }}>{emptyMessage}</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rows.map(r => (
+              <div key={r.key} className="flex items-center justify-between gap-3 pb-2" style={{ borderBottom: '1px solid var(--border-2)' }}>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{r.label}</p>
+                  {r.sub && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{r.sub}</p>}
+                </div>
+                <p className="text-xs font-extrabold tabular flex-shrink-0" style={{ color }}>{formatRp(r.value)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+        <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>{totalLabel}</span>
+        <span className="text-sm font-extrabold tabular" style={{ color }}>{formatRp(total)}</span>
+      </div>
+    </Modal>
   );
 }
 
@@ -1110,7 +1108,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                   Patokan umum untuk usaha kuliner/UMKM skala rumahan, bukan standar akuntansi baku — sekadar bantu baca cepat sehat tidaknya margin laba.
                 </p>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left" style={{ borderCollapse: 'collapse' }}>
+                  <table className="w-full min-w-[360px] text-left" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
                         <th className="pb-2 pr-3 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-2)' }}>Grade</th>

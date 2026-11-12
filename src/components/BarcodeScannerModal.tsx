@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Modal from '@/components/Modal';
 import { Html5Qrcode } from 'html5-qrcode';
 import type { CameraDevice, RangeCameraCapability } from 'html5-qrcode/camera/core';
 import { X, ScanLine, CheckCircle2, XCircle, Zap, ZapOff, SwitchCamera, Loader2, VideoOff, RotateCcw, ZoomIn, ZoomOut, Focus } from 'lucide-react';
@@ -235,275 +236,272 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
   const refocus = () => start(cameras[cameraIdx]?.id);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet modal-sm" onClick={e => e.stopPropagation()}>
-        <div className="modal-accent" />
-        <span className="modal-handle" />
+    <Modal onClose={onClose} className="modal-sm">
+      <div className="modal-accent" />
+      <span className="modal-handle" />
 
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon"><ScanLine size={17} /></div>
-            <div>
-              <p className="modal-title">{title}</p>
-              {subtitle && <p className="modal-subtitle">{subtitle}</p>}
-            </div>
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon"><ScanLine size={17} /></div>
+          <div>
+            <p className="modal-title">{title}</p>
+            {subtitle && <p className="modal-subtitle">{subtitle}</p>}
           </div>
-          <button onClick={onClose} className="modal-close"><X size={14} /></button>
         </div>
+        <button onClick={onClose} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+      </div>
 
-        <div className="modal-body">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {headerExtra}
+      <div className="modal-body">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {headerExtra}
 
-            <div className="bcsm-frame" data-flash={flash}>
-              <div id={REGION_ID} className="bcsm-region" />
+          <div className="bcsm-frame" data-flash={flash}>
+            <div id={REGION_ID} className="bcsm-region" />
 
-              {status === 'scanning' && (
-                <div className="bcsm-overlay" aria-hidden>
-                  <span className="bcsm-corner bcsm-corner-tl" />
-                  <span className="bcsm-corner bcsm-corner-tr" />
-                  <span className="bcsm-corner bcsm-corner-bl" />
-                  <span className="bcsm-corner bcsm-corner-br" />
-                  <span className="bcsm-laser" />
-                </div>
-              )}
+            {status === 'scanning' && (
+              <div className="bcsm-overlay" aria-hidden>
+                <span className="bcsm-corner bcsm-corner-tl" />
+                <span className="bcsm-corner bcsm-corner-tr" />
+                <span className="bcsm-corner bcsm-corner-bl" />
+                <span className="bcsm-corner bcsm-corner-br" />
+                <span className="bcsm-laser" />
+              </div>
+            )}
 
-              {status === 'init' && (
-                <div className="bcsm-state">
-                  <Loader2 size={26} className="animate-spin" style={{ color: '#fff' }} />
-                  <p>Menyalakan kamera…</p>
-                </div>
-              )}
+            {status === 'init' && (
+              <div className="bcsm-state">
+                <Loader2 size={26} className="animate-spin" style={{ color: '#fff' }} />
+                <p>Menyalakan kamera…</p>
+              </div>
+            )}
 
-              {status === 'error' && (
-                <div className="bcsm-state">
-                  <VideoOff size={26} style={{ color: '#fff' }} />
-                  <p style={{ maxWidth: 220 }}>{errorMsg}</p>
-                  <button type="button" onClick={() => start()} className="bcsm-retry">
-                    <RotateCcw size={12} /> Coba Lagi
+            {status === 'error' && (
+              <div className="bcsm-state">
+                <VideoOff size={26} style={{ color: '#fff' }} />
+                <p style={{ maxWidth: 220 }}>{errorMsg}</p>
+                <button type="button" onClick={() => start()} className="bcsm-retry">
+                  <RotateCcw size={12} /> Coba Lagi
+                </button>
+              </div>
+            )}
+
+            {status === 'scanning' && (
+              <div className="bcsm-controls">
+                {torchSupported && (
+                  <button type="button" onClick={toggleTorch} className="bcsm-icon-btn" data-active={torchOn ? '1' : '0'}>
+                    {torchOn ? <ZapOff size={15} /> : <Zap size={15} />}
                   </button>
-                </div>
-              )}
-
-              {status === 'scanning' && (
-                <div className="bcsm-controls">
-                  {torchSupported && (
-                    <button type="button" onClick={toggleTorch} className="bcsm-icon-btn" data-active={torchOn ? '1' : '0'}>
-                      {torchOn ? <ZapOff size={15} /> : <Zap size={15} />}
-                    </button>
-                  )}
-                  {cameras.length > 1 && (
-                    <button type="button" onClick={switchCamera} className="bcsm-icon-btn">
-                      <SwitchCamera size={15} />
-                    </button>
-                  )}
-                  <button type="button" onClick={refocus} className="bcsm-icon-btn">
-                    <Focus size={15} />
+                )}
+                {cameras.length > 1 && (
+                  <button aria-label="Ganti kamera" type="button" onClick={switchCamera} className="bcsm-icon-btn">
+                    <SwitchCamera size={15} />
                   </button>
-                  {zoom && (
-                    <div className="bcsm-zoom">
-                      <button
-                        type="button"
-                        onClick={() => stepZoom(1)}
-                        disabled={zoom.value >= zoom.max}
-                        className="bcsm-icon-btn"
-                      >
-                        <ZoomIn size={15} />
-                      </button>
-                      <span className="bcsm-zoom-value">{zoom.value.toFixed(1)}x</span>
-                      <button
-                        type="button"
-                        onClick={() => stepZoom(-1)}
-                        disabled={zoom.value <= zoom.min}
-                        className="bcsm-icon-btn"
-                      >
-                        <ZoomOut size={15} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
+                <button aria-label="Fokus ulang" type="button" onClick={refocus} className="bcsm-icon-btn">
+                  <Focus size={15} />
+                </button>
+                {zoom && (
+                  <div className="bcsm-zoom">
+                    <button aria-label="Perbesar zoom"
+                      type="button"
+                      onClick={() => stepZoom(1)}
+                      disabled={zoom.value >= zoom.max}
+                      className="bcsm-icon-btn"
+                    >
+                      <ZoomIn size={15} />
+                    </button>
+                    <span className="bcsm-zoom-value">{zoom.value.toFixed(1)}x</span>
+                    <button aria-label="Perkecil zoom"
+                      type="button"
+                      onClick={() => stepZoom(-1)}
+                      disabled={zoom.value <= zoom.min}
+                      className="bcsm-icon-btn"
+                    >
+                      <ZoomOut size={15} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
-              {lastResult && flash && (
-                <div className="bcsm-toast" data-ok={lastResult.ok ? '1' : '0'}>
-                  {lastResult.ok ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
-                  <span>{lastResult.label}</span>
-                </div>
-              )}
-            </div>
-
-            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-              {zoom
-                ? 'Jaga jarak kamera ± 15 cm dari barcode (jangan terlalu dekat), lalu pakai tombol zoom kalau barcode kecil'
-                : 'Arahkan kamera ke QR Code produk — hasil scan langsung tersimpan'}
-            </p>
-
-            {lastResult && (
-              <div className="flex items-center gap-1.5 justify-center text-xs font-bold"
-                style={{ color: lastResult.ok ? 'var(--success)' : 'var(--danger)' }}>
-                {lastResult.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                {lastResult.label}
+            {lastResult && flash && (
+              <div className="bcsm-toast" data-ok={lastResult.ok ? '1' : '0'}>
+                {lastResult.ok ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                <span>{lastResult.label}</span>
               </div>
             )}
           </div>
-        </div>
 
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-            Selesai
-          </button>
+          <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+            {zoom
+              ? 'Jaga jarak kamera ± 15 cm dari barcode (jangan terlalu dekat), lalu pakai tombol zoom kalau barcode kecil'
+              : 'Arahkan kamera ke QR Code produk — hasil scan langsung tersimpan'}
+          </p>
+
+          {lastResult && (
+            <div className="flex items-center gap-1.5 justify-center text-xs font-bold"
+              style={{ color: lastResult.ok ? 'var(--success)' : 'var(--danger)' }}>
+              {lastResult.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+              {lastResult.label}
+            </div>
+          )}
         </div>
       </div>
 
-      <style>{`
-        .bcsm-frame {
-          position: relative;
-          border-radius: 20px;
-          overflow: hidden;
-          background: #0a0a0a;
-          aspect-ratio: 1 / 1;
-          box-shadow: 0 0 0 1px var(--border);
-          transition: box-shadow 0.2s ease;
-        }
-        .bcsm-frame[data-flash="ok"] { box-shadow: 0 0 0 3px #22c55e; }
-        .bcsm-frame[data-flash="bad"] { box-shadow: 0 0 0 3px #ef4444; }
-        .bcsm-region, .bcsm-region video {
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: cover !important;
-        }
-        .bcsm-overlay {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-        }
-        .bcsm-corner {
-          position: absolute;
-          width: 28px;
-          height: 28px;
-          border: 3px solid #fff;
-          opacity: 0.85;
-        }
-        .bcsm-corner-tl { top: 14%; left: 14%; border-right: none; border-bottom: none; border-top-left-radius: 8px; }
-        .bcsm-corner-tr { top: 14%; right: 14%; border-left: none; border-bottom: none; border-top-right-radius: 8px; }
-        .bcsm-corner-bl { bottom: 14%; left: 14%; border-right: none; border-top: none; border-bottom-left-radius: 8px; }
-        .bcsm-corner-br { bottom: 14%; right: 14%; border-left: none; border-top: none; border-bottom-right-radius: 8px; }
-        .bcsm-laser {
-          position: absolute;
-          left: 14%;
-          right: 14%;
-          top: 14%;
-          height: 2px;
-          background: linear-gradient(90deg, transparent, #22c55e, transparent);
-          box-shadow: 0 0 8px 1px #22c55e;
-          animation: bcsm-sweep 2.1s ease-in-out infinite;
-        }
-        @keyframes bcsm-sweep {
-          0%   { top: 14%; opacity: 0; }
-          10%  { opacity: 1; }
-          50%  { top: 72%; opacity: 1; }
-          90%  { opacity: 1; }
-          100% { top: 14%; opacity: 0; }
-        }
-        .bcsm-state {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          text-align: center;
-          padding: 20px;
-          color: #fff;
-          font-size: 12px;
-        }
-        .bcsm-retry {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 11.5px;
-          font-weight: 700;
-          color: #0a0a0a;
-          background: #fff;
-          border: none;
-          border-radius: 999px;
-          padding: 7px 14px;
-          margin-top: 4px;
-        }
-        .bcsm-controls {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .bcsm-icon-btn {
-          width: 32px;
-          height: 32px;
-          border-radius: 999px;
-          background: rgba(0,0,0,0.5);
-          backdrop-filter: blur(4px);
-          border: 1px solid rgba(255,255,255,0.25);
-          color: #fff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .bcsm-icon-btn[data-active="1"] {
-          background: #f59e0b;
-          border-color: #f59e0b;
-          color: #1c1917;
-        }
-        .bcsm-icon-btn:disabled {
-          opacity: 0.35;
-        }
-        .bcsm-zoom {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-          background: rgba(0,0,0,0.5);
-          backdrop-filter: blur(4px);
-          border: 1px solid rgba(255,255,255,0.25);
-          border-radius: 999px;
-          padding: 6px 0;
-        }
-        .bcsm-zoom .bcsm-icon-btn {
-          background: transparent;
-          border: none;
-        }
-        .bcsm-zoom-value {
-          font-size: 10px;
-          font-weight: 700;
-          color: #fff;
-        }
-        .bcsm-toast {
-          position: absolute;
-          left: 10px;
-          right: 10px;
-          bottom: 10px;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 12px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 700;
-          color: #fff;
-          animation: bcsm-toast-in 0.18s ease-out;
-        }
-        .bcsm-toast[data-ok="1"] { background: rgba(34,197,94,0.92); }
-        .bcsm-toast[data-ok="0"] { background: rgba(239,68,68,0.92); }
-        @keyframes bcsm-toast-in {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @media (max-width: 480px) {
-          .bcsm-frame { aspect-ratio: 3 / 4; }
-        }
-      `}</style>
-    </div>
+      <div className="modal-footer">
+        <button onClick={onClose} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
+          Selesai
+        </button>
+      </div>
+    <style>{`
+      .bcsm-frame {
+        position: relative;
+        border-radius: 20px;
+        overflow: hidden;
+        background: #0a0a0a;
+        aspect-ratio: 1 / 1;
+        box-shadow: 0 0 0 1px var(--border);
+        transition: box-shadow 0.2s ease;
+      }
+      .bcsm-frame[data-flash="ok"] { box-shadow: 0 0 0 3px #22c55e; }
+      .bcsm-frame[data-flash="bad"] { box-shadow: 0 0 0 3px #ef4444; }
+      .bcsm-region, .bcsm-region video {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+      }
+      .bcsm-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .bcsm-corner {
+        position: absolute;
+        width: 28px;
+        height: 28px;
+        border: 3px solid #fff;
+        opacity: 0.85;
+      }
+      .bcsm-corner-tl { top: 14%; left: 14%; border-right: none; border-bottom: none; border-top-left-radius: 8px; }
+      .bcsm-corner-tr { top: 14%; right: 14%; border-left: none; border-bottom: none; border-top-right-radius: 8px; }
+      .bcsm-corner-bl { bottom: 14%; left: 14%; border-right: none; border-top: none; border-bottom-left-radius: 8px; }
+      .bcsm-corner-br { bottom: 14%; right: 14%; border-left: none; border-top: none; border-bottom-right-radius: 8px; }
+      .bcsm-laser {
+        position: absolute;
+        left: 14%;
+        right: 14%;
+        top: 14%;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #22c55e, transparent);
+        box-shadow: 0 0 8px 1px #22c55e;
+        animation: bcsm-sweep 2.1s ease-in-out infinite;
+      }
+      @keyframes bcsm-sweep {
+        0%   { top: 14%; opacity: 0; }
+        10%  { opacity: 1; }
+        50%  { top: 72%; opacity: 1; }
+        90%  { opacity: 1; }
+        100% { top: 14%; opacity: 0; }
+      }
+      .bcsm-state {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        text-align: center;
+        padding: 20px;
+        color: #fff;
+        font-size: 12px;
+      }
+      .bcsm-retry {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: #0a0a0a;
+        background: #fff;
+        border: none;
+        border-radius: 999px;
+        padding: 7px 14px;
+        margin-top: 4px;
+      }
+      .bcsm-controls {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bcsm-icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.25);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .bcsm-icon-btn[data-active="1"] {
+        background: #f59e0b;
+        border-color: #f59e0b;
+        color: #1c1917;
+      }
+      .bcsm-icon-btn:disabled {
+        opacity: 0.35;
+      }
+      .bcsm-zoom {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 999px;
+        padding: 6px 0;
+      }
+      .bcsm-zoom .bcsm-icon-btn {
+        background: transparent;
+        border: none;
+      }
+      .bcsm-zoom-value {
+        font-size: 10px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .bcsm-toast {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        animation: bcsm-toast-in 0.18s ease-out;
+      }
+      .bcsm-toast[data-ok="1"] { background: rgba(34,197,94,0.92); }
+      .bcsm-toast[data-ok="0"] { background: rgba(239,68,68,0.92); }
+      @keyframes bcsm-toast-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @media (max-width: 480px) {
+        .bcsm-frame { aspect-ratio: 3 / 4; }
+      }
+    `}</style>
+    </Modal>
   );
 }

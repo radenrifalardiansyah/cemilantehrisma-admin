@@ -10,7 +10,7 @@ export interface TopListItem { label: string; value: number; emoji?: string; sub
 export default function TopListChart({ items, color, formatValue }: { items: TopListItem[]; color: string; formatValue?: (v: number) => string }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const max = Math.max(...items.map(i => i.value), 1);
-  const fmt = formatValue ?? ((v: number) => v.toLocaleString('id'));
+  const fmt = formatValue ?? ((v: number) => v.toLocaleString('id-ID'));
   return (
     <div className="space-y-3.5">
       {items.map((it, i) => {

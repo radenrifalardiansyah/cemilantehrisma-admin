@@ -20,11 +20,12 @@ interface SearchableSelectProps {
   disabled?: boolean;
   searchPlaceholder?: string;
   emptyLabel?: string;
+  id?: string;
 }
 
 export default function SearchableSelect({
   value, onChange, options, placeholder = '— Pilih —', disabled,
-  searchPlaceholder = 'Cari…', emptyLabel = 'Tidak ada hasil.',
+  searchPlaceholder = 'Cari…', emptyLabel = 'Tidak ada hasil.', id,
 }: SearchableSelectProps) {
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState('');
@@ -79,6 +80,7 @@ export default function SearchableSelect({
       <button
         type="button"
         ref={btnRef}
+        id={id}
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
         className="input disabled:opacity-50"
@@ -92,6 +94,7 @@ export default function SearchableSelect({
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
+          data-popover-layer=""
           style={{
             position: 'fixed', top: pos.top, left: pos.left, width: pos.width, minWidth: 220,
             zIndex: 10000, background: 'var(--surface)', border: '1.5px solid var(--border)',
