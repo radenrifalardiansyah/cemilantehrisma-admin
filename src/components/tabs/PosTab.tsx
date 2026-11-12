@@ -288,8 +288,8 @@ function PosProductCard({ product, qty, onAdd, onMinus }: {
         <p className="text-[11px] font-bold leading-snug line-clamp-2" style={{ color: 'var(--text-primary)' }}>
           {product.name}
         </p>
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className={`badge ${stock.cls}`} style={{ fontSize: 10 }}>
+        <div className="flex items-center gap-1 min-w-0">
+          <span className={`badge ${stock.cls}`} style={{ fontSize: 10, whiteSpace: 'nowrap', padding: '2px 6px' }}>
             {stock.label}{stock === POS_STOCK_MAP.ready ? ` · ${product.stockQty ?? 0} pcs` : ''}
           </span>
         </div>
