@@ -418,7 +418,9 @@ export default function AppShell({
                   // override, making the parent collapse right as its own child becomes active.
                   const override    = expandedOverrides.get(tab.key);
                   const isOverridden = override !== undefined && override === childActive;
-                  const isExpanded   = !collapsed && (isSidebarSearching || (isOverridden ? !childActive : childActive));
+                  // hasChildren wajib: menu tanpa submenu tidak punya `children`, dan render submenu di bawah
+                  // memanggil tab.children!.map — tanpa guard ini, mencari menu "daun" membuat halaman crash.
+                  const isExpanded   = !collapsed && hasChildren && (isSidebarSearching || (isOverridden ? !childActive : childActive));
                   const navButton = (
                       <button
                         onClick={() => isFolder ? toggleExpanded(tab.key, childActive) : setActiveTab(tab.id!)}
