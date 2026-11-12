@@ -24,6 +24,8 @@ import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
 import { toDataUri } from '@/lib/pdf/logo';
 import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
+import ClosingPanel from '@/components/tabs/ClosingPanel';
+import type { Action } from '@/types/rbac';
 
 const API = '';
 const HEADER_BTN_H = 34;
@@ -78,7 +80,7 @@ const trendColor = (p: TrendProduct, i: number) => p.color || TREND_COLORS[i];
 interface ProductMeta { emoji: string; imageUrls?: string[]; bgColor: string; category?: string }
 interface Category { id: string; name: string; emoji: string }
 
-export default function ProductReportTab({ creds }: { creds: string }) {
+export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: string; can: (action: Action) => boolean; isSuperAdmin: boolean }) {
   const headers = { 'x-admin-auth': creds };
   const toast = useToast();
 
@@ -486,6 +488,9 @@ export default function ProductReportTab({ creds }: { creds: string }) {
           </div>
         )}
       </div>
+      {/* Closing HPP — di luar blok loading supaya tidak ikut ter-unmount tiap ganti periode */}
+      <ClosingPanel creds={creds} can={can} isSuperAdmin={isSuperAdmin} onChanged={load} />
+
 
       {loading ? (
         <PageLoader compact />

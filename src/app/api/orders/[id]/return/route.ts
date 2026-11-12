@@ -11,6 +11,7 @@ import { revalidateProductStock } from '@/lib/revalidate';
 import { rowToOrder, OrderRow } from '@/lib/orders-pg';
 import { computeReturn } from '@/lib/order-return';
 import { paidAmountOf } from '@/lib/order-payments-pg';
+import { orderClosingLock } from '@/lib/closing';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!row) throw new ReturnValidationError('Pesanan tidak ditemukan.');
       const order = rowToOrder(row);
       if (order.status === 'dibatalkan') throw new ReturnValidationError('Pesanan yang sudah dibatalkan tidak bisa diretur.');
+      const closingLock = await orderClosingLock(pgTx, id);
+      if (closingLock) throw new ReturnValidationError(closingLock);
 
       const oldItems = (order.items as OrderItem[]) ?? [];
       const returnQty = new Map<number, number>();

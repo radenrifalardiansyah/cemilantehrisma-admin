@@ -8,7 +8,7 @@ import { wibDayStart, wibDayEnd } from '@/lib/date';
 // melihat pesanan/produksi/dst juga otomatis boleh melihat riwayat record itu sendiri, tanpa perlu
 // izin 'history' terpisah. Izin 'history' tetap dipakai untuk mode jelajah lintas-modul (halaman Riwayat).
 const ENTITY_FEATURE_KEY: Record<string, string> = {
-  orders: 'orders', production: 'production', 'material-purchases': 'materials',
+  orders: 'orders', closings: 'product-report', production: 'production', 'material-purchases': 'materials',
   'purchase-orders': 'purchase-orders', 'goods-receipts': 'goods-receipts',
   materials: 'materials', consignment: 'consignment', consign: 'consign', stock: 'stock',
   warehouses: 'settings', pos: 'pos', capital: 'capital', income: 'income', expenses: 'expenses',

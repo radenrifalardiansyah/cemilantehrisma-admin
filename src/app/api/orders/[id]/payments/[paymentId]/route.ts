@@ -7,6 +7,7 @@ import { logHistory } from '@/lib/history';
 import { guardWalletBalances, WalletBalanceError } from '@/lib/wallet-balance';
 import { rowToOrder, syncInvoicePaymentStatus, OrderRow } from '@/lib/orders-pg';
 import { paidAmountOf, type OrderPaymentRow } from '@/lib/order-payments-pg';
+import { paymentClosingLock } from '@/lib/closing';
 
 type Ctx = { params: Promise<{ id: string; paymentId: string }> };
 class PaymentError extends Error {}
@@ -27,6 +28,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const order = rowToOrder(row);
       const [payment] = await tx<OrderPaymentRow[]>`select * from order_payments where id = ${paymentId} and order_id = ${id}`;
       if (!payment) throw new PaymentError('Catatan pembayaran tidak ditemukan.');
+      const closingLock = await paymentClosingLock(tx, paymentId);
+      if (closingLock) throw new PaymentError(closingLock);
 
       await guardWalletBalances(tx, [payment.wallet_id], async () => {
         await tx`delete from order_payments where id = ${paymentId}`;

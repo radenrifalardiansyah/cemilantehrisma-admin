@@ -37,6 +37,9 @@ export interface RecapRow {
   overdue_notified_at: Date | null;
   created_at: Date;
   updated_at: Date | null;
+  // Closing HPP (scripts/add-closings.mjs): tanggal pelunasan lewat Tandai Lunas (null = lunas sejak dibuat) & closing aktif.
+  paid_at?: Date | null;
+  closing_id?: string | null;
 }
 
 export function rowToRecap(r: RecapRow) {

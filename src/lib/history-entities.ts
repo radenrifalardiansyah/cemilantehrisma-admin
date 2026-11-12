@@ -4,6 +4,7 @@
 // featureKey 'materials', `warehouses` digerbangi 'settings'. Client-safe (tidak ada import server-only).
 export const HISTORY_ENTITIES: { key: string; label: string }[] = [
   { key: 'orders',              label: 'Pesanan' },
+  { key: 'closings',            label: 'Closing HPP' },
   { key: 'production',          label: 'Produksi' },
   { key: 'material-purchases',  label: 'Pembelian Bahan' },
   { key: 'purchase-orders',     label: 'Purchase Order' },

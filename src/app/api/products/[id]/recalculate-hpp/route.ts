@@ -3,6 +3,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { orderClosingLock, recapClosingLock } from '@/lib/closing';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -30,27 +31,32 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   // sama seperti pola lama.
   let updatedOrders = 0;
   let updatedRecaps = 0;
+  // Order/rekap yang sudah masuk Closing dilewati — snapshot HPP-nya terkunci sampai closing dibuka ulang.
+  let skippedClosed = 0;
 
+  // Urutan kunci baris SAMA dengan loadPool di lib/closing.ts (order by created_at, id) supaya tidak deadlock.
   // Satu transaksi dengan `for update` pada baris yang disentuh: tiap baris dibaca ulang SETELAH
   // dikunci, sehingga edit/batal pesanan yang terjadi bersamaan tidak tertimpa items versi lama
   // (read-modify-write tanpa kunci sebelumnya membuang perubahan items milik transaksi lain).
   await sql.begin(async pgTx => {
     const hasProduct = (raw: unknown) => (parseJsonb(raw) as { productId?: string }[] | null)?.some(it => it.productId === id) ?? false;
-    const orderIds = (await pgTx<{ id: string; items: unknown }[]>`select id, items from orders order by id`).filter(r => hasProduct(r.items));
+    const orderIds = (await pgTx<{ id: string; items: unknown }[]>`select id, items from orders order by created_at, id`).filter(r => hasProduct(r.items));
     for (const { id: orderId } of orderIds) {
       const [row] = await pgTx<{ id: string; items: unknown }[]>`select id, items from orders where id = ${orderId} for update`;
       const items = parseJsonb(row.items) as { productId?: string; costPrice?: number }[] | null;
       if (!items?.some(it => it.productId === id)) continue;
+      if (await orderClosingLock(pgTx, orderId)) { skippedClosed++; continue; }
       const newItems = items.map(it => (it.productId === id ? { ...it, costPrice } : it));
       await pgTx`update orders set items = ${JSON.stringify(newItems)}, updated_at = now() where id = ${row.id}`;
       updatedOrders++;
     }
 
-    const recapIds = (await pgTx<{ id: string; items: unknown }[]>`select id, items from consignment_recaps order by id`).filter(r => hasProduct(r.items));
+    const recapIds = (await pgTx<{ id: string; items: unknown }[]>`select id, items from consignment_recaps order by created_at, id`).filter(r => hasProduct(r.items));
     for (const { id: recapId } of recapIds) {
       const [row] = await pgTx<{ id: string; items: unknown }[]>`select id, items from consignment_recaps where id = ${recapId} for update`;
       const items = parseJsonb(row.items) as { productId?: string; costPrice?: number; qtySold?: number }[] | null;
       if (!items?.some(it => it.productId === id)) continue;
+      if (await recapClosingLock(pgTx, recapId)) { skippedClosed++; continue; }
       const newItems = items.map(it => (it.productId === id ? { ...it, costPrice, cogs: (it.qtySold ?? 0) * costPrice } : it));
       await pgTx`update consignment_recaps set items = ${JSON.stringify(newItems)}, updated_at = now() where id = ${row.id}`;
       updatedRecaps++;
@@ -63,8 +69,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     entityLabel: `Hitung Ulang HPP Retroaktif - ${productName}`,
     action: 'update',
     actor: guard,
-    meta: { costPrice, updatedOrders, updatedRecaps },
+    meta: { costPrice, updatedOrders, updatedRecaps, skippedClosed },
   }).catch(err => console.error('Failed to log recalculate-hpp history', err));
 
-  return Response.json({ ok: true, costPrice, updatedOrders, updatedRecaps });
+  return Response.json({ ok: true, costPrice, updatedOrders, updatedRecaps, skippedClosed });
 }

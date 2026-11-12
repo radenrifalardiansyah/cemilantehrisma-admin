@@ -41,7 +41,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'capital',          label: 'Modal & Prive',      actions: CRUD },
   { key: 'wallets',          label: 'Dompet',             actions: CRUD },
   { key: 'finance-report',   label: 'Laporan Keuangan',   actions: ['view'] },
-  { key: 'product-report',   label: 'Laporan Produk',     actions: ['view'] },
+  // `close` = melakukan Closing HPP; `reopen` = membuka ulang closing terakhir (alasan wajib).
+  { key: 'product-report',   label: 'Laporan Produk',     actions: ['view', 'close', 'reopen'] },
   { key: 'stock',            label: 'Gudang',             actions: ['view', 'edit'] },
   { key: 'materials',        label: 'Bahan Baku',         actions: CRUD },
   // `approve` = menyetujui PO (syarat sebelum dikirim ke supplier & dibuatkan GR) dan rollback PO.

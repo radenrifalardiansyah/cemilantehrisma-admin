@@ -11,14 +11,14 @@ import PageLoader from '@/components/PageLoader';
 
 type Matrix = Record<string, Partial<Record<Action, boolean>>>;
 
-const ACTION_LABELS: Record<Action, string> = { view: 'Lihat', create: 'Tambah', edit: 'Ubah', delete: 'Hapus', approve: 'Setujui' };
-const ACTIONS: Action[] = ['view', 'create', 'edit', 'delete', 'approve'];
+const ACTION_LABELS: Record<Action, string> = { view: 'Lihat', create: 'Tambah', edit: 'Ubah', delete: 'Hapus', approve: 'Setujui', close: 'Closing', reopen: 'Buka Ulang' };
+const ACTIONS: Action[] = ['view', 'create', 'edit', 'delete', 'approve', 'close', 'reopen'];
 // Fixed pixel widths applied literally to every row (header, module bar, data rows) so
 // columns line up exactly — a CSS Grid per row can size its own tracks slightly
 // differently even with an identical gridTemplateColumns, since each row is a separate grid.
 const SELECT_COL_W = 32;
-const ACTION_COL_W = 48;
-const MATRIX_MIN_WIDTH = 510;
+const ACTION_COL_W = 54;
+const MATRIX_MIN_WIDTH = 648;
 
 interface RolePermissionsTabProps { creds: string; can: (action: Action) => boolean }
 

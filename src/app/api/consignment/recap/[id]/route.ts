@@ -7,6 +7,7 @@ import { logHistory } from '@/lib/history';
 import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToRecap, sanitizeOtherCosts, type RecapRow } from '@/lib/recaps-pg';
+import { recapClosingLock } from '@/lib/closing';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; costPrice?: number }
@@ -21,8 +22,21 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const data = await req.json().catch(() => ({})) as { walletId?: string | null };
   const db = getDb();
   const sql = getSql();
-  const [before] = await sql<RecapRow[]>`select * from consignment_recaps where id = ${id}`;
-  await sql`update consignment_recaps set payment_status = 'lunas', wallet_id = ${data.walletId ?? null}, updated_at = now() where id = ${id}`;
+  let before: RecapRow | undefined;
+  try {
+    before = await sql.begin(async tx => {
+      const [row] = await tx<RecapRow[]>`select * from consignment_recaps where id = ${id} for update`;
+      if (!row) return undefined;
+      const closingLock = await recapClosingLock(tx, id);
+      if (closingLock) throw new Error(closingLock);
+      // paid_at = tanggal pelunasan (dasar tanggal bayar di Closing); tidak digeser kalau sudah lunas.
+      const paidAt = row.payment_status === 'lunas' ? (row.paid_at ?? null) : new Date();
+      await tx`update consignment_recaps set payment_status = 'lunas', wallet_id = ${data.walletId ?? null}, paid_at = ${paidAt}, updated_at = now() where id = ${id}`;
+      return row;
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menandai lunas.' }, { status: 400 });
+  }
   try {
     await logHistory(db, {
       entity: 'consignment',
@@ -65,6 +79,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       if ((locked.updated_at?.getTime() ?? null) !== (recapRow.updated_at?.getTime() ?? null)) {
         throw new Error('Riwayat rekap baru saja diubah — muat ulang lalu coba lagi.');
       }
+      const closingLock = await recapClosingLock(pgTx, id);
+      if (closingLock) throw new Error(closingLock);
 
       const stockKeys = items.map(it => `${recap.locationId}_${it.productId}`);
       const productIds = returItems.map(it => it.productId);
@@ -219,6 +235,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if ((locked.updated_at?.getTime() ?? null) !== (oldRecapRowPeek.updated_at?.getTime() ?? null)) {
         throw new Error('Riwayat rekap baru saja diubah — muat ulang lalu coba lagi.');
       }
+      const closingLock = await recapClosingLock(pgTx, id);
+      if (closingLock) throw new Error(closingLock);
 
       // Urutan kunci SERAGAM: produk → stok gudang → stok titip (lihat catatan di atas).
       const [productRows, wsRows, stockRows] = await Promise.all([
@@ -354,6 +372,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           location_id = ${data.locationId}, location_name = ${data.locationName},
           items = ${JSON.stringify(recapItems)}, total_sold = ${totalSold}, total_retur = ${totalRetur},
           total_reject = ${totalReject}, total_revenue = ${totalRevenue},
+          paid_at = ${paymentStatus !== 'lunas' ? null : (oldRecapRowPeek.payment_status === 'lunas' ? (oldRecapRowPeek.paid_at ?? null) : new Date())},
           other_costs = ${JSON.stringify(otherCosts)}, total_other_costs = ${totalOtherCosts}, payment_status = ${paymentStatus},
           warehouse_id = ${data.warehouseId ?? null}, warehouse_name = ${data.warehouseName ?? null},
           note = ${data.note ?? null}, wallet_id = ${data.walletId ?? null},

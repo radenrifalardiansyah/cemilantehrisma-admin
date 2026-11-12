@@ -15,6 +15,7 @@ import { notifyProductLowStock } from '@/lib/low-stock';
 import { isValidDueDate } from '@/lib/receivable';
 import { paidAmountOf } from '@/lib/order-payments-pg';
 import { voidStoreConsignSaleForOrder } from '@/lib/store-consign';
+import { orderClosingLock } from '@/lib/closing';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -82,6 +83,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
         const order = rowToOrder(orderRow);
         if (order.status === 'dibatalkan') throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diedit.');
+        // Pesanan yang sudah masuk Closing (atau salah satu cicilannya) terkunci — nilai/status/tanggalnya tidak boleh berubah.
+        const closingLock = await orderClosingLock(pgTx, id);
+        if (closingLock) throw new OrderValidationError(closingLock);
         const [withConsign] = await pgTx`select 1 from stall_sales where order_id = ${id} and status = 'paid' limit 1`;
         if (withConsign) throw new OrderValidationError('Pesanan ini memuat barang titipan — item tidak bisa diedit. Batalkan pesanan lalu buat ulang.');
         // Pesanan yang sudah menerima cicilan: status/metode bayar hanya berubah lewat pembayaran
@@ -180,6 +184,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (paidSoFar > 0 && data.total !== undefined) {
           updateCols.payment_status = paidSoFar >= data.total ? 'lunas' : 'belum_lunas';
         }
+        // Tanggal pelunasan untuk pesanan tanpa cicilan (dasar tanggal bayar di Closing): isi saat berubah jadi lunas, kosongkan saat kembali belum lunas.
+        const nextPaymentStatus = (updateCols.payment_status as string | undefined) ?? order.paymentStatus;
+        if (paidSoFar === 0 && nextPaymentStatus !== order.paymentStatus) updateCols.paid_at = nextPaymentStatus === 'lunas' ? new Date() : null;
 
         await pgTx`update orders set ${pgTx(updateCols, ...Object.keys(updateCols))} where id = ${id}`;
         const stockDeltas = new Map([...deltas].map(([pid, d]) => [pid, -d] as [string, number]));
@@ -229,6 +236,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diubah statusnya lagi.');
       }
       const paidSoFar = await paidAmountOf(pgTx, id);
+      // Pesanan yang sudah masuk Closing terkunci. Satu-satunya yang boleh: melunasi SISA cicilan (menambah baris
+      // pembayaran baru, tidak mengubah apa pun yang sudah closing) atau perubahan yang tidak mengubah status.
+      const closingLock = await orderClosingLock(pgTx, id);
+      if (closingLock) {
+        const sameStatus = status === undefined || status === order.status;
+        const samePayment = paymentStatus === undefined || paymentStatus === order.paymentStatus;
+        const settlingRest = sameStatus && paymentStatus === 'lunas' && order.paymentStatus === 'belum_lunas' && paidSoFar > 0;
+        if (!settlingRest && !(sameStatus && samePayment)) throw new OrderValidationError(closingLock);
+      }
       if (paidSoFar > 0) {
         if (status === 'dibatalkan') {
           throw new OrderValidationError(`Pesanan ini sudah menerima cicilan Rp${paidSoFar.toLocaleString('id-ID')} — batalkan pembayarannya dulu (uang dikembalikan ke pelanggan), baru pesanan dibatalkan.`);
@@ -242,6 +258,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (status !== undefined) updateCols.status = status;
       if (paymentStatus !== undefined) updateCols.payment_status = paymentStatus;
       if (walletId !== undefined) updateCols.wallet_id = walletId;
+      // "Tandai Lunas" tanpa cicilan: simpan tanggal bayar (dasar Closing). Pesanan ber-cicilan memakai paid_at tiap baris order_payments.
+      if (paidSoFar === 0 && paymentStatus !== undefined && paymentStatus !== order.paymentStatus) {
+        updateCols.paid_at = paymentStatus === 'lunas' ? new Date() : null;
+      }
       // "Tandai Lunas" pada pesanan yang sudah dicicil: sisa tagihan dicatat sebagai pembayaran
       // terakhir ke dompet yang dipilih (bukan total penuh lagi — sebagian sudah masuk dompet).
       if (paymentStatus === 'lunas' && order.paymentStatus === 'belum_lunas' && paidSoFar > 0 && order.total > paidSoFar) {
@@ -348,6 +368,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       const [orderRow] = await pgTx<OrderRow[]>`select * from orders where id = ${id} for update`;
       if (!orderRow) return null; // sudah tidak ada — hapus dianggap sukses (idempotent)
       const order = rowToOrder(orderRow);
+      const closingLock = await orderClosingLock(pgTx, id);
+      if (closingLock) throw new Error(closingLock);
       if (await paidAmountOf(pgTx, id) > 0) {
         throw new Error('Pesanan ini punya catatan pembayaran cicilan — batalkan pembayarannya dulu sebelum menghapus pesanan.');
       }

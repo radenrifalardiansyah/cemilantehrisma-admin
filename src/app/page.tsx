@@ -1782,7 +1782,7 @@ export default function AdminPage() {
         <FinanceReportTab creds={creds}
           onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />
       )}
-      {activeTab === 'product-report' && <ProductReportTab creds={creds} />}
+      {activeTab === 'product-report' && <ProductReportTab creds={creds} can={(a: Action) => can('product-report', a)} isSuperAdmin={superAdmin} />}
       {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
       {activeTab === 'users'      && <UsersTab     creds={creds} currentUsername={adminUsername} can={(a: Action) => can('users', a)} />}
       {activeTab === 'roles'      && <RolesTab     creds={creds} can={(a: Action) => can('roles', a)} />}

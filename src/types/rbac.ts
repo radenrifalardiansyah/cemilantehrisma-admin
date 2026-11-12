@@ -1,4 +1,5 @@
-export type Action = 'view' | 'create' | 'edit' | 'delete' | 'approve';
+// `close` & `reopen` = Closing HPP & Buka Ulang Closing (hanya fitur 'product-report').
+export type Action = 'view' | 'create' | 'edit' | 'delete' | 'approve' | 'close' | 'reopen';
 
 export interface Role {
   id: string;

@@ -8,6 +8,9 @@ interface OrderItemDoc { productId?: string; name?: string; qty: number; price?:
 interface OrderDoc {
   isFree?: boolean; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas'; items?: OrderItemDoc[];
   subtotal?: number; total?: number; createdAtSeconds: number | null;
+  // Porsi pesanan yang sudah dibayar (0..1): lunas = 1, belum lunas tanpa cicilan = 0, pesanan ber-cicilan =
+  // total cicilan ÷ total pesanan (proporsional, sama seperti Laporan Keuangan). Dipakai mengalikan qty/omzet/HPP.
+  paidFraction: number;
 }
 interface RecapItemDoc { productId?: string; productName?: string; qtySold: number; revenue?: number; hargaTitip?: number; costPrice?: number }
 interface RecapDoc { paymentStatus?: 'lunas' | 'belum_lunas'; items?: RecapItemDoc[]; createdAtSeconds: number | null }
@@ -18,6 +21,8 @@ interface ProductRow {
   revenue: number; cogs: number;
   qtyFree: number; cogsFree: number;
 }
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
 
 // Semua tanggal kalender dari `from` s/d `to` (inklusif) — dipakai supaya sumbu tanggal grafik tren
 // tidak bolong di hari tanpa transaksi (beda dari dailyTrend di analytics/overview yang cuma
@@ -41,9 +46,12 @@ const getRawProductReport = unstable_cache(
     const sql = getSql();
     const [orderRows, recapRows, productRows] = await Promise.all([
       // `orders` pindah ke Postgres (Tahap 12 migrasi Fase 2 — lihat plan gleaming-wondering-quokka.md).
-      sql<{ source: string; status: string; payment_status: string; items: unknown; subtotal: string; total: string; is_free: boolean | null; created_at: Date }[]>`
-        select source, status, payment_status, items, subtotal, total, is_free, created_at from orders
-        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      sql<{ source: string; status: string; payment_status: string; items: unknown; subtotal: string; total: string; is_free: boolean | null; created_at: Date; paid_sum: string; pay_n: string }[]>`
+        select o.source, o.status, o.payment_status, o.items, o.subtotal, o.total, o.is_free, o.created_at,
+          (select coalesce(sum(p.amount), 0) from order_payments p where p.order_id = o.id) as paid_sum,
+          (select count(*) from order_payments p where p.order_id = o.id) as pay_n
+        from orders o
+        where o.created_at >= ${wibDayStart(from).toDate()} and o.created_at <= ${wibDayEnd(to).toDate()}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
       sql<{ payment_status: string; items: unknown; created_at: Date }[]>`
@@ -55,12 +63,18 @@ const getRawProductReport = unstable_cache(
     return {
       productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
       productColors: productRows.map(r => [r.id, r.bg_color] as const),
-      orders: orderRows.map((r): OrderDoc => ({
-        source: r.source as 'kasir' | 'portal', status: r.status, paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
-        items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
-        subtotal: Number(r.subtotal), total: Number(r.total), isFree: r.is_free === true,
-        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
-      })),
+      orders: orderRows.map((r): OrderDoc => {
+        const total = Number(r.total);
+        const paidFraction = Number(r.pay_n) > 0
+          ? (total > 0 ? Math.min(1, Number(r.paid_sum) / total) : 0)
+          : (r.payment_status === 'lunas' ? 1 : 0);
+        return {
+          source: r.source as 'kasir' | 'portal', status: r.status, paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+          items: (parseJsonb(r.items) as OrderDoc['items']) ?? [],
+          subtotal: Number(r.subtotal), total, isFree: r.is_free === true,
+          createdAtSeconds: Math.floor(r.created_at.getTime() / 1000), paidFraction,
+        };
+      }),
       recaps: recapRows.map((r): RecapDoc => ({
         paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
         items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
@@ -92,8 +106,10 @@ export async function GET(req: NextRequest) {
     stored ? stored : (productId ? (productCostMap.get(productId) ?? 0) : 0);
 
   // Sama seperti Laporan Keuangan: order/rekap "Belum Lunas" atau yang belum dikonfirmasi
-  // (pesanan "baru"/dibatalkan) tidak dihitung sebagai penjualan.
-  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan');
+  // (pesanan "baru"/dibatalkan) tidak dihitung sebagai penjualan. Pesanan yang dicicil dihitung
+  // PROPORSIONAL terhadap uang yang sudah masuk (paidFraction), tetap di tanggal transaksinya;
+  // sisanya muncul di kartu "HPP Belum Closing > Belum dibayar" (lihat /api/closings/pending).
+  const countedOrders = orders.filter(o => (o.status !== 'baru') && o.status !== 'dibatalkan' && o.paidFraction > 0);
   const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
 
   const keyOf = (productId: string | undefined, name: string | undefined) => productId || `__noid__${name ?? '(tanpa nama)'}`;
@@ -116,7 +132,7 @@ export async function GET(req: NextRequest) {
     const dayKey = wibDateKey(new Date(seconds * 1000));
     let byProduct = dailyQty.get(dayKey);
     if (!byProduct) { byProduct = new Map(); dailyQty.set(dayKey, byProduct); }
-    byProduct.set(key, (byProduct.get(key) ?? 0) + qty);
+    byProduct.set(key, r2((byProduct.get(key) ?? 0) + qty));
   };
 
   countedOrders.forEach(o => {
@@ -127,19 +143,20 @@ export async function GET(req: NextRequest) {
     const scale = (o.total != null && itemsSubtotal > 0) ? o.total / itemsSubtotal : 1;
     // Transaksi yang ditandai Gratis di Kasir (bukan diskon): qty & HPP-nya dilacak terpisah.
     const isFree = o.isFree === true;
+    const f = o.paidFraction;
     (o.items ?? []).forEach(it => {
       // Item bebas input di POS (mis. "Ongkir JNE", "Bungkus kado") tidak punya productId —
       // sama seperti /api/orders yang skip pemotongan stok & HPP untuk item ini, laporan produk
       // juga harus skip supaya item non-produk ini tidak nyasar jadi baris produk.
       if (!it.productId) return;
       const r = rowFor(it.productId, it.name);
-      if (o.source === 'portal') r.qtyOnline += it.qty; else r.qtyPos += it.qty;
-      r.revenue += (it.subtotal ?? (it.price ?? 0) * it.qty) * scale;
-      const itemCogs = it.qty * effectiveCost(it.costPrice, it.productId);
+      if (o.source === 'portal') r.qtyOnline += it.qty * f; else r.qtyPos += it.qty * f;
+      r.revenue += (it.subtotal ?? (it.price ?? 0) * it.qty) * scale * f;
+      const itemCogs = it.qty * effectiveCost(it.costPrice, it.productId) * f;
       // Barang gratis: omzetnya Rp0, jadi HPP-nya TIDAK dihitung ke Total HPP produk (laba kotor tidak
       // jadi negatif). Nilai HPP-nya tetap dicatat terpisah di cogsFree sebagai informasi.
-      if (isFree) { r.qtyFree += it.qty; r.cogsFree += itemCogs; } else { r.cogs += itemCogs; }
-      addDaily(o.createdAtSeconds, r.key, it.qty);
+      if (isFree) { r.qtyFree += it.qty * f; r.cogsFree += itemCogs; } else { r.cogs += itemCogs; }
+      addDaily(o.createdAtSeconds, r.key, it.qty * f);
     });
   });
   countedRecaps.forEach(rec => {
@@ -154,14 +171,18 @@ export async function GET(req: NextRequest) {
 
   const products = [...rows.values()]
     // Math.round karena prorata diskon di atas menghasilkan pecahan rupiah.
-    .map(r => ({ ...r, revenue: Math.round(r.revenue), cogs: Math.round(r.cogs), cogsFree: Math.round(r.cogsFree), qtyTotal: r.qtyPos + r.qtyOnline + r.qtyConsignment }))
+    // qty bisa pecahan (cicilan proporsional) — dibulatkan 2 desimal supaya tidak muncul ekor floating point.
+    .map(r => {
+      const qtyPos = r2(r.qtyPos), qtyOnline = r2(r.qtyOnline), qtyConsignment = r2(r.qtyConsignment);
+      return { ...r, qtyPos, qtyOnline, qtyConsignment, qtyFree: r2(r.qtyFree), revenue: Math.round(r.revenue), cogs: Math.round(r.cogs), cogsFree: Math.round(r.cogsFree), qtyTotal: r2(qtyPos + qtyOnline + qtyConsignment) };
+    })
     .filter(r => r.qtyTotal > 0)
     .sort((a, b) => b.qtyTotal - a.qtyTotal);
 
-  const totalQty = products.reduce((s, p) => s + p.qtyTotal, 0);
+  const totalQty = r2(products.reduce((s, p) => s + p.qtyTotal, 0));
   const totalRevenue = products.reduce((s, p) => s + p.revenue, 0);
   const totalCogs = products.reduce((s, p) => s + p.cogs, 0);
-  const totalQtyFree = products.reduce((s, p) => s + p.qtyFree, 0);
+  const totalQtyFree = r2(products.reduce((s, p) => s + p.qtyFree, 0));
   const totalCogsFree = products.reduce((s, p) => s + p.cogsFree, 0);
 
   // Grafik tren — dibatasi ke 4 produk terlaris supaya tetap terbaca (bukan spaghetti chart) dan

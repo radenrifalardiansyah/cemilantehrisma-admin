@@ -7,6 +7,7 @@ import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { rowToOrder, syncInvoicePaymentStatus, OrderRow } from '@/lib/orders-pg';
 import { paidAmountOf, rowToPayment, type OrderPaymentRow } from '@/lib/order-payments-pg';
+import { orderOwnClosingLock, latestActiveClosing, paidAtProblem } from '@/lib/closing';
 import { installmentState, paymentProblem } from '@/lib/installment';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -44,11 +45,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!wallet) throw new PaymentError('Dompet tidak ditemukan.');
       if (wallet.is_active === false) throw new PaymentError('Dompet tidak aktif.');
 
+      // Pertahanan berlapis: pesanan lunas-sekaligus yang sudah closing tidak boleh ikut dihitung lagi lewat cicilan.
+      // (Melunasi sisa pesanan yang cicilan sebelumnya sudah closing tetap boleh — yang dicek hanya orders.closing_id.)
+      const lockMsg = await orderOwnClosingLock(tx, id);
+      if (lockMsg) throw new PaymentError(lockMsg);
+
       const paid = await paidAmountOf(tx, id);
       const problem = paymentProblem(order.total, paid, body.amount);
       if (problem) throw new PaymentError(problem);
 
       const paidAt = body.paidAt && !Number.isNaN(Date.parse(body.paidAt)) ? new Date(body.paidAt) : new Date();
+      const latestClosing = await latestActiveClosing(tx);
+      const dateMsg = paidAtProblem(paidAt, new Date(), latestClosing?.period_to ?? null);
+      if (dateMsg) throw new PaymentError(dateMsg);
       await tx`
         insert into order_payments (id, order_id, wallet_id, amount, paid_at, note, created_by)
         values (${randomUUID()}, ${id}, ${body.walletId}, ${Number(body.amount)}, ${paidAt}, ${(body.note ?? '').trim().slice(0, 200) || null}, ${guard.username})
