@@ -385,7 +385,7 @@ export default function AdminPage() {
   const [webLoading, setWebLoading] = useState(false);
 
   // ── Ringkasan — penjualan kasir + omzet konsinyasi (rekap mitra) per periode ──
-  const [sumPeriod, setSumPeriod] = useState<PeriodKey>('7d');
+  const [sumPeriod, setSumPeriod] = useState<PeriodKey>('month');
   const [sumCustomFrom, setSumCustomFrom] = useState('');
   const [sumCustomTo, setSumCustomTo] = useState('');
   const [sumOrders, setSumOrders] = useState<SumOrder[]>([]);

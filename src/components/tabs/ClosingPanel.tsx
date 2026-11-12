@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet, FileText } from 'lucide-react';
+import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet } from 'lucide-react';
+import { PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
 import Pagination from '@/components/Pagination';
 import { useToast } from '@/components/Toast';
@@ -100,7 +101,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
       toast.error('Gagal membuat PDF.');
     } finally { clearTimeout(timer); setPdfBusy(null); }
   };
-  const pdfIcon = (key: string) => pdfBusy === key ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />;
+  const pdfIcon = (key: string) => pdfBusy === key ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={15} />;
 
   const loadIdRef = useRef(0);
   const load = useCallback(async () => {
@@ -230,7 +231,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
             <button aria-label="Unduh draf PDF" disabled={!pending || !!pdfBusy}
               onClick={() => pending && downloadPdf('draft', '/api/closings/pending/pdf', `draf-closing-hpp-${pending.today}.pdf`)}
               className="btn-ghost flex items-center justify-center" style={{ height: 34, width: 34, padding: 0 }}>
-              {pdfBusy === 'draft' ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+              {pdfBusy === 'draft' ? <Loader2 size={15} className="animate-spin" /> : <PdfIcon size={20} />}
             </button>
           </Tooltip>
           <button onClick={() => { toggleCollapsed(false); setShowHistory(v => !v); }} className="btn-ghost flex items-center gap-1.5" style={{ height: 34 }}>
