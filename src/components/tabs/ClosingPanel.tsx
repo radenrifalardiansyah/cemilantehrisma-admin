@@ -226,6 +226,13 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
           <ChevronDown size={16} style={{ color: 'var(--text-muted)', transform: collapsed ? undefined : 'rotate(180deg)', transition: 'transform 0.15s' }} />
         </div>
         <div className="flex items-center gap-2">
+          <Tooltip label="Unduh draf PDF (belum closing)">
+            <button aria-label="Unduh draf PDF" disabled={!pending || !!pdfBusy}
+              onClick={() => pending && downloadPdf('draft', '/api/closings/pending/pdf', `draf-closing-hpp-${pending.today}.pdf`)}
+              className="btn-ghost flex items-center justify-center" style={{ height: 34, width: 34, padding: 0 }}>
+              {pdfBusy === 'draft' ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+            </button>
+          </Tooltip>
           <button onClick={() => { toggleCollapsed(false); setShowHistory(v => !v); }} className="btn-ghost flex items-center gap-1.5" style={{ height: 34 }}>
             <HistoryIcon size={14} /> Riwayat
           </button>
@@ -264,10 +271,6 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
             <button onClick={() => setShowDetail(v => !v)} className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
               <ChevronDown size={13} style={{ transform: showDetail ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
               {showDetail ? 'Sembunyikan rincian' : 'Lihat rincian untuk audit'}
-            </button>
-            <button onClick={() => downloadPdf('draft', '/api/closings/pending/pdf', `draf-closing-hpp-${pending.today}.pdf`)} disabled={!!pdfBusy}
-              className="btn-ghost flex items-center gap-1.5" style={{ height: 28, fontSize: 11 }}>
-              {pdfIcon('draft')} Draf PDF
             </button>
           </div>
           {showDetail && detail && (

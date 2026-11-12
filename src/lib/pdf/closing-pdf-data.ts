@@ -25,6 +25,8 @@ export interface PdfSection {
   omitted: number;        // baris yang tidak dicetak karena melebihi PDF_MAX_LINES
   totals: LineTotals;     // angka resmi untuk baris total tabel
   emptyText: string;
+  breakBefore?: boolean;  // mulai di halaman baru (bagian piutang pada draf)
+  showWords?: boolean;    // tampilkan terbilang HPP & omzet (nominal yang di-closing) di bawah tabel
 }
 
 export interface ClosingPdfData {
@@ -121,7 +123,7 @@ export function closingToPdfData(c: ClosingRecord, lines: ClosingLine[], generat
   }
   const pl = toPdfLines(lines);
   const sections: PdfSection[] = lines.length === 0 ? [] : [{
-    title: 'Rincian Transaksi', lines: pl.lines, omitted: pl.omitted, totals: snap, emptyText: 'Tidak ada rincian.',
+    title: 'Rincian Transaksi', lines: pl.lines, omitted: pl.omitted, totals: snap, emptyText: 'Tidak ada rincian.', showWords: true,
   }];
   return { ...base, variant: 'closing', summary: summaryOf(snap), notice, notes, sections };
 }
@@ -163,8 +165,8 @@ export function draftToPdfData(i: DraftInput): ClosingPdfData {
     notice: 'DRAF — dokumen ini hanya pratinjau kondisi saat dicetak dan BUKAN closing resmi. Tidak ada data yang ditutup atau disimpan. Piutang tidak ikut closing sampai dibayar.',
     notes: [],
     sections: [
-      { title: 'A. Sudah dibayar, belum closing', hint: i.upTo ? `Tanggal bayar sampai ${dayLabel(i.upTo)} — bagian yang akan ikut closing.` : 'Akan ikut closing berikutnya.', lines: paid.lines, omitted: paid.omitted, totals: paidT, emptyText: 'Tidak ada transaksi.' },
-      { title: 'B. Piutang (belum dibayar)', hint: 'Tidak ikut closing sampai dibayar. Untuk pesanan yang dicicil hanya porsi sisa.', lines: recv.lines, omitted: recv.omitted, totals: recvT, emptyText: 'Tidak ada piutang.' },
+      { title: 'A. Sudah dibayar, belum closing', hint: i.upTo ? `Tanggal bayar sampai ${dayLabel(i.upTo)} — bagian yang akan ikut closing.` : 'Akan ikut closing berikutnya.', lines: paid.lines, omitted: paid.omitted, totals: paidT, emptyText: 'Tidak ada transaksi.', showWords: true },
+      { title: 'B. Piutang (belum dibayar)', hint: 'Tidak ikut closing sampai dibayar. Untuk pesanan yang dicicil hanya porsi sisa.', lines: recv.lines, omitted: recv.omitted, totals: recvT, emptyText: 'Tidak ada piutang.', breakBefore: true },
     ],
     fileName: `draf-closing-hpp-${i.upTo ?? i.today}.pdf`,
   };

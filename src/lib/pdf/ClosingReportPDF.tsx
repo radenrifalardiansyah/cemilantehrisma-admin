@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { THEME_COLOR, SITE_URL } from '@/lib/branding';
 import { formatRp } from '@/lib/format';
+import { terbilangRupiah } from '@/lib/terbilang';
 import type { StoreHeader } from './ShipmentNotePDF';
 import { dayLabel, type ClosingPdfData, type PdfSection } from './closing-pdf-data';
 
@@ -10,6 +11,8 @@ import { dayLabel, type ClosingPdfData, type PdfSection } from './closing-pdf-da
 const C = {
   accent: THEME_COLOR, accentBg: '#FDF0E6', dark: '#1E1008', muted: '#A08468', border: '#E6DDD0', white: '#FFFFFF',
   warn: '#B45309', warnBg: '#FEF3C7',
+  // Warna tabel dibuat lembut (tidak pekat): header krem, baris selang-seling & total sangat tipis.
+  tHead: '#F6E7D8', tHeadText: '#6B4423', rowAlt: '#FEF9F4', totalBg: '#FBF0E4', tableBorder: '#EFE6DA', totalText: '#8A4B17',
 };
 
 const s = StyleSheet.create({
@@ -47,14 +50,17 @@ const s = StyleSheet.create({
 
   sectionTitle: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', marginTop: 16 },
   sectionHint: { fontSize: 7.5, color: C.muted, marginTop: 1, marginBottom: 5 },
-  table: { borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: C.border, marginTop: 4 },
-  tHeadRow: { flexDirection: 'row', backgroundColor: C.accent },
-  tHeadCell: { color: C.white, fontSize: 6.8, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 3 },
-  tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
-  tRowAlt: { backgroundColor: C.accentBg },
+  table: { borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: C.tableBorder, marginTop: 4 },
+  tHeadRow: { flexDirection: 'row', backgroundColor: C.tHead },
+  tHeadCell: { color: C.tHeadText, fontSize: 6.8, fontFamily: 'Helvetica-Bold', paddingVertical: 6, paddingHorizontal: 3 },
+  tRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.tableBorder },
+  tRowAlt: { backgroundColor: C.rowAlt },
   tCell: { fontSize: 7.2, paddingVertical: 4.5, paddingHorizontal: 3 },
-  totalsRow: { flexDirection: 'row', backgroundColor: C.accentBg, borderTopWidth: 1, borderTopColor: C.border },
+  totalsRow: { flexDirection: 'row', backgroundColor: C.totalBg, borderTopWidth: 1, borderTopColor: C.tableBorder },
   totalsCell: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', paddingVertical: 5, paddingHorizontal: 3 },
+  words: { marginTop: 8, padding: 8, borderWidth: 1, borderColor: C.tableBorder, borderRadius: 6, backgroundColor: C.rowAlt },
+  wordsLabel: { fontSize: 7, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.2 },
+  wordsValue: { fontSize: 8.5, fontFamily: 'Helvetica-Oblique', marginTop: 1, marginBottom: 5, lineHeight: 1.35 },
   empty: { fontSize: 8.5, color: C.muted, paddingVertical: 8, textAlign: 'center' },
   smallNote: { fontSize: 7.5, color: C.muted, marginTop: 5, lineHeight: 1.4 },
 
@@ -66,11 +72,14 @@ const s = StyleSheet.create({
   pageNo: { position: 'absolute', bottom: 18, right: 32, fontSize: 7, color: C.muted },
 });
 
+// "seratus ribu rupiah" → "Seratus Ribu Rupiah"
+const titleCase = (t: string) => t.replace(/(^|\s)(\p{L})/gu, (_, sp: string, c: string) => sp + c.toUpperCase());
+
 const qty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 
 function Table({ section }: { section: PdfSection }) {
   return (
-    <View>
+    <View break={section.breakBefore}>
       <Text style={s.sectionTitle} minPresenceAhead={60}>{section.title}</Text>
       {section.hint && <Text style={s.sectionHint}>{section.hint}</Text>}
       {section.lines.length === 0 ? (
@@ -107,8 +116,16 @@ function Table({ section }: { section: PdfSection }) {
             <Text style={[s.totalsCell, s.colPay]} />
             <Text style={[s.totalsCell, s.colQty]}>{qty(section.totals.qty)}</Text>
             <Text style={[s.totalsCell, s.colHpp]}>{formatRp(section.totals.cogs)}</Text>
-            <Text style={[s.totalsCell, s.colOmz, { color: C.accent }]}>{formatRp(section.totals.revenue)}</Text>
+            <Text style={[s.totalsCell, s.colOmz, { color: C.totalText }]}>{formatRp(section.totals.revenue)}</Text>
           </View>
+        </View>
+      )}
+      {section.showWords && section.lines.length > 0 && (
+        <View style={s.words} wrap={false}>
+          <Text style={s.wordsLabel}>HPP yang di-closing: {formatRp(section.totals.cogs)}</Text>
+          <Text style={s.wordsValue}>{titleCase(terbilangRupiah(section.totals.cogs))}</Text>
+          <Text style={s.wordsLabel}>Omzet: {formatRp(section.totals.revenue)}</Text>
+          <Text style={[s.wordsValue, { marginBottom: 0 }]}>{titleCase(terbilangRupiah(section.totals.revenue))}</Text>
         </View>
       )}
       {section.omitted > 0 && (
