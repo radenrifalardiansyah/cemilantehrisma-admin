@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet } from 'lucide-react';
+import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet, FileText } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import Pagination from '@/components/Pagination';
 import { useToast } from '@/components/Toast';
@@ -75,6 +75,32 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
   const [reopenTarget, setReopenTarget] = useState<ClosingItem | null>(null);
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
+
+  // Unduh PDF (closing resmi / draf) dari API — rute butuh header auth, jadi diambil sebagai blob lalu diunduh.
+  const [pdfBusy, setPdfBusy] = useState<string | null>(null);
+  const downloadPdf = async (key: string, url: string, filename: string) => {
+    if (pdfBusy) return;
+    setPdfBusy(key);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90_000);
+    try {
+      const res = await fetch(url, { headers, signal: ctrl.signal });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(data.error ?? 'Gagal membuat PDF.');
+        return;
+      }
+      const blobUrl = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = blobUrl; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Gagal mengunduh PDF closing', err);
+      toast.error('Gagal membuat PDF.');
+    } finally { clearTimeout(timer); setPdfBusy(null); }
+  };
+  const pdfIcon = (key: string) => pdfBusy === key ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />;
 
   const loadIdRef = useRef(0);
   const load = useCallback(async () => {
@@ -234,10 +260,16 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
 
       {!collapsed && pending && (
         <div>
-          <button onClick={() => setShowDetail(v => !v)} className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-            <ChevronDown size={13} style={{ transform: showDetail ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
-            {showDetail ? 'Sembunyikan rincian' : 'Lihat rincian untuk audit'}
-          </button>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <button onClick={() => setShowDetail(v => !v)} className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+              <ChevronDown size={13} style={{ transform: showDetail ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
+              {showDetail ? 'Sembunyikan rincian' : 'Lihat rincian untuk audit'}
+            </button>
+            <button onClick={() => downloadPdf('draft', '/api/closings/pending/pdf', `draf-closing-hpp-${pending.today}.pdf`)} disabled={!!pdfBusy}
+              className="btn-ghost flex items-center gap-1.5" style={{ height: 28, fontSize: 11 }}>
+              {pdfIcon('draft')} Draf PDF
+            </button>
+          </div>
           {showDetail && detail && (
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2">
@@ -338,8 +370,12 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                             )}
                         </td>
                         <td className={`${cell} text-right`}>
+                          <button onClick={() => downloadPdf(`c:${c.id}`, `/api/closings/${c.id}/pdf`, `closing-hpp-${c.periodTo}.pdf`)} disabled={!!pdfBusy}
+                            className="btn-ghost inline-flex items-center gap-1 align-middle" style={{ height: 28, fontSize: 11 }}>
+                            {pdfIcon(`c:${c.id}`)} PDF
+                          </button>
                           {canReopen && (
-                            <button onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost flex items-center gap-1 ml-auto" style={{ height: 28, fontSize: 11 }}>
+                            <button onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost inline-flex items-center gap-1 ml-1.5 align-middle" style={{ height: 28, fontSize: 11 }}>
                               <Unlock size={12} /> Buka Ulang
                             </button>
                           )}
@@ -389,6 +425,10 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                 </>
               )}
             </div>
+            <button type="button" onClick={() => downloadPdf('draft-dialog', `/api/closings/pending/pdf?upTo=${upTo}`, `draf-closing-hpp-${upTo}.pdf`)} disabled={!!pdfBusy || !upTo}
+              className="btn-ghost flex items-center gap-1.5 self-start" style={{ height: 30, fontSize: 11 }}>
+              {pdfIcon('draft-dialog')} Unduh draf PDF
+            </button>
             <Field label="Catatan (opsional)">
               <textarea rows={3} value={closeNote} onChange={e => setCloseNote(e.target.value.slice(0, 500))} className="input" style={{ resize: 'vertical' }} placeholder="Mis. Closing harian 12 Nov" />
             </Field>

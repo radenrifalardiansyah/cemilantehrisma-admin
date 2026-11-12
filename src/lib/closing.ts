@@ -192,6 +192,26 @@ export function reopenProblem(a: {
 
 export interface ClosingPool { paid: ClosingLine[]; receivable: ClosingLine[] }
 
+// Sama seperti Laporan Produk: snapshot costPrice dipakai; kalau 0/kosong pakai Harga Modal produk terkini.
+// Catatan: fallback itu "hidup" (ikut berubah bila Harga Modal produk diubah) dan sengaja TIDAK dibekukan —
+// membekukannya berarti menulis ulang items pesanan saat closing dan menyimpang dari Laporan Produk.
+// Dampaknya terbatas: total yang disimpan di baris closings tetap (tidak dihitung ulang), dan transaksi yang
+// sudah closing tidak tampil lagi di kartu "belum closing"; hanya pembanding Laporan Produk yang bisa bergeser
+// bila ada transaksi ber-costPrice 0 dan Harga Modal produknya diubah kemudian.
+export function makeCostOf(costRows: { id: string; cost_price: string | null }[]): CostOf {
+  const costMap = new Map(costRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0]));
+  return (stored, pid) => stored ? stored : (pid ? (costMap.get(pid) ?? 0) : 0);
+}
+
+async function loadPaymentsByOrder(tx: PgClient, orderIds: string[]): Promise<Map<string, PoolPaymentRow[]>> {
+  const payRows = orderIds.length > 0
+    ? await tx<PoolPaymentRow[]>`select id, order_id, amount, paid_at, closing_id from order_payments where order_id in ${tx(orderIds)} order by paid_at, created_at`
+    : [];
+  const payByOrder = new Map<string, PoolPaymentRow[]>();
+  for (const p of payRows) { const a = payByOrder.get(p.order_id); if (a) a.push(p); else payByOrder.set(p.order_id, [p]); }
+  return payByOrder;
+}
+
 // Semua item yang BELUM closing (sudah dibayar → `paid`; belum dibayar → `receivable`).
 // `lock` = kunci baris pesanan/rekap (for update) — dipakai saat closing supaya edit bersamaan menunggu.
 export async function loadPool(tx: PgClient, lock: boolean): Promise<ClosingPool> {
@@ -217,21 +237,8 @@ export async function loadPool(tx: PgClient, lock: boolean): Promise<ClosingPool
       from consignment_recaps where closing_id is null order by created_at, id ${forUpdateRecap}
     `,
   ]);
-  const costMap = new Map(costRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0]));
-  // Sama seperti Laporan Produk: snapshot costPrice dipakai; kalau 0/kosong pakai Harga Modal produk terkini.
-  // Catatan: fallback itu "hidup" (ikut berubah bila Harga Modal produk diubah) dan sengaja TIDAK dibekukan —
-  // membekukannya berarti menulis ulang items pesanan saat closing dan menyimpang dari Laporan Produk.
-  // Dampaknya terbatas: total yang disimpan di baris closings tetap (tidak dihitung ulang), dan transaksi yang
-  // sudah closing tidak tampil lagi di kartu "belum closing"; hanya pembanding Laporan Produk yang bisa bergeser
-  // bila ada transaksi ber-costPrice 0 dan Harga Modal produknya diubah kemudian.
-  const costOf: CostOf = (stored, pid) => stored ? stored : (pid ? (costMap.get(pid) ?? 0) : 0);
-
-  const orderIds = orderRows.map(o => o.id);
-  const payRows = orderIds.length > 0
-    ? await tx<PoolPaymentRow[]>`select id, order_id, amount, paid_at, closing_id from order_payments where order_id in ${tx(orderIds)} order by paid_at, created_at`
-    : [];
-  const payByOrder = new Map<string, PoolPaymentRow[]>();
-  for (const p of payRows) { const a = payByOrder.get(p.order_id); if (a) a.push(p); else payByOrder.set(p.order_id, [p]); }
+  const costOf = makeCostOf(costRows);
+  const payByOrder = await loadPaymentsByOrder(tx, orderRows.map(o => o.id));
 
   const paid: ClosingLine[] = [];
   const receivable: ClosingLine[] = [];
@@ -246,6 +253,45 @@ export async function loadPool(tx: PgClient, lock: boolean): Promise<ClosingPool
     if (r.receivable) receivable.push(r.receivable);
   }
   return { paid, receivable };
+}
+
+// Rincian sebuah closing (baris ber-closing_id = id) untuk PDF — memakai pembangun baris yang SAMA dengan
+// loadPool/createClosing (buildOrderLines/buildRecapLine) supaya angkanya identik dengan snapshot di tabel closings.
+// Pembangun itu membuang baris yang sudah closing, jadi closing_id dikosongkan dulu di salinan lalu hasilnya
+// disaring ke item milik closing ini. Closing yang sudah dibuka ulang tidak punya baris lagi (closing_id dikosongkan
+// saat buka ulang) → hasilnya kosong. Hanya baca; tidak menulis apa pun.
+export async function loadClosingLines(sql: PgClient, closingId: string): Promise<ClosingLine[]> {
+  const [costRows, orderRows, recapRows] = await Promise.all([
+    sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
+    sql<PoolOrderRow[]>`
+      select o.id, o.invoice_no, o.customer_name, o.items, o.total, o.payment_status, o.created_at, o.paid_at, o.closing_id
+      from orders o
+      where o.closing_id = ${closingId}
+        or exists (select 1 from order_payments p where p.order_id = o.id and p.closing_id = ${closingId})
+      order by o.created_at, o.id
+    `,
+    sql<PoolRecapRow[]>`
+      select id, location_name, items, payment_status, created_at, paid_at, closing_id
+      from consignment_recaps where closing_id = ${closingId} order by created_at, id
+    `,
+  ]);
+  const costOf = makeCostOf(costRows);
+  const payByOrder = await loadPaymentsByOrder(sql, orderRows.map(o => o.id));
+
+  const lines: ClosingLine[] = [];
+  for (const o of orderRows) {
+    const pays = payByOrder.get(o.id) ?? [];
+    const mine = new Set(pays.filter(p => p.closing_id === closingId).map(p => p.id));
+    const built = buildOrderLines({ ...o, closing_id: null }, pays.map(p => ({ ...p, closing_id: null })), costOf);
+    for (const l of built.paid) {
+      if (l.kind === 'payment' ? mine.has(l.paymentId!) : o.closing_id === closingId) lines.push(l);
+    }
+  }
+  for (const rc of recapRows) {
+    const l = buildRecapLine({ ...rc, closing_id: null }, costOf).paid;
+    if (l) lines.push(l);
+  }
+  return lines.sort((a, b) => (a.paidDate ?? '').localeCompare(b.paidDate ?? '') || a.txDate.localeCompare(b.txDate) || a.invoiceNo.localeCompare(b.invoiceNo));
 }
 
 // Kunci serialisasi closing/buka-ulang (dan skrip backfill) — satu closing berjalan pada satu waktu.
