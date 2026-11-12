@@ -5,6 +5,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { getSettings } from '@/lib/settings-pg';
+import { isApprovedShipment } from '@/lib/shipment-status';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 import ShipmentNotePDF, { type ShipmentNoteData, type StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 import { shipmentPdfTag } from '@/lib/pdf/shipmentPdfTag';
@@ -40,14 +41,21 @@ async function resolveLogoDataUri(db: ReturnType<typeof getDb>, logoUrl?: string
 // diedit/dihapus, dan revalidateTag('settings') saat pengaturan toko (logo/ttd/alamat) berubah.
 // printedAt jadi ikut ke-cache — nunjukkin kapan PDF ini terakhir di-render, bukan kapan
 // linknya dibuka — sama seperti nota yang didownload manual dari tab konsinyasi.
+// Hasil "tidak ada / belum approved" TIDAK boleh ikut ter-cache (404 basi sampai TTL 1 jam): ia dilempar
+// sebagai error — unstable_cache tidak menyimpan hasil yang melempar — lalu GET mengubahnya jadi 404.
+const PDF_NOT_FOUND = 'SHIPMENT_PDF_NOT_FOUND';
+class ShipmentPdfNotFound extends Error { constructor() { super(PDF_NOT_FOUND); } }
+
 function renderShipmentPdf(id: string) {
   return unstable_cache(
-    async (): Promise<string | null> => {
+    async (): Promise<string> => {
       const db = getDb();
       const sql = getSql();
       const [shipmentRow] = await sql<ShipmentRow[]>`select * from consignment_shipments where id = ${id}`;
-      if (!shipmentRow) return null;
+      if (!shipmentRow) throw new ShipmentPdfNotFound();
       const shipment = rowToShipment(shipmentRow);
+      // Rute publik: nota hanya untuk pengiriman yang sudah di-approve (draft/ditolak = 404).
+      if (!isApprovedShipment(shipment)) throw new ShipmentPdfNotFound();
 
       const [locationRows, settingsRaw] = await Promise.all([
         shipment.locationId
@@ -115,8 +123,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const base64 = await renderShipmentPdf(id);
-    if (base64 === null) return new NextResponse('Nota tidak ditemukan.', { status: 404 });
+    let base64: string;
+    try {
+      base64 = await renderShipmentPdf(id);
+    } catch (err) {
+      if (err instanceof ShipmentPdfNotFound || (err instanceof Error && err.message === PDF_NOT_FOUND)) return new NextResponse('Nota tidak ditemukan.', { status: 404 });
+      throw err;
+    }
 
     return new NextResponse(new Uint8Array(Buffer.from(base64, 'base64')), {
       status: 200,

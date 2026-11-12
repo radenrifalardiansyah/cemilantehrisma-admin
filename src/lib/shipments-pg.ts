@@ -1,5 +1,6 @@
 import { parseJsonb } from '@/lib/db';
 import { toTimestamp } from '@/lib/orders-pg';
+import { normalizeShipmentStatus } from '@/lib/shipment-status';
 
 // Versi Postgres dari dokumen `consignmentShipments` (Tahap 18a migrasi Fase 2, lihat plan
 // gleaming-wondering-quokka.md). Shape JSON yang dikembalikan ke frontend dipertahankan sama
@@ -19,6 +20,14 @@ export interface ShipmentRow {
   note: string | null;
   created_at: Date;
   updated_at: Date | null;
+  // Status dokumen (lihat shipment-status.ts). Default kolom 'approved' supaya baris lama aman.
+  status: string | null;
+  approved_by: string | null;
+  approved_at: Date | null;
+  rejected_by: string | null;
+  rejected_at: Date | null;
+  reject_reason: string | null;
+  created_by: string | null;
 }
 
 export function rowToShipment(r: ShipmentRow) {
@@ -32,5 +41,12 @@ export function rowToShipment(r: ShipmentRow) {
     note: r.note ?? '',
     createdAt: toTimestamp(r.created_at),
     updatedAt: toTimestamp(r.updated_at),
+    status: normalizeShipmentStatus(r.status),
+    approvedBy: r.approved_by ?? null,
+    approvedAt: toTimestamp(r.approved_at),
+    rejectedBy: r.rejected_by ?? null,
+    rejectedAt: toTimestamp(r.rejected_at),
+    rejectReason: r.reject_reason ?? null,
+    createdBy: r.created_by ?? null,
   };
 }

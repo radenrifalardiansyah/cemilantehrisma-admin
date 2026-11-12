@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart } from '@/lib/date';
+import { SHIPMENT_APPROVED } from '@/lib/shipment-status';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
 import { buildMitraDailyReport, type DailyReportRecap } from '@/lib/mitra-daily-report';
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   const [locRows, stockRows, shipRows, recapRows] = await Promise.all([
     sql<LocationRow[]>`select id, name, code, contact_name, contact_phone, is_active from consignment_locations order by name asc`,
     sql<StockRow[]>`select location_id, product_id, product_name, stock_qty, harga_titip from consignment_stock`,
-    sql<ShipmentRow[]>`select * from consignment_shipments where created_at >= ${since}`,
+    sql<ShipmentRow[]>`select * from consignment_shipments where created_at >= ${since} and status = ${SHIPMENT_APPROVED}`,
     sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${since}`,
   ]);
 

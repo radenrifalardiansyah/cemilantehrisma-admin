@@ -1,3 +1,5 @@
+import { approvedShipments } from '@/lib/shipment-status';
+
 // Laporan harian mitra: per mitra, per hari, per produk — kirim, jual, retur, reject, dan stok
 // akhir hari itu. Stok akhir dihitung mundur dari stok titip SAAT INI: kirim sesudah hari itu
 // dikurangkan, rekap (jual + retur + reject, semuanya mengurangi stok titip) ditambahkan kembali.
@@ -5,6 +7,7 @@
 export interface DailyReportLocation { id: string; name: string }
 export interface DailyReportStockItem { productId: string; productName: string; stockQty: number; hargaTitip?: number }
 export interface DailyReportShipment {
+  status?: string | null; // hanya 'approved' (atau kosong = data lama) yang dihitung; draft/ditolak diabaikan
   locationId?: string | null; createdAt?: { seconds: number } | null;
   items: { productId: string; productName: string; qty: number; hargaTitip?: number; subtotal?: number }[];
 }
@@ -59,6 +62,7 @@ export function buildMitraDailyReport(input: {
   from: string; to: string; // YYYY-MM-DD (WIB), inklusif
 }): MitraDailyReportSection[] {
   const { from, to } = input;
+  const shipments = approvedShipments(input.shipments);
   return input.locations.map(loc => {
     const names = new Map<string, string>();
     // Perubahan stok bersih per (tanggal, produk): kirim menambah, rekap mengurangi.
@@ -73,7 +77,7 @@ export function buildMitraDailyReport(input: {
     };
     const lastPrice = new Map<string, number>(); // harga titip terakhir yang dikenal per produk (fallback tampilan)
     for (const it of input.stockByLocation[loc.id] ?? []) { names.set(it.productId, it.productName); if (it.hargaTitip) lastPrice.set(it.productId, it.hargaTitip); }
-    for (const s of input.shipments) {
+    for (const s of shipments) {
       if (s.locationId !== loc.id || !s.createdAt?.seconds) continue;
       const date = wibDateKey(s.createdAt.seconds);
       for (const it of s.items) {

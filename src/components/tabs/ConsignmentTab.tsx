@@ -6,7 +6,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronRight, Upload,
-  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText,
+  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText, CircleCheck, CircleX,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -55,6 +55,10 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import type { Action } from '@/types/rbac';
+import {
+  type ShipmentStatus, SHIPMENT_STATUS_LABEL, normalizeShipmentStatus, approvedShipments, isStaleShipmentDate, STALE_APPROVE_DAYS, BULK_APPROVE_MAX,
+} from '@/lib/shipment-status';
 // Locations' load also re-fetches per-location stock (N+1, uncached) — longer than Kasir/
 // Pesanan's interval since this one is pricier per tick.
 const CONSIGNMENT_POLL_MS = 45_000;
@@ -194,7 +198,12 @@ interface ShipmentItem { productId: string; productName: string; qty: number; ha
 interface Shipment {
   id: string; locationId?: string; locationName: string; warehouseId?: string; warehouseName?: string;
   items: ShipmentItem[]; note?: string; createdAt?: { seconds: number };
+  // Draft = hanya dokumen (tanpa efek stok/laporan); approved = berlaku; ditolak = final. Baris lama = approved.
+  status?: ShipmentStatus; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
+  rejectedBy?: string | null; rejectedAt?: { seconds: number } | null; rejectReason?: string | null;
 }
+const shipmentStatusOf = (s: Shipment): ShipmentStatus => normalizeShipmentStatus(s.status);
+const SHIPMENT_STATUS_BADGE: Record<ShipmentStatus, string> = { draft: 'badge-amber', approved: 'badge-green', ditolak: 'badge-red' };
 
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; revenue: number }
 interface Recap {
@@ -308,8 +317,8 @@ function LocationStatTiles({ stockQty, stockValue, stats, dense = false }: { sto
   );
 }
 
-export default function ConsignmentTab({ creds, products, highlightShipmentId, highlightRecapId, onHighlightHandled }: {
-  creds: string; products: PosProduct[];
+export default function ConsignmentTab({ creds, products, can, highlightShipmentId, highlightRecapId, onHighlightHandled }: {
+  creds: string; products: PosProduct[]; can: (a: Action) => boolean;
   highlightShipmentId?: string | null; highlightRecapId?: string | null; onHighlightHandled?: () => void;
 }) {
   const toast   = useToast();
@@ -411,7 +420,8 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
       ]);
       const sData = sr.ok ? (await sr.json() as { shipments: Shipment[] }).shipments : [];
       const rData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
-      setHistoryShipments(sData.filter(s => s.locationId === l.id));
+      // Hanya shipment approved yang masuk riwayat/invoice/laporan lokasi — draft & ditolak tidak berefek.
+      setHistoryShipments(approvedShipments(sData).filter(s => s.locationId === l.id));
       setHistoryRecaps(rData.filter(r => r.locationId === l.id));
     } finally {
       setHistoryLoading(false);
@@ -459,7 +469,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     const recapData = rr.ok ? (await rr.json() as { recaps: Recap[] }).recaps : [];
     const stats: Record<string, LocationStats> = {};
     for (const l of ls) stats[l.id] = { ...EMPTY_LOCATION_STATS };
-    for (const s of sendData) {
+    for (const s of approvedShipments(sendData)) {
       if (!s.locationId || !stats[s.locationId]) continue;
       stats[s.locationId].totalKirim += s.items.reduce((ss, it) => ss + it.subtotal, 0);
     }
@@ -947,6 +957,12 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   const [bulkDeletingShipments, setBulkDeletingShipments] = useState(false);
   const [printingShipmentId, setPrintingShipmentId] = useState<string | null>(null);
   const [printingShipmentsBulk, setPrintingShipmentsBulk] = useState(false);
+  const [shipmentStatusFilter, setShipmentStatusFilter] = useState<'semua' | ShipmentStatus>('semua');
+  const [approvingShipmentId, setApprovingShipmentId] = useState<string | null>(null);
+  const [bulkApprovingShipments, setBulkApprovingShipments] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<Shipment | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
 
   const loadShipments = async () => {
     setShipmentsLoading(true);
@@ -1043,15 +1059,17 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
           });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan pengiriman.'); return; }
-      toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Stok berhasil dikirim ke "${location.name}".`);
+      toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Draft pengiriman ke "${location.name}" disimpan — perlu di-approve agar stok berpindah.`);
       setShowSendForm(false); setEditingShipment(null);
       setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
       await Promise.all([loadShipments(), loadLocations()]);
     } finally { setSending(false); }
   };
 
-  const exportShipmentsExcel = async (rows: Shipment[], label: string) => {
-    if (rows.length === 0) { toast.error('Tidak ada riwayat kirim untuk diexport.'); return; }
+  const exportShipmentsExcel = async (allRows: Shipment[], label: string) => {
+    // Draft/ditolak bukan data laporan — tidak ikut diexport.
+    const rows = approvedShipments(allRows);
+    if (rows.length === 0) { toast.error('Tidak ada riwayat kirim berstatus approved untuk diexport.'); return; }
     setExportingShipments(true);
     try {
       const wb = new ExcelJS.Workbook();
@@ -1150,8 +1168,9 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     }
   };
 
-  const exportShipmentsPDF = async (rows: Shipment[], label: string) => {
-    if (rows.length === 0) { toast.error('Tidak ada riwayat kirim untuk diexport.'); return; }
+  const exportShipmentsPDF = async (allRows: Shipment[], label: string) => {
+    const rows = approvedShipments(allRows);
+    if (rows.length === 0) { toast.error('Tidak ada riwayat kirim berstatus approved untuk diexport.'); return; }
     setExportingShipmentsPdf(true);
     try {
       const blob = await pdf(
@@ -1237,7 +1256,7 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
         else errors.push(`${g.location.name}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'gagal disimpan'}`);
       }
       await Promise.all([loadShipments(), loadLocations()]);
-      if (created > 0) toast.success(`${created} pengiriman berhasil diimpor.${errors.length ? ` ${errors.length} baris/pengiriman dilewati.` : ''}`);
+      if (created > 0) toast.success(`${created} draft dibuat, perlu di-approve.${errors.length ? ` ${errors.length} baris/pengiriman dilewati.` : ''}`);
       if (errors.length) toast.error(errors.slice(0, 3).join(' • ') + (errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ''));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal membaca file Excel. Pastikan format sesuai template.');
@@ -1246,11 +1265,93 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
     }
   };
 
+  // Peringatan (tidak memblokir) bila tanggal kirim sudah lampau: dampak ke laporan jatuh di tanggal kirim, bukan hari approve.
+  const staleNote = (list: Shipment[]) => list.some(s => isStaleShipmentDate(s.createdAt?.seconds))
+    ? ` PERINGATAN: ada pengiriman dengan tanggal kirim lebih dari ${STALE_APPROVE_DAYS} hari lalu — dampaknya ke laporan tercatat di tanggal kirim tersebut, bukan hari ini.`
+    : '';
+
+  const approveShipmentRow = async (s: Shipment) => {
+    if (approvingShipmentId) return;
+    if (!await confirm({ title: 'Approve pengiriman', message: `Approve pengiriman ke "${s.locationName}"? Stok toko & gudang akan berkurang dan stok titip di lokasi bertambah.${staleNote([s])}` })) return;
+    setApprovingShipmentId(s.id);
+    try {
+      const r = await fetch(`${API}/api/consignment/send/${s.id}/approve`, { method: 'POST', headers });
+      const data = await r.json().catch(() => ({} as { error?: string }));
+      if (!r.ok) { toast.error((data as { error?: string }).error ?? 'Gagal meng-approve pengiriman.'); await loadShipments(); return; }
+      toast.success(`Pengiriman ke "${s.locationName}" di-approve.`);
+      await Promise.all([loadShipments(), loadLocations()]);
+    } catch {
+      toast.error('Gagal meng-approve pengiriman — periksa koneksi internet.');
+    } finally {
+      setApprovingShipmentId(null);
+    }
+  };
+
+  const submitReject = async () => {
+    if (!rejectTarget || rejecting) return;
+    const reason = rejectReason.trim();
+    if (!reason) { toast.error('Alasan penolakan wajib diisi.'); return; }
+    setRejecting(true);
+    try {
+      const r = await fetch(`${API}/api/consignment/send/${rejectTarget.id}/reject`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+      });
+      const data = await r.json().catch(() => ({} as { error?: string }));
+      if (!r.ok) { toast.error((data as { error?: string }).error ?? 'Gagal menolak pengiriman.'); await loadShipments(); return; }
+      toast.success('Pengiriman ditolak.');
+      setRejectTarget(null); setRejectReason('');
+      await loadShipments();
+    } catch {
+      toast.error('Gagal menolak pengiriman — periksa koneksi internet.');
+    } finally {
+      setRejecting(false);
+    }
+  };
+
+  // Approve massal — server memproses berurutan (tiap approve memvalidasi stok terkini) dan melaporkan
+  // yang berhasil/gagal per item beserta alasannya. Pilihan besar dipecah jadi batch BULK_APPROVE_MAX yang
+  // dikirim berurutan (batas server per request); hasil digabung, refresh sekali di akhir.
+  const bulkApproveShipments = async () => {
+    const drafts = shipments.filter(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'draft');
+    if (drafts.length === 0) { toast.error('Tidak ada draft pada pilihan.'); return; }
+    if (!await confirm({ title: 'Approve massal', message: `Approve ${drafts.length} draft pengiriman? Stok akan diproses berurutan; yang stoknya kurang dilewati.${staleNote(drafts)}` })) return;
+    setBulkApprovingShipments(true);
+    let approvedCount = 0;
+    const failed: { id: string; label: string; reason: string }[] = [];
+    let aborted: string | null = null;
+    try {
+      for (let i = 0; i < drafts.length; i += BULK_APPROVE_MAX) {
+        const batch = drafts.slice(i, i + BULK_APPROVE_MAX);
+        try {
+          const r = await fetch(`${API}/api/consignment/send/bulk-approve`, {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: batch.map(d => d.id) }),
+          });
+          const data = await r.json().catch(() => ({})) as { approved?: number; failed?: { id: string; label: string; reason: string }[]; error?: string };
+          if (!r.ok) { aborted = data.error ?? 'Gagal meng-approve massal.'; break; }
+          approvedCount += data.approved ?? 0;
+          failed.push(...(data.failed ?? []));
+        } catch {
+          aborted = 'Koneksi terputus saat approve massal — periksa koneksi internet.';
+          break;
+        }
+      }
+      if (approvedCount > 0) toast.success(`${approvedCount} pengiriman di-approve.`);
+      if (failed.length > 0) toast.error(`${failed.length} gagal: ` + failed.slice(0, 3).map(f => `${f.label} (${f.reason})`).join(' • ') + (failed.length > 3 ? ` (+${failed.length - 3} lainnya)` : ''));
+      if (aborted) toast.error(`${aborted} Batch berikutnya tidak diproses.`);
+      setSelectedShipments(new Set());
+      await Promise.all([loadShipments(), loadLocations()]);
+    } finally {
+      setBulkApprovingShipments(false);
+    }
+  };
+
   const toggleSelectShipment = (id: string) =>
     setSelectedShipments(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const deleteShipment = async (s: Shipment) => {
-    if (!await confirm({ message: `Hapus riwayat kirim ke "${s.locationName}"? Stok toko akan dikembalikan.`, danger: true })) return;
+    if (!await confirm({ message: shipmentStatusOf(s) === 'approved'
+      ? `Hapus riwayat kirim ke "${s.locationName}"? Stok toko & gudang akan dikembalikan dan stok titip di lokasi dikurangi.`
+      : `Hapus ${shipmentStatusOf(s) === 'draft' ? 'draft' : 'pengiriman ditolak'} ke "${s.locationName}"? Tidak ada stok yang dikembalikan karena belum pernah berefek ke stok.`, danger: true })) return;
     setDeletingShipmentId(s.id);
     try {
       const r = await fetch(`${API}/api/consignment/send/${s.id}`, { method: 'DELETE', headers });
@@ -1313,8 +1414,10 @@ export default function ConsignmentTab({ creds, products, highlightShipmentId, h
   // beberapa pengiriman ternyata ke mitra yang sama, qty & subtotalnya dijumlahkan jadi satu
   // halaman ringkasan (per produk); mitra yang berbeda tetap dapat halamannya masing-masing.
   // Sama persis dengan `printRecapsBulk` di tab Rekap.
-  const printShipmentsBulk = async (rows: Shipment[]) => {
-    if (rows.length === 0) { toast.error('Tidak ada pengiriman untuk dicetak.'); return; }
+  const printShipmentsBulk = async (allRows: Shipment[]) => {
+    // Nota hanya untuk pengiriman approved.
+    const rows = approvedShipments(allRows);
+    if (rows.length === 0) { toast.error('Tidak ada pengiriman berstatus approved untuk dicetak.'); return; }
     setPrintingShipmentsBulk(true);
     try {
       const groups = groupAndMergeShipments(rows, locationId => {
@@ -1381,7 +1484,11 @@ _${storeHeader.name}_`.trim();
 
   const bulkDeleteShipments = async () => {
     if (selectedShipments.size === 0) return;
-    if (!await confirm({ message: `Hapus ${selectedShipments.size} riwayat kirim yang dipilih? Stok toko akan dikembalikan.`, danger: true })) return;
+    const selected = shipments.filter(s => selectedShipments.has(s.id));
+    const nApproved = selected.filter(s => shipmentStatusOf(s) === 'approved').length;
+    if (!await confirm({ message: nApproved > 0
+      ? `Hapus ${selectedShipments.size} riwayat kirim yang dipilih? ${nApproved} yang berstatus approved akan mengembalikan stok toko & gudang dan mengurangi stok titip; draft/ditolak tidak mengubah stok.`
+      : `Hapus ${selectedShipments.size} pengiriman (draft/ditolak) yang dipilih? Tidak ada stok yang dikembalikan karena belum pernah berefek ke stok.`, danger: true })) return;
     setBulkDeletingShipments(true);
     const count = selectedShipments.size;
     const ids = [...selectedShipments];
@@ -1395,7 +1502,77 @@ _${storeHeader.name}_`.trim();
     setBulkDeletingShipments(false);
   };
 
+  const renderShipmentStatusBadge = (s: Shipment) => {
+    const st = shipmentStatusOf(s);
+    return <span className={`badge ${SHIPMENT_STATUS_BADGE[st]}`} style={{ fontSize: 10, padding: '1px 6px' }}>{SHIPMENT_STATUS_LABEL[st]}</span>;
+  };
+
+  // Info tambahan per status: alasan penolakan (ditolak) / "belum berefek ke stok" (draft).
+  const renderShipmentExtra = (s: Shipment) => {
+    const st = shipmentStatusOf(s);
+    if (st === 'ditolak') return (
+      <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>
+        Ditolak{s.rejectedBy ? ` oleh ${s.rejectedBy}` : ''}{s.rejectedAt?.seconds ? ` · ${formatDate(s.rejectedAt.seconds)}` : ''}{s.rejectReason ? ` — ${s.rejectReason}` : ''}
+      </p>
+    );
+    if (st === 'draft') return <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Draft — belum mengubah stok; menunggu approval.</p>;
+    return null;
+  };
+
+  const renderShipmentActions = (s: Shipment) => {
+    const st = shipmentStatusOf(s);
+    const iconBtn = { background: 'var(--surface-2)', color: 'var(--text-secondary)' } as const;
+    return (
+      <>
+        {st === 'draft' && can('approve') && (
+          <>
+            <Tooltip label="Approve">
+              <button onClick={() => approveShipmentRow(s)} disabled={approvingShipmentId === s.id || bulkApprovingShipments} aria-label="Approve"
+                className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-50" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                {approvingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <CircleCheck size={12} />}
+              </button>
+            </Tooltip>
+            <Tooltip label="Tolak">
+              <button onClick={() => { setRejectTarget(s); setRejectReason(''); }} disabled={approvingShipmentId === s.id || bulkApprovingShipments} aria-label="Tolak"
+                className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-50" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                <CircleX size={12} />
+              </button>
+            </Tooltip>
+          </>
+        )}
+        {st === 'approved' && (
+          <>
+            <Tooltip label="Kirim Nota via WhatsApp">
+              <button onClick={() => sendShipmentWhatsApp(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={iconBtn} title="Kirim Nota via WhatsApp">
+                <MessageCircle size={12} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Cetak Nota PDF">
+              <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={iconBtn} title="Cetak Nota PDF">
+                {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
+              </button>
+            </Tooltip>
+          </>
+        )}
+        <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
+        {st !== 'ditolak' && (
+          <Tooltip label="Edit">
+            <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={iconBtn} title="Edit">
+              <Pencil size={12} />
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip label="Hapus">
+          <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
+            {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+          </button>
+        </Tooltip>
+      </>
+    );
+  };
+
   const filteredShipments = shipments.filter(s => {
+    if (shipmentStatusFilter !== 'semua' && shipmentStatusOf(s) !== shipmentStatusFilter) return false;
     if (!shipmentSearch) return true;
     const q = shipmentSearch.toLowerCase();
     return s.locationName.toLowerCase().includes(q)
@@ -1414,6 +1591,7 @@ _${storeHeader.name}_`.trim();
     if (idx === -1) { onHighlightHandled?.(); return; }
     setSubTab('kirim');
     setShipmentSearch('');
+    setShipmentStatusFilter('semua');
     setShipmentPage(Math.floor(idx / shipmentPageSize) + 1);
     setHighlightedShipmentId(highlightShipmentId);
     requestAnimationFrame(() => shipmentRowRefs.current[highlightShipmentId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -2825,6 +3003,16 @@ _${storeHeader.name}_`.trim();
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {shipments.length > 0 && (
+                <FilterSelect searchable={false} height={HEADER_BTN_H} value={shipmentStatusFilter}
+                  onChange={v => { setShipmentStatusFilter(v as typeof shipmentStatusFilter); resetShipmentPage(); }}
+                  options={[
+                    { value: 'semua', label: 'Semua status', count: shipments.length },
+                    { value: 'draft', label: 'Draft', count: shipments.filter(x => shipmentStatusOf(x) === 'draft').length },
+                    { value: 'approved', label: 'Approved', count: shipments.filter(x => shipmentStatusOf(x) === 'approved').length },
+                    { value: 'ditolak', label: 'Ditolak', count: shipments.filter(x => shipmentStatusOf(x) === 'ditolak').length },
+                  ]} />
+              )}
+              {shipments.length > 0 && (
                 <div className="relative flex-1 min-w-0">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                   <input
@@ -2911,6 +3099,7 @@ _${storeHeader.name}_`.trim();
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                                  {renderShipmentStatusBadge(s)}
                                   {locations.find(l => l.id === s.locationId)?.code && (
                                     <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded"
                                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -2929,29 +3118,10 @@ _${storeHeader.name}_`.trim();
                               {s.note && (
                                 <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{s.note}&rdquo;</p>
                               )}
+                              {renderShipmentExtra(s)}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
-                              <Tooltip label="Kirim Nota via WhatsApp">
-                                <button onClick={() => sendShipmentWhatsApp(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Nota via WhatsApp">
-                                  <MessageCircle size={12} />
-                                </button>
-                              </Tooltip>
-                              <Tooltip label="Cetak Nota PDF">
-                                <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
-                                  {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
-                                </button>
-                              </Tooltip>
-                              <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
-                              <Tooltip label="Edit">
-                                <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                  <Pencil size={12} />
-                                </button>
-                              </Tooltip>
-                              <Tooltip label="Hapus">
-                                <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                  {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                </button>
-                              </Tooltip>
+                              {renderShipmentActions(s)}
                             </div>
                           </div>
                           {auditHistoryId === s.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={s.id} />}
@@ -2971,6 +3141,7 @@ _${storeHeader.name}_`.trim();
                               <Checkbox checked={isSelected} onChange={() => toggleSelectShipment(s.id)} />
                               <LocationLogo location={locations.find(l => l.id === s.locationId) ?? { name: s.locationName }} size={32} />
                               <p className="text-sm font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>{s.locationName}</p>
+                              {renderShipmentStatusBadge(s)}
                               {locations.find(l => l.id === s.locationId)?.code && (
                                 <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
                                   style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -2978,27 +3149,7 @@ _${storeHeader.name}_`.trim();
                                 </span>
                               )}
                               <div className="flex items-center gap-1 flex-shrink-0">
-                                <Tooltip label="Kirim Nota via WhatsApp">
-                                  <button onClick={() => sendShipmentWhatsApp(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Nota via WhatsApp">
-                                    <MessageCircle size={12} />
-                                  </button>
-                                </Tooltip>
-                                <Tooltip label="Cetak Nota PDF">
-                                  <button onClick={() => printShipmentNota(s)} disabled={printingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Cetak Nota PDF">
-                                    {printingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={12} />}
-                                  </button>
-                                </Tooltip>
-                                <RecordHistoryButton open={auditHistoryId === s.id} onToggle={() => toggleAuditHistory(s.id)} />
-                                <Tooltip label="Edit">
-                                  <button onClick={() => openEditSend(s)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Edit">
-                                    <Pencil size={12} />
-                                  </button>
-                                </Tooltip>
-                                <Tooltip label="Hapus">
-                                  <button onClick={() => deleteShipment(s)} disabled={deletingShipmentId === s.id} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }} title="Hapus">
-                                    {deletingShipmentId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                  </button>
-                                </Tooltip>
+                                {renderShipmentActions(s)}
                               </div>
                             </div>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(s.createdAt?.seconds)}</p>
@@ -3008,6 +3159,7 @@ _${storeHeader.name}_`.trim();
                             {s.note && (
                               <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>&ldquo;{s.note}&rdquo;</p>
                             )}
+                            {renderShipmentExtra(s)}
                             <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total item</span>
                               <span className="text-sm font-bold tabular" style={{ color: 'var(--text-primary)' }}>
@@ -3411,8 +3563,12 @@ _${storeHeader.name}_`.trim();
             <div className="modal-header-left">
               <div className="modal-icon"><Send size={17} /></div>
               <div>
-                <p className="modal-title">{editingShipment ? 'Edit Kirim Stok' : 'Kirim Stok Konsinyasi'}</p>
-                <p className="modal-subtitle">Stok gudang & stok toko berkurang, stok titip di lokasi bertambah</p>
+                <p className="modal-title">{editingShipment ? (shipmentStatusOf(editingShipment) === 'draft' ? 'Edit Draft Kirim Stok' : 'Edit Kirim Stok') : 'Draft Kirim Stok'}</p>
+                <p className="modal-subtitle">
+                  {editingShipment && shipmentStatusOf(editingShipment) === 'approved'
+                    ? 'Stok gudang & stok toko berkurang, stok titip di lokasi bertambah'
+                    : 'Disimpan sebagai draft — stok baru berubah setelah di-approve'}
+                </p>
               </div>
             </div>
             <Tooltip label="Tutup">
@@ -3509,7 +3665,39 @@ _${storeHeader.name}_`.trim();
             </button>
             <button onClick={submitSend} disabled={sending || !canSubmitSend} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
               {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              {sending ? 'Menyimpan…' : editingShipment ? 'Simpan Perubahan' : 'Kirim Stok'}
+              {sending ? 'Menyimpan…' : editingShipment ? 'Simpan Perubahan' : 'Simpan Draft'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {rejectTarget && (
+        <Modal onClose={() => !rejecting && setRejectTarget(null)} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><CircleX size={17} /></div>
+              <div>
+                <p className="modal-title">Tolak Pengiriman</p>
+                <p className="modal-subtitle">{rejectTarget.locationName} · penolakan bersifat final</p>
+              </div>
+            </div>
+            <Tooltip label="Tutup">
+              <button onClick={() => setRejectTarget(null)} disabled={rejecting} className="modal-close" aria-label="Tutup"><X size={14} /></button>
+            </Tooltip>
+          </div>
+          <div className="modal-body">
+            <Field label="Alasan penolakan" required>
+              <textarea rows={4} value={rejectReason} onChange={e => setRejectReason(e.target.value)} maxLength={500}
+                placeholder="Mis. qty salah, lokasi tidak sesuai…" className="input" style={{ resize: 'vertical' }} autoFocus />
+            </Field>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setRejectTarget(null)} disabled={rejecting} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={submitReject} disabled={rejecting || !rejectReason.trim()} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0', background: 'var(--danger)' }}>
+              {rejecting ? <Loader2 size={14} className="animate-spin" /> : <CircleX size={14} />}
+              {rejecting ? 'Menolak…' : 'Tolak Pengiriman'}
             </button>
           </div>
         </Modal>
@@ -4026,13 +4214,21 @@ _${storeHeader.name}_`.trim();
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
             <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selectedShipments.size} dipilih</span>
             <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => exportShipmentsExcel(shipments.filter(s => selectedShipments.has(s.id)), 'terpilih')} disabled={exportingShipments}
+            {can('approve') && shipments.some(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'draft') && (
+              <button onClick={bulkApproveShipments} disabled={bulkApprovingShipments}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 flex-shrink-0 whitespace-nowrap"
+                style={{ background: 'var(--success)', color: '#fff' }}>
+                {bulkApprovingShipments ? <Loader2 size={13} className="animate-spin" /> : <CircleCheck size={13} />}
+                Approve
+              </button>
+            )}
+            <button onClick={() => exportShipmentsExcel(shipments.filter(s => selectedShipments.has(s.id)), 'terpilih')} disabled={exportingShipments || !shipments.some(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'approved')}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {exportingShipments ? <Loader2 size={13} className="animate-spin" /> : <ExcelIcon size={13} />}
               Export
             </button>
-            <button onClick={() => printShipmentsBulk(shipments.filter(s => selectedShipments.has(s.id)))} disabled={printingShipmentsBulk}
+            <button onClick={() => printShipmentsBulk(shipments.filter(s => selectedShipments.has(s.id)))} disabled={printingShipmentsBulk || !shipments.some(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'approved')}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
               {printingShipmentsBulk ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}

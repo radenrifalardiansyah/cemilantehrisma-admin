@@ -61,4 +61,20 @@ describe('buildMitraDailyReport', () => {
     expect(p.days).toBe(4);
     expect(p.fromLong).toBe('Jumat, 30 Oktober 2026');
   });
+
+  it('mengabaikan pengiriman draft/ditolak; status kosong (data lama) & approved tetap dihitung', () => {
+    const item = (qty: number) => [{ productId: 'p', productName: 'Keripik', qty, hargaTitip: 5000, subtotal: qty * 5000 }];
+    const [l1] = buildMitraDailyReport({
+      ...base,
+      shipments: [
+        { locationId: 'L1', createdAt: at('2026-10-30T08:00:00'), status: 'approved', items: item(50) },
+        { locationId: 'L1', createdAt: at('2026-10-30T09:00:00'), status: 'draft', items: item(999) },
+        { locationId: 'L1', createdAt: at('2026-11-02T08:00:00'), status: 'ditolak', items: item(777) },
+        { locationId: 'L1', createdAt: at('2026-11-02T09:00:00'), items: item(10) },
+      ],
+      from: '2026-10-30', to: '2026-11-02',
+    });
+    expect(l1.totals.kirim).toBe(60);
+    expect(l1.days.map(d => d.totals.stokAkhir)).toEqual([50, 27, 37]);
+  });
 });

@@ -1762,7 +1762,7 @@ export default function AdminPage() {
       )}
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {activeTab === 'consignment' && (
-        <ConsignmentTab creds={creds} products={posProducts}
+        <ConsignmentTab creds={creds} products={posProducts} can={(a: Action) => can('consignment', a)}
           highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
           onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
       )}

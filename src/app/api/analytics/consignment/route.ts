@@ -1,3 +1,4 @@
+import { SHIPMENT_APPROVED } from '@/lib/shipment-status';
 import { NextRequest } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { getSql, parseJsonb } from '@/lib/db';
@@ -36,6 +37,7 @@ const getRawConsignmentAnalytics = unstable_cache(
         select location_id, location_name, created_at, items
         from consignment_shipments
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+          and status = ${SHIPMENT_APPROVED}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
       sql<{ location_id: string; location_name: string; payment_status: string; created_at: Date; total_sold: string; total_retur: string; total_reject: string; total_revenue: string; items: unknown }[]>`

@@ -21,7 +21,8 @@ export const FEATURE_KEYS: FeatureKeyDef[] = [
   { key: 'customers',        label: 'Pelanggan',          actions: CRUD },
   { key: 'storefront-customers', label: 'Akun Storefront', actions: ['view', 'delete'] },
   { key: 'reviews',          label: 'Ulasan',             actions: ['view', 'edit', 'delete'] },
-  { key: 'consignment',      label: 'Mitra',              actions: CRUD },
+  // `approve` = meng-approve/menolak Kirim Stok (draft → approved/ditolak); efek stok baru terjadi saat approve.
+  { key: 'consignment',      label: 'Mitra',              actions: [...CRUD, 'approve'] },
   // Teruskan Stok WA (menu sendiri di modul Mitra): view = lihat status & riwayat; edit = pemetaan grup, pengaturan, sinkron grup.
   { key: 'wa-forward',       label: 'Teruskan Stok WA',   actions: ['view', 'edit'] },
   // Laporan Harian Mitra (menu Laporan di modul Manajemen): kirim, jual, retur, reject & stok akhir per hari.

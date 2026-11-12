@@ -5,6 +5,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { getSettings } from '@/lib/settings-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
+import { SHIPMENT_APPROVED } from '@/lib/shipment-status';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 import MitraInvoicePDF from '@/lib/pdf/MitraInvoicePDF';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ loca
     if (!loc) return new NextResponse('Invoice tidak ditemukan.', { status: 404 });
 
     const [shipmentRows, recapRows, settingsRaw] = await Promise.all([
-      sql<ShipmentRow[]>`select * from consignment_shipments where location_id = ${locationId}`,
+      sql<ShipmentRow[]>`select * from consignment_shipments where location_id = ${locationId} and status = ${SHIPMENT_APPROVED}`,
       sql<RecapRow[]>`select * from consignment_recaps where location_id = ${locationId}`,
       getSettings(),
     ]);
