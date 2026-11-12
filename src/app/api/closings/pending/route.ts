@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
   const byPaid = (a: { paidDate: string | null; txDate: string }, b: { paidDate: string | null; txDate: string }) =>
     (a.paidDate ?? a.txDate).localeCompare(b.paidDate ?? b.txDate);
   const paid = [...pool.paid].sort(byPaid);
-  const receivable = [...pool.receivable].sort(byPaid);
+  // Piutang: terbaru di atas (tanggal transaksi menurun). Dipotong MAX_LINES dari yang terbaru.
+  const receivable = [...pool.receivable].sort((a, b) => b.txDate.localeCompare(a.txDate) || b.invoiceNo.localeCompare(a.invoiceNo));
 
   return Response.json({
     upTo, today: todayWib(), lastClosingTo: latest?.period_to ?? null,

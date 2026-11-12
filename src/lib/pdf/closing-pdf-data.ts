@@ -52,8 +52,12 @@ const orderedLines = (lines: ClosingLine[]): ClosingLine[] =>
   [...lines].sort((a, b) =>
     (a.paidDate ?? a.txDate).localeCompare(b.paidDate ?? b.txDate) || a.txDate.localeCompare(b.txDate) || a.invoiceNo.localeCompare(b.invoiceNo));
 
-function toPdfLines(lines: ClosingLine[]): { lines: PdfLine[]; omitted: number } {
-  const shown = orderedLines(lines).slice(0, PDF_MAX_LINES);
+// Piutang: terbaru di atas (tanggal transaksi menurun).
+const newestFirst = (lines: ClosingLine[]): ClosingLine[] =>
+  [...lines].sort((a, b) => b.txDate.localeCompare(a.txDate) || b.invoiceNo.localeCompare(a.invoiceNo));
+
+function toPdfLines(lines: ClosingLine[], desc = false): { lines: PdfLine[]; omitted: number } {
+  const shown = (desc ? newestFirst(lines) : orderedLines(lines)).slice(0, PDF_MAX_LINES);
   return {
     lines: shown.map((l, i) => ({
       no: i + 1, invoice: l.invoiceNo, party: l.party, note: l.note ?? '', txDate: l.txDate, paidDate: l.paidDate,
@@ -142,7 +146,7 @@ export function draftToPdfData(i: DraftInput): ClosingPdfData {
   const paidT = sumLines(i.paid);
   const recvT = sumLines(i.receivable);
   const paid = toPdfLines(i.paid);
-  const recv = toPdfLines(i.receivable);
+  const recv = toPdfLines(i.receivable, true);
   const scope = i.upTo ? `Sampai tanggal bayar ${dayLabel(i.upTo)}` : `Per ${dayLabel(i.today)} (semua yang belum closing)`;
   return {
     variant: 'draft',
