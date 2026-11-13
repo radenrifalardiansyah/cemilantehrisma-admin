@@ -66,6 +66,8 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
   const [detailFilters, setDetailFilters] = useState({ paid: EMPTY_DF, receivable: EMPTY_DF });
   const [detailPageSize, setDetailPageSize] = useState(10);
   const [histPage, setHistPage] = useState(1);
+  const EMPTY_HF = { q: '', status: '', from: '', to: '' };
+  const [histFilter, setHistFilter] = useState(EMPTY_HF);
   const [histPageSize, setHistPageSize] = useState(10);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return typeof window !== 'undefined' && window.localStorage.getItem('closing-panel-collapsed') === '1'; } catch { return false; }
@@ -263,7 +265,18 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
   });
   const filterActive = !!(df.q || df.from || df.to);
   const dPg = paginate(filteredLines, detailPage, detailPageSize);
-  const hPg = paginate(closings, histPage, histPageSize);
+  const setHf = (patch: Partial<typeof EMPTY_HF>) => { setHistFilter(f => ({ ...f, ...patch })); setHistPage(1); };
+  const hq = histFilter.q.trim().toLowerCase();
+  const filteredClosings = closings.filter(c => {
+    if (hq && !`${c.closedBy} ${c.note}`.toLowerCase().includes(hq)) return false;
+    const st = histFilter.status;
+    if (st === 'dibuka_ulang' ? c.status !== 'dibuka_ulang'
+      : st === 'saldo_awal' ? !c.isOpeningBalance
+      : st ? c.status !== 'aktif' || c.settlementStatus !== st : false) return false;
+    return (!histFilter.from || c.periodTo >= histFilter.from) && (!histFilter.to || c.periodTo <= histFilter.to);
+  });
+  const histFilterActive = !!(histFilter.q || histFilter.status || histFilter.from || histFilter.to);
+  const hPg = paginate(filteredClosings, histPage, histPageSize);
   const closable = preview?.paid.closable;
   const cell = 'px-3 py-2 whitespace-nowrap';
   const th = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
@@ -381,22 +394,22 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
           <Tooltip label="Unduh draf PDF (belum closing)">
             <button aria-label="Unduh draf PDF" disabled={!pending || !!pdfBusy}
               onClick={() => pending && downloadPdf('draft', '/api/closings/pending/pdf', `draf-closing-hpp-${pending.today}.pdf`)}
-              className="btn-ghost flex items-center justify-center h-10 w-10 sm:h-[34px] sm:w-[34px]" style={{ padding: 0 }}>
-              {pdfBusy === 'draft' ? <Loader2 size={15} className="animate-spin" /> : <PdfIcon size={20} />}
+              className="btn-ghost flex items-center justify-center h-10 w-10 sm:h-[28px] sm:w-[28px]" style={{ padding: 0 }}>
+              {pdfBusy === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={18} />}
             </button>
           </Tooltip>
           {/* Aktif (berwarna) selama panel riwayat terbuka. Saat kartu terlipat, klik membuka kartu + riwayat. */}
           <button
             onClick={() => { if (collapsed) { toggleCollapsed(false); setShowHistory(true); } else setShowHistory(v => !v); }}
             aria-pressed={showHistory && !collapsed}
-            className="btn-ghost flex items-center gap-1.5 h-10 sm:h-[34px]"
+            className="btn-ghost flex items-center gap-1.5 h-10 sm:h-[28px]"
             style={showHistory && !collapsed
-              ? { background: 'var(--accent-bg)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 700 }
-              : undefined}>
+              ? { fontSize: 12, padding: '0 10px', background: 'var(--accent-bg)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 700 }
+              : { fontSize: 12, padding: '0 10px' }}>
             <HistoryIcon size={14} /> Riwayat
           </button>
           {can('close') && (
-            <button onClick={openClose} disabled={!pending || loading} className="btn-primary flex items-center gap-1.5 h-10 sm:h-[34px]">
+            <button onClick={openClose} disabled={!pending || loading} className="btn-primary flex items-center gap-1.5 h-10 sm:h-[28px]" style={{ fontSize: 12, padding: '0 12px' }}>
               <Lock size={14} /> Closing
             </button>
           )}
@@ -443,10 +456,10 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                 ))}
               </div>
               <div className="flex flex-wrap items-end gap-2">
-                <input value={df.q} onChange={e => setDf({ q: e.target.value })} className="input flex-1 min-w-[160px]" placeholder="Cari invoice / pihak…" aria-label="Cari invoice atau pihak" />
-                <div className="w-[140px]"><DateInput value={df.from} onChange={v => setDf({ from: v })} max={df.to || undefined} /></div>
-                <span className="text-xs pb-2.5" style={{ color: 'var(--text-muted)' }}>s/d</span>
-                <div className="w-[140px]"><DateInput value={df.to} onChange={v => setDf({ to: v })} min={df.from || undefined} /></div>
+                <input value={df.q} onChange={e => setDf({ q: e.target.value })} className="input flex-1 min-w-[160px] sm:!py-0 sm:!h-[30px] sm:!text-xs" placeholder="Cari invoice / pihak…" aria-label="Cari invoice atau pihak" />
+                <div className="w-[130px]"><DateInput height={30} value={df.from} onChange={v => setDf({ from: v })} max={df.to || undefined} /></div>
+                <span className="text-xs pb-1.5" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                <div className="w-[130px]"><DateInput height={30} value={df.to} onChange={v => setDf({ to: v })} min={df.from || undefined} /></div>
                 {filterActive && (
                   <button onClick={() => setDf(EMPTY_DF)} className="btn-ghost text-xs font-semibold min-h-10 sm:min-h-0 px-2" style={{ color: 'var(--danger)' }}>Reset</button>
                 )}
@@ -519,8 +532,26 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
       {!collapsed && showHistory && (
         <div className="space-y-2">
           <p className="field-label">Riwayat closing</p>
-          {closings.length === 0 ? (
-            <p className="text-xs py-4 text-center" style={{ color: 'var(--text-muted)' }}>Belum ada closing.</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <input value={histFilter.q} onChange={e => setHf({ q: e.target.value })} className="input flex-1 min-w-[160px] sm:!py-0 sm:!h-[30px] sm:!text-xs" placeholder="Cari penutup / catatan…" aria-label="Cari penutup atau catatan" />
+            <select value={histFilter.status} onChange={e => setHf({ status: e.target.value })} aria-label="Filter status" className="input sm:!py-0 sm:!h-[30px] sm:!text-xs" style={{ width: 150 }}>
+              <option value="">Semua status</option>
+              <option value="belum">Belum ditransfer</option>
+              <option value="sebagian">Sebagian</option>
+              <option value="sudah">Sudah ditransfer</option>
+              <option value="dibuka_ulang">Dibuka ulang</option>
+              <option value="saldo_awal">Saldo awal</option>
+            </select>
+            <div className="w-[130px]"><DateInput height={30} value={histFilter.from} onChange={v => setHf({ from: v })} max={histFilter.to || undefined} /></div>
+            <span className="text-xs pb-1.5" style={{ color: 'var(--text-muted)' }}>s/d</span>
+            <div className="w-[130px]"><DateInput height={30} value={histFilter.to} onChange={v => setHf({ to: v })} min={histFilter.from || undefined} /></div>
+            {histFilterActive && (
+              <button onClick={() => setHf(EMPTY_HF)} className="btn-ghost text-xs font-semibold min-h-10 sm:min-h-0 px-2" style={{ color: 'var(--danger)' }}>Reset</button>
+            )}
+          </div>
+          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tanggal disaring menurut akhir periode closing.</p>
+          {filteredClosings.length === 0 ? (
+            <p className="text-xs py-4 text-center" style={{ color: 'var(--text-muted)' }}>{closings.length === 0 ? 'Belum ada closing.' : 'Tidak ada closing yang cocok dengan filter.'}</p>
           ) : (
             <>
             <ul className="md:hidden rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
@@ -602,7 +633,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
             </div>
             </>
           )}
-          <Pagination total={closings.length} safePage={hPg.safePage} totalPages={hPg.totalPages} pageSize={histPageSize}
+          <Pagination total={filteredClosings.length} safePage={hPg.safePage} totalPages={hPg.totalPages} pageSize={histPageSize}
             onPageSize={n => { setHistPageSize(n); setHistPage(1); }} onGoPage={setHistPage} unit="closing" />
         </div>
       )}
