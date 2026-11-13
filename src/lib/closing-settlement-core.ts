@@ -1,4 +1,4 @@
-import { parseMoneyAmount } from '@/lib/validate-input';
+import { parseMoneyAmount } from '@/lib/money-input';
 
 // Bagian MURNI (tanpa DB) logika status transfer closing — aman dipakai di klien dan diuji langsung.
 // Akses DB-nya ada di src/lib/closing-settlement.ts.
