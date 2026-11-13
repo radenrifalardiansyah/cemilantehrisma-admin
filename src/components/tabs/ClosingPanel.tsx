@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet, MessageCircle } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet, MessageCircle, ArrowRightLeft, Unlink } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
 import Pagination from '@/components/Pagination';
@@ -12,6 +12,9 @@ import { formatRp } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import ClosingSettlementDialog from '@/components/tabs/ClosingSettlementDialog';
+import { SETTLEMENT_STATUS_LABEL, type SettlementStatus } from '@/lib/closing-settlement-core';
+import { useConfirm } from '@/components/Confirm';
 
 const formatQty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 const fmtDay = (d: string | null) => {
@@ -35,14 +38,19 @@ interface ClosingItem {
   id: string; periodFrom: string | null; periodTo: string; closedAt: string; closedBy: string;
   totalQty: number | null; totalCogs: number | null; totalRevenue: number | null; itemCount: number; note: string;
   status: 'aktif' | 'dibuka_ulang'; reopenedAt: string | null; reopenedBy: string; reopenReason: string; isOpeningBalance: boolean;
+  // Status transfer closing (null = tidak berlaku: saldo awal / dibuka ulang)
+  settledAmount: number; settlementStatus: SettlementStatus | null; settlementRemaining: number | null;
+  settlements: { id: string; walletTransferId: string; amount: number; date: string; fromWalletName: string; toWalletName: string; createdBy: string }[];
 }
+const SETTLE_BADGE: Record<SettlementStatus, string> = { belum: 'badge-red', sebagian: 'badge-amber', sudah: 'badge-green' };
 
 const DETAIL_LIMIT = 100;
 
-export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
-  creds: string; can: (action: Action) => boolean; isSuperAdmin: boolean; onChanged: () => void;
+export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onChanged }: {
+  creds: string; can: (action: Action) => boolean; canWallet: (action: Action) => boolean; isSuperAdmin: boolean; onChanged: () => void;
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
 
   const [pending, setPending] = useState<Pending | null>(null);
@@ -77,6 +85,29 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
   const [reopenTarget, setReopenTarget] = useState<ClosingItem | null>(null);
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
+
+  // Status transfer closing: rincian tautan (baris yang dibuka), dialog "Catat transfer", dan lepas tautan.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [settleTarget, setSettleTarget] = useState<ClosingItem | null>(null);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
+  const unlinkSettlement = async (c: ClosingItem, s: ClosingItem['settlements'][number]) => {
+    if (unlinkingId) return;
+    if (!await confirm({
+      message: `Lepas tautan transfer ${s.fromWalletName} → ${s.toWalletName} sebesar ${formatRp(s.amount)} dari closing ini? Transfer dompetnya tetap ada; hanya statusnya yang kembali berkurang.`,
+      danger: true,
+    })) return;
+    setUnlinkingId(s.id);
+    try {
+      const res = await fetch(`/api/closings/${c.id}/settlements?settlementId=${encodeURIComponent(s.id)}`, { method: 'DELETE', headers });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) { toast.error(data.error ?? 'Gagal melepas tautan.'); return; }
+      toast.success('Tautan dilepas.');
+      await load();
+    } catch (err) {
+      console.error('Gagal melepas tautan transfer', err);
+      toast.error('Gagal melepas tautan.');
+    } finally { setUnlinkingId(null); }
+  };
 
   // Unduh PDF (closing resmi / draf) dari API — rute butuh header auth, jadi diambil sebagai blob lalu diunduh.
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
@@ -145,8 +176,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
       console.error('Gagal memuat data closing', err);
     } finally { if (myId === loadIdRef.current) setLoading(false); }
   }, [creds]); // eslint-disable-line react-hooks/exhaustive-deps
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- memuat data saat panel dibuka (pola sama dengan tab laporan lain)
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load]); // memuat data saat panel dibuka (pola sama dengan tab laporan lain)
 
   // Pratinjau closing: abaikan respons lama bila tanggal sudah diganti lagi.
   const previewIdRef = useRef(0);
@@ -379,7 +409,8 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                   {hPg.rows.map((c, i) => {
                     const canReopen = can('reopen') && c.status === 'aktif' && c.id === latestActiveId && (!c.isOpeningBalance || isSuperAdmin);
                     return (
-                      <tr key={c.id} style={{ borderBottom: '1px solid var(--border-2)' }}>
+                      <Fragment key={c.id}>
+                      <tr style={{ borderBottom: expandedId === c.id ? undefined : '1px solid var(--border-2)' }}>
                         <td className="px-3 py-2.5 align-top tabular" style={{ color: 'var(--text-muted)' }}>{hPg.offset + i + 1}</td>
                         <td className="px-3 py-2.5 align-top" style={{ color: 'var(--text-primary)' }}>
                           <span className="font-semibold">{c.periodFrom && c.periodFrom !== c.periodTo ? `${fmtDay(c.periodFrom)} – ${fmtDay(c.periodTo)}` : fmtDay(c.periodTo)}</span>
@@ -394,15 +425,34 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                           <p className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>{c.totalRevenue == null ? '–' : formatRp(c.totalRevenue)}</p>
                         </td>
                         <td className="px-3 py-2.5 align-top">
-                          {c.status === 'aktif'
-                            ? <span className="badge badge-green">Aktif</span>
-                            : (
-                              <Tooltip label={`${c.reopenedBy ? `Oleh ${c.reopenedBy} · ` : ''}${c.reopenedAt ? fmtStamp(c.reopenedAt) : ''}${c.reopenReason ? ` — ${c.reopenReason}` : ''}`}>
-                                <span className="badge badge-gray">Dibuka ulang</span>
+                          <div className="flex flex-col items-start gap-1">
+                            {c.status === 'aktif'
+                              ? <span className="badge badge-green">Aktif</span>
+                              : (
+                                <Tooltip label={`${c.reopenedBy ? `Oleh ${c.reopenedBy} · ` : ''}${c.reopenedAt ? fmtStamp(c.reopenedAt) : ''}${c.reopenReason ? ` — ${c.reopenReason}` : ''}`}>
+                                  <span className="badge badge-gray">Dibuka ulang</span>
+                                </Tooltip>
+                              )}
+                            {c.settlementStatus && (
+                              <Tooltip label={c.settlements.length > 0 ? 'Lihat transfer tertaut' : 'Belum ada transfer tertaut'}>
+                                <button type="button" aria-expanded={expandedId === c.id} onClick={() => setExpandedId(v => v === c.id ? null : c.id)}
+                                  className={`badge ${SETTLE_BADGE[c.settlementStatus]}`} style={{ cursor: 'pointer' }}>
+                                  {SETTLEMENT_STATUS_LABEL[c.settlementStatus]}
+                                </button>
                               </Tooltip>
                             )}
+                          </div>
                         </td>
-                        <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                        <td className="px-3 py-2.5 align-top text-right">
+                          <div className="flex flex-wrap justify-end gap-1">
+                          {canWallet('create') && c.settlementStatus && c.settlementStatus !== 'sudah' && (
+                            <Tooltip label="Catat transfer">
+                              <button aria-label="Catat transfer" onClick={() => setSettleTarget(c)}
+                                className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0, color: 'var(--accent)' }}>
+                                <ArrowRightLeft size={14} />
+                              </button>
+                            </Tooltip>
+                          )}
                           {can('close') && c.status === 'aktif' && !c.isOpeningBalance && (
                             <Tooltip label="Kirim WA">
                               <button aria-label="Kirim WA" onClick={() => sendClosingWhatsApp(c.id)} disabled={!!waBusyId}
@@ -413,19 +463,55 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                           )}
                           <Tooltip label="Unduh PDF closing">
                             <button aria-label="Unduh PDF closing" onClick={() => downloadPdf(`c:${c.id}`, `/api/closings/${c.id}/pdf`, `closing-hpp-${c.periodTo}.pdf`)} disabled={!!pdfBusy}
-                              className="btn-ghost inline-flex items-center justify-center ml-1 align-middle" style={{ height: 30, width: 30, padding: 0 }}>
+                              className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0 }}>
                               {pdfIcon(`c:${c.id}`)}
                             </button>
                           </Tooltip>
                           {canReopen && (
                             <Tooltip label="Buka ulang closing">
-                              <button aria-label="Buka ulang closing" onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost inline-flex items-center justify-center ml-1 align-middle" style={{ height: 30, width: 30, padding: 0 }}>
+                              <button aria-label="Buka ulang closing" onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0 }}>
                                 <Unlock size={14} />
                               </button>
                             </Tooltip>
                           )}
+                          </div>
                         </td>
                       </tr>
+                      {expandedId === c.id && c.settlementStatus && (
+                        <tr style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                          <td colSpan={5} className="px-3 py-2.5">
+                            <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                              Tertransfer {formatRp(c.settledAmount)} dari HPP {formatRp(c.totalCogs ?? 0)}
+                              {c.settlementStatus !== 'sudah' && c.settlementRemaining != null ? ` · sisa ${formatRp(c.settlementRemaining)}` : ''}
+                            </p>
+                            {c.settlements.length === 0 ? (
+                              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Belum ada transfer tertaut.</p>
+                            ) : (
+                              <ul className="mt-1.5 space-y-1">
+                                {c.settlements.map(st => (
+                                  <li key={st.id} className="flex items-center justify-between gap-2 text-[11px]">
+                                    <span style={{ color: 'var(--text-primary)' }}>
+                                      {fmtDay(st.date)} · {st.fromWalletName} → {st.toWalletName}
+                                    </span>
+                                    <span className="flex items-center gap-1.5 flex-shrink-0">
+                                      <span className="font-semibold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(st.amount)}</span>
+                                      {canWallet('edit') && (
+                                        <Tooltip label="Lepas tautan">
+                                          <button aria-label="Lepas tautan" onClick={() => unlinkSettlement(c, st)} disabled={!!unlinkingId}
+                                            className="btn-ghost inline-flex items-center justify-center" style={{ height: 24, width: 24, padding: 0, color: 'var(--danger)' }}>
+                                            {unlinkingId === st.id ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
+                                          </button>
+                                        </Tooltip>
+                                      )}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -489,6 +575,13 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
             </button>
           </div>
         </Modal>
+      )}
+
+      {settleTarget && settleTarget.totalCogs != null && (
+        <ClosingSettlementDialog
+          creds={creds} onClose={() => setSettleTarget(null)} onDone={load}
+          closing={{ id: settleTarget.id, periodFrom: settleTarget.periodFrom, periodTo: settleTarget.periodTo, totalCogs: settleTarget.totalCogs, settlementRemaining: settleTarget.settlementRemaining ?? settleTarget.totalCogs }}
+        />
       )}
 
       {reopenTarget && (

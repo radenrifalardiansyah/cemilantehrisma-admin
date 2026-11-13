@@ -28,6 +28,8 @@ import { resolveIcon } from '@/lib/icon-registry';
 import { activeWalletOptions, type WalletDoc } from '@/lib/useWallets';
 import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
+import TransferClosingPicker, { closingLinksProblem, type PayableClosing } from '@/components/tabs/TransferClosingPicker';
+import { closingPeriodLabel } from '@/lib/closing-settlement-core';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -50,7 +52,22 @@ function formatDateDisplay(iso: string) {
 const WALLET_TYPE_LABEL: Record<string, string> = { cash: 'Tunai', bank: 'Bank', ewallet: 'E-Wallet', other: 'Lainnya' };
 const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other'] as const;
 
-interface Transfer { id: string; fromWalletId: string; toWalletId: string; amount: number; date: string; note?: string }
+interface ClosingLink { closingId: string; amount: number; periodFrom: string | null; periodTo: string }
+interface Transfer { id: string; fromWalletId: string; toWalletId: string; amount: number; date: string; note?: string; closingLinks?: ClosingLink[] }
+
+// Badge "Closing: 12–13 Nov" pada transfer yang ditautkan ke closing HPP.
+function ClosingBadges({ links }: { links?: ClosingLink[] }) {
+  if (!links || links.length === 0) return null;
+  return (
+    <>
+      {links.map(l => (
+        <Tooltip key={l.closingId} label={`Ditautkan ${formatRp(l.amount)}`}>
+          <span className="badge badge-blue" style={{ fontSize: 10 }}>Closing: {closingPeriodLabel(l.periodFrom, l.periodTo)}</span>
+        </Tooltip>
+      ))}
+    </>
+  );
+}
 
 type WalletForm = { name: string; type: WalletDoc['type']; icon: string; color: string; initialBalance: string; bankName: string };
 const emptyForm = (): WalletForm => ({ name: '', type: 'cash', icon: 'Wallet', color: '#D4691E', initialBalance: '', bankName: '' });
@@ -123,6 +140,10 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const [transferSaving, setTransferSaving] = useState(false);
   const [transferDeletingId, setTransferDeletingId] = useState<string | null>(null);
   const [transferError, setTransferError] = useState('');
+  // Tautan ke closing HPP (opsional): `payable` null = pemilih tidak tersedia (tanpa akses baca Laporan Produk / gagal muat).
+  const [payable, setPayable] = useState<PayableClosing[] | null>(null);
+  const [linkSel, setLinkSel] = useState<Record<string, string>>({});
+  const payableReqRef = useRef(0);
 
   // ── Riwayat transfer: search, tabel/kartu, ceklis, export ───────────
   const [transferSearch, setTransferSearch] = useState('');
@@ -406,12 +427,25 @@ export default function WalletsTab({ creds }: { creds: string }) {
   };
 
   // ─── Transfer: CRUD ──────────────────────────────────────────────
-  const openNewTransfer = () => { setTransferEditing({ id: '', ...emptyTransferForm() }); setTransferIsNew(true); setTransferError(''); };
+  // Muat closing yang bisa ditautkan; abaikan respons lama bila form sudah dibuka ulang / ditutup.
+  const loadPayable = async (transferId?: string) => {
+    const myReq = ++payableReqRef.current;
+    setPayable(null);
+    try {
+      const res = await fetch(`${API}/api/closings/payable${transferId ? `?transferId=${encodeURIComponent(transferId)}` : ''}`, { headers });
+      if (myReq !== payableReqRef.current || !res.ok) return;
+      const d = await res.json() as { closings: PayableClosing[] };
+      if (myReq === payableReqRef.current) setPayable(d.closings);
+    } catch { /* pemilih closing opsional — form tetap bisa dipakai tanpa tautan */ }
+  };
+  const openNewTransfer = () => { setTransferEditing({ id: '', ...emptyTransferForm() }); setTransferIsNew(true); setTransferError(''); setLinkSel({}); loadPayable(); };
   const openEditTransfer = (t: Transfer) => {
     setTransferEditing({ id: t.id, fromWalletId: t.fromWalletId, toWalletId: t.toWalletId, amount: String(t.amount), date: t.date, note: t.note ?? '' });
     setTransferIsNew(false); setTransferError('');
+    setLinkSel(Object.fromEntries((t.closingLinks ?? []).map(l => [l.closingId, String(l.amount)])));
+    loadPayable(t.id);
   };
-  const closeTransferEdit = () => { setTransferEditing(null); setTransferIsNew(false); setTransferError(''); };
+  const closeTransferEdit = () => { payableReqRef.current++; setTransferEditing(null); setTransferIsNew(false); setTransferError(''); setPayable(null); setLinkSel({}); };
 
   // Saldo dompet asal yang dipakai untuk validasi tombol — saat edit, tambahkan kembali jumlah
   // transfer lama supaya tidak keblokir oleh kontribusi transfer yang sedang diedit itu sendiri
@@ -434,10 +468,19 @@ export default function WalletsTab({ creds }: { creds: string }) {
     if (amountNum <= 0) { setTransferError('Jumlah transfer harus lebih dari 0.'); return; }
     if (amountNum > transferFromAvailable) { setTransferError(`Saldo "${walletName(transferEditing.fromWalletId)}" tidak cukup (saldo saat ini ${formatRp(transferFromAvailable)}).`); return; }
     if (!transferEditing.date) { setTransferError('Tanggal wajib diisi.'); return; }
+    if (payable) {
+      const linkProblem = closingLinksProblem(payable, linkSel, amountNum);
+      if (linkProblem) { setTransferError(linkProblem); return; }
+    }
     setTransferSaving(true); setTransferError('');
+    // Tautan closing: kirim hanya bila pemilih tersedia (PUT = set pengganti; kosong berarti semua tautan dilepas).
+    const closingLinks = payable && (!transferIsNew || Object.keys(linkSel).length > 0)
+      ? Object.entries(linkSel).map(([closingId, v]) => ({ closingId, amount: parseFloat(v) || 0 }))
+      : undefined;
     const payload = {
       fromWalletId: transferEditing.fromWalletId, toWalletId: transferEditing.toWalletId,
       amount: amountNum, date: transferEditing.date, note: transferEditing.note,
+      ...(closingLinks ? { closingLinks } : {}),
     };
     const r = transferIsNew
       ? await fetch(`${API}/api/wallet-transfers`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -454,9 +497,13 @@ export default function WalletsTab({ creds }: { creds: string }) {
     setTransferSaving(false);
   };
 
+  const closingImpact = (ts: Transfer[]) => {
+    const labels = [...new Set(ts.flatMap(t => (t.closingLinks ?? []).map(l => closingPeriodLabel(l.periodFrom, l.periodTo))))];
+    return labels.length > 0 ? ` Tautan ke closing ${labels.join(', ')} akan dilepas otomatis (status transfer closing kembali berkurang).` : '';
+  };
   const delTransfer = async (t: Transfer) => {
     if (!await confirm({
-      message: `Hapus transfer ${walletName(t.fromWalletId)} → ${walletName(t.toWalletId)} sebesar ${formatRp(t.amount)}? Tindakan ini tidak bisa dibatalkan.`,
+      message: `Hapus transfer ${walletName(t.fromWalletId)} → ${walletName(t.toWalletId)} sebesar ${formatRp(t.amount)}? Tindakan ini tidak bisa dibatalkan.${closingImpact([t])}`,
       danger: true,
     })) return;
     setTransferDeletingId(t.id);
@@ -474,7 +521,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
   const transferBulkDelete = async () => {
     if (transferSelected.size === 0) return;
-    if (!await confirm({ message: `Hapus ${transferSelected.size} transfer yang dipilih? Tindakan ini tidak bisa dibatalkan.`, danger: true })) return;
+    if (!await confirm({ message: `Hapus ${transferSelected.size} transfer yang dipilih? Tindakan ini tidak bisa dibatalkan.${closingImpact(transfers.filter(t => transferSelected.has(t.id)))}`, danger: true })) return;
     setTransferBulkDeleting(true);
     const r = await fetch(`${API}/api/wallet-transfers/bulk-delete`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
@@ -965,6 +1012,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                             {walletName(t.fromWalletId)} → {walletName(t.toWalletId)}
                           </p>
                           <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(t.date)}{t.note ? ` · ${t.note}` : ''}</p>
+                          {!!t.closingLinks?.length && <div className="flex flex-wrap gap-1 mt-1"><ClosingBadges links={t.closingLinks} /></div>}
                         </div>
                         <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{formatRp(t.amount)}</span>
                         <div className="flex items-center gap-1 flex-shrink-0">
@@ -1003,6 +1051,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
                         </p>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(t.date)}</p>
                         <p className="text-base font-extrabold tabular mt-1" style={{ color: 'var(--text-primary)' }}>{formatRp(t.amount)}</p>
+                        {!!t.closingLinks?.length && <div className="flex flex-wrap justify-center gap-1 mt-1"><ClosingBadges links={t.closingLinks} /></div>}
                       </div>
                       <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                         <Tooltip label="Edit">
@@ -1137,6 +1186,12 @@ export default function WalletsTab({ creds }: { creds: string }) {
               <Field label="Jumlah (Rp)" required>
                 <NumberInput value={transferEditing.amount} onChange={raw => setTransferEditing({ ...transferEditing, amount: raw })} placeholder="0" />
               </Field>
+
+              {payable && payable.length > 0 && (
+                <TransferClosingPicker closings={payable} selected={linkSel} onChange={setLinkSel}
+                  transferAmount={parseFloat(transferEditing.amount) || 0}
+                  onSuggestAmount={n => setTransferEditing(te => te && ({ ...te, amount: String(n) }))} />
+              )}
 
               <Field label="Catatan (opsional)">
                 <textarea value={transferEditing.note} onChange={e => setTransferEditing({ ...transferEditing, note: e.target.value })}

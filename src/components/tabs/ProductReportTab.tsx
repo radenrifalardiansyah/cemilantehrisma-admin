@@ -79,7 +79,7 @@ const trendColor = (p: TrendProduct, i: number) => p.color || TREND_COLORS[i];
 interface ProductMeta { emoji: string; imageUrls?: string[]; bgColor: string; category?: string }
 interface Category { id: string; name: string; emoji: string }
 
-export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: string; can: (action: Action) => boolean; isSuperAdmin: boolean }) {
+export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }: { creds: string; can: (action: Action) => boolean; canWallet: (action: Action) => boolean; isSuperAdmin: boolean }) {
   const headers = { 'x-admin-auth': creds };
   const toast = useToast();
 
@@ -489,7 +489,7 @@ export default function ProductReportTab({ creds, can, isSuperAdmin }: { creds: 
       </div>
 
       {/* Closing HPP — di atas, bisa di-collapse; di luar blok loading supaya tidak ikut ter-unmount tiap ganti periode */}
-      <ClosingPanel creds={creds} can={can} isSuperAdmin={isSuperAdmin} onChanged={load} />
+      <ClosingPanel creds={creds} can={can} canWallet={canWallet} isSuperAdmin={isSuperAdmin} onChanged={load} />
 
       {loading ? (
         <PageLoader compact />

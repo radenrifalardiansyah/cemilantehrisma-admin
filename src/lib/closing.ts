@@ -179,12 +179,14 @@ export function paidAtProblem(paidAt: Date, now: Date, latestActivePeriodTo: str
 export function reopenProblem(a: {
   closing: { id: string; status: string; is_opening_balance: boolean; period_to: string } | undefined;
   latestActiveId: string | null; isSuperAdmin: boolean; reason: string;
+  settlementCount?: number; // jumlah tautan transfer (closing_settlements) milik closing ini
 }): string | null {
   if (!a.closing) return 'Closing tidak ditemukan.';
   if (a.closing.status !== 'aktif') return 'Closing ini sudah dibuka ulang.';
   if (!a.reason.trim()) return 'Alasan buka ulang wajib diisi.';
   if (a.closing.is_opening_balance && !a.isSuperAdmin) return 'Closing saldo awal hanya bisa dibuka ulang oleh Super Admin.';
   if (a.latestActiveId !== a.closing.id) return 'Hanya closing aktif paling terakhir yang bisa dibuka ulang — buka ulang closing yang lebih baru lebih dulu.';
+  if ((a.settlementCount ?? 0) > 0) return 'Closing ini sudah punya tautan transfer dompet. Lepas tautan transfer dulu, baru buka ulang.';
   return null;
 }
 
@@ -295,7 +297,7 @@ export async function loadClosingLines(sql: PgClient, closingId: string): Promis
 }
 
 // Kunci serialisasi closing/buka-ulang (dan skrip backfill) — satu closing berjalan pada satu waktu.
-const lockClosings = (tx: PgClient) => tx`select pg_advisory_xact_lock(hashtext('closings'))`;
+export const lockClosings = (tx: PgClient) => tx`select pg_advisory_xact_lock(hashtext('closings'))`;
 
 // "Closing aktif terakhir" — urutan tunggal yang dipakai di mana-mana: period_to terbesar, lalu closed_at terbaru
 // (closed_at memakai clock_timestamp() saat insert, bukan now() awal transaksi, supaya urut sesuai antrean kunci).
@@ -352,7 +354,9 @@ export async function reopenClosing(sql: postgres.Sql, a: { id: string; reason: 
       select id, status, is_opening_balance, period_to, total_cogs, total_revenue from closings where id = ${a.id} for update
     `;
     const latest = await latestActiveClosing(tx);
-    const problem = reopenProblem({ closing, latestActiveId: latest?.id ?? null, isSuperAdmin: a.isSuperAdmin, reason: a.reason });
+    // Tautan transfer dibuat di bawah kunci `closings` yang sama, jadi hitungan ini tidak bisa basi.
+    const [{ n: settlementCount }] = await tx<{ n: number }[]>`select count(*)::int as n from closing_settlements where closing_id = ${a.id}`;
+    const problem = reopenProblem({ closing, latestActiveId: latest?.id ?? null, isSuperAdmin: a.isSuperAdmin, reason: a.reason, settlementCount });
     if (problem) throw new ClosingError(problem);
 
     const o = await tx`update orders set closing_id = null where closing_id = ${a.id}`;
