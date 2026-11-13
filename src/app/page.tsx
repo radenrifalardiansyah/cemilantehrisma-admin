@@ -38,6 +38,7 @@ const StallSalesReportTab = dynamic(() => import('@/components/tabs/StallSalesRe
 const MitraDailyReportTab = dynamic(() => import('@/components/tabs/MitraDailyReportTab'), { loading: () => <PageLoader /> });
 const ProcurementReportTab = dynamic(() => import('@/components/tabs/ProcurementReportTab'), { loading: () => <PageLoader /> });
 const PurchaseFlowTab = dynamic(() => import('@/components/tabs/PurchaseFlowTab'), { loading: () => <PageLoader /> });
+import PayablesAlertBanner from '@/components/PayablesAlertBanner';
 const MaterialsTab = dynamic(() => import('@/components/tabs/MaterialsTab'), { loading: () => <PageLoader /> });
 import { isMaterialLowStock } from '@/lib/stock-threshold';
 const ProductionTab = dynamic(() => import('@/components/tabs/ProductionTab'), { loading: () => <PageLoader /> });
@@ -356,6 +357,8 @@ export default function AdminPage() {
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(null);
+  // Permintaan membuka sub-tab Bahan Baku (banner/notifikasi Hutang Supplier).
+  const [materialsOpenSubTab, setMaterialsOpenSubTab] = useState<'hutang' | null>(null);
   const [openGrId, setOpenGrId] = useState<string | null>(null);
   const [highlightShipmentId, setHighlightShipmentId] = useState<string | null>(null);
   const [highlightRecapId, setHighlightRecapId] = useState<string | null>(null);
@@ -370,6 +373,7 @@ export default function AdminPage() {
       case 'consignment_overdue':
       case 'consignment_recap': setHighlightRecapId(n.entityId); break;
       case 'consignment_send': setHighlightShipmentId(n.entityId); break;
+      case 'payable_due': setMaterialsOpenSubTab('hutang'); break;
     }
     if (n.link) setActiveTab(n.link as TabId);
   };
@@ -1151,6 +1155,9 @@ export default function AdminPage() {
 
       {dashSubView === 'ringkasan' && (
       <div className="space-y-5">
+      {/* Peringatan hutang supplier jatuh tempo (hanya pemegang izin Bahan Baku › lihat) */}
+      <PayablesAlertBanner creds={creds} canView={superAdmin || permissions['materials']?.view === true}
+        onOpen={() => { setMaterialsOpenSubTab('hutang'); setActiveTab('materials'); }} />
       {/* Loading */}
       {loading && !dashData && (
         <PageLoader compact />
@@ -1753,7 +1760,8 @@ export default function AdminPage() {
       {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
       {activeTab === 'materials'  && (
         <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
-          onHighlightHandled={() => setHighlightMaterialId(null)} />
+          onHighlightHandled={() => setHighlightMaterialId(null)}
+          canEdit={can('materials', 'edit')} openSubTab={materialsOpenSubTab} onSubTabOpened={() => setMaterialsOpenSubTab(null)} />
       )}
       {(activeTab === 'purchase-orders' || activeTab === 'goods-receipts') && (
         <PurchaseFlowTab creds={creds} view={activeTab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')} canApprovePo={can('purchase-orders', 'approve')}

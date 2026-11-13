@@ -39,7 +39,7 @@ export function rowToPo(r: PoRow, opts?: { includeToken?: boolean }) {
 export interface GrRow {
   id: string; gr_number: string; do_number: string; supplier_do_number?: string; po_id: string;
   items: unknown; total: string; received_date: string; note: string; status: string;
-  wallet_id: string | null; payment_status: string | null; purchase_id: string | null; token: string;
+  wallet_id: string | null; payment_status: string | null; due_date?: string | null; purchase_id: string | null; token: string;
   created_by: string | null; approved_by: string | null; approved_at: Date | null;
   cancelled_at: Date | null; cancel_note: string | null;
   created_at: Date; updated_at: Date | null;
@@ -62,7 +62,7 @@ export function rowToGr(r: GrRow, opts?: { includeToken?: boolean }) {
     items: (parseJsonb(r.items as string | GrItem[] | null) as GrItem[] | null) ?? [],
     attachments: parseAttachments(r.attachments),
     total: Number(r.total), receivedDate: r.received_date, note: r.note, status: r.status as GrStatus,
-    walletId: r.wallet_id, paymentStatus: r.payment_status, purchaseId: r.purchase_id,
+    walletId: r.wallet_id, paymentStatus: r.payment_status, dueDate: r.due_date ?? null, purchaseId: r.purchase_id,
     createdBy: r.created_by, approvedBy: r.approved_by, approvedAt: toTimestamp(r.approved_at),
     createdByName: r.created_by_name || null, createdBySignature: r.created_by_signature || null,
     approvedByName: r.approved_by_name || null, approvedBySignature: r.approved_by_signature || null,

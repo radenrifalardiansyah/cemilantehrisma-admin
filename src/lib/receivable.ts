@@ -31,5 +31,10 @@ export function dueInfo(ymd: string | undefined | null, now = new Date()): { sta
 }
 
 export function isValidDueDate(v: unknown): v is string {
-  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+  if (typeof v !== 'string') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  // Bandingkan balik tahun/bulan/hari supaya tanggal kalender yang tidak ada (mis. 2026-02-31) ditolak.
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
 }

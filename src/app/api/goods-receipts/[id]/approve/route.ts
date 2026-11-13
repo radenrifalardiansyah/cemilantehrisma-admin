@@ -5,6 +5,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
+import { parseDueDate } from '@/lib/payables-core';
 import { createPurchaseTx } from '@/lib/material-purchase-core';
 import { rowToGr, receivedByMaterial, buildGrItems, recalcPoStatus, type GrRow, type PoRow, type PoItem, type GrItem } from '@/lib/purchase-orders-pg';
 
@@ -18,10 +19,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'goods-receipts', 'approve');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const body = await req.json().catch(() => ({})) as { walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas' };
+  const body = await req.json().catch(() => ({})) as { walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string | null };
   const walletId = body.walletId || null;
   if (!walletId) return Response.json({ error: 'Dompet sumber wajib dipilih.' }, { status: 400 });
   const paymentStatus = body.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
+  const dueParsed = parseDueDate(body.dueDate);
+  if (dueParsed && 'error' in dueParsed) return Response.json({ error: dueParsed.error }, { status: 400 });
 
   const sql = getSql();
   const purchaseId = randomUUID();
@@ -54,13 +57,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         date: gr.received_date,
         note: `Dari ${po.po_number} / ${gr.gr_number} / ${gr.do_number}${gr.note ? ` — ${gr.note}` : ''}`,
         walletId, paymentStatus,
+        // Jatuh tempo dari form approve; kalau tidak dikirim, pakai yang sudah disimpan di draft GR.
+        dueDate: dueParsed ? dueParsed.value : (gr.due_date ?? null),
         poId: po.id, grId: gr.id,
       });
       const total = Number(purchaseData.total);
       await pgTx`
         update goods_receipts set
           status = 'approved', items = ${JSON.stringify(items)}, total = ${total},
-          wallet_id = ${walletId}, payment_status = ${paymentStatus}, purchase_id = ${purchaseId},
+          wallet_id = ${walletId}, payment_status = ${paymentStatus}, due_date = ${paymentStatus === 'belum_lunas' ? (dueParsed ? dueParsed.value : (gr.due_date ?? null)) : null}, purchase_id = ${purchaseId},
           approved_by = ${guard.username}, approved_at = now(), updated_at = now()
         where id = ${id}
       `;

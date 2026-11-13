@@ -32,6 +32,7 @@ export async function walletHasReferences(db: Firestore, walletId: string): Prom
       or exists(select 1 from order_payments where wallet_id = ${walletId})
       or exists(select 1 from consignment_recaps where wallet_id = ${walletId})
       or exists(select 1 from material_purchases where wallet_id = ${walletId})
+      or exists(select 1 from material_purchase_payments where wallet_id = ${walletId})
       as exists
   `;
   return Boolean(row.exists);

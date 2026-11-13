@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Boxes, ShoppingBag, ShoppingCart, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw, Package, Clock, Search,
-  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle,
+  ChevronLeft, ChevronRight, Wrench, Ban, Upload, PackageCheck, MessageCircle, HandCoins, History,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -28,6 +28,11 @@ import PageLoader from '@/components/PageLoader';
 import MaterialShoppingPanel from '@/components/tabs/MaterialShoppingPanel';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import { DateInput } from '@/components/DateTimeInput';
+import SupplierPayablesPanel from '@/components/tabs/SupplierPayablesPanel';
+import PurchasePaymentDialog, { type PayTarget } from '@/components/tabs/PurchasePaymentDialog';
+import PayablesAlertBanner from '@/components/PayablesAlertBanner';
+import { formatDueDate } from '@/lib/receivable';
+import { PAYMENT_STATE_LABEL, type PaymentState } from '@/lib/payables-core';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -86,12 +91,17 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
-type SubTab = 'stok' | 'belanja' | 'pembelian';
+type SubTab = 'stok' | 'belanja' | 'pembelian' | 'hutang';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'stok',      label: 'Stok',      Icon: Boxes },
   { id: 'belanja',   label: 'Daftar Belanja', Icon: ShoppingCart },
   { id: 'pembelian', label: 'Pembelian', Icon: ShoppingBag },
+  { id: 'hutang',    label: 'Hutang Supplier', Icon: HandCoins },
 ];
+
+// Label status bayar untuk ekspor/WA: 'Sebagian' bila sudah dicicil; pembelian dibatalkan tetap memakai kolom lama.
+const paymentLabel = (p: Pick<Purchase, 'paymentStatus' | 'paymentState'>) =>
+  p.paymentState ? PAYMENT_STATE_LABEL[p.paymentState] : (p.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas');
 
 interface RawMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number; minStock?: number }
 // Menipis = stok masih ada tapi sudah di batas minimum yang diset admin.
@@ -103,6 +113,8 @@ interface Purchase {
   id: string; supplierId?: string | null; supplierName: string; items: PurchaseItem[]; total: number; note?: string;
   date?: string; paymentStatus?: 'lunas' | 'belum_lunas'; expenseId?: string | null; createdAt?: { seconds: number };
   voided?: boolean; voidNote?: string; walletId?: string | null;
+  // Hutang supplier: paymentState diturunkan server (belum_lunas / sebagian / lunas; null bila dibatalkan).
+  dueDate?: string | null; paidAmount?: number; remaining?: number; paymentState?: PaymentState | null;
   source?: 'manual' | 'po'; grId?: string | null; poNumber?: string | null; grNumber?: string | null;
 }
 
@@ -150,8 +162,12 @@ function detectPurchaseColumn(header: string): PurchaseTemplateKey | null {
   return null;
 }
 
-export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled }: {
+export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHandled, canEdit = true, openSubTab, onSubTabOpened }: {
   creds: string; highlightMaterialId?: string | null; onHighlightHandled?: () => void;
+  /** Izin 'materials' 'edit' — menentukan tombol Bayar di Hutang Supplier. */
+  canEdit?: boolean;
+  /** Permintaan membuka sub-tab tertentu (mis. dari banner/notifikasi hutang). */
+  openSubTab?: SubTab | null; onSubTabOpened?: () => void;
 }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -159,6 +175,11 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const storeHeader = useStoreHeader(creds);
 
   const [subTab, setSubTab] = useState<SubTab>('stok');
+  useEffect(() => {
+    if (!openSubTab) return;
+    setSubTab(openSubTab);
+    onSubTabOpened?.();
+  }, [openSubTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const [highlightedMaterialId, setHighlightedMaterialId] = useState<string | null>(null);
   const materialRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -632,6 +653,9 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const [purchaseNote, setPurchaseNote] = useState('');
   const [purchasePaymentStatus, setPurchasePaymentStatus] = useState<'lunas' | 'belum_lunas'>('lunas');
   const [purchaseWalletId, setPurchaseWalletId] = useState('');
+  const [purchaseDueDate, setPurchaseDueDate] = useState('');
+  const [payTarget, setPayTarget] = useState<PayTarget | null>(null);
+  const [payablesKey, setPayablesKey] = useState(0);
   const [submittingPurchase, setSubmittingPurchase] = useState(false);
   const [markingPurchaseId, setMarkingPurchaseId] = useState<string | null>(null);
   const wallets = useWallets(creds);
@@ -640,7 +664,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
 
   const resetPurchaseForm = () => {
     setEditingPurchase(null); setSupplierId(''); setSupplierName(''); setPurchaseDate(todayISO());
-    setRows([{ ...EMPTY_ROW }]); setPurchaseNote(''); setPurchasePaymentStatus('lunas'); setPurchaseWalletId('');
+    setRows([{ ...EMPTY_ROW }]); setPurchaseNote(''); setPurchasePaymentStatus('lunas'); setPurchaseWalletId(''); setPurchaseDueDate('');
   };
   const openCreatePurchase = () => { resetPurchaseForm(); setShowPurchaseForm(true); };
   const openEditPurchase = (p: Purchase) => {
@@ -654,6 +678,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     setPurchaseNote(p.note ?? '');
     setPurchasePaymentStatus(p.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
     setPurchaseWalletId(p.walletId ?? '');
+    setPurchaseDueDate(p.dueDate ?? '');
     setShowPurchaseForm(true);
   };
   const closePurchaseForm = () => { setShowPurchaseForm(false); resetPurchaseForm(); };
@@ -663,6 +688,8 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const updateRow = (i: number, patch: Partial<PurchaseRow>) => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
 
   const purchaseTotal = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0), 0);
+  // Pembelian yang sudah dicicil: status bayar & barang dikunci server (lihat PUT /api/material-purchases/[id]).
+  const hasPaymentsLock = !!editingPurchase && (editingPurchase.paidAmount ?? 0) > 0;
   const canSubmitPurchase = supplierName.trim() !== '' && !!purchaseDate && !!purchaseWalletId
     && rows.some(r => r.materialId && (parseFloat(r.qty) || 0) > 0);
 
@@ -679,6 +706,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       const payload = {
         supplierId: supplierId || undefined, supplierName: supplierName.trim(), date: purchaseDate, items, note: purchaseNote,
         paymentStatus: purchasePaymentStatus, walletId: purchaseWalletId,
+        dueDate: purchasePaymentStatus === 'belum_lunas' && purchaseDueDate ? purchaseDueDate : null,
       };
       const res = editingPurchase
         ? await fetch(`${API}/api/material-purchases/${editingPurchase.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -689,15 +717,32 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       closePurchaseForm();
       await Promise.all([loadMaterials(), loadPurchases()]);
       refetchBalances();
+      setPayablesKey(k => k + 1);
     } finally { setSubmittingPurchase(false); }
   };
 
   const markPurchaseLunas = async (id: string) => {
     setMarkingPurchaseId(id);
     const r = await fetch(`${API}/api/material-purchases/${id}/mark-lunas`, { method: 'POST', headers });
-    if (r.ok) { toast.success('Pembelian ditandai lunas — sudah tercatat di Pengeluaran.'); await loadPurchases(); refetchBalances(); }
-    else toast.error('Gagal menandai lunas.');
+    if (r.ok) { toast.success('Pembelian ditandai lunas — sisa hutang sudah tercatat di Pengeluaran.'); await loadPurchases(); refetchBalances(); setPayablesKey(k => k + 1); }
+    else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menandai lunas.');
     setMarkingPurchaseId(null);
+  };
+
+  const openPay = (p: Purchase) => setPayTarget({
+    id: p.id, supplierName: p.supplierName, total: p.total, remaining: p.remaining ?? p.total, dueDate: p.dueDate ?? null, walletId: p.walletId ?? null,
+  });
+  const afterPay = async () => { await loadPurchases(); refetchBalances(); setPayablesKey(k => k + 1); };
+
+  // Baris info hutang (sisa + jatuh tempo) di riwayat pembelian; hanya untuk pembelian belum lunas yang tidak dibatalkan.
+  const debtInfo = (p: Purchase, center = false) => {
+    if (p.voided || p.paymentStatus !== 'belum_lunas') return null;
+    return (
+      <p className={`text-xs mt-0.5 ${center ? 'text-center' : ''}`} style={{ color: 'var(--text-secondary)' }}>
+        Sisa {formatRp(p.remaining ?? p.total)}{(p.paidAmount ?? 0) > 0 ? ` · dibayar ${formatRp(p.paidAmount ?? 0)}` : ''}
+        {p.dueDate ? ` · jatuh tempo ${formatDueDate(p.dueDate)}` : ''}
+      </p>
+    );
   };
 
   // ── Nota Pembelian: download PDF & kirim WA ──
@@ -763,7 +808,7 @@ ${SEP}
 ${itemLines}
 ${SEP}
 *Total : ${formatRp(p.total)}*
-Status : *${p.paymentStatus === 'belum_lunas' ? 'BELUM LUNAS' : 'LUNAS'}*
+Status : *${paymentLabel(p).toUpperCase()}*
 ${SEP}
 
 Nota PDF:
@@ -1045,7 +1090,7 @@ ${pdfUrl}`.trim();
           supplier: p.supplierName || 'Tanpa nama',
           items: p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', '),
           total: p.total,
-          payment: p.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+          payment: paymentLabel(p),
           status: p.voided ? 'Dibatalkan' : 'Aktif',
           note: p.note || '-',
         });
@@ -1129,7 +1174,7 @@ ${pdfUrl}`.trim();
               p.supplierName || 'Tanpa nama',
               p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', '),
               formatRp(p.total),
-              p.paymentStatus === 'belum_lunas' ? 'Belum Lunas' : 'Lunas',
+              paymentLabel(p),
               p.voided ? 'Dibatalkan' : 'Aktif',
               p.note || '-',
             ]),
@@ -1474,11 +1519,18 @@ ${pdfUrl}`.trim();
           />
         )}
 
+        {/* ════ HUTANG SUPPLIER ════════════════════════════════ */}
+        {subTab === 'hutang' && (
+          <SupplierPayablesPanel creds={creds} canEdit={canEdit} reloadKey={payablesKey}
+            onChanged={async () => { await loadPurchases(); refetchBalances(); }} />
+        )}
+
         {/* ════ PEMBELIAN ══════════════════════════════════════ */}
 
         {subTab === 'pembelian' && (purchasesLoading && purchases.length === 0) && <PageLoader />}
         {subTab === 'pembelian' && !(purchasesLoading && purchases.length === 0) && (
           <div className="p-4 lg:p-6 animate-fade-up space-y-5">
+            <PayablesAlertBanner creds={creds} canView reloadKey={payablesKey} onOpen={() => setSubTab('hutang')} />
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                 <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
@@ -1575,18 +1627,29 @@ ${pdfUrl}`.trim();
                                     <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
                                       {p.voided && <span className="badge badge-gray flex-shrink-0">Dibatalkan</span>}
-                                      {!p.voided && p.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
+                                      {!p.voided && p.paymentStatus === 'belum_lunas' && <span className={`badge ${p.paymentState === 'sebagian' ? 'badge-blue' : 'badge-amber'} flex-shrink-0`}>{PAYMENT_STATE_LABEL[p.paymentState ?? 'belum_lunas']}</span>}
                                       {p.grId && <span className="badge badge-blue flex-shrink-0" title="Pembelian ini dibuat dari Penerimaan Barang — ubah/batalkan lewat menu Penerimaan (GR)">dari {p.poNumber ?? 'PO'} · {p.grNumber ?? 'GR'}</span>}
                                     </div>
                                     <div className="flex items-center gap-2 flex-shrink-0">
                                       <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(p.total)}</span>
                                       {!p.voided && (
                                         <>
+                                          {p.paymentStatus === 'belum_lunas' && canEdit && (
+                                            <button onClick={() => openPay(p)} className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--accent)' }}>Bayar</button>
+                                          )}
                                           {p.paymentStatus === 'belum_lunas' && (
                                             <button onClick={() => markPurchaseLunas(p.id)} disabled={markingPurchaseId === p.id}
                                               className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
                                               {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
                                             </button>
+                                          )}
+                                          {p.paymentStatus === 'lunas' && (p.paidAmount ?? 0) > 0 && (
+                                            <Tooltip label="Riwayat pembayaran">
+                                              <button onClick={() => openPay(p)} aria-label="Riwayat pembayaran"
+                                                className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
+                                                <History size={12} />
+                                              </button>
+                                            </Tooltip>
                                           )}
                                           <Tooltip label="Download PDF nota">
                                             <button onClick={() => printPurchasePdf(p)} disabled={printingPurchasePdfId === p.id}
@@ -1629,6 +1692,7 @@ ${pdfUrl}`.trim();
                                     </div>
                                   </div>
                                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
+                                  {debtInfo(p)}
                                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>
                                     {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
                                   </p>
@@ -1658,9 +1722,10 @@ ${pdfUrl}`.trim();
                                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)', textDecoration: p.voided ? 'line-through' : undefined }}>{p.supplierName || 'Tanpa nama'}</p>
                                 </div>
                                 {p.voided && <div className="text-center mt-1"><span className="badge badge-gray">Dibatalkan</span></div>}
-                                {!p.voided && p.paymentStatus === 'belum_lunas' && <div className="text-center mt-1"><span className="badge badge-amber">Belum Lunas</span></div>}
+                                {!p.voided && p.paymentStatus === 'belum_lunas' && <div className="text-center mt-1"><span className={`badge ${p.paymentState === 'sebagian' ? 'badge-blue' : 'badge-amber'}`}>{PAYMENT_STATE_LABEL[p.paymentState ?? 'belum_lunas']}</span></div>}
                                 {p.grId && <div className="text-center mt-1"><span className="badge badge-blue">dari {p.poNumber ?? 'PO'} · {p.grNumber ?? 'GR'}</span></div>}
                                 <p className="text-xs text-center mt-1" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
+                                {debtInfo(p, true)}
                                 <p className="text-xs text-center mt-1.5" style={{ color: 'var(--text-secondary)' }}>
                                   {p.items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', ')}
                                 </p>
@@ -1669,11 +1734,22 @@ ${pdfUrl}`.trim();
                               <div className="flex items-center justify-center gap-1 px-4 py-2" style={{ borderTop: '1px solid var(--border-2)' }}>
                                 {!p.voided && (
                                   <>
+                                    {p.paymentStatus === 'belum_lunas' && canEdit && (
+                                      <button onClick={() => openPay(p)} className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--accent)' }}>Bayar</button>
+                                    )}
                                     {p.paymentStatus === 'belum_lunas' && (
                                       <button onClick={() => markPurchaseLunas(p.id)} disabled={markingPurchaseId === p.id}
                                         className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
                                         {markingPurchaseId === p.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
                                       </button>
+                                    )}
+                                    {p.paymentStatus === 'lunas' && (p.paidAmount ?? 0) > 0 && (
+                                      <Tooltip label="Riwayat pembayaran">
+                                        <button onClick={() => openPay(p)} aria-label="Riwayat pembayaran"
+                                          className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>
+                                          <History size={12} />
+                                        </button>
+                                      </Tooltip>
                                     )}
                                     <Tooltip label="Download PDF nota">
                                       <button onClick={() => printPurchasePdf(p)} disabled={printingPurchasePdfId === p.id}
@@ -1995,21 +2071,33 @@ ${pdfUrl}`.trim();
 
               <div>
                 <label style={fieldLabel}>Status Pembayaran</label>
-                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)', opacity: hasPaymentsLock ? 0.6 : 1 }}>
                   {(['lunas', 'belum_lunas'] as const).map(s => (
-                    <button key={s} type="button" onClick={() => setPurchasePaymentStatus(s)}
+                    <button key={s} type="button" onClick={() => setPurchasePaymentStatus(s)} disabled={hasPaymentsLock}
                       className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
                       style={purchasePaymentStatus === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
                       {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
                     </button>
                   ))}
                 </div>
-                {purchasePaymentStatus === 'belum_lunas' && (
+                {hasPaymentsLock && (
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                    Stok tetap bertambah sekarang, tapi belum tercatat sebagai Pengeluaran sampai ditandai Lunas.
+                    Pembelian ini sudah punya pembayaran ({formatRp(editingPurchase?.paidAmount ?? 0)}) — status bayar mengikuti cicilan, dan barang/harga tidak bisa diubah. Kelola lewat Hutang Supplier.
+                  </p>
+                )}
+                {!hasPaymentsLock && purchasePaymentStatus === 'belum_lunas' && (
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Stok tetap bertambah sekarang, tapi belum tercatat sebagai Pengeluaran sampai dibayar (bisa dicicil di Hutang Supplier) atau ditandai Lunas.
                   </p>
                 )}
               </div>
+
+              {purchasePaymentStatus === 'belum_lunas' && (
+                <div>
+                  <label style={fieldLabel}>Jatuh Tempo (opsional)</label>
+                  <DateInput value={purchaseDueDate} onChange={setPurchaseDueDate} min={purchaseDate || undefined} style={{ maxWidth: 220 }} />
+                </div>
+              )}
 
               <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
                 <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Pembelian</span>
@@ -2029,6 +2117,7 @@ ${pdfUrl}`.trim();
           </div>
         </Modal>
       )}
+      {payTarget && <PurchasePaymentDialog creds={creds} purchase={payTarget} canEdit={canEdit} onClose={() => setPayTarget(null)} onDone={afterPay} />}
     </div>
   );
 }

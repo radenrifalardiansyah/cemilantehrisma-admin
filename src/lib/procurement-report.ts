@@ -8,6 +8,8 @@ export interface PoReportRow {
 export interface GrReportRow {
   id: string; grNumber: string; doNumber: string; poNumber: string; supplierName: string; receivedDate: string;
   items: string; total: number; status: string; approvedBy: string | null; paymentStatus: string | null; purchaseVoided: boolean;
+  /** Jumlah cicilan aktif pembelian (hutang supplier); kosong = 0. */
+  paidAmount?: number;
 }
 export interface OpnameReportRow {
   id: string; createdAt: string; warehouseName: string; productName: string;
@@ -39,7 +41,8 @@ export function summarizeGr(rows: GrReportRow[]) {
   return {
     count: rows.length, byStatus,
     approvedValue: approved.reduce((s, r) => s + r.total, 0),
-    unpaidValue: approved.filter(r => r.paymentStatus === 'belum_lunas').reduce((s, r) => s + r.total, 0),
+    // Belum lunas dihitung SISA hutang (total dikurangi cicilan yang sudah dibayar).
+    unpaidValue: approved.filter(r => r.paymentStatus === 'belum_lunas').reduce((s, r) => s + Math.max(0, r.total - (r.paidAmount ?? 0)), 0),
     pendingValue: rows.filter(r => r.status === 'draft').reduce((s, r) => s + r.total, 0),
     bySupplier: breakdown(approved.map(r => ({ name: r.supplierName, total: r.total }))),
   };

@@ -27,6 +27,9 @@ describe('addDaysWib & isValidDueDate', () => {
   });
   it('validasi format tanggal', () => {
     expect(isValidDueDate('2026-10-20')).toBe(true);
+    expect(isValidDueDate('2026-02-31')).toBe(false);
+    expect(isValidDueDate('2026-04-31')).toBe(false);
+    expect(isValidDueDate('2028-02-29')).toBe(true);
     expect(isValidDueDate('2026-13-45')).toBe(false);
     expect(isValidDueDate('20-10-2026')).toBe(false);
     expect(isValidDueDate(123)).toBe(false);

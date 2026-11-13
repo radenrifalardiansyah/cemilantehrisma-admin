@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { rowToGr, receivedByMaterial, buildGrItems, parseAttachments, type GrRow, type GrItemInput, type PoItem } from '@/lib/purchase-orders-pg';
 import { parseJsonb } from '@/lib/db';
+import { parseDueDate } from '@/lib/payables-core';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -36,8 +37,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as {
     items: GrItemInput[]; receivedDate?: string; note?: string; attachments?: string[];
-    walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas';
+    walletId?: string | null; paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string | null;
   };
+  const dueParsed = parseDueDate(data.dueDate);
+  if (dueParsed && 'error' in dueParsed) return Response.json({ error: dueParsed.error }, { status: 400 });
   const sql = getSql();
   let before: ReturnType<typeof rowToGr>;
   let total = 0;
@@ -56,7 +59,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         update goods_receipts set
           items = ${JSON.stringify(items)}, total = ${total}, received_date = ${data.receivedDate || row.received_date},
           note = ${data.note ?? ''},
-          wallet_id = ${data.walletId ?? null}, payment_status = ${data.paymentStatus ?? null}, updated_at = now()
+          wallet_id = ${data.walletId ?? null}, payment_status = ${data.paymentStatus ?? null},
+          due_date = ${data.paymentStatus === 'belum_lunas' ? (dueParsed ? dueParsed.value : (row.due_date ?? null)) : null}, updated_at = now()
         where id = ${id}
       `;
       // Lampiran hanya disentuh kalau dikirim klien (kolom opsional, tidak mengganggu GR tanpa lampiran).

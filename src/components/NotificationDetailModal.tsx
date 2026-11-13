@@ -7,6 +7,7 @@ import Modal from '@/components/Modal';
 export const TYPE_LABEL: Record<NotificationDoc['type'], string> = {
   order_new: 'Pesanan',
   order_overdue: 'Piutang Pesanan',
+  payable_due: 'Hutang Supplier',
   payment_proof: 'Bukti Pembayaran',
   stock_low: 'Stok Menipis',
   pos_shift_open: 'Shift Kasir',

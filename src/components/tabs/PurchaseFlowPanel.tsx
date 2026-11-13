@@ -49,7 +49,7 @@ interface Po {
 interface Gr {
   id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null; supplierPhone?: string; supplierAddress?: string;
   poNumber: string | null; supplierName: string | null; items: GrItem[]; total: number;
-  receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null;
+  receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null; dueDate?: string | null;
   purchaseId: string | null; cancelNote: string | null;
   createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
   createdByName?: string | null; createdBySignature?: string | null; approvedByName?: string | null; approvedBySignature?: string | null;
@@ -305,6 +305,7 @@ ${pdfUrl}`.trim();
   const [gAtt, setGAtt] = useState<string[]>([]);
   const [gWallet, setGWallet] = useState('');
   const [gPayment, setGPayment] = useState<'lunas' | 'belum_lunas'>('lunas');
+  const [gDue, setGDue] = useState('');
   const [savingGr, setSavingGr] = useState(false);
 
   function openEditGr(g: Gr) {
@@ -312,6 +313,7 @@ ${pdfUrl}`.trim();
     setGRows(g.items.map(it => ({ materialId: it.materialId, name: it.materialName, unit: it.unit, orderedQty: it.orderedQty, qty: String(it.qty), price: String(Math.round(it.price)), condition: it.condition ?? '', itemNote: it.itemNote ?? '' })));
     setGDate(g.receivedDate); setGNote(g.note); setGAtt(g.attachments ?? []);
     setGWallet(g.walletId ?? ''); setGPayment(g.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas');
+    setGDue(g.dueDate ?? '');
   }
   useEffect(() => {
     if (!openGrId) return;
@@ -331,7 +333,7 @@ ${pdfUrl}`.trim();
     try {
       const body = {
         items: gRows.map(r => ({ materialId: r.materialId, qty: parseFloat(r.qty) || 0, price: parseFloat(r.price) || 0, condition: r.condition, itemNote: r.itemNote })),
-        receivedDate: gDate, note: gNote, walletId: gWallet || null, paymentStatus: gPayment,
+        receivedDate: gDate, note: gNote, walletId: gWallet || null, paymentStatus: gPayment, dueDate: gPayment === 'belum_lunas' && gDue ? gDue : null,
         // Dikirim hanya kalau ada/berubah, supaya GR tanpa lampiran tidak menyentuh kolom `attachments`.
         ...(gAtt.length > 0 || (editingGr.attachments ?? []).length > 0 ? { attachments: gAtt } : {}),
       };
@@ -340,7 +342,7 @@ ${pdfUrl}`.trim();
       if (!res.ok) { toast.error(d.error ?? 'Gagal menyimpan GR.'); return; }
       if (approve) {
         const ar = await fetch(`/api/goods-receipts/${editingGr.id}/approve`, {
-          method: 'POST', headers: jsonHeaders, body: JSON.stringify({ walletId: gWallet, paymentStatus: gPayment }),
+          method: 'POST', headers: jsonHeaders, body: JSON.stringify({ walletId: gWallet, paymentStatus: gPayment, dueDate: gPayment === 'belum_lunas' && gDue ? gDue : null }),
         });
         const ad = await ar.json().catch(() => ({})) as { error?: string };
         if (!ar.ok) { toast.error(ad.error ?? 'Gagal meng-approve GR.'); await loadGrs(); return; }
@@ -1198,10 +1200,17 @@ ${pdfUrl}`.trim();
                 </div>
                 <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                   {gPayment === 'belum_lunas'
-                    ? 'Stok bertambah saat approve, tapi baru tercatat sebagai Pengeluaran saat ditandai Lunas di tab Pembelian.'
+                    ? 'Stok bertambah saat approve, tapi baru tercatat sebagai Pengeluaran saat dibayar/dicicil atau ditandai Lunas (Bahan Baku › Hutang Supplier).'
                     : 'Saat approve, pengeluaran otomatis tercatat dari dompet ini.'}
                 </p>
               </div>
+
+              {gPayment === 'belum_lunas' && (
+                <div>
+                  <label style={fieldLabel}>Jatuh Tempo Hutang (opsional)</label>
+                  <DateInput value={gDue} onChange={setGDue} min={gDate || undefined} style={{ maxWidth: 220 }} />
+                </div>
+              )}
 
               <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--accent-bg)' }}>
                 <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total Diterima</span>

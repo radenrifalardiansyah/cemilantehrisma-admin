@@ -29,9 +29,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   let expenseDeleted: boolean;
   let reversed: boolean;
   let skippedMaterials: string[];
+  let paymentsVoided: number;
 
   try {
-    ({ before, purchaseUpdate, expenseDeleted, reversed, skippedMaterials } = await sql.begin(async pgTx => {
+    ({ before, purchaseUpdate, expenseDeleted, reversed, skippedMaterials, paymentsVoided } = await sql.begin(async pgTx => {
       const [gr] = await pgTx<{ gr_id: string | null }[]>`select gr_id from material_purchases where id = ${id}`;
       if (gr?.gr_id) throw new Error('Pembelian ini berasal dari Penerimaan Barang (GR) — batalkan lewat GR-nya supaya status PO ikut benar.');
       return voidPurchaseTx(pgTx, id, note?.trim() ?? '');
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       actor: guard,
       before,
       after: { ...before, ...purchaseUpdate },
-      meta: { stockReversed: reversed, skippedMaterials },
+      meta: { stockReversed: reversed, skippedMaterials, paymentsVoided },
     });
   } catch (err) {
     console.error('Failed to write history for material purchase void', err);

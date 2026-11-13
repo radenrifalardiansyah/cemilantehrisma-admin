@@ -34,6 +34,9 @@ describe('summarizeGr', () => {
   it('belum lunas dihitung dari GR approved', () => {
     expect(summarizeGr([gr({ total: 100, paymentStatus: 'belum_lunas' }), gr({ total: 40 })]).unpaidValue).toBe(100);
   });
+  it('belum lunas dikurangi cicilan yang sudah dibayar', () => {
+    expect(summarizeGr([gr({ total: 100, paymentStatus: 'belum_lunas', paidAmount: 30 }), gr({ total: 50, paymentStatus: 'belum_lunas' })]).unpaidValue).toBe(120);
+  });
 });
 
 describe('summarizeOpname', () => {

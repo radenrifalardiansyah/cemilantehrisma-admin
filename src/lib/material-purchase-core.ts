@@ -2,6 +2,7 @@ import { parseJsonb } from '@/lib/db';
 import { guardWalletBalances } from '@/lib/wallet-balance';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 import type { PgTx } from '@/lib/doc-number';
+import { removePurchasePaymentsTx } from '@/lib/purchase-payments';
 
 // Logika inti pembelian bahan baku, dipakai bersama oleh Pembelian manual
 // (api/material-purchases) dan Penerimaan Barang/GR yang di-approve (api/goods-receipts/[id]/approve)
@@ -23,6 +24,8 @@ export interface CreatePurchaseArgs {
   note: string;
   walletId: string | null;
   paymentStatus: 'lunas' | 'belum_lunas';
+  /** Jatuh tempo hutang (yyyy-mm-dd), hanya berlaku bila belum_lunas. */
+  dueDate?: string | null;
   poId?: string | null;
   grId?: string | null;
 }
@@ -57,19 +60,20 @@ export async function createPurchaseTx(pgTx: PgTx, a: CreatePurchaseArgs): Promi
   // benar-benar keluar.
   const willCreateExpense = total > 0 && a.paymentStatus === 'lunas';
   const source = a.grId ? 'po' : 'manual';
+  const dueDate = a.paymentStatus === 'belum_lunas' ? (a.dueDate ?? null) : null;
 
   const purchaseData = {
     supplierId: a.supplierId,
     supplierName: a.supplierName,
     items: itemsWithSubtotal,
-    total, date: a.date, paymentStatus: a.paymentStatus,
+    total, date: a.date, paymentStatus: a.paymentStatus, dueDate,
     expenseId: willCreateExpense ? a.expenseId : null,
     note: a.note, walletId: a.walletId,
     source, poId: a.poId ?? null, grId: a.grId ?? null,
   };
   await pgTx`
-    insert into material_purchases (id, supplier_id, supplier_name, items, total, date, payment_status, expense_id, note, wallet_id, source, po_id, gr_id, created_at)
-    values (${a.purchaseId}, ${a.supplierId}, ${a.supplierName}, ${JSON.stringify(itemsWithSubtotal)}, ${total}, ${a.date}, ${a.paymentStatus}, ${willCreateExpense ? a.expenseId : null}, ${a.note}, ${a.walletId}, ${source}, ${a.poId ?? null}, ${a.grId ?? null}, now())
+    insert into material_purchases (id, supplier_id, supplier_name, items, total, date, payment_status, expense_id, note, wallet_id, source, po_id, gr_id, due_date, created_at)
+    values (${a.purchaseId}, ${a.supplierId}, ${a.supplierName}, ${JSON.stringify(itemsWithSubtotal)}, ${total}, ${a.date}, ${a.paymentStatus}, ${willCreateExpense ? a.expenseId : null}, ${a.note}, ${a.walletId}, ${source}, ${a.poId ?? null}, ${a.grId ?? null}, ${dueDate}, now())
   `;
 
   if (willCreateExpense) {
@@ -92,6 +96,7 @@ export interface VoidPurchaseResult {
   expenseDeleted: boolean;
   reversed: boolean;
   skippedMaterials: string[];
+  paymentsVoided: number;
 }
 
 // Batalkan (void) — baris pembelian TETAP ADA (ditandai voided) untuk jejak audit. Stok & harga
@@ -151,6 +156,10 @@ export async function voidPurchaseTx(pgTx: PgTx, id: string, note: string): Prom
       deleted = true;
     }
   }
+  // Pembelian ber-cicilan (hutang supplier): pengeluaran semua cicilan aktif ikut dihapus (uang kembali ke dompet) dan
+  // barisnya ditandai voided — sama seperti pengeluaran pembelian lunas yang dihapus di atas.
+  const paid = await removePurchasePaymentsTx(pgTx, id, 'void');
+  if (paid.count > 0) deleted = true;
 
   const voidNote = note.trim();
   await pgTx`
@@ -165,5 +174,6 @@ export async function voidPurchaseTx(pgTx: PgTx, id: string, note: string): Prom
     expenseDeleted: deleted,
     reversed: canReverse,
     skippedMaterials: blockedNames,
+    paymentsVoided: paid.count,
   };
 }

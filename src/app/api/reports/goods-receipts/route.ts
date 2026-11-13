@@ -15,10 +15,11 @@ export async function GET(req: NextRequest) {
   const sql = getSql();
   const rows = await sql<{
     id: string; gr_number: string; do_number: string; po_number: string; supplier_name: string; received_date: string;
-    items: unknown; total: string; status: string; approved_by: string | null; payment_status: string | null; voided: boolean | null;
+    items: unknown; total: string; status: string; approved_by: string | null; payment_status: string | null; voided: boolean | null; paid_amount: string | null;
   }[]>`
     select g.id, g.gr_number, g.do_number, po.po_number, po.supplier_name, g.received_date, g.items, g.total, g.status,
-      g.approved_by, mp.payment_status, mp.voided
+      g.approved_by, mp.payment_status, mp.voided,
+      (select sum(pp.amount) from material_purchase_payments pp where pp.purchase_id = mp.id and not pp.voided) as paid_amount
     from goods_receipts g
     join purchase_orders po on po.id = g.po_id
     left join material_purchases mp on mp.id = g.purchase_id
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
     return {
       id: r.id, grNumber: r.gr_number, doNumber: r.do_number, poNumber: r.po_number, supplierName: r.supplier_name,
       receivedDate: r.received_date, items: items.map(it => `${it.materialName} (${it.qty} ${it.unit})`).join(', '),
-      total: Number(r.total), status: r.status, approvedBy: r.approved_by, paymentStatus: r.payment_status, purchaseVoided: !!r.voided,
+      total: Number(r.total), status: r.status, approvedBy: r.approved_by, paymentStatus: r.payment_status, purchaseVoided: !!r.voided, paidAmount: Number(r.paid_amount ?? 0),
     };
   });
   return Response.json({ rows: data, summary: summarizeGr(data) });

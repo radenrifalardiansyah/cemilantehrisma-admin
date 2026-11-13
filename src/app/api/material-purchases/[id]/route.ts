@@ -9,6 +9,9 @@ import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
+import { isValidDueDate } from '@/lib/receivable';
+import { parseDueDate } from '@/lib/payables-core';
+import { removePurchasePaymentsTx } from '@/lib/purchase-payments';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -33,7 +36,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as {
     supplierId?: string; supplierName: string; date?: string; note?: string;
-    items: PurchaseItem[]; paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
+    items: PurchaseItem[]; paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null; dueDate?: string | null;
   };
   const newItems = data.items ?? [];
   if (newItems.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
@@ -41,6 +44,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (itemError) return Response.json({ error: itemError }, { status: 400 });
   const newPaymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
   const date = data.date || wibDateKey(new Date());
+  const dueParsed = parseDueDate(data.dueDate);
+  if (dueParsed && 'error' in dueParsed) return Response.json({ error: dueParsed.error }, { status: 400 });
 
   const db = getDb();
   const sql = getSql();
@@ -60,6 +65,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       let expenseChangedLocal = false;
       const oldItems = purchase.items;
       const itemsChanged = itemsKey(oldItems) !== itemsKey(newItems);
+
+      // Pembelian yang sudah punya pembayaran/cicilan (hutang supplier): barang & total dikunci karena pengeluaran cicilan
+      // sudah tercatat, dan status bayar mengikuti cicilan (bukan dari form). Batalkan cicilannya dulu bila perlu mengubahnya.
+      const [{ n: paymentCount }] = await pgTx<{ n: number }[]>`select count(*)::int as n from material_purchase_payments where purchase_id = ${id} and not voided`;
+      const hasPayments = paymentCount > 0;
+      if (hasPayments && itemsChanged) throw new Error('Pembelian ini sudah punya pembayaran/cicilan — barang & harga tidak bisa diubah. Batalkan pembayarannya dulu lewat tombol Riwayat pembayaran di daftar Pembelian atau di Hutang Supplier.');
+      const effectiveStatus = hasPayments ? purchase.paymentStatus : newPaymentStatus;
 
       let itemsWithSubtotal = oldItems.map(it => ({ ...it, subtotal: it.qty * it.price }));
       let total = purchase.total;
@@ -134,9 +146,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const oldExpenseExists = !!oldExpenseRow;
       let expenseIdToStore: string | null = oldExpenseExists ? (oldExpenseId ?? null) : null;
       const supplierName = data.supplierName ?? purchase.supplierName ?? '';
-      const walletId = data.walletId !== undefined ? data.walletId : (purchase.walletId ?? null);
+      // Dompet dikunci bila sudah ada cicilan (dompet bayar tiap cicilan dipilih saat membayar; ini hanya default).
+      const walletId = hasPayments ? (purchase.walletId ?? null) : (data.walletId !== undefined ? data.walletId : (purchase.walletId ?? null));
 
-      await guardWalletBalances(pgTx, [purchase.walletId ?? null, walletId], async () => {
+      if (!hasPayments) await guardWalletBalances(pgTx, [purchase.walletId ?? null, walletId], async () => {
         if (newPaymentStatus === 'lunas') {
           expenseChangedLocal = true;
           if (oldExpenseExists && oldExpenseId) {
@@ -156,15 +169,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         }
       });
 
+      // Jatuh tempo hanya bermakna untuk hutang; tanpa cicilan, pembelian lunas membuangnya. Tidak dikirim = tetap.
+      const dueDateToStore = !hasPayments && effectiveStatus !== 'belum_lunas' ? null : (dueParsed ? dueParsed.value : (row.due_date ?? null));
       const purchaseUpdateLocal = {
         supplierId: data.supplierId ?? null, supplierName, items: itemsWithSubtotal, total, date,
-        paymentStatus: newPaymentStatus, expenseId: expenseIdToStore, note: data.note ?? '', walletId,
+        paymentStatus: effectiveStatus, dueDate: dueDateToStore, expenseId: expenseIdToStore, note: data.note ?? '', walletId,
       };
       await pgTx`
         update material_purchases set
           supplier_id = ${data.supplierId ?? null}, supplier_name = ${supplierName},
           items = ${JSON.stringify(itemsWithSubtotal)}, total = ${total}, date = ${date},
-          payment_status = ${newPaymentStatus}, expense_id = ${expenseIdToStore}, note = ${data.note ?? ''},
+          payment_status = ${effectiveStatus}, due_date = ${dueDateToStore}, expense_id = ${expenseIdToStore}, note = ${data.note ?? ''},
           wallet_id = ${walletId}, updated_at = now()
         where id = ${id}
       `;
@@ -279,6 +294,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         }
       }
 
+      // Cicilan hutang supplier: pengeluarannya dihapus dan barisnya dibuang sebelum pembelian dihapus (FK restrict).
+      const paid = await removePurchasePaymentsTx(pgTx, id, 'delete');
+      if (paid.count > 0) deleted = true;
+
       await pgTx`delete from material_purchases where id = ${id}`;
       return { before: purchase, expenseDeleted: deleted };
     }));
@@ -302,5 +321,46 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });
 
+  return Response.json({ ok: true });
+}
+
+// Ubah HANYA jatuh tempo hutang — boleh juga untuk pembelian dari GR (yang tidak bisa diedit penuh di sini). Body: { dueDate: 'yyyy-mm-dd' | null }.
+export async function PATCH(req: NextRequest, ctx: Ctx) {
+  const guard = await requirePermission(req, 'materials', 'edit');
+  if (guard instanceof Response) return guard;
+  const { id } = await ctx.params;
+  const body = await req.json().catch(() => ({})) as { dueDate?: unknown };
+  if (body.dueDate === undefined) return Response.json({ error: 'dueDate wajib dikirim (yyyy-mm-dd atau null).' }, { status: 400 });
+  const parsed = parseDueDate(body.dueDate);
+  if (parsed && 'error' in parsed) return Response.json({ error: parsed.error }, { status: 400 });
+  const dueDate = parsed && 'value' in parsed ? parsed.value : null;
+  if (dueDate !== null && !isValidDueDate(dueDate)) return Response.json({ error: 'Tanggal jatuh tempo tidak valid.' }, { status: 400 });
+
+  const sql = getSql();
+  let before: ReturnType<typeof rowToPurchase>;
+  try {
+    before = await sql.begin(async pgTx => {
+      const [row] = await pgTx<PurchaseRow[]>`select * from material_purchases where id = ${id} for update`;
+      if (!row) throw new Error('Pembelian tidak ditemukan.');
+      if (row.voided) throw new Error('Pembelian ini sudah dibatalkan.');
+      if (row.payment_status === 'lunas') throw new Error('Pembelian ini sudah lunas — jatuh tempo tidak berlaku.');
+      await pgTx`update material_purchases set due_date = ${dueDate}, updated_at = now() where id = ${id}`;
+      // Pembelian dari GR: samakan jatuh tempo di GR-nya supaya tampilan GR tidak menyimpang.
+      if (row.gr_id) await pgTx`update goods_receipts set due_date = ${dueDate}, updated_at = now() where id = ${row.gr_id}`;
+      return rowToPurchase(row);
+    });
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Gagal mengubah jatuh tempo.' }, { status: 400 });
+  }
+  try {
+    await logHistory(getDb(), {
+      entity: 'material-purchases', entityId: id,
+      entityLabel: `${before.supplierName?.trim() || 'Tanpa nama'} - Rp${before.total}`,
+      action: 'update', actor: guard, before, after: { ...before, dueDate },
+    });
+  } catch (err) {
+    console.error('Failed to write history for material purchase due date', err);
+  }
+  revalidateTag('admin-materials', { expire: 0 });
   return Response.json({ ok: true });
 }

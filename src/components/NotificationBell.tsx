@@ -12,7 +12,7 @@ import { useToast } from '@/components/Toast';
 
 export interface NotificationDoc {
   id: string;
-  type: 'order_new' | 'order_overdue' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send'
+  type: 'order_new' | 'order_overdue' | 'payable_due' | 'payment_proof' | 'stock_low' | 'pos_shift_open' | 'consignment_overdue' | 'consignment_recap' | 'consignment_send'
     | 'income_new' | 'expense_new' | 'capital_new' | 'system';
   title: string;
   message: string;
@@ -32,6 +32,7 @@ export const TYPE_ICON: Record<NotificationDoc['type'], typeof Bell> = {
   pos_shift_open: Wallet,
   consignment_overdue: ReceiptText,
   order_overdue: ReceiptText,
+  payable_due: ReceiptText,
   consignment_recap: ClipboardList,
   consignment_send: Truck,
   income_new: TrendingUp,

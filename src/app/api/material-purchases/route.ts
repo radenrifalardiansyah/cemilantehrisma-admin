@@ -9,6 +9,7 @@ import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
 import { rowToPurchase, type PurchaseRow } from '@/lib/materials-pg';
 import { wibDateKey } from '@/lib/date';
+import { parseDueDate } from '@/lib/payables-core';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'materials', 'view');
@@ -20,7 +21,8 @@ export async function GET(req: NextRequest) {
   const limit = limitParam === 'all' ? null : parseInt(limitParam ?? '50') || 50;
   const sql = getSql();
   const rows = await sql<PurchaseRow[]>`
-    select p.*, po.po_number, gr.gr_number
+    select p.*, po.po_number, gr.gr_number,
+      coalesce((select sum(pp.amount) from material_purchase_payments pp where pp.purchase_id = p.id and not pp.voided), 0) as paid_amount
     from material_purchases p
     left join purchase_orders po on po.id = p.po_id
     left join goods_receipts gr on gr.id = p.gr_id
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     supplierId?: string; supplierName: string; date?: string; note?: string; items: PurchaseItemInput[];
-    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null;
+    paymentStatus?: 'lunas' | 'belum_lunas'; walletId?: string | null; dueDate?: string | null;
   };
   const items = data.items ?? [];
   if (items.length === 0) return Response.json({ error: 'Minimal 1 bahan baku.' }, { status: 400 });
@@ -42,6 +44,8 @@ export async function POST(req: NextRequest) {
   if (itemError) return Response.json({ error: itemError }, { status: 400 });
   const paymentStatus = data.paymentStatus === 'belum_lunas' ? 'belum_lunas' : 'lunas';
   const date = data.date || wibDateKey(new Date());
+  const dueParsed = parseDueDate(data.dueDate);
+  if (dueParsed && 'error' in dueParsed) return Response.json({ error: dueParsed.error }, { status: 400 });
 
   const db = getDb();
   const sql = getSql();
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
         purchaseId, expenseId,
         supplierId: data.supplierId ?? null,
         supplierName: data.supplierName ?? '',
-        items, date, paymentStatus,
+        items, date, paymentStatus, dueDate: dueParsed ? dueParsed.value : null,
         note: data.note ?? '',
         walletId: data.walletId ?? null,
       });

@@ -1,5 +1,6 @@
 import { parseJsonb } from '@/lib/db';
 import { toTimestamp } from '@/lib/orders-pg';
+import { purchasePaymentState, remainingOf } from '@/lib/payables-core';
 
 // Versi Postgres dari `rawMaterials`/`materialPurchases`/`productionBatches`/`materialAdjustments`
 // (Tahap 18b migrasi Fase 2, lihat plan gleaming-wondering-quokka.md). Shape JSON yang
@@ -31,13 +32,19 @@ export interface PurchaseRow {
   voided: boolean; voided_at: Date | null; void_note: string | null;
   source?: string; po_id?: string | null; gr_id?: string | null;
   po_number?: string | null; gr_number?: string | null;
+  due_date?: string | null; paid_amount?: string | null; // paid_amount hanya ada di query daftar (jumlah pembayaran aktif)
   created_at: Date; updated_at: Date | null;
 }
 export function rowToPurchase(r: PurchaseRow) {
+  const total = Number(r.total);
+  const paidAmount = Number(r.paid_amount ?? 0) || 0;
   return {
     id: r.id, supplierId: r.supplier_id, supplierName: r.supplier_name,
     items: (parseJsonb(r.items as string | PurchaseItemRow[] | null) as PurchaseItemRow[] | null) ?? [],
-    total: Number(r.total), date: r.date, paymentStatus: r.payment_status, expenseId: r.expense_id,
+    total, date: r.date, paymentStatus: r.payment_status, expenseId: r.expense_id,
+    // Hutang supplier: dueDate opsional; paymentState = belum_lunas | sebagian | lunas (null bila dibatalkan).
+    dueDate: r.due_date ?? null, paidAmount, remaining: r.payment_status === 'lunas' ? 0 : remainingOf(total, paidAmount),
+    paymentState: purchasePaymentState({ paymentStatus: r.payment_status, total, paid: paidAmount, voided: r.voided }),
     note: r.note, walletId: r.wallet_id,
     voided: r.voided, voidedAt: toTimestamp(r.voided_at), voidNote: r.void_note,
     source: r.source ?? 'manual', poId: r.po_id ?? null, grId: r.gr_id ?? null,
