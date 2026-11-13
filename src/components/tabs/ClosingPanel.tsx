@@ -256,11 +256,97 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
   const th = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
   const thStyle = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' } as const;
 
+  // Potongan tampilan riwayat yang dipakai bersama oleh kartu (mobile) dan tabel (md ke atas).
+  const iconBtn = 'btn-ghost inline-flex items-center justify-center align-middle h-10 w-10 md:h-[30px] md:w-[30px]';
+  const periodLabel = (c: ClosingItem) => c.periodFrom && c.periodFrom !== c.periodTo ? `${fmtDay(c.periodFrom)} – ${fmtDay(c.periodTo)}` : fmtDay(c.periodTo);
+  const statusBadges = (c: ClosingItem) => (
+    <>
+      {c.status === 'aktif'
+        ? <span className="badge badge-green">Aktif</span>
+        : (
+          <Tooltip label={`${c.reopenedBy ? `Oleh ${c.reopenedBy} · ` : ''}${c.reopenedAt ? fmtStamp(c.reopenedAt) : ''}${c.reopenReason ? ` — ${c.reopenReason}` : ''}`}>
+            <span className="badge badge-gray">Dibuka ulang</span>
+          </Tooltip>
+        )}
+      {c.settlementStatus && (
+        <Tooltip label={c.settlements.length > 0 ? 'Lihat transfer tertaut' : 'Belum ada transfer tertaut'}>
+          <button type="button" aria-expanded={expandedId === c.id} onClick={() => setExpandedId(v => v === c.id ? null : c.id)}
+            className={`badge ${SETTLE_BADGE[c.settlementStatus]} min-h-8 md:min-h-0`} style={{ cursor: 'pointer' }}>
+            {SETTLEMENT_STATUS_LABEL[c.settlementStatus]}
+          </button>
+        </Tooltip>
+      )}
+    </>
+  );
+  const rowActions = (c: ClosingItem, canReopen: boolean) => (
+    <>
+      {canWallet('create') && c.settlementStatus && c.settlementStatus !== 'sudah' && (
+        <Tooltip label="Catat transfer">
+          <button aria-label="Catat transfer" onClick={() => setSettleTarget(c)} className={iconBtn} style={{ padding: 0, color: 'var(--accent)' }}>
+            <ArrowRightLeft size={14} />
+          </button>
+        </Tooltip>
+      )}
+      {can('close') && c.status === 'aktif' && !c.isOpeningBalance && (
+        <Tooltip label="Kirim WA">
+          <button aria-label="Kirim WA" onClick={() => sendClosingWhatsApp(c.id)} disabled={!!waBusyId} className={iconBtn} style={{ padding: 0, color: '#059669' }}>
+            {waBusyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <MessageCircle size={15} />}
+          </button>
+        </Tooltip>
+      )}
+      <Tooltip label="Unduh PDF closing">
+        <button aria-label="Unduh PDF closing" onClick={() => downloadPdf(`c:${c.id}`, `/api/closings/${c.id}/pdf`, `closing-hpp-${c.periodTo}.pdf`)} disabled={!!pdfBusy} className={iconBtn} style={{ padding: 0 }}>
+          {pdfIcon(`c:${c.id}`)}
+        </button>
+      </Tooltip>
+      {canReopen && (
+        <Tooltip label="Buka ulang closing">
+          <button aria-label="Buka ulang closing" onClick={() => { setReopenTarget(c); setReopenReason(''); }} className={iconBtn} style={{ padding: 0 }}>
+            <Unlock size={14} />
+          </button>
+        </Tooltip>
+      )}
+    </>
+  );
+  const settlementDetail = (c: ClosingItem) => (
+    <>
+      <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
+        Tertransfer {formatRp(c.settledAmount)} dari HPP {formatRp(c.totalCogs ?? 0)}
+        {c.settlementStatus !== 'sudah' && c.settlementRemaining != null ? ` · sisa ${formatRp(c.settlementRemaining)}` : ''}
+      </p>
+      {c.settlements.length === 0 ? (
+        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Belum ada transfer tertaut.</p>
+      ) : (
+        <ul className="mt-1.5 space-y-1">
+          {c.settlements.map(st => (
+            <li key={st.id} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>
+                {fmtDay(st.date)} · {st.fromWalletName} → {st.toWalletName}
+              </span>
+              <span className="flex items-center gap-1.5 flex-shrink-0">
+                <span className="font-semibold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(st.amount)}</span>
+                {canWallet('edit') && (
+                  <Tooltip label="Lepas tautan">
+                    <button aria-label="Lepas tautan" onClick={() => unlinkSettlement(c, st)} disabled={!!unlinkingId}
+                      className="btn-ghost inline-flex items-center justify-center h-10 w-10 md:h-6 md:w-6" style={{ padding: 0, color: 'var(--danger)' }}>
+                      {unlinkingId === st.id ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
+                    </button>
+                  </Tooltip>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+  const canReopenRow = (c: ClosingItem) => can('reopen') && c.status === 'aktif' && c.id === latestActiveId && (!c.isOpeningBalance || isSuperAdmin);
+
   return (
     <div className="card p-5 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div
-          className="flex items-center gap-2.5 cursor-pointer select-none"
+          className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1 basis-56"
           role="button" tabIndex={0} aria-expanded={!collapsed}
           onClick={() => toggleCollapsed(!collapsed)}
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapsed(!collapsed); } }}
@@ -268,7 +354,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
           <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
             <Lock size={16} />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Closing HPP</p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {collapsed && pending
@@ -276,13 +362,13 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                 : `${pending?.lastClosingTo ? `Closing terakhir sampai ${fmtDay(pending.lastClosingTo)}` : 'Belum ada closing aktif'} · tidak mengikuti filter periode`}
             </p>
           </div>
-          <ChevronDown size={16} style={{ color: 'var(--text-muted)', transform: collapsed ? undefined : 'rotate(180deg)', transition: 'transform 0.15s' }} />
+          <ChevronDown size={16} className="flex-shrink-0" style={{ color: 'var(--text-muted)', transform: collapsed ? undefined : 'rotate(180deg)', transition: 'transform 0.15s' }} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Tooltip label="Unduh draf PDF (belum closing)">
             <button aria-label="Unduh draf PDF" disabled={!pending || !!pdfBusy}
               onClick={() => pending && downloadPdf('draft', '/api/closings/pending/pdf', `draf-closing-hpp-${pending.today}.pdf`)}
-              className="btn-ghost flex items-center justify-center" style={{ height: 34, width: 34, padding: 0 }}>
+              className="btn-ghost flex items-center justify-center h-10 w-10 sm:h-[34px] sm:w-[34px]" style={{ padding: 0 }}>
               {pdfBusy === 'draft' ? <Loader2 size={15} className="animate-spin" /> : <PdfIcon size={20} />}
             </button>
           </Tooltip>
@@ -290,14 +376,14 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
           <button
             onClick={() => { if (collapsed) { toggleCollapsed(false); setShowHistory(true); } else setShowHistory(v => !v); }}
             aria-pressed={showHistory && !collapsed}
-            className="btn-ghost flex items-center gap-1.5"
+            className="btn-ghost flex items-center gap-1.5 h-10 sm:h-[34px]"
             style={showHistory && !collapsed
-              ? { height: 34, background: 'var(--accent-bg)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 700 }
-              : { height: 34 }}>
+              ? { background: 'var(--accent-bg)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 700 }
+              : undefined}>
             <HistoryIcon size={14} /> Riwayat
           </button>
           {can('close') && (
-            <button onClick={openClose} disabled={!pending || loading} className="btn-primary flex items-center gap-1.5" style={{ height: 34 }}>
+            <button onClick={openClose} disabled={!pending || loading} className="btn-primary flex items-center gap-1.5 h-10 sm:h-[34px]">
               <Lock size={14} /> Closing
             </button>
           )}
@@ -328,7 +414,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
       {!collapsed && pending && (
         <div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <button onClick={() => setShowDetail(v => !v)} className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+            <button onClick={() => setShowDetail(v => !v)} className="text-xs font-semibold flex items-center gap-1 min-h-10 sm:min-h-0" style={{ color: 'var(--accent)' }}>
               <ChevronDown size={13} style={{ transform: showDetail ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
               {showDetail ? 'Sembunyikan rincian' : 'Lihat rincian untuk audit'}
             </button>
@@ -337,7 +423,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2">
                 {([['paid', 'Sudah dibayar'], ['receivable', 'Belum dibayar']] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => { setDetailTab(id); setDetailPage(1); }} className="px-3 py-1.5 rounded-xl text-xs font-bold"
+                  <button key={id} onClick={() => { setDetailTab(id); setDetailPage(1); }} className="px-3 py-1.5 min-h-10 sm:min-h-0 rounded-xl text-xs font-bold flex-1 sm:flex-none"
                     style={detailTab === id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                     {label}
                   </button>
@@ -346,7 +432,25 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
               {detail.lines.length === 0 ? (
                 <p className="text-xs py-4 text-center" style={{ color: 'var(--text-muted)' }}>Tidak ada data.</p>
               ) : (
-                <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+                <>
+                <ul className="md:hidden rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
+                  {dPg.rows.map((l, i) => (
+                    <li key={l.key} className="px-3 py-2.5 flex gap-2.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--border-2)' : undefined }}>
+                      <span className="tabular w-5 flex-shrink-0 text-right" style={{ color: 'var(--text-muted)' }}>{dPg.offset + i + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-semibold min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>{l.invoiceNo || '–'}</p>
+                          <p className="font-semibold tabular flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{formatRp(l.cogs)}</p>
+                        </div>
+                        <p className="break-words" style={{ color: 'var(--text-muted)' }}>{l.party}{l.note ? ` · ${l.note}` : ''}</p>
+                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                          Transaksi {fmtDay(l.txDate)} · Bayar {fmtDay(l.paidDate)} · {formatQty(l.qty)} unit
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden md:block overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
                   <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--surface-2)' }}>
@@ -375,6 +479,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
               <Pagination total={detail.lines.length} safePage={dPg.safePage} totalPages={dPg.totalPages} pageSize={detailPageSize}
                 onPageSize={n => { setDetailPageSize(n); setDetailPage(1); }} onGoPage={setDetailPage} unit="baris" />
@@ -394,7 +499,40 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
           {closings.length === 0 ? (
             <p className="text-xs py-4 text-center" style={{ color: 'var(--text-muted)' }}>Belum ada closing.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
+            <>
+            <ul className="md:hidden rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
+              {hPg.rows.map((c, i) => (
+                <li key={c.id} className="px-3 py-3 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--border-2)' : undefined }}>
+                  <div className="flex items-start gap-2.5">
+                    <span className="tabular w-5 flex-shrink-0 text-right" style={{ color: 'var(--text-muted)' }}>{hPg.offset + i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-semibold min-w-0" style={{ color: 'var(--text-primary)' }}>
+                          {periodLabel(c)}
+                          {c.isOpeningBalance && <span className="badge badge-blue ml-1.5" style={{ fontSize: 10 }}>Saldo awal</span>}
+                        </p>
+                        <div className="text-right tabular flex-shrink-0">
+                          <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>{c.totalCogs == null ? '–' : formatRp(c.totalCogs)}</p>
+                          <p className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>{c.totalRevenue == null ? '–' : formatRp(c.totalRevenue)}</p>
+                        </div>
+                      </div>
+                      <p className="text-[10.5px] mt-0.5 break-words" style={{ color: 'var(--text-muted)' }}>
+                        {c.itemCount} transaksi · {fmtStamp(c.closedAt)} · {c.closedBy || '–'}
+                      </p>
+                      {c.note && <p className="text-[10.5px] break-words" style={{ color: 'var(--text-muted)' }}>{c.note}</p>}
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mt-2">
+                        <div className="flex flex-wrap items-center gap-1.5">{statusBadges(c)}</div>
+                        <div className="flex flex-wrap items-center justify-end gap-1">{rowActions(c, canReopenRow(c))}</div>
+                      </div>
+                    </div>
+                  </div>
+                  {expandedId === c.id && c.settlementStatus && (
+                    <div className="mt-2 rounded-lg px-3 py-2.5" style={{ background: 'var(--surface-2)' }}>{settlementDetail(c)}</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
               <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)' }}>
@@ -406,14 +544,12 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                   </tr>
                 </thead>
                 <tbody>
-                  {hPg.rows.map((c, i) => {
-                    const canReopen = can('reopen') && c.status === 'aktif' && c.id === latestActiveId && (!c.isOpeningBalance || isSuperAdmin);
-                    return (
-                      <Fragment key={c.id}>
+                  {hPg.rows.map((c, i) => (
+                    <Fragment key={c.id}>
                       <tr style={{ borderBottom: expandedId === c.id ? undefined : '1px solid var(--border-2)' }}>
                         <td className="px-3 py-2.5 align-top tabular" style={{ color: 'var(--text-muted)' }}>{hPg.offset + i + 1}</td>
                         <td className="px-3 py-2.5 align-top" style={{ color: 'var(--text-primary)' }}>
-                          <span className="font-semibold">{c.periodFrom && c.periodFrom !== c.periodTo ? `${fmtDay(c.periodFrom)} – ${fmtDay(c.periodTo)}` : fmtDay(c.periodTo)}</span>
+                          <span className="font-semibold">{periodLabel(c)}</span>
                           {c.isOpeningBalance && <span className="badge badge-blue ml-1.5" style={{ fontSize: 10 }}>Saldo awal</span>}
                           <p className="text-[10.5px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                             {c.itemCount} transaksi · {fmtStamp(c.closedAt)} · {c.closedBy || '–'}
@@ -425,98 +561,23 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                           <p className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>{c.totalRevenue == null ? '–' : formatRp(c.totalRevenue)}</p>
                         </td>
                         <td className="px-3 py-2.5 align-top">
-                          <div className="flex flex-col items-start gap-1">
-                            {c.status === 'aktif'
-                              ? <span className="badge badge-green">Aktif</span>
-                              : (
-                                <Tooltip label={`${c.reopenedBy ? `Oleh ${c.reopenedBy} · ` : ''}${c.reopenedAt ? fmtStamp(c.reopenedAt) : ''}${c.reopenReason ? ` — ${c.reopenReason}` : ''}`}>
-                                  <span className="badge badge-gray">Dibuka ulang</span>
-                                </Tooltip>
-                              )}
-                            {c.settlementStatus && (
-                              <Tooltip label={c.settlements.length > 0 ? 'Lihat transfer tertaut' : 'Belum ada transfer tertaut'}>
-                                <button type="button" aria-expanded={expandedId === c.id} onClick={() => setExpandedId(v => v === c.id ? null : c.id)}
-                                  className={`badge ${SETTLE_BADGE[c.settlementStatus]}`} style={{ cursor: 'pointer' }}>
-                                  {SETTLEMENT_STATUS_LABEL[c.settlementStatus]}
-                                </button>
-                              </Tooltip>
-                            )}
-                          </div>
+                          <div className="flex flex-col items-start gap-1">{statusBadges(c)}</div>
                         </td>
                         <td className="px-3 py-2.5 align-top text-right">
-                          <div className="flex flex-wrap justify-end gap-1">
-                          {canWallet('create') && c.settlementStatus && c.settlementStatus !== 'sudah' && (
-                            <Tooltip label="Catat transfer">
-                              <button aria-label="Catat transfer" onClick={() => setSettleTarget(c)}
-                                className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0, color: 'var(--accent)' }}>
-                                <ArrowRightLeft size={14} />
-                              </button>
-                            </Tooltip>
-                          )}
-                          {can('close') && c.status === 'aktif' && !c.isOpeningBalance && (
-                            <Tooltip label="Kirim WA">
-                              <button aria-label="Kirim WA" onClick={() => sendClosingWhatsApp(c.id)} disabled={!!waBusyId}
-                                className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0, color: '#059669' }}>
-                                {waBusyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <MessageCircle size={15} />}
-                              </button>
-                            </Tooltip>
-                          )}
-                          <Tooltip label="Unduh PDF closing">
-                            <button aria-label="Unduh PDF closing" onClick={() => downloadPdf(`c:${c.id}`, `/api/closings/${c.id}/pdf`, `closing-hpp-${c.periodTo}.pdf`)} disabled={!!pdfBusy}
-                              className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0 }}>
-                              {pdfIcon(`c:${c.id}`)}
-                            </button>
-                          </Tooltip>
-                          {canReopen && (
-                            <Tooltip label="Buka ulang closing">
-                              <button aria-label="Buka ulang closing" onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0 }}>
-                                <Unlock size={14} />
-                              </button>
-                            </Tooltip>
-                          )}
-                          </div>
+                          <div className="flex flex-wrap justify-end gap-1">{rowActions(c, canReopenRow(c))}</div>
                         </td>
                       </tr>
                       {expandedId === c.id && c.settlementStatus && (
                         <tr style={{ borderBottom: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
-                          <td colSpan={5} className="px-3 py-2.5">
-                            <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                              Tertransfer {formatRp(c.settledAmount)} dari HPP {formatRp(c.totalCogs ?? 0)}
-                              {c.settlementStatus !== 'sudah' && c.settlementRemaining != null ? ` · sisa ${formatRp(c.settlementRemaining)}` : ''}
-                            </p>
-                            {c.settlements.length === 0 ? (
-                              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Belum ada transfer tertaut.</p>
-                            ) : (
-                              <ul className="mt-1.5 space-y-1">
-                                {c.settlements.map(st => (
-                                  <li key={st.id} className="flex items-center justify-between gap-2 text-[11px]">
-                                    <span style={{ color: 'var(--text-primary)' }}>
-                                      {fmtDay(st.date)} · {st.fromWalletName} → {st.toWalletName}
-                                    </span>
-                                    <span className="flex items-center gap-1.5 flex-shrink-0">
-                                      <span className="font-semibold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(st.amount)}</span>
-                                      {canWallet('edit') && (
-                                        <Tooltip label="Lepas tautan">
-                                          <button aria-label="Lepas tautan" onClick={() => unlinkSettlement(c, st)} disabled={!!unlinkingId}
-                                            className="btn-ghost inline-flex items-center justify-center" style={{ height: 24, width: 24, padding: 0, color: 'var(--danger)' }}>
-                                            {unlinkingId === st.id ? <Loader2 size={12} className="animate-spin" /> : <Unlink size={12} />}
-                                          </button>
-                                        </Tooltip>
-                                      )}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </td>
+                          <td colSpan={5} className="px-3 py-2.5">{settlementDetail(c)}</td>
                         </tr>
                       )}
-                      </Fragment>
-                    );
-                  })}
+                    </Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
+            </>
           )}
           <Pagination total={closings.length} safePage={hPg.safePage} totalPages={hPg.totalPages} pageSize={histPageSize}
             onPageSize={n => { setHistPageSize(n); setHistPage(1); }} onGoPage={setHistPage} unit="closing" />
@@ -557,7 +618,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
               )}
             </div>
             <button type="button" onClick={() => downloadPdf('draft-dialog', `/api/closings/pending/pdf?upTo=${upTo}`, `draf-closing-hpp-${upTo}.pdf`)} disabled={!!pdfBusy || !upTo}
-              className="btn-ghost flex items-center gap-1.5 self-start" style={{ height: 30, fontSize: 11 }}>
+              className="btn-ghost flex items-center gap-1.5 self-start h-10 sm:h-[30px]" style={{ fontSize: 11 }}>
               {pdfIcon('draft-dialog')} Unduh draf PDF
             </button>
             <Field label="Catatan (opsional)">

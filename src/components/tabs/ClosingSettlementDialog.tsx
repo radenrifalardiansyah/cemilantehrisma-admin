@@ -150,9 +150,9 @@ export default function ClosingSettlementDialog({ creds, closing, onClose, onDon
         <Tooltip label="Tutup"><button onClick={() => !saving && onClose()} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
       </div>
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {([['new', 'Catat transfer baru'], ['existing', 'Tautkan yang sudah ada']] as const).map(([id, label]) => (
-            <button key={id} type="button" onClick={() => { setTab(id); setError(''); }} className="px-3 py-1.5 rounded-xl text-xs font-bold"
+            <button key={id} type="button" onClick={() => { setTab(id); setError(''); }} className="px-2 py-1.5 min-h-10 sm:min-h-0 rounded-xl text-xs font-bold text-center"
               style={tab === id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
               {label}
             </button>
@@ -192,8 +192,9 @@ export default function ClosingSettlementDialog({ creds, closing, onClose, onDon
               <FilterSelect value={pickedId} onChange={pick} height={40} searchable={candidates.length > 8}
                 options={[{ value: '', label: '– Pilih transfer –' }, ...candidates.map(c => ({
                   value: c.t.id,
-                  label: `${fmtDate(c.t.date)} · ${walletName(c.t.fromWalletId)} → ${walletName(c.t.toWalletId)} · ${formatRp(c.t.amount)} (sisa ${formatRp(c.free)})`,
+                  label: `${fmtDate(c.t.date)} · ${walletName(c.t.fromWalletId)} → ${walletName(c.t.toWalletId)} · ${formatRp(c.t.amount)}`,
                 }))]} />
+              {picked && <p className="text-[11px] mt-1.5 font-semibold" style={{ color: 'var(--text-secondary)' }}>Sisa belum ditautkan {formatRp(picked.free)} dari {formatRp(picked.t.amount)}</p>}
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
                 Hanya transfer yang sebagian/seluruhnya belum ditautkan ke closing. Menautkan tidak mengubah saldo dompet.
               </p>

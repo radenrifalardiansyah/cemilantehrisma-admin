@@ -49,9 +49,9 @@ export default function TransferClosingPicker({ closings, selected, onChange, tr
           const on = c.id in selected;
           return (
             <div key={c.id} className="px-3 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border-2)' : undefined, background: on ? 'var(--accent-bg)' : undefined }}>
-              <label className="flex items-start gap-2.5 cursor-pointer">
+              <label className="flex items-start gap-2.5 cursor-pointer py-1 -my-1">
                 <input type="checkbox" checked={on} onChange={() => toggle(c)} className="mt-0.5" />
-                <span className="min-w-0">
+                <span className="min-w-0 break-words">
                   <span className="block text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Closing {closingPeriodLabel(c.periodFrom, c.periodTo)}</span>
                   <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>HPP {formatRp(c.totalCogs)} · sisa {formatRp(c.remaining)}</span>
                 </span>

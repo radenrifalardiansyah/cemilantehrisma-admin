@@ -62,7 +62,7 @@ function ClosingBadges({ links }: { links?: ClosingLink[] }) {
     <>
       {links.map(l => (
         <Tooltip key={l.closingId} label={`Ditautkan ${formatRp(l.amount)}`}>
-          <span className="badge badge-blue" style={{ fontSize: 10 }}>Closing: {closingPeriodLabel(l.periodFrom, l.periodTo)}</span>
+          <span className="badge badge-blue max-w-full" style={{ fontSize: 10, whiteSpace: 'normal' }}>Closing: {closingPeriodLabel(l.periodFrom, l.periodTo)}</span>
         </Tooltip>
       ))}
     </>
