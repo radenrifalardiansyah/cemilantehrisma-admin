@@ -1,4 +1,5 @@
 import { revalidateTag } from 'next/cache';
+import { after } from 'next/server';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { withDeadlockRetry } from '@/lib/db-retry';
@@ -32,16 +33,24 @@ export function revalidateShipmentCaches(ids: string[], opts: { stock?: boolean 
   if (opts.stock) revalidateProductStock();
 }
 
-// Approve: SELURUH efek stok (kurangi toko+gudang, ledger, tambah stok titip) terjadi di sini, dalam
+export interface ApprovedShipment { id: string; locationName: string; totalQty: number }
+export interface ApproveOutcome extends ApprovedShipment {
+  /** Efek samping non-DB pasca-commit (riwayat, notifikasi, low-stock). Best-effort: tidak pernah melempar. */
+  runEffects: () => Promise<void>;
+}
+
+// Fase DB approve: SELURUH efek stok (kurangi toko+gudang, ledger, tambah stok titip) terjadi di sini, dalam
 // SATU transaksi dengan penguncian baris shipment; stok divalidasi memakai data saat approve (kurang →
-// ditolak dengan pesan jelas, shipment tetap draft). Efek samping non-DB (riwayat, notifikasi,
-// low-stock) dijalankan setelah commit, best-effort. Pemanggil bertanggung jawab revalidateShipmentCaches.
-export async function approveShipment(id: string, actor: AuthUser): Promise<{ id: string; locationName: string; totalQty: number }> {
+// ditolak dengan pesan jelas, shipment tetap draft). Efek samping non-DB TIDAK dijalankan di sini: pemanggil
+// menjalankan `runEffects` (langsung atau lewat scheduleApproveEffects/after()). Pemanggil juga
+// bertanggung jawab revalidateShipmentCaches.
+export async function approveShipmentDb(id: string, actor: AuthUser): Promise<ApproveOutcome> {
   const sql = getSql();
   const db = getDb();
   let before: ReturnType<typeof rowToShipment>;
+  let stockAfter: Map<string, number>;
   try {
-    before = await withDeadlockRetry(() => sql.begin(async pgTx => {
+    ({ before, stockAfter } = await withDeadlockRetry(() => sql.begin(async pgTx => {
       const [row] = await pgTx<ShipmentRow[]>`select * from consignment_shipments where id = ${id} for update`;
       if (!row) throw new ShipmentActionError('Riwayat kirim tidak ditemukan.', 404);
       const s = rowToShipment(row);
@@ -49,7 +58,7 @@ export async function approveShipment(id: string, actor: AuthUser): Promise<{ id
       if (blocked) throw new ShipmentActionError(blocked, 409);
       if (!s.locationId) throw new ShipmentActionError('Lokasi pengiriman tidak valid.');
 
-      await applyShipmentEffect(pgTx, {
+      const stockAfter = await applyShipmentEffect(pgTx, {
         locationId: s.locationId, locationName: s.locationName ?? '',
         warehouseId: s.warehouseId, warehouseName: s.warehouseName, note: s.note, items: s.items,
       });
@@ -57,8 +66,8 @@ export async function approveShipment(id: string, actor: AuthUser): Promise<{ id
         update consignment_shipments set status = 'approved', approved_by = ${actor.username}, approved_at = now(), updated_at = now()
         where id = ${id}
       `;
-      return s;
-    }));
+      return { before: s, stockAfter };
+    })));
   } catch (err) {
     if (err instanceof ShipmentActionError) throw err;
     throw unexpectedShipmentError(err, 'approve consignment send', 'Gagal approve, coba lagi');
@@ -66,30 +75,73 @@ export async function approveShipment(id: string, actor: AuthUser): Promise<{ id
 
   const locationName = before.locationName ?? '';
   const totalQty = before.items.reduce((sum, it) => sum + it.qty, 0);
+  // Tiga efek saling bebas → paralel (allSettled; tiap efek menangkap & log errornya sendiri).
+  const runEffects = async () => {
+    await Promise.allSettled([
+      (async () => {
+        try {
+          await logHistory(db, {
+            entity: 'consignment', entityCollection: 'consignmentShipments', entityId: id,
+            entityLabel: `${locationName || 'Kirim Konsinyasi'} - approved`,
+            action: 'update', actor,
+            before, after: { ...before, status: 'approved', approvedBy: actor.username },
+            meta: { transition: 'approve' },
+          });
+        } catch (err) { console.error('Failed to write history for consignment send approve', err); }
+      })(),
+      (async () => {
+        try {
+          await notify(db, {
+            type: 'consignment_send',
+            title: 'Kirim stok konsinyasi',
+            message: `${totalQty} pcs dikirim ke ${locationName} — oleh ${actor.username}.`,
+            link: 'consignment',
+            entityCollection: 'consignmentShipments', entityId: id,
+            actor,
+          });
+        } catch (err) { console.error('Failed to send notification for consignment send approve', err); }
+      })(),
+      // Stok toko berkurang saat approve — beri tahu kalau produknya jadi menipis. stockAfter dari dalam
+      // transaksi: stabil walau efek ini jalan belakangan, setelah approve lain di batch yang sama.
+      (async () => {
+        try {
+          await notifyProductLowStock(db, shipmentStockDeltas(before.items, -1), actor, `kirim konsinyasi ke ${locationName}`, stockAfter);
+        } catch (err) { console.error('Failed low-stock notification for consignment send approve', err); }
+      })(),
+    ]);
+  };
+  return { id, locationName, totalQty, runEffects };
+}
+
+// Approve + efek samping dijalankan (paralel) sebelum return. Untuk pemanggil yang butuh efek selesai.
+export async function approveShipment(id: string, actor: AuthUser): Promise<ApprovedShipment> {
+  const { runEffects, ...result } = await approveShipmentDb(id, actor);
+  await runEffects();
+  return result;
+}
+
+const EFFECTS_CONCURRENCY = 3;
+
+// Jadwalkan efek samping SETELAH respons terkirim (after(), Route Handler runtime nodejs; di Vercel diperpanjang
+// lewat waitUntil dan dibatasi maxDuration fungsi). Antar-shipment dibatasi konkurensi kecil (pool DB max 5).
+// Bila after() tidak tersedia (di luar request scope), efek dijalankan inline supaya tidak hilang. Tidak melempar.
+export async function scheduleApproveEffects(effects: (() => Promise<void>)[]): Promise<void> {
+  if (effects.length === 0) return;
+  const job = async () => {
+    const queue = [...effects];
+    const worker = async () => {
+      for (let fx = queue.shift(); fx; fx = queue.shift()) {
+        try { await fx(); } catch (err) { console.error('approve consignment send: efek pasca-approve gagal', err); }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(EFFECTS_CONCURRENCY, queue.length) }, worker));
+  };
   try {
-    await logHistory(db, {
-      entity: 'consignment', entityCollection: 'consignmentShipments', entityId: id,
-      entityLabel: `${locationName || 'Kirim Konsinyasi'} - approved`,
-      action: 'update', actor,
-      before, after: { ...before, status: 'approved', approvedBy: actor.username },
-      meta: { transition: 'approve' },
-    });
-  } catch (err) { console.error('Failed to write history for consignment send approve', err); }
-  try {
-    await notify(db, {
-      type: 'consignment_send',
-      title: 'Kirim stok konsinyasi',
-      message: `${totalQty} pcs dikirim ke ${locationName} — oleh ${actor.username}.`,
-      link: 'consignment',
-      entityCollection: 'consignmentShipments', entityId: id,
-      actor,
-    });
-  } catch (err) { console.error('Failed to send notification for consignment send approve', err); }
-  // Stok toko berkurang saat approve — beri tahu kalau produknya jadi menipis.
-  try {
-    await notifyProductLowStock(db, shipmentStockDeltas(before.items, -1), actor, `kirim konsinyasi ke ${locationName}`);
-  } catch (err) { console.error('Failed low-stock notification for consignment send approve', err); }
-  return { id, locationName, totalQty };
+    after(job);
+  } catch (err) {
+    console.error('after() tidak tersedia, efek pasca-approve dijalankan inline', err);
+    await job();
+  }
 }
 
 export async function rejectShipment(id: string, actor: AuthUser, reason: string): Promise<void> {

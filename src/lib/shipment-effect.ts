@@ -55,7 +55,9 @@ export async function lockShipmentRows(
 
 // Terapkan efek kirim: kurangi stok toko & stok gudang asal, ledger 'out', tambah stok titip di lokasi
 // dengan harga titip rata-rata tertimbang. Melempar Error (pesan siap tampil) bila stok tidak cukup.
-export async function applyShipmentEffect(pgTx: PgTx, s: ShipmentEffectInput, opts: { edited?: boolean } = {}): Promise<void> {
+// Mengembalikan stok toko per produk SETELAH efek ini (di dalam transaksi) — dipakai notifikasi low-stock
+// yang dijalankan belakangan agar tidak membaca stok yang sudah diubah approve lain.
+export async function applyShipmentEffect(pgTx: PgTx, s: ShipmentEffectInput, opts: { edited?: boolean } = {}): Promise<Map<string, number>> {
   const { items } = s;
   if (!s.warehouseId) throw new ShipmentActionError('Pilih gudang asal pengiriman.');
   const productIds = items.map(it => it.productId);
@@ -113,6 +115,7 @@ export async function applyShipmentEffect(pgTx: PgTx, s: ShipmentEffectInput, op
       on conflict (id) do update set stock_qty = ${newStockQty}, harga_titip = ${newHarga}, updated_at = now()
     `;
   }
+  return curProductQty;
 }
 
 // Balik efek kirim (edit/hapus shipment approved): stok toko & stok gudang asal kembali, stok titip

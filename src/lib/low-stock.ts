@@ -13,6 +13,10 @@ export async function notifyProductLowStock(
   stockDeltas: Map<string, number>,
   actor: AuthUser,
   source: string,
+  // Stok sesudah perubahan per produk bila sudah diketahui pemanggil. Wajib diisi bila notifikasi dijalankan
+  // belakangan (mis. bulk approve via after()), karena stok di DB saat itu bisa sudah diubah operasi lain
+  // sehingga "sebelum/sesudah" dan isi pesan jadi meleset.
+  stockAfter?: Map<string, number>,
 ): Promise<void> {
   try {
     const out = [...stockDeltas].filter(([, d]) => d < 0);
@@ -22,7 +26,7 @@ export async function notifyProductLowStock(
       select id, name, stock_qty, min_stock, open_po from products where id in ${sql(out.map(([id]) => id))}
     `;
     for (const r of rows) {
-      const after = Number(r.stock_qty) || 0;
+      const after = stockAfter?.get(r.id) ?? (Number(r.stock_qty) || 0);
       const min = Number(r.min_stock) || 0;
       const before = after - (stockDeltas.get(r.id) ?? 0);
       if (r.open_po || min <= 0 || !(before > min && after <= min)) continue;
