@@ -3003,6 +3003,7 @@ _${storeHeader.name}_`.trim();
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               {shipments.length > 0 && (
+                <div className="flex-shrink-0 w-full sm:w-[170px]" aria-label="Filter status kirim stok">
                 <FilterSelect searchable={false} height={HEADER_BTN_H} value={shipmentStatusFilter}
                   onChange={v => { setShipmentStatusFilter(v as typeof shipmentStatusFilter); resetShipmentPage(); }}
                   options={[
@@ -3011,9 +3012,10 @@ _${storeHeader.name}_`.trim();
                     { value: 'approved', label: 'Approved', count: shipments.filter(x => shipmentStatusOf(x) === 'approved').length },
                     { value: 'ditolak', label: 'Ditolak', count: shipments.filter(x => shipmentStatusOf(x) === 'ditolak').length },
                   ]} />
+                </div>
               )}
               {shipments.length > 0 && (
-                <div className="relative flex-1 min-w-0">
+                <div className="relative flex-1 min-w-0 w-full sm:min-w-[220px]">
                   <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                   <input
                     value={shipmentSearch}
