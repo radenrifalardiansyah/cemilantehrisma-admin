@@ -781,24 +781,27 @@ ${pdfUrl}`.trim();
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{view === 'po' ? 'Tanggal PO' : 'Tanggal terima'}</span>
-        <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.from} onChange={v => setDr({ from: v })} max={dr.to || undefined} /></div>
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-        <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.to} onChange={v => setDr({ to: v })} min={dr.from || undefined} /></div>
-        {(dr.from || dr.to) && <button onClick={() => setDr({ from: '', to: '' })} className="btn-ghost text-xs font-semibold" style={{ color: 'var(--danger)' }}>Reset</button>}
-      </div>
-
-      {total > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 card flex-wrap" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
-          <Checkbox
-            checked={pageIds.length > 0 && pageIds.every(id => selected.has(id))}
-            indeterminate={pageIds.some(id => selected.has(id)) && !pageIds.every(id => selected.has(id))}
-            onChange={togglePageAll}
-          />
-          <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-            {selected.size > 0 ? `${selected.size} dipilih` : `${pageIds.length} ${view === 'po' ? 'PO' : 'GR'} di halaman ini`}
-          </span>
+      {(total > 0 || dr.from || dr.to) && (
+        <div className="flex items-center gap-x-3 gap-y-2 px-4 py-2.5 card flex-wrap" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+          {total > 0 && (
+            <>
+              <Checkbox
+                checked={pageIds.length > 0 && pageIds.every(id => selected.has(id))}
+                indeterminate={pageIds.some(id => selected.has(id)) && !pageIds.every(id => selected.has(id))}
+                onChange={togglePageAll}
+              />
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                {selected.size > 0 ? `${selected.size} dipilih` : `${pageIds.length} ${view === 'po' ? 'PO' : 'GR'} di halaman ini`}
+              </span>
+            </>
+          )}
+          <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+            <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{view === 'po' ? 'Tanggal PO' : 'Tanggal terima'}</span>
+            <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.from} onChange={v => setDr({ from: v })} max={dr.to || undefined} /></div>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+            <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.to} onChange={v => setDr({ to: v })} min={dr.from || undefined} /></div>
+            {(dr.from || dr.to) && <button onClick={() => setDr({ from: '', to: '' })} className="btn-ghost text-xs font-semibold" style={{ color: 'var(--danger)' }}>Reset</button>}
+          </div>
         </div>
       )}
 
