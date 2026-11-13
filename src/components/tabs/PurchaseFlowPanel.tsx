@@ -134,6 +134,8 @@ export default function PurchaseFlowPanel({
   const [grs, setGrs] = useState<Gr[]>([]);
   const [loaded, setLoaded] = useState({ po: false, gr: false });
   const [search, setSearch] = useState('');
+  // Filter tanggal (PO: tanggal PO, GR: tanggal terima); terpisah per tampilan.
+  const [dateFilter, setDateFilter] = useState({ po: { from: '', to: '' }, gr: { from: '', to: '' } });
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -437,9 +439,12 @@ ${pdfUrl}`.trim();
 
   // ── Daftar: cari, halaman, tampilan Tabel/Kartu ────────────────────────────
   const q = search.trim().toLowerCase();
-  const filteredPos = pos.filter(p => !q || p.poNumber.toLowerCase().includes(q) || p.supplierName.toLowerCase().includes(q));
-  const filteredGrs = grs.filter(g => !q || g.grNumber.toLowerCase().includes(q) || g.doNumber.toLowerCase().includes(q)
-    || (g.poNumber ?? '').toLowerCase().includes(q) || (g.supplierName ?? '').toLowerCase().includes(q));
+  const inRange = (d: string, r: { from: string; to: string }) => (!r.from || d >= r.from) && (!r.to || d <= r.to);
+  const filteredPos = pos.filter(p => inRange(p.date, dateFilter.po) && (!q || p.poNumber.toLowerCase().includes(q) || p.supplierName.toLowerCase().includes(q)));
+  const filteredGrs = grs.filter(g => inRange(g.receivedDate, dateFilter.gr) && (!q || g.grNumber.toLowerCase().includes(q) || g.doNumber.toLowerCase().includes(q)
+    || (g.poNumber ?? '').toLowerCase().includes(q) || (g.supplierName ?? '').toLowerCase().includes(q)));
+  const dr = dateFilter[view === 'po' ? 'po' : 'gr'];
+  const setDr = (patch: Partial<{ from: string; to: string }>) => { setDateFilter(f => ({ ...f, [view === 'po' ? 'po' : 'gr']: { ...dr, ...patch } })); setPage(1); };
   const [poView, setPoView] = useViewMode('purchase-orders');
   const [grView, setGrView] = useViewMode('goods-receipts');
   const mode = view === 'po' ? poView : grView;
@@ -775,6 +780,13 @@ ${pdfUrl}`.trim();
               )}
           </div>
         </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{view === 'po' ? 'Tanggal PO' : 'Tanggal terima'}</span>
+        <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.from} onChange={v => setDr({ from: v })} max={dr.to || undefined} /></div>
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
+        <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.to} onChange={v => setDr({ to: v })} min={dr.from || undefined} /></div>
+        {(dr.from || dr.to) && <button onClick={() => setDr({ from: '', to: '' })} className="btn-ghost text-xs font-semibold" style={{ color: 'var(--danger)' }}>Reset</button>}
       </div>
 
       {total > 0 && (
