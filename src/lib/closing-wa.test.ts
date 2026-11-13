@@ -16,10 +16,11 @@ vi.mock('@/lib/pdf/server-store-header', () => ({ getServerStoreHeader: async ()
 vi.mock('@react-pdf/renderer', async importOriginal => ({ ...(await importOriginal<typeof import('@react-pdf/renderer')>()), renderToBuffer: vi.fn(async () => Buffer.from('%PDF-fake')) }));
 
 import { resetRateLimits } from './rate-limit';
-import { buildClosingWaMessage, periodLabel, signClosingPdfToken, verifyClosingPdfToken } from './closing-wa';
+import { buildClosingPdfUrl, buildClosingWaMessage, parseClosingShortCode, periodLabel, signClosingPdfToken, signClosingShortCode, verifyClosingPdfToken } from './closing-wa';
 import { formatRp } from './format';
 import type { ClosingRecord } from './pdf/closing-pdf-data';
 import { GET as publicPdf } from '@/app/api/closings/[id]/pdf/public/route';
+import { GET as shortPdf, HEAD as shortPdfHead } from '@/app/c/[code]/route';
 import { POST as waRoute } from '@/app/api/closings/[id]/wa/route';
 
 const ID = 'abcdef12-0000-0000-0000-000000000000';
@@ -32,6 +33,62 @@ const rec = (over: Partial<ClosingRecord> = {}): ClosingRecord => ({
 const OLD = process.env.JWT_SECRET;
 beforeEach(() => { resetRateLimits(); process.env.JWT_SECRET = 'test-secret'; h.closing = rec(); h.settings = { storeName: 'Cemilan Teh Risma', whatsapp: '081234567890' }; h.lines = []; h.perm = true; });
 afterEach(() => { if (OLD === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = OLD; });
+
+describe('tautan ringkas /c/[code]', () => {
+  const shortReq = (code: string) => new NextRequest(`http://x/c/${code}`);
+  const shortCtx = (code: string) => ({ params: Promise.resolve({ code }) });
+
+  it('kode = 38 karakter; roundtrip mengembalikan id; buildClosingPdfUrl memakainya', () => {
+    const code = signClosingShortCode(ID)!;
+    expect(code).toHaveLength(38);
+    expect(code).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(parseClosingShortCode(code)).toBe(ID);
+    expect(buildClosingPdfUrl('https://h.test', ID)).toBe(`https://h.test/c/${code}`);
+  });
+  it('tanda tangan diubah / id diubah / panjang salah / kosong → null', () => {
+    const code = signClosingShortCode(ID)!;
+    const flip = (c: string) => (c === 'A' ? 'B' : 'A');
+    expect(parseClosingShortCode(code.slice(0, 37) + flip(code[37]))).toBeNull();
+    expect(parseClosingShortCode(flip(code[0]) + code.slice(1))).toBeNull();
+    expect(parseClosingShortCode(code.slice(0, 37))).toBeNull();
+    expect(parseClosingShortCode(code + 'A')).toBeNull();
+    expect(parseClosingShortCode('')).toBeNull();
+    expect(parseClosingShortCode(null)).toBeNull();
+    expect(parseClosingShortCode('!'.repeat(38))).toBeNull();
+  });
+  it('rahasia beda → kode lama tidak valid; tanpa JWT_SECRET → tidak ada kode', () => {
+    const code = signClosingShortCode(ID)!;
+    process.env.JWT_SECRET = 'rahasia-lain';
+    expect(parseClosingShortCode(code)).toBeNull();
+    delete process.env.JWT_SECRET;
+    expect(signClosingShortCode(ID)).toBeNull();
+    expect(parseClosingShortCode(code)).toBeNull();
+  });
+  it('id bukan UUID → kode null; buildClosingPdfUrl jatuh ke tautan panjang bertoken', () => {
+    expect(signClosingShortCode('abc')).toBeNull();
+    expect(buildClosingPdfUrl('https://h.test', 'abc')).toBe(`https://h.test/api/closings/abc/pdf/public?t=${signClosingPdfToken('abc')}`);
+  });
+  it('rute /c/[code]: aktif → 200 PDF no-store; HEAD → 200 tanpa body', async () => {
+    const code = signClosingShortCode(ID)!;
+    const res = await shortPdf(shortReq(code), shortCtx(code));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('application/pdf');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    const head = await shortPdfHead(shortReq(code), shortCtx(code));
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe('');
+  });
+  it('rute /c/[code]: kode salah → 404; dibuka_ulang / saldo awal / tidak ada → 404', async () => {
+    const code = signClosingShortCode(ID)!;
+    expect((await shortPdf(shortReq('x'.repeat(38)), shortCtx('x'.repeat(38)))).status).toBe(404);
+    h.closing = rec({ status: 'dibuka_ulang' });
+    expect((await shortPdf(shortReq(code), shortCtx(code))).status).toBe(404);
+    h.closing = rec({ is_opening_balance: true });
+    expect((await shortPdf(shortReq(code), shortCtx(code))).status).toBe(404);
+    h.closing = null;
+    expect((await shortPdf(shortReq(code), shortCtx(code))).status).toBe(404);
+  });
+});
 
 describe('periodLabel', () => {
   it('satu tanggal bila sama atau tanpa awal', () => {
@@ -56,7 +113,7 @@ describe('buildClosingWaMessage', () => {
       'Transaksi : 9',
       `Omzet     : ${formatRp(171000)}`,
       `*HPP      : ${formatRp(118750)}*`,
-      'Terbilang : Seratus Delapan Belas Ribu Tujuh Ratus Lima Puluh Rupiah',
+      'Terbilang : *Seratus Delapan Belas Ribu Tujuh Ratus Lima Puluh Rupiah*',
       '',
       'Mohon dicek dan ditransfer. Terima kasih 🙏',
       'Rincian (PDF): https://x/p?t=abc',
@@ -129,7 +186,8 @@ describe('POST /api/closings/[id]/wa', () => {
     expect(res.status).toBe(200);
     const d = await res.json() as { phone: string; message: string; url: string };
     expect(d.phone).toBe('081234567890');
-    expect(d.url).toBe(`http://admin.test/api/closings/${ID}/pdf/public?t=${signClosingPdfToken(ID)}`);
+    expect(d.url).toBe(`http://admin.test/c/${signClosingShortCode(ID)}`);
+    expect(d.url.length).toBeLessThan(90);
     expect(d.message).toContain(d.url);
     expect(d.message).toContain('*CLOSING HPP — Cemilan Teh Risma*');
   });

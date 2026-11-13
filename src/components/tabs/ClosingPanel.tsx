@@ -256,7 +256,14 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
               {pdfBusy === 'draft' ? <Loader2 size={15} className="animate-spin" /> : <PdfIcon size={20} />}
             </button>
           </Tooltip>
-          <button onClick={() => { toggleCollapsed(false); setShowHistory(v => !v); }} className="btn-ghost flex items-center gap-1.5" style={{ height: 34 }}>
+          {/* Aktif (berwarna) selama panel riwayat terbuka. Saat kartu terlipat, klik membuka kartu + riwayat. */}
+          <button
+            onClick={() => { if (collapsed) { toggleCollapsed(false); setShowHistory(true); } else setShowHistory(v => !v); }}
+            aria-pressed={showHistory && !collapsed}
+            className="btn-ghost flex items-center gap-1.5"
+            style={showHistory && !collapsed
+              ? { height: 34, background: 'var(--accent-bg)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 700 }
+              : { height: 34 }}>
             <HistoryIcon size={14} /> Riwayat
           </button>
           {can('close') && (

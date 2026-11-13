@@ -32,6 +32,50 @@ export function verifyClosingPdfToken(id: string, token: string | null | undefin
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// ── Tautan ringkas: /c/<kode> ───────────────────────────────────────────────
+// kode (38 karakter) = base64url(16 byte UUID closing) [22] + base64url(12 byte pertama HMAC token) [16].
+// 96-bit tanda tangan cukup untuk menolak tebakan; tautan jadi ±80 karakter (bukan ±165). Hanya untuk id
+// berbentuk UUID (closing dibuat dengan randomUUID); selain itu dipakai tautan panjang.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SHORT_SIG_BYTES = 12;
+const ID_PART_LEN = 22; // base64url dari 16 byte, tanpa padding
+
+function rawSig(id: string): Buffer | null {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return null;
+  return createHmac('sha256', secret).update(`closing-pdf:${id}`).digest();
+}
+
+/** Kode ringkas untuk id UUID, atau null bila id bukan UUID / JWT_SECRET kosong. */
+export function signClosingShortCode(id: string): string | null {
+  if (!UUID_RE.test(id)) return null;
+  const sig = rawSig(id);
+  if (!sig) return null;
+  const idPart = Buffer.from(id.replace(/-/g, ''), 'hex').toString('base64url');
+  return idPart + sig.subarray(0, SHORT_SIG_BYTES).toString('base64url');
+}
+
+/** Verifikasi kode ringkas; mengembalikan id closing bila valid, selain itu null. */
+export function parseClosingShortCode(code: string | null | undefined): string | null {
+  if (!code || code.length !== ID_PART_LEN + Math.ceil((SHORT_SIG_BYTES * 4) / 3)) return null;
+  if (!/^[A-Za-z0-9_-]+$/.test(code)) return null;
+  const bytes = Buffer.from(code.slice(0, ID_PART_LEN), 'base64url');
+  if (bytes.length !== 16) return null;
+  const hex = bytes.toString('hex');
+  const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  const sig = rawSig(id);
+  if (!sig) return null;
+  const a = Buffer.from(code.slice(ID_PART_LEN));
+  const b = Buffer.from(sig.subarray(0, SHORT_SIG_BYTES).toString('base64url'));
+  return a.length === b.length && timingSafeEqual(a, b) ? id : null;
+}
+
+/** Tautan PDF publik untuk pesan WA: ringkas (/c/<kode>) untuk id UUID, tautan panjang bertoken untuk lainnya. */
+export function buildClosingPdfUrl(origin: string, id: string): string {
+  const code = signClosingShortCode(id);
+  return code ? `${origin}/c/${code}` : `${origin}/api/closings/${id}/pdf/public?t=${signClosingPdfToken(id)}`;
+}
+
 // Hanya closing resmi berstatus 'aktif' dan bukan saldo awal yang punya tautan publik.
 export const isPubliclyShareableClosing = (c: Pick<ClosingRecord, 'status' | 'is_opening_balance'>): boolean =>
   c.status === 'aktif' && !c.is_opening_balance;
@@ -71,7 +115,7 @@ export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: stri
     `Transaksi : ${c.item_count}`,
     `Omzet     : ${formatRp(revenue)}`,
     `*HPP      : ${formatRp(cogs)}*`,
-    `Terbilang : ${titleCase(terbilangRupiah(cogs))}`,
+    `Terbilang : *${titleCase(terbilangRupiah(cogs))}*`,
     '',
     'Mohon dicek dan ditransfer. Terima kasih 🙏',
     `Rincian (PDF): ${opts.pdfUrl}`,
