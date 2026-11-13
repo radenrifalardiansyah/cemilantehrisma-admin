@@ -301,9 +301,9 @@ ${pdfUrl}`.trim();
     setBusyId(`gr-${p.id}`);
     try {
       const r = await fetch('/api/goods-receipts', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ poId: p.id }) });
-      const d = await r.json() as { error?: string; id?: string; grNumber?: string; doNumber?: string };
+      const d = await r.json() as { error?: string; id?: string; grNumber?: string; doNumber?: string; existing?: boolean };
       if (!r.ok || !d.id) { toast.error(d.error ?? 'Gagal membuat GR.'); return; }
-      toast.success(`${d.grNumber} & ${d.doNumber} dibuat. Cek qty yang datang lalu approve.`);
+      toast.success(d.existing ? `PO ini sudah punya GR draft (${d.grNumber}) — dibuka untuk dilanjutkan.` : `${d.grNumber} & ${d.doNumber} dibuat. Cek qty yang datang lalu approve.`);
       onGoto('gr', d.id);
     } finally { setBusyId(null); }
   };

@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
       mp.payment_status as mp_status, mp.total as mp_total, coalesce(mp.voided, false) as mp_voided, mp.due_date as mp_due,
       coalesce((select sum(amount) from material_purchase_payments pay where pay.purchase_id = mp.id and not pay.voided), 0) as mp_paid
     from goods_receipts g join purchase_orders po on po.id = g.po_id
+    left join material_purchases mp on mp.id = g.purchase_id
     left join suppliers s on s.id = po.supplier_id
     left join profiles cp on cp.username = g.created_by
     left join profiles ap on ap.username = g.approved_by
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
   let doNumber = '';
   let total = 0;
   let poNumber = '';
+  let existing: { id: string; grNumber: string; doNumber: string } | null = null;
   try {
     await sql.begin(async pgTx => {
       const [po] = await pgTx<PoRow[]>`select * from purchase_orders where id = ${poId} for update`;
@@ -68,8 +70,10 @@ export async function POST(req: NextRequest) {
       if (po.status === 'draft') throw new Error('PO belum di-approve. Approve PO dulu sebelum membuat GR.');
       if (po.status === 'diterima') throw new Error('PO ini sudah diterima penuh.');
       poNumber = po.po_number;
-      const [{ exists }] = await pgTx<{ exists: boolean }[]>`select exists(select 1 from goods_receipts where po_id = ${poId} and status = 'draft') as exists`;
-      if (exists) throw new Error('PO ini masih punya GR draft. Selesaikan (approve/batalkan) dulu.');
+      // PO yang sudah punya GR draft: buka draft itu (satu PO satu draft, supaya sisa PO tidak terisi dobel).
+      const [draft] = await pgTx<{ id: string; gr_number: string; do_number: string }[]>`
+        select id, gr_number, do_number from goods_receipts where po_id = ${poId} and status = 'draft' order by created_at desc limit 1`;
+      if (draft) { existing = { id: draft.id, grNumber: draft.gr_number, doNumber: draft.do_number }; return; }
 
       const poItems = mergePoItems((parseJsonb(po.items as string | PoItem[] | null) as PoItem[] | null) ?? []);
       const items = remainingItems(poItems, await receivedByMaterial(pgTx, poId));
@@ -88,6 +92,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal membuat GR.' }, { status: 400 });
   }
+  const found = existing as { id: string; grNumber: string; doNumber: string } | null;
+  if (found) return Response.json({ ...found, existing: true });
   try {
     await logHistory(getDb(), {
       entity: 'goods-receipts', entityId: id, entityLabel: `${grNumber} (${poNumber}) - Rp${total}`,
