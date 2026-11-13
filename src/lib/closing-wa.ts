@@ -118,8 +118,6 @@ export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: stri
   // Data dalam blok monospace (```): satu-satunya cara agar titik dua sejajar di WhatsApp (font biasa proporsional).
   // Konsekuensinya teks tebal (*...*) tidak berlaku di dalam blok, jadi Terbilang ditaruh di luar blok agar tetap tebal.
   const rows: [string, string][] = [
-    ['Ditutup', stamp(c.closed_at)],
-    ['Oleh', c.closed_by || '-'],
     ['Periode', periodLabel(c.period_from, c.period_to)],
     ['Terjual', `${qtyLabel(Number(c.total_qty ?? 0))} Pcs`],
     ['Omzet', formatRp(revenue)],
@@ -128,6 +126,7 @@ export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: stri
   const w = Math.max(...rows.map(([l]) => l.length));
   return plainText([
     `*CLOSING HPP — ${store}*`,
+    `Ditutup: ${stamp(c.closed_at)} oleh ${c.closed_by || '-'}`,
     '',
     '```',
     ...rows.map(([l, v]) => `${l.padEnd(w)} : ${v}`),

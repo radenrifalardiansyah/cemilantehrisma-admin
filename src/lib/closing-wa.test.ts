@@ -109,10 +109,9 @@ describe('buildClosingWaMessage', () => {
     const msg = buildClosingWaMessage(rec(), { storeName: 'Cemilan Teh Risma', pdfUrl: 'https://x/p?t=abc' });
     expect(msg).toBe([
       '*CLOSING HPP - Cemilan Teh Risma*',
+      'Ditutup: 13 Nov 2026, 09.14 oleh superadmin',
       '',
       '```',
-      'Ditutup : 13 Nov 2026, 09.14',
-      'Oleh    : superadmin',
       'Periode : 12 - 13 Nov 2026',
       'Terjual : 19 Pcs',
       `Omzet   : ${plain(formatRp(171000))}`,
@@ -135,7 +134,7 @@ describe('buildClosingWaMessage', () => {
     expect(open).toBeGreaterThan(-1);
     expect(close).toBeGreaterThan(open);
     const cols = lines.slice(open + 1, close).map(l => l.indexOf(':'));
-    expect(cols.length).toBe(6);
+    expect(cols.length).toBe(4);
     expect(new Set(cols).size).toBe(1);
   });
   it('pesan ASCII murni: tanpa emoji, tanda pisah, atau spasi tak terputus (cegah tampil sebagai �)', () => {
@@ -152,7 +151,7 @@ describe('buildClosingWaMessage', () => {
     const msg = buildClosingWaMessage(rec({ period_from: '2026-11-13', closed_by: null }), { storeName: '  ', pdfUrl: 'u' });
     expect(msg).toContain('*CLOSING HPP - Cemilan Teh Risma*');
     expect(msg).toContain('Periode : 13 Nov 2026');
-    expect(msg).toContain('Oleh    : -');
+    expect(msg).toContain('Ditutup: 13 Nov 2026, 09.14 oleh -');
   });
 });
 
