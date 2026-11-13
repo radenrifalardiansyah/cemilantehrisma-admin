@@ -674,8 +674,8 @@ ${pdfUrl}`.trim();
           </Tooltip>
         )}
         <RecordHistoryButton open={historyId === p.id} onToggle={() => setHistoryId(c => c === p.id ? null : p.id)} />
-        <Tooltip label="Lihat detail">
-          <button aria-label="Lihat detail" onClick={() => setExpandedId(c => c === p.id ? null : p.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+        <Tooltip label="Lihat Detail">
+          <button aria-label="Lihat Detail" onClick={() => setExpandedId(c => c === p.id ? null : p.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
             <ChevronRight size={12} style={{ transform: expandedId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
           </button>
         </Tooltip>
@@ -717,8 +717,8 @@ ${pdfUrl}`.trim();
         </Tooltip>
       )}
       <RecordHistoryButton open={historyId === g.id} onToggle={() => setHistoryId(c => c === g.id ? null : g.id)} />
-        <Tooltip label="Lihat detail">
-          <button aria-label="Lihat detail" onClick={() => setExpandedId(c => c === g.id ? null : g.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+        <Tooltip label="Lihat Detail">
+          <button aria-label="Lihat Detail" onClick={() => setExpandedId(c => c === g.id ? null : g.id)} className={iconBtn} style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
             <ChevronRight size={12} style={{ transform: expandedId === g.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
           </button>
         </Tooltip>

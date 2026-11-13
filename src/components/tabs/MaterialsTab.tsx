@@ -118,6 +118,58 @@ interface Purchase {
   source?: 'manual' | 'po'; grId?: string | null; poNumber?: string | null; grNumber?: string | null;
 }
 
+// Detail satu pembelian (dibuka lewat tombol ikon "Lihat Detail", seperti Pesanan / PO / GR).
+function PurchaseDetail({ p }: { p: Purchase }) {
+  const field = (label: string, value: React.ReactNode, wide = false) => (
+    <div className={wide ? 'col-span-2 sm:col-span-4' : undefined}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <p className="text-xs mt-0.5 break-words" style={{ color: 'var(--text-primary)' }}>{value || '–'}</p>
+    </div>
+  );
+  return (
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+        {field('Supplier', p.supplierName)}
+        {field('Tanggal', p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds))}
+        {field('Status', p.voided ? 'Dibatalkan' : paymentLabel(p))}
+        {field('Total', formatRp(p.total))}
+        {p.grId && field('Ref. PO / GR', [p.poNumber, p.grNumber].filter(Boolean).join(' · '))}
+        {p.paymentStatus === 'belum_lunas' && !p.voided && field('Sisa', formatRp(p.remaining ?? p.total))}
+        {p.paymentStatus === 'belum_lunas' && !p.voided && field('Jatuh Tempo', p.dueDate ? formatDueDate(p.dueDate) : '')}
+        {p.note && field('Catatan', p.note, true)}
+        {p.voided && p.voidNote && field('Alasan Batal', p.voidNote, true)}
+      </div>
+      <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--border-2)', background: 'var(--surface)' }}>
+        <table className="w-full text-xs">
+          <thead>
+            <tr style={{ background: 'var(--surface-2)' }}>
+              {['No', 'Bahan Baku', 'Sat.', 'Qty', 'Harga', 'Jumlah'].map((h, i) => (
+                <th key={h} className={`px-3 py-2 font-semibold whitespace-nowrap ${i >= 3 ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text-muted)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {p.items.map((it, i) => (
+              <tr key={`${it.materialId}-${i}`} style={{ borderTop: '1px solid var(--border-2)' }}>
+                <td className="px-3 py-2 tabular" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{it.materialName}</td>
+                <td className="px-3 py-2 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{it.unit}</td>
+                <td className="px-3 py-2 text-right tabular whitespace-nowrap">{formatQty(it.qty)}</td>
+                <td className="px-3 py-2 text-right tabular whitespace-nowrap">{formatRp(it.price)}</td>
+                <td className="px-3 py-2 text-right tabular whitespace-nowrap font-semibold">{formatRp(it.subtotal)}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: '1px solid var(--border-2)', background: 'var(--accent-bg)' }}>
+              <td colSpan={5} className="px-3 py-2 font-bold">Total</td>
+              <td className="px-3 py-2 text-right tabular font-bold whitespace-nowrap">{formatRp(p.total)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 type MaterialForm = { name: string; unit: string; minStock: string };
 const EMPTY_MATERIAL: MaterialForm = { name: '', unit: '', minStock: '' };
 
@@ -861,6 +913,7 @@ ${pdfUrl}`.trim();
   const [importingPurchases, setImportingPurchases] = useState(false);
   const importPurchaseFileRef = useRef<HTMLInputElement>(null);
   const [purchaseHistoryId, setPurchaseHistoryId] = useState<string | null>(null);
+  const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null);
   const togglePurchaseHistory = (id: string) => setPurchaseHistoryId(cur => cur === id ? null : id);
 
   const toggleSelectPurchase = (id: string) =>
@@ -1689,6 +1742,11 @@ ${pdfUrl}`.trim();
                                         </>
                                       )}
                                       <RecordHistoryButton open={purchaseHistoryId === p.id} onToggle={() => togglePurchaseHistory(p.id)} />
+                                <Tooltip label="Lihat Detail">
+                                  <button aria-label="Lihat Detail" aria-expanded={expandedPurchaseId === p.id} onClick={() => setExpandedPurchaseId(c => c === p.id ? null : p.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                                    <ChevronRight size={12} style={{ transform: expandedPurchaseId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                                  </button>
+                                </Tooltip>
                                     </div>
                                   </div>
                                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{p.date ? formatDateDisplay(p.date) : formatDate(p.createdAt?.seconds)}</p>
@@ -1702,6 +1760,7 @@ ${pdfUrl}`.trim();
                                 </div>
                               </div>
                             </div>
+                            {expandedPurchaseId === p.id && <PurchaseDetail p={p} />}
                             {purchaseHistoryId === p.id && <RecordHistoryPanel creds={creds} entity="material-purchases" entityId={p.id} />}
                           </div>
                         );
@@ -1789,11 +1848,17 @@ ${pdfUrl}`.trim();
                                   </>
                                 )}
                                 <RecordHistoryButton open={purchaseHistoryId === p.id} onToggle={() => togglePurchaseHistory(p.id)} />
+                                <Tooltip label="Lihat Detail">
+                                  <button aria-label="Lihat Detail" aria-expanded={expandedPurchaseId === p.id} onClick={() => setExpandedPurchaseId(c => c === p.id ? null : p.id)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                                    <ChevronRight size={12} style={{ transform: expandedPurchaseId === p.id ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+                                  </button>
+                                </Tooltip>
                               </div>
                               {p.voided && p.voidNote && (
                                 <p className="text-xs text-center px-4 pb-3 italic" style={{ color: 'var(--text-muted)' }}>Alasan batal: {p.voidNote}</p>
                               )}
                             </div>
+                            {expandedPurchaseId === p.id && <PurchaseDetail p={p} />}
                             {purchaseHistoryId === p.id && <RecordHistoryPanel creds={creds} entity="material-purchases" entityId={p.id} />}
                           </div>
                         );

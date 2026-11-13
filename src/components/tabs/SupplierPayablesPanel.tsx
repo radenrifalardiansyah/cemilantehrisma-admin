@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, HandCoins, Loader2, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ChevronRight, HandCoins, Loader2, RefreshCw, Search } from 'lucide-react';
 import Pagination from '@/components/Pagination';
 import PageLoader from '@/components/PageLoader';
 import Tooltip from '@/components/Tooltip';
@@ -107,6 +107,15 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
     </button>
   );
 
+  // Tombol ikon "Lihat Detail" (sama dengan Pesanan): satu-satunya cara membuka daftar pembelian supplier.
+  const detailButton = (key: string, open: boolean) => (
+    <Tooltip label="Lihat Detail">
+      <button aria-label="Lihat Detail" aria-expanded={open} onClick={() => toggle(key)} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+        <ChevronRight size={12} style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+      </button>
+    </Tooltip>
+  );
+
   // Daftar pembelian satu supplier (dipakai tabel desktop dan kartu mobile).
   const itemsOf = (g: SupplierPayable) => (
     <div className="divide-y divide-[var(--border-2)]" style={{ background: 'var(--surface-2)' }}>
@@ -190,12 +199,11 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
                 const open = expanded.has(g.key);
                 return (
                   <div key={g.key}>
-                    <button onClick={() => toggle(g.key)} aria-expanded={open} className="w-full px-4 py-3 text-left flex items-start gap-3">
+                    <div className="w-full px-4 py-3 text-left flex items-start gap-3">
                       <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center pt-0.5" style={{ color: 'var(--text-muted)' }}>{rowNum(idx)}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                            {open ? <ChevronDown size={14} className="flex-shrink-0" /> : <ChevronRight size={14} className="flex-shrink-0" />}
                             <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{g.supplierName}</p>
                             {g.overdueCount > 0 && <span className="badge badge-red flex-shrink-0"><AlertTriangle size={10} /> Lewat {formatRp(g.overdueAmount)} ({g.overdueCount})</span>}
                           </div>
@@ -205,7 +213,8 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
                           {g.count} pembelian · Jatuh tempo terdekat: {g.nearestDue ? formatDueDate(g.nearestDue) : '–'}
                         </p>
                       </div>
-                    </button>
+                      {detailButton(g.key, open)}
+                    </div>
                     {open && <div style={{ borderTop: '1px solid var(--border-2)' }}>{itemsOf(g)}</div>}
                   </div>
                 );
@@ -216,8 +225,9 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
               {paged.map((g, idx) => {
                 const open = expanded.has(g.key);
                 return (
-                  <div key={g.key} className="card overflow-hidden">
-                    <button onClick={() => toggle(g.key)} aria-expanded={open} className="w-full pt-3 pb-3 px-4 text-center">
+                  <div key={g.key} className="card overflow-hidden relative">
+                    <div className="absolute top-2.5 right-2.5 z-10">{detailButton(g.key, open)}</div>
+                    <div className="w-full pt-3 pb-3 px-4 text-center">
                       <span className="text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>#{rowNum(idx)}</span>
                       <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.supplierName}</p>
                       {g.overdueCount > 0 && <div className="mt-1"><span className="badge badge-red"><AlertTriangle size={10} /> Lewat {formatRp(g.overdueAmount)} ({g.overdueCount})</span></div>}
@@ -225,10 +235,7 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
                         {g.count} pembelian · Terdekat: {g.nearestDue ? formatDueDate(g.nearestDue) : '–'}
                       </p>
                       <p className="text-base font-extrabold tabular mt-2" style={{ color: 'var(--danger)' }}>{formatRp(g.totalDebt)}</p>
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold mt-1" style={{ color: 'var(--accent)' }}>
-                        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {open ? 'Sembunyikan' : 'Lihat pembelian'}
-                      </span>
-                    </button>
+                    </div>
                     {open && <div style={{ borderTop: '1px solid var(--border-2)' }}>{itemsOf(g)}</div>}
                   </div>
                 );
