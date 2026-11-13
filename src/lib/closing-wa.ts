@@ -106,21 +106,35 @@ const qtyLabel = (n: number) => new Intl.NumberFormat('id-ID', { maximumFraction
 
 const stamp = (d: Date) => `${formatDate(d, 'short', 'Asia/Jakarta')}, ${formatDate(d, 'time', 'Asia/Jakarta')}`;
 
+// Pesan WA dikirim lewat URL wa.me: sebagian klien WhatsApp merender karakter non-ASCII (emoji, tanda pisah, spasi
+// tak terputus dari format Rupiah) sebagai "�". Jadi pesan dijaga ASCII murni.
+export const plainText = (t: string): string =>
+  t.replace(/[\u00a0\u202f]/g, ' ').replace(/[\u2013\u2014]/g, '-');
+
 export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: string; pdfUrl: string }): string {
   const cogs = Number(c.total_cogs ?? 0);
   const revenue = Number(c.total_revenue ?? 0);
   const store = opts.storeName?.trim() || DEFAULT_STORE_NAME;
-  return [
+  // Data dalam blok monospace (```): satu-satunya cara agar titik dua sejajar di WhatsApp (font biasa proporsional).
+  // Konsekuensinya teks tebal (*...*) tidak berlaku di dalam blok, jadi Terbilang ditaruh di luar blok agar tetap tebal.
+  const rows: [string, string][] = [
+    ['Ditutup', stamp(c.closed_at)],
+    ['Oleh', c.closed_by || '-'],
+    ['Periode', periodLabel(c.period_from, c.period_to)],
+    ['Terjual', `${qtyLabel(Number(c.total_qty ?? 0))} Pcs`],
+    ['Omzet', formatRp(revenue)],
+    ['HPP', formatRp(cogs)],
+  ];
+  const w = Math.max(...rows.map(([l]) => l.length));
+  return plainText([
     `*CLOSING HPP — ${store}*`,
-    `Ditutup: ${stamp(c.closed_at)} oleh ${c.closed_by || '–'}`,
     '',
-    `Periode   : ${periodLabel(c.period_from, c.period_to)}`,
-    `Terjual   : ${qtyLabel(Number(c.total_qty ?? 0))} Pcs`,
-    `Omzet     : ${formatRp(revenue)}`,
-    `*HPP      : ${formatRp(cogs)}*`,
-    `Terbilang : *${titleCase(terbilangRupiah(cogs))}*`,
+    '```',
+    ...rows.map(([l, v]) => `${l.padEnd(w)} : ${v}`),
+    '```',
+    `Terbilang: *${titleCase(terbilangRupiah(cogs))}*`,
     '',
-    'Mohon dicek dan ditransfer. Terima kasih 🙏',
+    'Mohon dicek dan ditransfer. Terima kasih.',
     `Rincian (PDF): ${opts.pdfUrl}`,
-  ].join('\n');
+  ].join('\n'));
 }
