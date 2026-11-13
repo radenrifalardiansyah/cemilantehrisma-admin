@@ -153,7 +153,9 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
     finally { setExporting(null); }
   };
 
+  // Modal di LUAR pembungkus animate-fade-up (elemen ber-transform menjadi acuan posisi `fixed`).
   return (
+    <>
     <div className="animate-fade-up">
       <div className="flex items-center gap-3 mb-6">
         <Tooltip label="Kembali">
@@ -267,9 +269,9 @@ export default function StockSection({ creds, data, can, goTo }: SectionProps) {
           )}
         </>
       )}
-
-      {history && <LedgerModal creds={creds} {...history} onClose={() => setHistory(null)} />}
     </div>
+      {history && <LedgerModal creds={creds} {...history} onClose={() => setHistory(null)} />}
+    </>
   );
 }
 
