@@ -127,7 +127,7 @@ export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: stri
   return plainText([
     `*CLOSING HPP — ${store}*`,
     `Ditutup: ${stamp(c.closed_at)} oleh ${c.closed_by || '-'}`,
-    '',
+    // Tanpa baris kosong sebelum blok: WhatsApp sudah memberi jarak otomatis di atas blok monospace.
     '```',
     ...rows.map(([l, v]) => `${l.padEnd(w)} : ${v}`),
     '```',

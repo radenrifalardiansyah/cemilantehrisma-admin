@@ -110,7 +110,6 @@ describe('buildClosingWaMessage', () => {
     expect(msg).toBe([
       '*CLOSING HPP - Cemilan Teh Risma*',
       'Ditutup: 13 Nov 2026, 09.14 oleh superadmin',
-      '',
       '```',
       'Periode : 12 - 13 Nov 2026',
       'Terjual : 19 Pcs',
