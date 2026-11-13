@@ -26,7 +26,7 @@ import { POST as waRoute } from '@/app/api/closings/[id]/wa/route';
 const ID = 'abcdef12-0000-0000-0000-000000000000';
 const rec = (over: Partial<ClosingRecord> = {}): ClosingRecord => ({
   id: ID, period_from: '2026-11-12', period_to: '2026-11-13', closed_at: new Date('2026-11-13T02:14:00Z'), closed_by: 'superadmin',
-  total_qty: '20', total_cogs: '118750', total_revenue: '171000', item_count: 9, note: null,
+  total_qty: '19', total_cogs: '118750', total_revenue: '171000', item_count: 9, note: null,
   status: 'aktif', reopened_at: null, reopened_by: null, reopen_reason: null, is_opening_balance: false, ...over,
 });
 
@@ -110,7 +110,7 @@ describe('buildClosingWaMessage', () => {
       'Ditutup: 13 Nov 2026, 09.14 oleh superadmin',
       '',
       'Periode   : 12 – 13 Nov 2026',
-      'Transaksi : 9',
+      'Terjual   : 19 Pcs',
       `Omzet     : ${formatRp(171000)}`,
       `*HPP      : ${formatRp(118750)}*`,
       'Terbilang : *Seratus Delapan Belas Ribu Tujuh Ratus Lima Puluh Rupiah*',
@@ -118,8 +118,14 @@ describe('buildClosingWaMessage', () => {
       'Mohon dicek dan ditransfer. Terima kasih 🙏',
       'Rincian (PDF): https://x/p?t=abc',
     ].join('\n'));
+    expect(msg).not.toContain('Transaksi');
     expect(msg).not.toContain('Sudah ditransfer');
     expect(msg).not.toContain('Sisa');
+  });
+  it('Terjual memakai total qty (bukan jumlah transaksi); pecahan 2 desimal; kosong → 0', () => {
+    expect(buildClosingWaMessage(rec({ total_qty: '5.5', item_count: 3 }), { pdfUrl: 'u' })).toContain('Terjual   : 5,5 Pcs');
+    expect(buildClosingWaMessage(rec({ total_qty: '1234', item_count: 3 }), { pdfUrl: 'u' })).toContain('Terjual   : 1.234 Pcs');
+    expect(buildClosingWaMessage(rec({ total_qty: null }), { pdfUrl: 'u' })).toContain('Terjual   : 0 Pcs');
   });
   it('periode satu tanggal, fallback nama toko & pembuat', () => {
     const msg = buildClosingWaMessage(rec({ period_from: '2026-11-13', closed_by: null }), { storeName: '  ', pdfUrl: 'u' });

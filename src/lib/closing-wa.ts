@@ -101,6 +101,9 @@ export function periodLabel(from: string | null, to: string): string {
   return `${d1} – ${d2} ${m2} ${y2}`;
 }
 
+// Qty bisa pecahan (cicilan proporsional): tampilkan maksimal 2 desimal, tanpa desimal bila bulat.
+const qtyLabel = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+
 const stamp = (d: Date) => `${formatDate(d, 'short', 'Asia/Jakarta')}, ${formatDate(d, 'time', 'Asia/Jakarta')}`;
 
 export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: string; pdfUrl: string }): string {
@@ -112,7 +115,7 @@ export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: stri
     `Ditutup: ${stamp(c.closed_at)} oleh ${c.closed_by || '–'}`,
     '',
     `Periode   : ${periodLabel(c.period_from, c.period_to)}`,
-    `Transaksi : ${c.item_count}`,
+    `Terjual   : ${qtyLabel(Number(c.total_qty ?? 0))} Pcs`,
     `Omzet     : ${formatRp(revenue)}`,
     `*HPP      : ${formatRp(cogs)}*`,
     `Terbilang : *${titleCase(terbilangRupiah(cogs))}*`,
