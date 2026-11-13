@@ -50,6 +50,8 @@ interface Gr {
   id: string; grNumber: string; doNumber: string; poId: string; supplierId?: string | null; supplierPhone?: string; supplierAddress?: string;
   poNumber: string | null; supplierName: string | null; items: GrItem[]; total: number;
   receivedDate: string; note: string; status: GrStatus; walletId: string | null; paymentStatus: string | null; dueDate?: string | null;
+  // Diturunkan server dari pembelian terkait (null bila GR belum approve / tak punya pembelian).
+  payState?: 'belum_lunas' | 'sebagian' | 'lunas' | null; paidAmount?: number; remaining?: number;
   purchaseId: string | null; cancelNote: string | null;
   createdBy?: string | null; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
   createdByName?: string | null; createdBySignature?: string | null; approvedByName?: string | null; approvedBySignature?: string | null;
@@ -61,6 +63,15 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+// Keterangan hutang di daftar GR: hanya untuk GR approved yang pembeliannya belum lunas.
+function GrDebtBadge({ g }: { g: Gr }) {
+  if (g.status !== 'approved' || !g.payState || g.payState === 'lunas') return null;
+  const overdue = !!g.dueDate && g.dueDate < todayISO();
+  const label = g.payState === 'sebagian' ? 'Dibayar sebagian' : 'Belum lunas';
+  const detail = `${label} · sisa ${formatRp(g.remaining ?? g.total)}${g.dueDate ? ` · jatuh tempo ${formatDateDisplay(g.dueDate)}` : ''}${overdue ? ' (lewat)' : ''}`;
+  return <span className={`badge ${overdue ? 'badge-red' : 'badge-amber'}`} title={detail}>{detail}</span>;
+}
+
 const formatDateDisplay = (iso?: string | null) =>
   iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 const normalizePhone = (raw: string) => {
@@ -856,6 +867,7 @@ ${pdfUrl}`.trim();
                           <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber}</p>
                           <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span>
                           <span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span>
+                          <GrDebtBadge g={g} />
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                           {g.supplierName} · dari {g.poNumber} · {formatDateDisplay(g.receivedDate)}
@@ -902,7 +914,7 @@ ${pdfUrl}`.trim();
                 <div className="absolute top-3 left-3 z-10 rounded-md p-0.5" style={{ background: 'var(--surface)' }}><Checkbox checked={selGr.has(g.id)} onChange={() => toggleSel(g.id)} /></div>
                 <div className="pt-8 pb-3 px-4 text-center">
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{g.grNumber} <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>/ {g.doNumber}</span></p>
-                  <div className="mt-1"><span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span></div>
+                  <div className="mt-1 flex items-center justify-center gap-1.5 flex-wrap"><span className={`badge ${GR_BADGE[g.status].cls}`}>{GR_BADGE[g.status].label}</span><GrDebtBadge g={g} /></div>
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{g.supplierName} · dari {g.poNumber}</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(g.receivedDate)}</p>
                   <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)' }}>{grItemsText(g)}</p>

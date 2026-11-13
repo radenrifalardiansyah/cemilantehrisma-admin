@@ -7,23 +7,39 @@ import { logHistory } from '@/lib/history';
 import { nextDocNumber, periodOf, supplierDoCode } from '@/lib/doc-number';
 import { rowToGr, receivedByMaterial, remainingItems, mergePoItems, type GrRow, type PoRow, type PoItem } from '@/lib/purchase-orders-pg';
 import { wibDateKey } from '@/lib/date';
+import { purchasePaymentState, remainingOf } from '@/lib/payables-core';
 
 export async function GET(req: NextRequest) {
   const guard = await requirePermission(req, 'goods-receipts', 'view');
   if (guard instanceof Response) return guard;
   const sql = getSql();
-  const rows = await sql<GrRow[]>`
+  type Row = GrRow & { mp_status: string | null; mp_total: string | null; mp_voided: boolean; mp_due: string | null; mp_paid: string };
+  const rows = await sql<Row[]>`
     select g.*, po.po_number, po.supplier_name, po.supplier_id,
       coalesce(nullif(po.supplier_phone, ''), s.phone, '') as supplier_phone, coalesce(s.address, '') as supplier_address,
       cp.full_name as created_by_name, cp.signature as created_by_signature,
-      ap.full_name as approved_by_name, ap.signature as approved_by_signature
+      ap.full_name as approved_by_name, ap.signature as approved_by_signature,
+      mp.payment_status as mp_status, mp.total as mp_total, coalesce(mp.voided, false) as mp_voided, mp.due_date as mp_due,
+      coalesce((select sum(amount) from material_purchase_payments pay where pay.purchase_id = mp.id and not pay.voided), 0) as mp_paid
     from goods_receipts g join purchase_orders po on po.id = g.po_id
     left join suppliers s on s.id = po.supplier_id
     left join profiles cp on cp.username = g.created_by
     left join profiles ap on ap.username = g.approved_by
     order by g.created_at desc
   `;
-  return Response.json({ goodsReceipts: rows.map(r => rowToGr(r)) });
+  // Status bayar GR diturunkan dari pembelian terkait (kolom goods_receipts.payment_status tidak ikut berubah saat dicicil/dilunasi).
+  return Response.json({
+    goodsReceipts: rows.map(r => {
+      const gr = rowToGr(r);
+      if (!r.purchase_id || r.mp_status == null) return { ...gr, payState: null, paidAmount: 0, remaining: 0 };
+      const total = Number(r.mp_total), paid = Number(r.mp_paid);
+      return {
+        ...gr,
+        payState: purchasePaymentState({ paymentStatus: r.mp_status, total, paid, voided: r.mp_voided }),
+        paidAmount: paid, remaining: remainingOf(total, paid), dueDate: r.mp_due ?? gr.dueDate,
+      };
+    }),
+  });
 }
 
 // "Buat GR" dari sebuah PO — satu klik: item terisi otomatis dari sisa PO yang belum diterima,
