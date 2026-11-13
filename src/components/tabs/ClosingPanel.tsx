@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet } from 'lucide-react';
+import { Loader2, Lock, Unlock, History as HistoryIcon, ChevronDown, X, Clock, Wallet, MessageCircle } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import Tooltip from '@/components/Tooltip';
 import Pagination from '@/components/Pagination';
@@ -9,6 +9,7 @@ import { useToast } from '@/components/Toast';
 import { DateInput } from '@/components/DateTimeInput';
 import type { Action } from '@/types/rbac';
 import { formatRp } from '@/lib/format';
+import { normalizePhone } from '@/lib/phone';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
 
@@ -100,6 +101,27 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
       console.error('Gagal mengunduh PDF closing', err);
       toast.error('Gagal membuat PDF.');
     } finally { clearTimeout(timer); setPdfBusy(null); }
+  };
+  // Kirim WA ke nomor toko (minta HPP ditransfer). Pesan + tautan PDF publik dibuat server; pengguna menekan Kirim di WA.
+  const [waBusyId, setWaBusyId] = useState<string | null>(null);
+  const sendClosingWhatsApp = async (id: string) => {
+    if (waBusyId) return;
+    // Jendela dibuka SEKARANG (sebelum await) supaya tidak diblokir popup-blocker, lalu diarahkan.
+    const win = window.open('', '_blank');
+    setWaBusyId(id);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30_000);
+    try {
+      const res = await fetch(`/api/closings/${id}/wa`, { method: 'POST', headers, signal: ctrl.signal });
+      const data = await res.json().catch(() => ({})) as { error?: string; phone?: string; message?: string };
+      if (!res.ok || !data.phone || !data.message) { win?.close(); toast.error(data.error ?? 'Gagal menyiapkan pesan WhatsApp.'); return; }
+      const waUrl = `https://wa.me/${normalizePhone(data.phone)}?text=${encodeURIComponent(data.message)}`;
+      if (win) win.location.href = waUrl; else window.location.assign(waUrl);
+    } catch (err) {
+      console.error('Gagal menyiapkan WA closing', err);
+      win?.close();
+      toast.error('Gagal menyiapkan pesan WhatsApp.');
+    } finally { clearTimeout(timer); setWaBusyId(null); }
   };
   const pdfIcon = (key: string) => pdfBusy === key ? <Loader2 size={12} className="animate-spin" /> : <PdfIcon size={15} />;
 
@@ -341,10 +363,7 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                   <tr style={{ background: 'var(--surface-2)' }}>
                     <th className={`${th} text-left`} style={thStyle}>No</th>
                     <th className={`${th} text-left`} style={thStyle}>Periode</th>
-                    <th className={`${th} text-left`} style={thStyle}>Ditutup</th>
-                    <th className={`${th} text-right`} style={thStyle}>Transaksi</th>
-                    <th className={`${th} text-right`} style={thStyle}>Total HPP</th>
-                    <th className={`${th} text-right`} style={thStyle}>Omzet</th>
+                    <th className={`${th} text-right`} style={thStyle}>HPP / Omzet</th>
                     <th className={`${th} text-left`} style={thStyle}>Status</th>
                     <th className={th} style={thStyle} />
                   </tr>
@@ -354,17 +373,20 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                     const canReopen = can('reopen') && c.status === 'aktif' && c.id === latestActiveId && (!c.isOpeningBalance || isSuperAdmin);
                     return (
                       <tr key={c.id} style={{ borderBottom: '1px solid var(--border-2)' }}>
-                        <td className={`${cell} tabular`} style={{ color: 'var(--text-muted)' }}>{hPg.offset + i + 1}</td>
-                        <td className={cell} style={{ color: 'var(--text-primary)' }}>
+                        <td className="px-3 py-2.5 align-top tabular" style={{ color: 'var(--text-muted)' }}>{hPg.offset + i + 1}</td>
+                        <td className="px-3 py-2.5 align-top" style={{ color: 'var(--text-primary)' }}>
                           <span className="font-semibold">{c.periodFrom && c.periodFrom !== c.periodTo ? `${fmtDay(c.periodFrom)} – ${fmtDay(c.periodTo)}` : fmtDay(c.periodTo)}</span>
                           {c.isOpeningBalance && <span className="badge badge-blue ml-1.5" style={{ fontSize: 10 }}>Saldo awal</span>}
-                          {c.note && <p className="text-[10.5px] whitespace-normal max-w-[260px]" style={{ color: 'var(--text-muted)' }}>{c.note}</p>}
+                          <p className="text-[10.5px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {c.itemCount} transaksi · {fmtStamp(c.closedAt)} · {c.closedBy || '–'}
+                          </p>
+                          {c.note && <p className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>{c.note}</p>}
                         </td>
-                        <td className={cell} style={{ color: 'var(--text-secondary)' }}>{fmtStamp(c.closedAt)} · {c.closedBy || '–'}</td>
-                        <td className={`${cell} text-right tabular`} style={{ color: 'var(--text-secondary)' }}>{c.itemCount}</td>
-                        <td className={`${cell} text-right tabular font-semibold`} style={{ color: 'var(--text-primary)' }}>{c.totalCogs == null ? '–' : formatRp(c.totalCogs)}</td>
-                        <td className={`${cell} text-right tabular`} style={{ color: 'var(--text-secondary)' }}>{c.totalRevenue == null ? '–' : formatRp(c.totalRevenue)}</td>
-                        <td className={cell}>
+                        <td className="px-3 py-2.5 align-top text-right tabular whitespace-nowrap">
+                          <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>{c.totalCogs == null ? '–' : formatRp(c.totalCogs)}</p>
+                          <p className="text-[10.5px]" style={{ color: 'var(--text-muted)' }}>{c.totalRevenue == null ? '–' : formatRp(c.totalRevenue)}</p>
+                        </td>
+                        <td className="px-3 py-2.5 align-top">
                           {c.status === 'aktif'
                             ? <span className="badge badge-green">Aktif</span>
                             : (
@@ -373,15 +395,27 @@ export default function ClosingPanel({ creds, can, isSuperAdmin, onChanged }: {
                               </Tooltip>
                             )}
                         </td>
-                        <td className={`${cell} text-right`}>
-                          <button onClick={() => downloadPdf(`c:${c.id}`, `/api/closings/${c.id}/pdf`, `closing-hpp-${c.periodTo}.pdf`)} disabled={!!pdfBusy}
-                            className="btn-ghost inline-flex items-center gap-1 align-middle" style={{ height: 28, fontSize: 11 }}>
-                            {pdfIcon(`c:${c.id}`)} PDF
-                          </button>
-                          {canReopen && (
-                            <button onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost inline-flex items-center gap-1 ml-1.5 align-middle" style={{ height: 28, fontSize: 11 }}>
-                              <Unlock size={12} /> Buka Ulang
+                        <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                          {can('close') && c.status === 'aktif' && !c.isOpeningBalance && (
+                            <Tooltip label="Kirim WA">
+                              <button aria-label="Kirim WA" onClick={() => sendClosingWhatsApp(c.id)} disabled={!!waBusyId}
+                                className="btn-ghost inline-flex items-center justify-center align-middle" style={{ height: 30, width: 30, padding: 0, color: '#059669' }}>
+                                {waBusyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <MessageCircle size={15} />}
+                              </button>
+                            </Tooltip>
+                          )}
+                          <Tooltip label="Unduh PDF closing">
+                            <button aria-label="Unduh PDF closing" onClick={() => downloadPdf(`c:${c.id}`, `/api/closings/${c.id}/pdf`, `closing-hpp-${c.periodTo}.pdf`)} disabled={!!pdfBusy}
+                              className="btn-ghost inline-flex items-center justify-center ml-1 align-middle" style={{ height: 30, width: 30, padding: 0 }}>
+                              {pdfIcon(`c:${c.id}`)}
                             </button>
+                          </Tooltip>
+                          {canReopen && (
+                            <Tooltip label="Buka ulang closing">
+                              <button aria-label="Buka ulang closing" onClick={() => { setReopenTarget(c); setReopenReason(''); }} className="btn-ghost inline-flex items-center justify-center ml-1 align-middle" style={{ height: 30, width: 30, padding: 0 }}>
+                                <Unlock size={14} />
+                              </button>
+                            </Tooltip>
                           )}
                         </td>
                       </tr>

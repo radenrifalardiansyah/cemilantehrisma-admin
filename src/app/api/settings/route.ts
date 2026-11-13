@@ -2,6 +2,7 @@ import { NextRequest, after } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { requirePermission } from '@/lib/rbac';
 import { getSettings, setSettings } from '@/lib/settings-pg';
+import { CLOSING_PDF_TAG } from '@/lib/closing-wa';
 import { revalidateStorefront } from '@/lib/revalidate';
 
 export async function GET(req: NextRequest) {
@@ -24,6 +25,7 @@ export async function PUT(req: NextRequest) {
   // Nota kirim ke mitra (via WA) di-cache 1 jam per shipment — invalidasi begitu
   // ada perubahan settings (logo/alamat/ttd/dll) supaya tidak menampilkan data basi.
   revalidateTag('settings', 'max');
+  revalidateTag(CLOSING_PDF_TAG, { expire: 0 }); // header toko (nama/alamat/logo) ikut tercetak di PDF closing ter-cache
   // Storefront (app terpisah) cache rekening/QRIS & branding sendiri — beri tahu lewat
   // endpoint revalidate-nya juga, sama seperti products/categories/stats. Kita tidak tahu
   // dari sini field mana yang berubah, jadi invalidasi keduanya sekalian (murah, best-effort).

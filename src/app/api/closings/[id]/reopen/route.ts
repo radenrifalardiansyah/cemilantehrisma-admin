@@ -5,6 +5,7 @@ import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { logHistory } from '@/lib/history';
 import { ClosingError, reopenClosing } from '@/lib/closing';
+import { closingPdfTag } from '@/lib/closing-wa';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return Response.json({ error: 'Gagal membuka ulang closing.' }, { status: 500 });
   }
 
+  // Buang cache PDF segera setelah commit (sebelum logHistory yang bisa gagal). Rute publik juga sudah 404 lewat cek status.
+  revalidateTag(closingPdfTag(id), { expire: 0 });
   try {
     await logHistory(getDb(), {
       entity: 'closings', entityId: id, entityLabel: `Buka ulang closing sampai ${result.periodTo}`,
