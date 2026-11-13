@@ -61,6 +61,9 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
   const [detailTab, setDetailTab] = useState<'paid' | 'receivable'>('paid');
   const [showHistory, setShowHistory] = useState(false);
   const [detailPage, setDetailPage] = useState(1);
+  // Filter rincian: terpisah untuk tiap tab (Sudah dibayar / Belum dibayar).
+  const EMPTY_DF = { q: '', from: '', to: '' };
+  const [detailFilters, setDetailFilters] = useState({ paid: EMPTY_DF, receivable: EMPTY_DF });
   const [detailPageSize, setDetailPageSize] = useState(10);
   const [histPage, setHistPage] = useState(1);
   const [histPageSize, setHistPageSize] = useState(10);
@@ -249,7 +252,17 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
     const rows = size === Infinity ? items : items.slice((safePage - 1) * size, safePage * size);
     return { rows, totalPages, safePage, offset: size === Infinity ? 0 : (safePage - 1) * size };
   };
-  const dPg = paginate(detail?.lines ?? [], detailPage, detailPageSize);
+  const df = detailFilters[detailTab];
+  const setDf = (patch: Partial<typeof EMPTY_DF>) => { setDetailFilters(f => ({ ...f, [detailTab]: { ...f[detailTab], ...patch } })); setDetailPage(1); };
+  // Tab "Sudah dibayar" disaring menurut tanggal bayar, "Belum dibayar" menurut tanggal transaksi (belum ada tgl bayar).
+  const filteredLines = (detail?.lines ?? []).filter(l => {
+    const q = df.q.trim().toLowerCase();
+    if (q && !`${l.invoiceNo} ${l.party} ${l.note ?? ''}`.toLowerCase().includes(q)) return false;
+    const d = detailTab === 'paid' ? (l.paidDate ?? l.txDate) : l.txDate;
+    return (!df.from || d >= df.from) && (!df.to || d <= df.to);
+  });
+  const filterActive = !!(df.q || df.from || df.to);
+  const dPg = paginate(filteredLines, detailPage, detailPageSize);
   const hPg = paginate(closings, histPage, histPageSize);
   const closable = preview?.paid.closable;
   const cell = 'px-3 py-2 whitespace-nowrap';
@@ -429,8 +442,18 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                   </button>
                 ))}
               </div>
-              {detail.lines.length === 0 ? (
-                <p className="text-xs py-4 text-center" style={{ color: 'var(--text-muted)' }}>Tidak ada data.</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <input value={df.q} onChange={e => setDf({ q: e.target.value })} className="input flex-1 min-w-[160px]" placeholder="Cari invoice / pihak…" aria-label="Cari invoice atau pihak" />
+                <div className="w-[140px]"><DateInput value={df.from} onChange={v => setDf({ from: v })} max={df.to || undefined} /></div>
+                <span className="text-xs pb-2.5" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                <div className="w-[140px]"><DateInput value={df.to} onChange={v => setDf({ to: v })} min={df.from || undefined} /></div>
+                {filterActive && (
+                  <button onClick={() => setDf(EMPTY_DF)} className="btn-ghost text-xs font-semibold min-h-10 sm:min-h-0 px-2" style={{ color: 'var(--danger)' }}>Reset</button>
+                )}
+              </div>
+              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Tanggal disaring menurut {detailTab === 'paid' ? 'tanggal bayar' : 'tanggal transaksi'}.</p>
+              {filteredLines.length === 0 ? (
+                <p className="text-xs py-4 text-center" style={{ color: 'var(--text-muted)' }}>{filterActive ? 'Tidak ada data yang cocok dengan filter.' : 'Tidak ada data.'}</p>
               ) : (
                 <>
                 <ul className="md:hidden rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
@@ -481,7 +504,7 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                 </div>
                 </>
               )}
-              <Pagination total={detail.lines.length} safePage={dPg.safePage} totalPages={dPg.totalPages} pageSize={detailPageSize}
+              <Pagination total={filteredLines.length} safePage={dPg.safePage} totalPages={dPg.totalPages} pageSize={detailPageSize}
                 onPageSize={n => { setDetailPageSize(n); setDetailPage(1); }} onGoPage={setDetailPage} unit="baris" />
               {(detail.lines.length > DETAIL_LIMIT || detail.truncated) && (
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
