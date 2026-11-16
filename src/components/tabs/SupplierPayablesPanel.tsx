@@ -199,23 +199,19 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
                 const open = expanded.has(g.key);
                 return (
                   <div key={g.key}>
-                    <div className="w-full px-4 py-3 text-left flex items-start gap-3">
-                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center h-7 leading-7" style={{ color: 'var(--text-muted)' }}>{rowNum(idx)}</span>
+                    <div className="w-full px-4 py-3 text-left flex items-center gap-3">
+                      <span className="text-[11px] font-bold tabular-nums flex-shrink-0 w-5 text-center" style={{ color: 'var(--text-muted)' }}>{rowNum(idx)}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 min-h-7">
-                          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{g.supplierName}</p>
-                            {g.overdueCount > 0 && <span className="badge badge-red flex-shrink-0"><AlertTriangle size={10} /> Lewat {formatRp(g.overdueAmount)} ({g.overdueCount})</span>}
-                          </div>
-                          <span className="flex items-center gap-3 flex-shrink-0">
-                            <span className="text-sm font-bold tabular" style={{ color: 'var(--danger)' }}>{formatRp(g.totalDebt)}</span>
-                            {detailButton(g.key, open)}
-                          </span>
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{g.supplierName}</p>
+                          {g.overdueCount > 0 && <span className="badge badge-red flex-shrink-0"><AlertTriangle size={10} /> Lewat {formatRp(g.overdueAmount)} ({g.overdueCount})</span>}
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                           {g.count} pembelian · Jatuh tempo terdekat: {g.nearestDue ? formatDueDate(g.nearestDue) : '–'}
                         </p>
                       </div>
+                      <span className="text-sm font-bold tabular flex-shrink-0" style={{ color: 'var(--danger)' }}>{formatRp(g.totalDebt)}</span>
+                      {detailButton(g.key, open)}
                     </div>
                     {open && <div style={{ borderTop: '1px solid var(--border-2)' }}>{itemsOf(g)}</div>}
                   </div>
