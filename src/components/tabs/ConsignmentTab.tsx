@@ -6,7 +6,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronRight, Upload,
-  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText, CircleCheck, CircleX,
+  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText, CircleCheck, CircleX, HandCoins,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -50,6 +50,7 @@ import EmptyAddCard from '@/components/EmptyAddCard';
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 import FilterSelect from '@/components/FilterSelect';
 import RecapPaymentDialog from '@/components/tabs/RecapPaymentDialog';
+import MitraReceivablesPanel from '@/components/tabs/MitraReceivablesPanel';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -108,11 +109,12 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
-type SubTab = 'lokasi' | 'kirim' | 'rekap' | 'analitik';
+type SubTab = 'lokasi' | 'kirim' | 'rekap' | 'piutang' | 'analitik';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'lokasi', label: 'Lokasi',      Icon: Store },
   { id: 'kirim',  label: 'Kirim Stok',  Icon: Send },
   { id: 'rekap',  label: 'Rekap Harian', Icon: ClipboardList },
+  { id: 'piutang', label: 'Piutang Mitra', Icon: HandCoins },
   { id: 'analitik', label: 'Analitik',  Icon: PieChart },
 ];
 
@@ -3490,6 +3492,11 @@ _${storeHeader.name}_`.trim();
             )}
           </div>
         )}
+
+        {/* ════ PIUTANG MITRA ══════════════════════════════════ */}
+        {subTab === 'piutang' && (
+          <MitraReceivablesPanel creds={creds} canEdit={can('edit')} onChanged={async () => { await loadRecaps(); refetchBalances(); }} />
+        )}
       </div>
 
       {showLForm && (
@@ -4102,9 +4109,9 @@ _${storeHeader.name}_`.trim();
           <div className="modal-body">
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Periode:</span>
-              <DateInput value={invoiceFrom} onChange={setInvoiceFrom} height={32} style={{ width: 140 }} />
+              <DateInput value={invoiceFrom} onChange={setInvoiceFrom} height={32} style={{ width: 150, flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>s/d</span>
-              <DateInput value={invoiceTo} onChange={setInvoiceTo} height={32} style={{ width: 140 }} />
+              <DateInput value={invoiceTo} onChange={setInvoiceTo} height={32} style={{ width: 150, flexShrink: 0 }} />
               {(invoiceFrom || invoiceTo) && (
                 <button onClick={() => { setInvoiceFrom(''); setInvoiceTo(''); }} style={{ fontSize: 11, color: 'var(--text-secondary)', textDecoration: 'underline' }}>Semua</button>
               )}
