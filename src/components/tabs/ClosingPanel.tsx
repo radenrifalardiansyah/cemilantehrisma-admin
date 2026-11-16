@@ -455,11 +455,11 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                   </button>
                 ))}
               </div>
-              <div className="flex flex-wrap items-end gap-2">
-                <input value={df.q} onChange={e => setDf({ q: e.target.value })} className="input flex-1 min-w-[160px] sm:!py-0 sm:!h-[30px] sm:!text-xs" placeholder="Cari invoice / pihak…" aria-label="Cari invoice atau pihak" />
-                <div className="w-[130px]"><DateInput height={30} value={df.from} onChange={v => setDf({ from: v })} max={df.to || undefined} /></div>
-                <span className="text-xs pb-1.5" style={{ color: 'var(--text-muted)' }}>s/d</span>
-                <div className="w-[130px]"><DateInput height={30} value={df.to} onChange={v => setDf({ to: v })} min={df.from || undefined} /></div>
+              <div className="flex flex-wrap items-center gap-2 [--ctl-h:40px] sm:[--ctl-h:30px]">
+                <input value={df.q} onChange={e => setDf({ q: e.target.value })} className="input flex-1 basis-full sm:basis-0 min-w-[160px] !py-0 !h-10 sm:!h-[30px] sm:!text-xs" placeholder="Cari invoice / pihak…" aria-label="Cari invoice atau pihak" />
+                <div className="w-[150px] shrink-0"><DateInput height="var(--ctl-h)" value={df.from} onChange={v => setDf({ from: v })} max={df.to || undefined} /></div>
+                <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>s/d</span>
+                <div className="w-[150px] shrink-0"><DateInput height="var(--ctl-h)" value={df.to} onChange={v => setDf({ to: v })} min={df.from || undefined} /></div>
                 {filterActive && (
                   <button onClick={() => setDf(EMPTY_DF)} className="btn-ghost text-xs font-semibold min-h-10 sm:min-h-0 px-2" style={{ color: 'var(--danger)' }}>Reset</button>
                 )}
@@ -532,9 +532,9 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
       {!collapsed && showHistory && (
         <div className="space-y-2">
           <p className="field-label">Riwayat closing</p>
-          <div className="flex flex-wrap items-end gap-2">
-            <input value={histFilter.q} onChange={e => setHf({ q: e.target.value })} className="input flex-1 min-w-[160px] sm:!py-0 sm:!h-[30px] sm:!text-xs" placeholder="Cari penutup / catatan…" aria-label="Cari penutup atau catatan" />
-            <select value={histFilter.status} onChange={e => setHf({ status: e.target.value })} aria-label="Filter status" className="input sm:!py-0 sm:!h-[30px] sm:!text-xs" style={{ width: 150 }}>
+          <div className="flex flex-wrap items-center gap-2 [--ctl-h:40px] sm:[--ctl-h:30px]">
+            <input value={histFilter.q} onChange={e => setHf({ q: e.target.value })} className="input flex-1 basis-full sm:basis-0 min-w-[160px] !py-0 !h-10 sm:!h-[30px] sm:!text-xs" placeholder="Cari penutup / catatan…" aria-label="Cari penutup atau catatan" />
+            <select value={histFilter.status} onChange={e => setHf({ status: e.target.value })} aria-label="Filter status" className="input !py-0 !h-10 sm:!h-[30px] sm:!text-xs" style={{ width: 150 }}>
               <option value="">Semua status</option>
               <option value="belum">Belum ditransfer</option>
               <option value="sebagian">Sebagian</option>
@@ -542,9 +542,9 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
               <option value="dibuka_ulang">Dibuka ulang</option>
               <option value="saldo_awal">Saldo awal</option>
             </select>
-            <div className="w-[130px]"><DateInput height={30} value={histFilter.from} onChange={v => setHf({ from: v })} max={histFilter.to || undefined} /></div>
-            <span className="text-xs pb-1.5" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <div className="w-[130px]"><DateInput height={30} value={histFilter.to} onChange={v => setHf({ to: v })} min={histFilter.from || undefined} /></div>
+            <div className="w-[150px] shrink-0"><DateInput height="var(--ctl-h)" value={histFilter.from} onChange={v => setHf({ from: v })} max={histFilter.to || undefined} /></div>
+            <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>s/d</span>
+            <div className="w-[150px] shrink-0"><DateInput height="var(--ctl-h)" value={histFilter.to} onChange={v => setHf({ to: v })} min={histFilter.from || undefined} /></div>
             {histFilterActive && (
               <button onClick={() => setHf(EMPTY_HF)} className="btn-ghost text-xs font-semibold min-h-10 sm:min-h-0 px-2" style={{ color: 'var(--danger)' }}>Reset</button>
             )}

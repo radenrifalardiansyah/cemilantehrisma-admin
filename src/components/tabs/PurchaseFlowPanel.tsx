@@ -810,9 +810,9 @@ ${pdfUrl}`.trim();
           )}
           <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
             <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{view === 'po' ? 'Tanggal PO' : 'Tanggal terima'}</span>
-            <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.from} onChange={v => setDr({ from: v })} max={dr.to || undefined} /></div>
+            <div className="w-[150px] shrink-0"><DateInput height={HEADER_BTN_H} value={dr.from} onChange={v => setDr({ from: v })} max={dr.to || undefined} /></div>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>s/d</span>
-            <div className="w-[140px]"><DateInput height={HEADER_BTN_H} value={dr.to} onChange={v => setDr({ to: v })} min={dr.from || undefined} /></div>
+            <div className="w-[150px] shrink-0"><DateInput height={HEADER_BTN_H} value={dr.to} onChange={v => setDr({ to: v })} min={dr.from || undefined} /></div>
             {(dr.from || dr.to) && <button onClick={() => setDr({ from: '', to: '' })} className="btn-ghost text-xs font-semibold" style={{ color: 'var(--danger)' }}>Reset</button>}
           </div>
         </div>

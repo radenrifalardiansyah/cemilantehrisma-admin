@@ -101,9 +101,9 @@ function DatePicker({ value, onChange, disabled, min, max, height, clearable, id
         disabled={disabled}
         onClick={toggle}
         className="input disabled:opacity-50"
-        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left', ...(height != null ? { height, boxSizing: 'border-box' as const, paddingTop: 0, paddingBottom: 0 } : null) }}
+        style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'left', ...(height != null ? { height, boxSizing: 'border-box' as const, paddingTop: 0, paddingBottom: 0, paddingLeft: 12, paddingRight: 12 } : null) }}
       >
-        <span className="tabular" style={{ color: parsed ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+        <span className="tabular" style={{ whiteSpace: 'nowrap', color: parsed ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           {parsed ? `${pad(parsed.getDate())}/${pad(parsed.getMonth() + 1)}/${parsed.getFullYear()}` : 'dd/mm/yyyy'}
         </span>
         <Calendar size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
