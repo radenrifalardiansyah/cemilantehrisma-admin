@@ -2789,6 +2789,33 @@ _${storeHeader.name}_`.trim();
               <EmptyAddCard label="Tambah Lokasi" onClick={openCreateL} />
             ) : (
               <>
+                {/* Total stok titip di SEMUA mitra (bukan hanya halaman/filter ini); bila filter aktif, tampil juga total sesuai filter. */}
+                {(() => {
+                  const sum = (list: ConsignmentLocation[]) => list.reduce((a, l) => { const t = locationStockTotals(l.id); return { qty: a.qty + t.qty, value: a.value + t.value, withStock: a.withStock + (t.qty > 0 ? 1 : 0) }; }, { qty: 0, value: 0, withStock: 0 });
+                  const formatQty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+                  const all = sum(locations);
+                  const flt = sum(filteredLocations);
+                  const filtered = filteredLocations.length !== locations.length;
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="card px-4 py-3 min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Total stok di mitra</p>
+                        <p className="text-lg font-extrabold tabular" style={{ color: 'var(--success)' }}>{formatQty(all.qty)} pcs</p>
+                        {filtered && <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>Sesuai filter: {formatQty(flt.qty)} pcs</p>}
+                      </div>
+                      <div className="card px-4 py-3 min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Nilai stok titip</p>
+                        <p className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(all.value)}</p>
+                        {filtered && <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>Sesuai filter: {formatRp(flt.value)}</p>}
+                      </div>
+                      <div className="card px-4 py-3 min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Mitra yang punya stok</p>
+                        <p className="text-lg font-extrabold tabular" style={{ color: 'var(--text-primary)' }}>{all.withStock} <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>dari {locations.length} mitra</span></p>
+                        {filtered && <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>Sesuai filter: {flt.withStock} dari {filteredLocations.length}</p>}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {paginatedLocations.length > 0 && (
                   <div className="flex items-center gap-3 px-4 py-2.5 card" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
                     <Checkbox
