@@ -115,22 +115,17 @@ export function buildClosingWaMessage(c: ClosingRecord, opts: { storeName?: stri
   const cogs = Number(c.total_cogs ?? 0);
   const revenue = Number(c.total_revenue ?? 0);
   const store = opts.storeName?.trim() || DEFAULT_STORE_NAME;
-  // Data dalam blok monospace (```): satu-satunya cara agar titik dua sejajar di WhatsApp (font biasa proporsional).
-  // Konsekuensinya teks tebal (*...*) tidak berlaku di dalam blok, jadi Terbilang ditaruh di luar blok agar tetap tebal.
-  const rows: [string, string][] = [
-    ['Periode', periodLabel(c.period_from, c.period_to)],
-    ['Terjual', `${qtyLabel(Number(c.total_qty ?? 0))} Pcs`],
-    ['Omzet', formatRp(revenue)],
-    ['HPP', formatRp(cogs)],
-  ];
-  const w = Math.max(...rows.map(([l]) => l.length));
+  // Tanpa blok monospace (```): font monospace WhatsApp Android melebarkan digit dan menyempitkan spasi, jadi
+  // titik dua tetap tidak sejajar dan tampilan justru berantakan. Satu baris per data ("Label: nilai") tampil
+  // sama di semua perangkat, dan HPP + terbilang bisa ditebalkan.
   return plainText([
     `*CLOSING HPP — ${store}*`,
     `Ditutup: ${stamp(c.closed_at)} oleh ${c.closed_by || '-'}`,
-    // Tanpa baris kosong sebelum blok: WhatsApp sudah memberi jarak otomatis di atas blok monospace.
-    '```',
-    ...rows.map(([l, v]) => `${l.padEnd(w)} : ${v}`),
-    '```',
+    '',
+    `Periode: ${periodLabel(c.period_from, c.period_to)}`,
+    `Terjual: ${qtyLabel(Number(c.total_qty ?? 0))} Pcs`,
+    `Omzet: ${formatRp(revenue)}`,
+    `HPP: *${formatRp(cogs)}*`,
     `Terbilang: *${titleCase(terbilangRupiah(cogs))}*`,
     '',
     'Mohon dicek dan ditransfer. Terima kasih.',

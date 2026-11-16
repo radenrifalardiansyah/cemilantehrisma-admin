@@ -110,12 +110,11 @@ describe('buildClosingWaMessage', () => {
     expect(msg).toBe([
       '*CLOSING HPP - Cemilan Teh Risma*',
       'Ditutup: 13 Nov 2026, 09.14 oleh superadmin',
-      '```',
-      'Periode : 12 - 13 Nov 2026',
-      'Terjual : 19 Pcs',
-      `Omzet   : ${plain(formatRp(171000))}`,
-      `HPP     : ${plain(formatRp(118750))}`,
-      '```',
+      '',
+      'Periode: 12 - 13 Nov 2026',
+      'Terjual: 19 Pcs',
+      `Omzet: ${plain(formatRp(171000))}`,
+      `HPP: *${plain(formatRp(118750))}*`,
       'Terbilang: *Seratus Delapan Belas Ribu Tujuh Ratus Lima Puluh Rupiah*',
       '',
       'Mohon dicek dan ditransfer. Terima kasih.',
@@ -125,16 +124,11 @@ describe('buildClosingWaMessage', () => {
     expect(msg).not.toContain('Sudah ditransfer');
     expect(msg).not.toContain('Sisa');
   });
-  it('titik dua sejajar: semua baris data satu kolom dan berada dalam blok monospace', () => {
+  it('tanpa blok monospace (``` tidak rapi di WhatsApp Android); HPP dan terbilang tebal', () => {
     const msg = buildClosingWaMessage(rec(), { pdfUrl: 'u' });
-    const lines = msg.split('\n');
-    const open = lines.indexOf('```');
-    const close = lines.indexOf('```', open + 1);
-    expect(open).toBeGreaterThan(-1);
-    expect(close).toBeGreaterThan(open);
-    const cols = lines.slice(open + 1, close).map(l => l.indexOf(':'));
-    expect(cols.length).toBe(4);
-    expect(new Set(cols).size).toBe(1);
+    expect(msg).not.toContain('```');
+    expect(msg).toContain('HPP: *Rp 118.750*');
+    expect(msg).toMatch(/Terbilang: \*.+\*/);
   });
   it('pesan ASCII murni: tanpa emoji, tanda pisah, atau spasi tak terputus (cegah tampil sebagai �)', () => {
     const msg = buildClosingWaMessage(rec({ closed_by: null }), { storeName: 'Toko — Uji', pdfUrl: 'https://x/c/abc' });
@@ -142,14 +136,14 @@ describe('buildClosingWaMessage', () => {
     expect(msg).toContain('Rp 118.750');
   });
   it('Terjual memakai total qty (bukan jumlah transaksi); pecahan 2 desimal; kosong → 0', () => {
-    expect(buildClosingWaMessage(rec({ total_qty: '5.5', item_count: 3 }), { pdfUrl: 'u' })).toContain('Terjual : 5,5 Pcs');
-    expect(buildClosingWaMessage(rec({ total_qty: '1234', item_count: 3 }), { pdfUrl: 'u' })).toContain('Terjual : 1.234 Pcs');
-    expect(buildClosingWaMessage(rec({ total_qty: null }), { pdfUrl: 'u' })).toContain('Terjual : 0 Pcs');
+    expect(buildClosingWaMessage(rec({ total_qty: '5.5', item_count: 3 }), { pdfUrl: 'u' })).toContain('Terjual: 5,5 Pcs');
+    expect(buildClosingWaMessage(rec({ total_qty: '1234', item_count: 3 }), { pdfUrl: 'u' })).toContain('Terjual: 1.234 Pcs');
+    expect(buildClosingWaMessage(rec({ total_qty: null }), { pdfUrl: 'u' })).toContain('Terjual: 0 Pcs');
   });
   it('periode satu tanggal, fallback nama toko & pembuat', () => {
     const msg = buildClosingWaMessage(rec({ period_from: '2026-11-13', closed_by: null }), { storeName: '  ', pdfUrl: 'u' });
     expect(msg).toContain('*CLOSING HPP - Cemilan Teh Risma*');
-    expect(msg).toContain('Periode : 13 Nov 2026');
+    expect(msg).toContain('Periode: 13 Nov 2026');
     expect(msg).toContain('Ditutup: 13 Nov 2026, 09.14 oleh -');
   });
 });
