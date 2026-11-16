@@ -1033,8 +1033,14 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     setShowSendForm(true);
   };
 
-  const submitSend = async () => {
+  // approveNow: simpan lalu langsung approve (hanya yang berizin approve; form baru atau edit draft).
+  const submitSend = async (approveNow = false) => {
     if (!canSubmitSend) return;
+    if (approveNow) {
+      if (!can('approve')) return;
+      const stale = isStaleShipmentDate(Math.floor(new Date(sendDate).getTime() / 1000));
+      if (stale && !await confirm({ title: 'Simpan & Approve', message: `Tanggal kirim lebih dari ${STALE_APPROVE_DAYS} hari lalu — dampaknya ke laporan tercatat di tanggal kirim tersebut, bukan hari ini. Lanjutkan?` })) return;
+    }
     setSending(true);
     try {
       const location = locations.find(l => l.id === sendLocationId)!;
@@ -1059,7 +1065,17 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
           });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan pengiriman.'); return; }
-      toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Draft pengiriman ke "${location.name}" disimpan — perlu di-approve agar stok berpindah.`);
+      const shipmentId = editingShipment?.id ?? data.id;
+      let approveError: string | null = null;
+      if (approveNow && shipmentId) {
+        try {
+          const ar = await fetch(`${API}/api/consignment/send/${shipmentId}/approve`, { method: 'POST', headers });
+          if (!ar.ok) approveError = ((await ar.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal meng-approve pengiriman.';
+        } catch { approveError = 'Gagal meng-approve pengiriman — periksa koneksi internet.'; }
+      }
+      if (approveNow && approveError) toast.error(`Draft ke "${location.name}" tersimpan, tetapi approve gagal: ${approveError}`);
+      else if (approveNow) toast.success(`Pengiriman ke "${location.name}" disimpan dan di-approve.`);
+      else toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Draft pengiriman ke "${location.name}" disimpan — perlu di-approve agar stok berpindah.`);
       setShowSendForm(false); setEditingShipment(null);
       setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
       await Promise.all([loadShipments(), loadLocations()]);
@@ -3569,7 +3585,7 @@ _${storeHeader.name}_`.trim();
                 <p className="modal-subtitle">
                   {editingShipment && shipmentStatusOf(editingShipment) === 'approved'
                     ? 'Stok gudang & stok toko berkurang, stok titip di lokasi bertambah'
-                    : 'Disimpan sebagai draft — stok baru berubah setelah di-approve'}
+                    : can('approve') ? 'Simpan sebagai draft, atau Simpan & Approve agar stok langsung berpindah' : 'Disimpan sebagai draft — stok baru berubah setelah di-approve'}
                 </p>
               </div>
             </div>
@@ -3665,10 +3681,16 @@ _${storeHeader.name}_`.trim();
             <button onClick={() => setShowSendForm(false)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
               Batal
             </button>
-            <button onClick={submitSend} disabled={sending || !canSubmitSend} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+            <button onClick={() => submitSend()} disabled={sending || !canSubmitSend} className={can('approve') && (!editingShipment || shipmentStatusOf(editingShipment) === 'draft') ? 'btn-ghost' : 'btn-primary'} style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
               {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
               {sending ? 'Menyimpan…' : editingShipment ? 'Simpan Perubahan' : 'Simpan Draft'}
             </button>
+            {can('approve') && (!editingShipment || shipmentStatusOf(editingShipment) === 'draft') && (
+              <button onClick={() => submitSend(true)} disabled={sending || !canSubmitSend} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+                {sending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {sending ? 'Memproses…' : 'Simpan & Approve'}
+              </button>
+            )}
           </div>
         </Modal>
       )}
