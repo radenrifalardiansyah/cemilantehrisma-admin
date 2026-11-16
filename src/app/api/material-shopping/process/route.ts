@@ -4,6 +4,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { revalidateShoppingPdf } from '@/lib/shopping-pdf-link';
 import { createPurchaseTx, type PurchaseItemInput } from '@/lib/material-purchase-core';
 import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
       console.error('Failed to write history for shopping-list purchase', err);
     }
   }
+  revalidateShoppingPdf();
   revalidateTag('admin-materials', { expire: 0 });
   if (created.some(c => c.data.expenseId)) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });

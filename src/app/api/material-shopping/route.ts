@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { revalidateShoppingPdf } from '@/lib/shopping-pdf-link';
 import { rowToShoppingItem, type ShoppingItemRow } from '@/lib/material-shopping';
 
 // Daftar Belanja bahan baku — daftar yang disusun sebelum belanja ke toko/warung. Belum
@@ -63,5 +64,6 @@ export async function POST(req: NextRequest) {
       `;
     }
   });
+  revalidateShoppingPdf();
   return Response.json({ created: parsed.length });
 }

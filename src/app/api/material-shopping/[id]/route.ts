@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { revalidateShoppingPdf } from '@/lib/shopping-pdf-link';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -29,6 +30,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       checked = ${data.checked !== undefined ? data.checked === true : sql`checked`}
     where id = ${id}
   `;
+  revalidateShoppingPdf();
   return Response.json({ ok: true });
 }
 
@@ -38,5 +40,6 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const sql = getSql();
   await sql`delete from material_shopping_items where id = ${id} and status = 'pending'`;
+  revalidateShoppingPdf();
   return Response.json({ ok: true });
 }

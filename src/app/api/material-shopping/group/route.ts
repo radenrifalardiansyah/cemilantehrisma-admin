@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { revalidateShoppingPdf } from '@/lib/shopping-pdf-link';
 
 // Aksi untuk satu daftar belanja (kumpulan item dengan tanggal + supplier yang sama), dikirim
 // sebagai daftar id item — hanya item yang masih menunggu (belum diproses) yang terpengaruh.
@@ -20,6 +21,7 @@ export async function PUT(req: NextRequest) {
       supplier_name = ${(data.supplierName ?? '').trim().slice(0, 120)}, note = ${data.note?.trim().slice(0, 200) || null}
     where id in ${sql(ids)} and status = 'pending'
   `;
+  revalidateShoppingPdf();
   return Response.json({ ok: true });
 }
 
@@ -31,5 +33,6 @@ export async function DELETE(req: NextRequest) {
   if (!Array.isArray(ids) || ids.length === 0) return Response.json({ error: 'Tidak ada item.' }, { status: 400 });
   const sql = getSql();
   await sql`delete from material_shopping_items where id in ${sql(ids)} and status = 'pending'`;
+  revalidateShoppingPdf();
   return Response.json({ ok: true });
 }

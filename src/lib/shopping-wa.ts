@@ -1,7 +1,7 @@
 import { formatRp, formatDate } from './format';
 import { normalizePhone } from './phone';
 
-// Kirim WA Daftar Belanja: pembentuk pesan + URL wa.me. Murni (tanpa DB/HTTP/modul server) supaya aman di klien
+// Kirim WA Daftar Belanja (ke nomor WA toko): pembentuk pesan + URL wa.me. Murni (tanpa DB/HTTP/modul server) supaya aman di klien
 // dan bisa diuji. Pesan dijaga ASCII murni (emoji/en-em dash/spasi tak terputus dirender sebagai karakter rusak di
 // sebagian klien WA) dan tanpa blok monospace (tiga backtick) karena font monospace WhatsApp Android melebarkan digit.
 
@@ -27,7 +27,7 @@ export const plainText = (t: string): string =>
 
 const qtyLabel = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 
-export function buildShoppingWaMessage(g: ShoppingWaGroup, opts: { storeName?: string } = {}): string {
+export function buildShoppingWaMessage(g: ShoppingWaGroup, opts: { storeName?: string; pdfUrl?: string } = {}): string {
   const store = opts.storeName?.trim() || SHOPPING_WA_DEFAULT_STORE;
   const pending = g.items.filter(i => i.status === 'pending');
   // Daftar yang masih punya item belum dibeli hanya mengirim sisanya; bila semua selesai, kirim semuanya.
@@ -50,7 +50,8 @@ export function buildShoppingWaMessage(g: ShoppingWaGroup, opts: { storeName?: s
     }
   });
   if (total > 0) lines.push('', `*Total: ${formatRp(total)}*`);
-  lines.push('', 'Mohon konfirmasi ketersediaan. Terima kasih.');
+  lines.push('', 'Mohon dicek. Terima kasih.');
+  if (opts.pdfUrl) lines.push(`Rincian (PDF): ${opts.pdfUrl}`);
   return plainText(lines.join('\n'));
 }
 
@@ -59,7 +60,7 @@ export const SHOPPING_WA_MAX_ENCODED = 4000;
 export const shoppingWaFits = (message: string): boolean => encodeURIComponent(message).length <= SHOPPING_WA_MAX_ENCODED;
 
 /** Satu pesan gabungan untuk semua daftar (supplier) pada satu tanggal. */
-export function buildShoppingWaDayMessage(date: string, groups: Omit<ShoppingWaGroup, 'date'>[], opts: { storeName?: string } = {}): string {
+export function buildShoppingWaDayMessage(date: string, groups: Omit<ShoppingWaGroup, 'date'>[], opts: { storeName?: string; pdfUrl?: string } = {}): string {
   const store = opts.storeName?.trim() || SHOPPING_WA_DEFAULT_STORE;
   const hasPending = (g: Omit<ShoppingWaGroup, 'date'>) => g.items.some(i => i.status === 'pending');
   // Supplier yang semua itemnya selesai dilewati, kecuali SEMUA daftar tanggal itu selesai (kirim semua).
@@ -86,11 +87,12 @@ export function buildShoppingWaDayMessage(date: string, groups: Omit<ShoppingWaG
     grand += sub;
   });
   if (grand > 0) lines.push('', `*Total semua: ${formatRp(grand)}*`);
-  lines.push('', 'Mohon konfirmasi ketersediaan. Terima kasih.');
+  lines.push('', 'Mohon dicek. Terima kasih.');
+  if (opts.pdfUrl) lines.push(`Rincian (PDF): ${opts.pdfUrl}`);
   return plainText(lines.join('\n'));
 }
 
-/** Nomor ada: chat langsung ke supplier; kosong: wa.me/?text= (pengguna memilih kontak sendiri). */
+/** Nomor WA toko (dari Pengaturan) ada: chat langsung; kosong: wa.me/?text= (pengguna memilih kontak sendiri). */
 export function shoppingWaUrl(phone: string | undefined | null, message: string): string {
   const text = encodeURIComponent(message);
   const p = (phone ?? '').trim();

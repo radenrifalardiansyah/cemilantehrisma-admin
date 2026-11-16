@@ -3,6 +3,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { revalidateShoppingPdf } from '@/lib/shopping-pdf-link';
 import { logHistory } from '@/lib/history';
 import { voidPurchaseTx, type VoidPurchaseResult } from '@/lib/material-purchase-core';
 
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
       console.error('Failed to write history for shopping-list reopen', err);
     }
   }
+  revalidateShoppingPdf();
   revalidateTag('admin-materials', { expire: 0 });
   if (voided.some(v => v.expenseDeleted)) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });

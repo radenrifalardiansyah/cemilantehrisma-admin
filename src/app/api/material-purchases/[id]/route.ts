@@ -4,6 +4,7 @@ import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
+import { revalidateShoppingPdf } from '@/lib/shopping-pdf-link';
 import { guardWalletBalances } from '@/lib/wallet-balance';
 import { invalidPurchaseItemMessage } from '@/lib/validate-items';
 import { logHistory } from '@/lib/history';
@@ -215,6 +216,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to sync shopping list items for purchase edit', err);
   }
+  revalidateShoppingPdf();
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseChanged) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });
@@ -317,6 +319,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   } catch (err) {
     console.error('Failed to write history for material purchase delete', err);
   }
+  revalidateShoppingPdf();
   revalidateTag('admin-materials', { expire: 0 });
   if (expenseDeleted) revalidateTag('admin-expenses', { expire: 0 });
   revalidateTag('admin-analytics', { expire: 0 });

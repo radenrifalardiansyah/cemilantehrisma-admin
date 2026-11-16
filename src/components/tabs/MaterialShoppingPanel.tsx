@@ -22,19 +22,12 @@ import { DateInput } from '@/components/DateTimeInput';
 
 const API = '';
 
-interface ShoppingItem {
-  id: string; materialId: string; materialName: string; unit: string;
-  qty: number; price: number | null; note: string;
-  shoppingDate: string; supplierId?: string; supplierName: string;
-  checked: boolean; status: 'pending' | 'done'; purchaseId?: string; doneAt?: string;
-  walletId?: string; paymentStatus?: 'lunas' | 'belum_lunas'; createdBy?: string;
-}
 interface Opt { value: string; label: string; sublabel?: string }
 
 interface Props {
   creds: string;
   materials: { id: string; name: string; unit: string; stockQty: number }[];
-  suppliers: { id: string; name: string; phone?: string }[];
+  suppliers: { id: string; name: string }[];
   walletOptions: Opt[];
   walletBalances: Record<string, number>;
   /** id dompet → nama, untuk menampilkan dompet yang dipakai pembelian. */
@@ -43,25 +36,18 @@ interface Props {
   onProcessed: () => void;
 }
 
-// Satu daftar belanja = kumpulan item dengan tanggal + supplier yang sama (otomatis tergabung).
-interface ShoppingGroup {
-  key: string; date: string; supplierId?: string; supplierName: string;
-  items: ShoppingItem[]; pending: ShoppingItem[]; checked: ShoppingItem[];
-  total: number; notes: string[]; walletIds: string[]; unpaid: boolean; imported: boolean; status: 'menunggu' | 'belanja' | 'sebagian' | 'selesai';
-}
-
-const formatQty = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const formatDateLong = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-const NO_SUPPLIER = 'Tanpa supplier';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import { buildShoppingWaMessage, buildShoppingWaDayMessage, shoppingWaFits, shoppingWaUrl } from '@/lib/shopping-wa';
 import Modal from '@/components/Modal';
+import {
+  buildGroups, buildShoppingPdfData, formatDateLong, formatQty, NO_SUPPLIER, shoppingPdfGeneratedAt, SHOPPING_STATUS_LABEL,
+  type ShoppingGroup, type ShoppingItem,
+} from '@/lib/shopping-pdf-data';
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' };
 const thCls = 'px-3 py-2.5 font-bold uppercase tracking-wide whitespace-nowrap';
@@ -82,7 +68,6 @@ function SelectBox({ checked, indeterminate, onChange, label }: { checked: boole
 interface AddRow { materialId: string; qty: string; price: string }
 const EMPTY_ROW: AddRow = { materialId: '', qty: '', price: '' };
 
-const supplierKeyOf = (i: ShoppingItem) => i.supplierId ? `id:${i.supplierId}` : `n:${i.supplierName.trim().toLowerCase()}`;
 
 // Warna bullet supplier mengikuti status daftar.
 const STATUS_DOT: Record<ShoppingGroup['status'], string> = {
@@ -90,35 +75,11 @@ const STATUS_DOT: Record<ShoppingGroup['status'], string> = {
 };
 
 const STATUS_BADGE: Record<ShoppingGroup['status'], { label: string; cls: string }> = {
-  menunggu: { label: 'Menunggu', cls: 'badge-gray' },
-  belanja:  { label: 'Sedang belanja', cls: 'badge-blue' },
-  sebagian: { label: 'Sebagian', cls: 'badge-amber' },
-  selesai:  { label: 'Selesai', cls: 'badge-green' },
+  menunggu: { label: SHOPPING_STATUS_LABEL.menunggu, cls: 'badge-gray' },
+  belanja:  { label: SHOPPING_STATUS_LABEL.belanja, cls: 'badge-blue' },
+  sebagian: { label: SHOPPING_STATUS_LABEL.sebagian, cls: 'badge-amber' },
+  selesai:  { label: SHOPPING_STATUS_LABEL.selesai, cls: 'badge-green' },
 };
-
-function buildGroups(items: ShoppingItem[]): ShoppingGroup[] {
-  const map = new Map<string, ShoppingItem[]>();
-  items.forEach(i => {
-    const key = `${i.shoppingDate}|${supplierKeyOf(i)}`;
-    map.set(key, [...(map.get(key) ?? []), i]);
-  });
-  return [...map.entries()].map(([key, list]) => {
-    const pending = list.filter(i => i.status === 'pending');
-    const done = list.filter(i => i.status === 'done');
-    const checked = pending.filter(i => i.checked);
-    const status: ShoppingGroup['status'] = pending.length === 0 ? 'selesai' : done.length > 0 ? 'sebagian' : checked.length > 0 ? 'belanja' : 'menunggu';
-    return {
-      key, date: list[0].shoppingDate, supplierId: list[0].supplierId, supplierName: list[0].supplierName,
-      items: list, pending, checked,
-      total: list.reduce((s, i) => s + i.qty * (i.price ?? 0), 0),
-      notes: [...new Set(list.map(i => i.note.trim()).filter(Boolean))],
-      walletIds: [...new Set(done.map(i => i.walletId).filter((w): w is string => !!w))],
-      unpaid: done.some(i => i.paymentStatus === 'belum_lunas'),
-      imported: list.some(i => i.createdBy === 'import-pembelian'),
-      status,
-    };
-  });
-}
 
 export default function MaterialShoppingPanel({ creds, materials, suppliers, walletOptions, walletBalances, walletNames, onProcessed }: Props) {
   const toast = useToast();
@@ -206,40 +167,55 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   const walletLabel = (g: ShoppingGroup) => g.walletIds.map(id => walletNames[id] ?? 'Dompet dihapus').join(', ') || '-';
   const supplierLabel = (g: { supplierName: string }) => g.supplierName.trim() || NO_SUPPLIER;
 
-  // Kirim WA: murni sinkron (tanpa await) sehingga window.open langsung dari klik tidak diblokir popup-blocker.
-  // Tidak ada pengiriman otomatis: pengguna menekan Kirim sendiri di WhatsApp.
-  const sendShoppingWa = (g: ShoppingGroup) => {
+  // Kirim WA ke nomor WhatsApp TOKO (Pengaturan), seperti Closing HPP. Tautan PDF publik ditandatangani di server
+  // (POST /api/material-shopping/pdf-link): jendela WA dibuka SINKRON dulu (anti popup-blocker), lalu diarahkan setelah
+  // fetch. Bila fetch gagal, pesan tetap dikirim TANPA tautan (tidak memblokir pengiriman). Pengguna menekan Kirim sendiri.
+  const [waBusy, setWaBusy] = useState<string | null>(null);
+  const openWa = async (busyKey: string, link: { date: string; supplierId?: string; supplierName?: string; allSuppliers?: boolean }, build: (pdfUrl?: string) => string) => {
+    if (waBusy) return;
+    const win = window.open('', '_blank');
+    setWaBusy(busyKey);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20_000);
+    let pdfUrl: string | undefined; let phone = '';
+    try {
+      const res = await fetch(`${API}/api/material-shopping/pdf-link`, { method: 'POST', headers, body: JSON.stringify(link), signal: ctrl.signal });
+      const data = await res.json().catch(() => ({})) as { url?: string; phone?: string; error?: string };
+      if (res.ok && data.url) { pdfUrl = data.url; phone = data.phone ?? ''; }
+      else toast.error(data.error ?? 'Tautan PDF gagal dibuat, pesan dikirim tanpa tautan.');
+    } catch (err) {
+      console.error('Gagal membuat tautan PDF daftar belanja', err);
+      toast.error('Tautan PDF gagal dibuat, pesan dikirim tanpa tautan.');
+    } finally { clearTimeout(timer); setWaBusy(null); }
+    const message = build(pdfUrl);
+    // Jangan memotong diam-diam: URL terlalu panjang bisa ditolak/terpotong oleh peramban atau WhatsApp.
+    if (!shoppingWaFits(message)) { win?.close(); toast.error('Pesan terlalu panjang untuk WhatsApp. Kirim per supplier saja.'); return; }
+    if (!phone) toast.success('Nomor WhatsApp toko belum diisi di Pengaturan — pilih kontak di WhatsApp.');
+    const url = shoppingWaUrl(phone, message);
+    if (win) win.location.href = url; else window.location.assign(url);
+  };
+
+  const registeredOf = (g: ShoppingGroup) => {
     const name = g.supplierName.trim();
     const sup = (g.supplierId ? suppliers.find(s => s.id === g.supplierId) : undefined)
       ?? (name ? suppliers.find(s => s.name.trim().toLowerCase() === name.toLowerCase()) : undefined);
-    const message = buildShoppingWaMessage(
-      { date: g.date, supplierName: sup?.name ?? name, registeredSupplier: !!sup, items: g.items, notes: g.notes },
-      { storeName: storeHeader.name },
-    );
-    const phone = sup?.phone?.trim() ?? '';
-    const url = shoppingWaUrl(phone, message);
-    if (!phone) toast.success('Nomor supplier belum diisi — pilih kontak di WhatsApp.');
-    if (!window.open(url, '_blank')) window.location.href = url;
+    return { supplierName: sup?.name ?? name, registeredSupplier: !!sup };
   };
 
-  // WA gabungan satu tanggal: banyak supplier, jadi selalu tanpa nomor (pengguna memilih kontak sendiri).
-  const sendDayWa = (block: { date: string; groups: ShoppingGroup[] }) => {
-    const message = buildShoppingWaDayMessage(
+  const sendShoppingWa = (g: ShoppingGroup) => openWa(
+    g.key, { date: g.date, supplierId: g.supplierId, supplierName: g.supplierName },
+    pdfUrl => buildShoppingWaMessage({ date: g.date, ...registeredOf(g), items: g.items, notes: g.notes }, { storeName: storeHeader.name, pdfUrl }),
+  );
+
+  // WA gabungan satu tanggal: semua supplier dalam satu pesan.
+  const sendDayWa = (block: { date: string; groups: ShoppingGroup[] }) => openWa(
+    `day:${block.date}`, { date: block.date, allSuppliers: true },
+    pdfUrl => buildShoppingWaDayMessage(
       block.date,
-      block.groups.map(g => {
-        const name = g.supplierName.trim();
-        const sup = (g.supplierId ? suppliers.find(s => s.id === g.supplierId) : undefined)
-          ?? (name ? suppliers.find(s => s.name.trim().toLowerCase() === name.toLowerCase()) : undefined);
-        return { supplierName: sup?.name ?? name, registeredSupplier: !!sup, items: g.items, notes: g.notes };
-      }),
-      { storeName: storeHeader.name },
-    );
-    // Jangan memotong diam-diam: URL terlalu panjang bisa ditolak/terpotong oleh peramban atau WhatsApp.
-    if (!shoppingWaFits(message)) { toast.error('Pesan gabungan terlalu panjang untuk WhatsApp. Kirim per supplier saja.'); return; }
-    const url = shoppingWaUrl('', message);
-    toast.success('Pilih kontak di WhatsApp untuk mengirim daftar gabungan ini.');
-    if (!window.open(url, '_blank')) window.location.href = url;
-  };
+      block.groups.map(g => ({ ...registeredOf(g), items: g.items, notes: g.notes })),
+      { storeName: storeHeader.name, pdfUrl },
+    ),
+  );
 
   // ── Form buat daftar baru ──
   const openCreate = () => {
@@ -473,21 +449,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   };
 
   // Data PDF satu tanggal: per supplier ada tabel item + subtotal, ditutup total tanggal.
-  const pdfDataFor = (date: string, gs: ShoppingGroup[]) => ({
-    no: numberOf.get(date) ?? 0,
-    dateLabel: formatDateLong(date),
-    generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-    itemCount: gs.reduce((t, g) => t + g.items.length, 0), grandTotal: gs.reduce((t, g) => t + g.total, 0),
-    suppliers: gs.slice().sort((a, b) => (a.supplierName || '￿').localeCompare(b.supplierName || '￿')).map(g => ({
-      name: supplierLabel(g), notes: g.notes.join(' · '), wallet: walletLabel(g),
-      status: STATUS_BADGE[g.status].label + (g.unpaid ? ' (belum lunas)' : ''),
-      total: g.total,
-      items: g.items.map((i, idx) => ({
-        no: idx + 1, name: i.materialName, qty: formatQty(i.qty), unit: i.unit,
-        price: i.price, subtotal: i.qty * (i.price ?? 0), bought: i.status === 'done',
-      })),
-    })),
-  });
+  const pdfDataFor = (date: string, gs: ShoppingGroup[]) =>
+    buildShoppingPdfData(date, gs, { no: numberOf.get(date) ?? 0, walletNames, generatedAt: shoppingPdfGeneratedAt() });
 
   const printDatePdf = async (block: { date: string; groups: ShoppingGroup[] }) => {
     setPrintingDate(block.date);
@@ -661,7 +624,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                   <div className="flex flex-wrap items-center gap-2 min-w-0">
                     <p className="text-sm font-extrabold tabular break-words" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
                     <Tooltip label="Kirim WA semua supplier tanggal ini">
-                      <button onClick={() => sendDayWa(block)} aria-label="Kirim WA semua supplier tanggal ini"
+                      <button disabled={!!waBusy} onClick={() => sendDayWa(block)} aria-label="Kirim WA semua supplier tanggal ini"
                         className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: 30, width: 30, color: 'var(--success)' }}>
                         <MessageCircle size={14} />
                       </button>
@@ -719,7 +682,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                               <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
                             <Tooltip label="Kirim WA">
-                              <button aria-label="Kirim WA" onClick={() => sendShoppingWa(g)} className="btn-ghost p-2" style={{ color: 'var(--success)' }}><MessageCircle size={14} /></button>
+                              <button aria-label="Kirim WA" disabled={!!waBusy} onClick={() => sendShoppingWa(g)} className="btn-ghost p-2" style={{ color: 'var(--success)' }}><MessageCircle size={14} /></button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -767,7 +730,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                               <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
                             <Tooltip label="Kirim WA">
-                              <button aria-label="Kirim WA" onClick={() => sendShoppingWa(g)} className="btn-ghost p-2" style={{ color: 'var(--success)' }}><MessageCircle size={14} /></button>
+                              <button aria-label="Kirim WA" disabled={!!waBusy} onClick={() => sendShoppingWa(g)} className="btn-ghost p-2" style={{ color: 'var(--success)' }}><MessageCircle size={14} /></button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -1040,7 +1003,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
           </div>
           <div className="modal-footer">
             <Tooltip label="Kirim WA">
-              <button aria-label="Kirim WA" onClick={() => sendShoppingWa(detail)} className="btn-ghost" style={{ justifyContent: 'center', padding: '10px 14px', color: 'var(--success)' }}><MessageCircle size={16} /></button>
+              <button aria-label="Kirim WA" disabled={!!waBusy} onClick={() => sendShoppingWa(detail)} className="btn-ghost" style={{ justifyContent: 'center', padding: '10px 14px', color: 'var(--success)' }}><MessageCircle size={16} /></button>
             </Tooltip>
             <button onClick={() => setDetailKey(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
             {detail.pending.length > 0 && (

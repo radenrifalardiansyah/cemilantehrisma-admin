@@ -18,7 +18,7 @@ describe('buildShoppingWaMessage', () => {
     expect(m).toContain('Tanggal: 16 Nov 2026');
     expect(m).toContain('Supplier: UD Sumber Tani');
     expect(m).toContain('1. Gula Pasir - 2 kg');
-    expect(m).toContain('Mohon konfirmasi ketersediaan. Terima kasih.');
+    expect(m).toContain('Mohon dicek. Terima kasih.');
   });
   it('nama toko fallback', () => {
     expect(buildShoppingWaMessage(grp())).toContain('*DAFTAR BELANJA - Cemilan Teh Risma*');
@@ -119,5 +119,29 @@ describe('buildShoppingWaDayMessage', () => {
     const m = buildShoppingWaDayMessage('2026-11-16', many);
     expect(shoppingWaFits(m)).toBe(false);
     expect(shoppingWaUrl('', m).length).toBeGreaterThan(4000);
+  });
+});
+
+describe('baris tautan PDF', () => {
+  const URL_PDF = 'https://admin.test/b/AAAAAAAAAAAAAAAAAAAA';
+  it('per supplier: baris terakhir "Rincian (PDF): url" setelah penutup; tanpa pdfUrl tidak ada', () => {
+    const m = buildShoppingWaMessage(grp(), { storeName: 'Toko', pdfUrl: URL_PDF });
+    const lines = m.split('\n');
+    expect(lines[lines.length - 1]).toBe(`Rincian (PDF): ${URL_PDF}`);
+    expect(lines[lines.length - 2]).toBe('Mohon dicek. Terima kasih.');
+    expect(buildShoppingWaMessage(grp())).not.toContain('Rincian (PDF)');
+    expect(/^[\x0a\x20-\x7e]*$/.test(m)).toBe(true);
+  });
+  it('gabungan per tanggal: sama', () => {
+    const m = buildShoppingWaDayMessage('2026-11-16', [grp()], { pdfUrl: URL_PDF });
+    expect(m.split('\n').pop()).toBe(`Rincian (PDF): ${URL_PDF}`);
+    expect(buildShoppingWaDayMessage('2026-11-16', [grp()])).not.toContain('Rincian (PDF)');
+  });
+  it('shoppingWaFits memperhitungkan tautan', () => {
+    const many = Array.from({ length: 1 }, () => grp({ notes: ['x'.repeat(1250)] }));
+    const without = buildShoppingWaDayMessage('2026-11-16', many);
+    const withLink = buildShoppingWaDayMessage('2026-11-16', many, { pdfUrl: URL_PDF });
+    expect(withLink.length).toBeGreaterThan(without.length);
+    expect(shoppingWaUrl('6281234567890', withLink)).toContain('https://wa.me/6281234567890?text=');
   });
 });
