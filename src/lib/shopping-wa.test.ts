@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildShoppingWaMessage, shoppingWaUrl, type ShoppingWaGroup, type ShoppingWaItem } from './shopping-wa';
+import { buildShoppingWaMessage, buildShoppingWaDayMessage, shoppingWaFits, shoppingWaUrl, type ShoppingWaGroup, type ShoppingWaItem } from './shopping-wa';
 
 const item = (o: Partial<ShoppingWaItem> = {}): ShoppingWaItem =>
   ({ materialName: 'Gula Pasir', unit: 'kg', qty: 2, price: null, status: 'pending', ...o });
@@ -69,5 +69,55 @@ describe('shoppingWaUrl', () => {
     expect(shoppingWaUrl('', 'x')).toBe('https://wa.me/?text=x');
     expect(shoppingWaUrl(undefined, 'x')).toBe('https://wa.me/?text=x');
     expect(shoppingWaUrl('  ', 'x')).toBe('https://wa.me/?text=x');
+  });
+});
+
+describe('buildShoppingWaDayMessage', () => {
+  const g = (o: Partial<ShoppingWaGroup> = {}) => { const { date: _d, ...r } = grp(o); void _d; return r; };
+  const A = g({ supplierName: 'UD A', items: [item({ materialName: 'Gula', qty: 2, price: 10000 }), item({ materialName: 'Garam', price: null })] });
+  const B = g({ supplierName: 'Warung B', registeredSupplier: false, notes: ['Ambil sore'], items: [item({ materialName: 'Telur', unit: 'butir', qty: 30, price: 2000 })] });
+  it('banyak supplier: bagian per supplier, penomoran per supplier, subtotal dan total benar', () => {
+    const m = buildShoppingWaDayMessage('2026-11-16', [A, B], { storeName: 'Toko Uji' });
+    expect(m).toContain('*DAFTAR BELANJA - Toko Uji*');
+    expect(m).toContain('Tanggal: 16 Nov 2026');
+    expect(m).toContain('*UD A*');
+    expect(m).toContain('Toko: *Warung B*');
+    expect(m).toContain('Catatan: Ambil sore');
+    expect(m).toContain('1. Gula - 2 kg');
+    expect(m).toContain('2. Garam - 2 kg');
+    expect(m).toContain('1. Telur - 30 butir');
+    expect(m).toContain('   Subtotal: Rp 20.000');
+    expect(m).toContain('   Subtotal: Rp 60.000');
+    expect(m).toContain('*Total semua: Rp 80.000*');
+    expect(/^[\x0a\x20-\x7e]*$/.test(m)).toBe(true);
+    expect(m).not.toContain('```');
+  });
+  it('supplier selesai dilewati; item selesai tidak ikut', () => {
+    const done = g({ supplierName: 'Sudah Beres', items: [item({ materialName: 'Zzz', status: 'done' })] });
+    const part = g({ supplierName: 'Sebagian', items: [item({ materialName: 'Belum' }), item({ materialName: 'Sudah', status: 'done' })] });
+    const m = buildShoppingWaDayMessage('2026-11-16', [done, part]);
+    expect(m).not.toContain('Sudah Beres');
+    expect(m).not.toContain('Zzz');
+    expect(m).not.toContain('- 2 kg\n2.');
+    expect(m).toContain('1. Belum');
+    expect(m).not.toContain('Sudah -');
+  });
+  it('semua selesai: kirim semua supplier dan item', () => {
+    const d1 = g({ supplierName: 'S1', items: [item({ materialName: 'X', status: 'done' })] });
+    const d2 = g({ supplierName: 'S2', items: [item({ materialName: 'Y', status: 'done' })] });
+    const m = buildShoppingWaDayMessage('2026-11-16', [d1, d2]);
+    expect(m).toContain('*S1*'); expect(m).toContain('*S2*');
+    expect(m).toContain('1. X'); expect(m).toContain('1. Y');
+  });
+  it('tanpa harga: tanpa @, subtotal, total', () => {
+    const m = buildShoppingWaDayMessage('2026-11-16', [g(), g({ supplierName: 'Lain' })]);
+    expect(m).not.toContain('@'); expect(m).not.toContain('Subtotal'); expect(m).not.toContain('Total');
+  });
+  it('panjang URL: pesan kecil muat, pesan sangat panjang tidak', () => {
+    expect(shoppingWaFits(buildShoppingWaDayMessage('2026-11-16', [A, B]))).toBe(true);
+    const many = Array.from({ length: 80 }, (_, i) => g({ supplierName: `Supplier ${i}`, items: [item({ materialName: 'Bahan baku panjang', price: 1000 })] }));
+    const m = buildShoppingWaDayMessage('2026-11-16', many);
+    expect(shoppingWaFits(m)).toBe(false);
+    expect(shoppingWaUrl('', m).length).toBeGreaterThan(4000);
   });
 });

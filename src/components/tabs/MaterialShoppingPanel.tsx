@@ -60,7 +60,7 @@ const formatDateLong = (iso: string) =>
 const NO_SUPPLIER = 'Tanpa supplier';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
-import { buildShoppingWaMessage, shoppingWaUrl } from '@/lib/shopping-wa';
+import { buildShoppingWaMessage, buildShoppingWaDayMessage, shoppingWaFits, shoppingWaUrl } from '@/lib/shopping-wa';
 import Modal from '@/components/Modal';
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' };
@@ -219,6 +219,25 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
     const phone = sup?.phone?.trim() ?? '';
     const url = shoppingWaUrl(phone, message);
     if (!phone) toast.success('Nomor supplier belum diisi — pilih kontak di WhatsApp.');
+    if (!window.open(url, '_blank')) window.location.href = url;
+  };
+
+  // WA gabungan satu tanggal: banyak supplier, jadi selalu tanpa nomor (pengguna memilih kontak sendiri).
+  const sendDayWa = (block: { date: string; groups: ShoppingGroup[] }) => {
+    const message = buildShoppingWaDayMessage(
+      block.date,
+      block.groups.map(g => {
+        const name = g.supplierName.trim();
+        const sup = (g.supplierId ? suppliers.find(s => s.id === g.supplierId) : undefined)
+          ?? (name ? suppliers.find(s => s.name.trim().toLowerCase() === name.toLowerCase()) : undefined);
+        return { supplierName: sup?.name ?? name, registeredSupplier: !!sup, items: g.items, notes: g.notes };
+      }),
+      { storeName: storeHeader.name },
+    );
+    // Jangan memotong diam-diam: URL terlalu panjang bisa ditolak/terpotong oleh peramban atau WhatsApp.
+    if (!shoppingWaFits(message)) { toast.error('Pesan gabungan terlalu panjang untuk WhatsApp. Kirim per supplier saja.'); return; }
+    const url = shoppingWaUrl('', message);
+    toast.success('Pilih kontak di WhatsApp untuk mengirim daftar gabungan ini.');
     if (!window.open(url, '_blank')) window.location.href = url;
   };
 
@@ -627,20 +646,26 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             {pagedBlocks.map(block => (
               <div key={block.date} className="card overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
                 <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2" style={{ background: 'var(--surface-2)' }}>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <SelectBox label="Pilih semua supplier di tanggal ini"
                       checked={block.groups.every(g => selected.has(g.key))}
                       indeterminate={block.groups.some(g => selected.has(g.key)) && !block.groups.every(g => selected.has(g.key))}
                       onChange={() => toggleDate(block.groups)} />
-                    <div>
-                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold break-words" style={{ color: 'var(--text-primary)' }}>
                         <span style={{ color: 'var(--text-muted)' }}>{numberOf.get(block.date)}.</span> {formatDateLong(block.date)}
                       </p>
                       <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{block.groups.length} supplier · {block.itemCount} item</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <p className="text-sm font-extrabold tabular break-words" style={{ color: 'var(--accent)' }}>Total {formatRp(block.total)}</p>
+                    <Tooltip label="Kirim WA semua supplier tanggal ini">
+                      <button onClick={() => sendDayWa(block)} aria-label="Kirim WA semua supplier tanggal ini"
+                        className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: 30, width: 30, color: 'var(--success)' }}>
+                        <MessageCircle size={14} />
+                      </button>
+                    </Tooltip>
                     <Tooltip label="Cetak PDF tanggal ini">
                       <button onClick={() => printDatePdf(block)} disabled={printingDate === block.date} aria-label="Cetak PDF tanggal ini"
                         className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: 30, width: 30 }}>
@@ -649,17 +674,17 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                     </Tooltip>
                   </div>
                 </div>
-                {view === 'table' ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-xs table-fixed" style={{ borderCollapse: 'collapse' }}>
+                {view === 'table' && (
+            <div className="hidden xl:block overflow-hidden">
+              <table className="w-full text-xs table-fixed" style={{ borderCollapse: 'collapse' }}>
                 <colgroup>
                   <col style={{ width: 40 }} />
                   <col />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 150 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 150 }} />
                   <col style={{ width: 110 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 132 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 130 }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -679,7 +704,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                       <tr key={g.key} onClick={() => openDetail(g)} className="cursor-pointer" style={{ borderBottom: '1px solid var(--border-2)', background: selected.has(g.key) ? 'var(--accent-bg)' : undefined }}>
                         <td className="pl-3 py-2.5"><SelectBox label="Pilih daftar ini" checked={selected.has(g.key)} onChange={() => toggleKey(g.key)} /></td>
                         <td className="px-3 py-2.5" style={{ color: 'var(--text-primary)' }}>
-                          <p className="font-semibold flex items-start gap-1.5"><span style={{ color: STATUS_DOT[g.status] }}>•</span> <span className="min-w-0">{supplierLabel(g)}</span></p>
+                          <p className="font-semibold flex items-start gap-1.5"><span style={{ color: STATUS_DOT[g.status] }}>•</span> <span className="min-w-0 break-words">{supplierLabel(g)}</span></p>
                           {g.notes.length > 0 && <p className="text-[10.5px] truncate pl-3.5" style={{ color: 'var(--text-muted)' }}>{g.notes.join(' · ')}</p>}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{doneCount}/{g.items.length} dibeli</td>
@@ -688,8 +713,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                         <td className="px-3 py-2.5 break-words" style={{ color: 'var(--text-secondary)' }}>
                           {walletLabel(g)}{g.unpaid && <span className="block text-[10.5px]" style={{ color: 'var(--danger)' }}>Belum lunas</span>}
                         </td>
-                        <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                          <div className="inline-flex items-center gap-1">
+                        <td className="px-2 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="inline-flex flex-wrap justify-end items-center gap-1">
                             <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Lihat'}>
                               <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
@@ -710,7 +735,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 <tfoot>
                   <tr style={{ background: 'var(--surface-2)' }}>
                     <td />
-                    <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>Total semua supplier</td>
+                    <td className="px-3 py-2.5 font-bold" style={{ color: 'var(--text-primary)' }}>Total semua supplier</td>
                     <td className="px-3 py-2.5 text-right font-bold tabular" style={{ color: 'var(--text-secondary)' }}>{block.itemCount} item</td>
                     <td className="px-3 py-2.5 text-right font-extrabold tabular whitespace-nowrap" style={{ color: 'var(--accent)' }}>{formatRp(block.total)}</td>
                     <td colSpan={3} />
@@ -718,12 +743,14 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </tfoot>
               </table>
             </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
+                )}
+                {/* Kartu: pilihan tampilan Kartu, atau otomatis di bawah xl (tabel tidak muat tanpa scroll samping). */}
+                <div className={view === 'table' ? 'xl:hidden' : undefined}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3 min-w-0">
                     {block.groups.map(g => {
                       const doneCount = g.items.length - g.pending.length;
                       return (
-                        <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer" style={{ borderColor: selected.has(g.key) ? 'var(--accent)' : 'var(--border-2)', background: selected.has(g.key) ? 'var(--accent-bg)' : undefined }}>
+                        <div key={g.key} onClick={() => openDetail(g)} className="card p-3.5 flex flex-col gap-2 cursor-pointer min-w-0" style={{ borderColor: selected.has(g.key) ? 'var(--accent)' : 'var(--border-2)', background: selected.has(g.key) ? 'var(--accent-bg)' : undefined }}>
                           <div className="flex items-center justify-between gap-2">
                             <SelectBox label="Pilih daftar ini" checked={selected.has(g.key)} onChange={() => toggleKey(g.key)} />
                             <div className="min-w-0 flex-1">
@@ -732,10 +759,10 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                             </div>
                             <span className={`badge ${STATUS_BADGE[g.status].cls} flex-shrink-0`}>{STATUS_BADGE[g.status].label}</span>
                           </div>
-                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{doneCount}/{g.items.length} item dibeli{g.walletIds.length > 0 ? ` · ${walletLabel(g)}${g.unpaid ? ' (belum lunas)' : ''}` : ''}</p>
+                          <p className="text-xs break-words" style={{ color: 'var(--text-muted)' }}>{doneCount}/{g.items.length} item dibeli{g.walletIds.length > 0 ? ` · ${walletLabel(g)}${g.unpaid ? ' (belum lunas)' : ''}` : ''}</p>
                           <p className="text-sm font-extrabold tabular" style={{ color: 'var(--accent)' }}>{formatRp(g.total)}</p>
-                          <div className="flex items-center justify-end gap-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }} onClick={e => e.stopPropagation()}>
-                            <div className="inline-flex items-center gap-1">
+                          <div className="flex flex-wrap items-center justify-end gap-1 pt-2" style={{ borderTop: '1px solid var(--border-2)' }} onClick={e => e.stopPropagation()}>
+                            <div className="inline-flex flex-wrap justify-end items-center gap-1">
                             <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Lihat'}>
                               <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
@@ -753,7 +780,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                       );
                     })}
                   </div>
-                )}
+                </div>
               </div>
             ))}
 
@@ -770,7 +797,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 <PageSizeSelect value={pageSize} onChange={n => { setPageSize(n); setPage(1); }} />
               </div>
               {totalPages > 1 && (
-                <div className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   <Tooltip label="Halaman sebelumnya">
                     <button aria-label="Halaman sebelumnya" onClick={() => goPage(safePage - 1)} disabled={safePage === 1} className="btn-ghost p-2 disabled:opacity-30"><ChevronLeft size={14} /></button>
                   </Tooltip>
@@ -835,7 +862,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             </div>
             <Tooltip label="Tutup"><button onClick={() => setDetailKey(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
-          <div className="modal-body">
+          <div className="modal-body" style={{ overflowX: 'hidden' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {/* Hasil proses terakhir */}
               {processResult && (
@@ -900,8 +927,8 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                 </div>
                 {detail.items.map(i => i.status === 'done' ? (
                   <div key={i.id} className="px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ border: '1px solid var(--border-2)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                    <span className="flex items-center gap-2"><Check size={13} style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
-                    <span className="tabular">{formatRp(i.qty * (i.price ?? 0))}</span>
+                    <span className="flex items-center gap-2 min-w-0 break-words"><Check size={13} className="flex-shrink-0" style={{ color: 'var(--success)' }} /> {i.materialName} · {formatQty(i.qty)} {i.unit}</span>
+                    <span className="tabular flex-shrink-0">{formatRp(i.qty * (i.price ?? 0))}</span>
                   </div>
                 ) : (
                   // Desktop: satu baris (centang · nama · qty & harga · dompet · hapus). Mobile: baris 1 = centang, nama, hapus;
@@ -981,7 +1008,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                       <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Ringkasan per dompet — {walletTotals.size} pembelian akan dibuat</p>
                       {[...walletTotals.entries()].map(([w, total]) => (
                         <div key={w} className="flex justify-between gap-3">
-                          <span style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
+                          <span className="min-w-0 break-words" style={{ color: 'var(--text-secondary)' }}>{walletNames[w] ?? 'Dompet'} <span style={{ color: 'var(--text-muted)' }}>(saldo {formatRp(walletBalances[w] ?? 0)})</span></span>
                           <span className="font-bold tabular" style={{ color: paymentStatus === 'lunas' && total > (walletBalances[w] ?? 0) ? 'var(--danger)' : 'var(--text-primary)' }}>{formatRp(total)}</span>
                         </div>
                       ))}
@@ -1041,7 +1068,7 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             </div>
             <Tooltip label="Tutup"><button onClick={() => setShowCreate(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
-          <div className="modal-body">
+          <div className="modal-body" style={{ overflowX: 'hidden' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
