@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Eye, Undo2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Loader2, ShoppingCart, Check, Trash2, Pencil, Eye, Undo2, Search, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { pdf } from '@react-pdf/renderer';
 import GenericTablePDF from '@/lib/pdf/GenericTablePDF';
@@ -34,7 +34,7 @@ interface Opt { value: string; label: string; sublabel?: string }
 interface Props {
   creds: string;
   materials: { id: string; name: string; unit: string; stockQty: number }[];
-  suppliers: { id: string; name: string }[];
+  suppliers: { id: string; name: string; phone?: string }[];
   walletOptions: Opt[];
   walletBalances: Record<string, number>;
   /** id dompet → nama, untuk menampilkan dompet yang dipakai pembelian. */
@@ -60,6 +60,7 @@ const formatDateLong = (iso: string) =>
 const NO_SUPPLIER = 'Tanpa supplier';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
+import { buildShoppingWaMessage, shoppingWaUrl } from '@/lib/shopping-wa';
 import Modal from '@/components/Modal';
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 9.5, borderBottom: '1px solid var(--border-2)' };
@@ -204,6 +205,22 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
   // Dompet yang dipakai pembelian dari daftar ini (kosong kalau belum ada yang diproses).
   const walletLabel = (g: ShoppingGroup) => g.walletIds.map(id => walletNames[id] ?? 'Dompet dihapus').join(', ') || '-';
   const supplierLabel = (g: { supplierName: string }) => g.supplierName.trim() || NO_SUPPLIER;
+
+  // Kirim WA: murni sinkron (tanpa await) sehingga window.open langsung dari klik tidak diblokir popup-blocker.
+  // Tidak ada pengiriman otomatis: pengguna menekan Kirim sendiri di WhatsApp.
+  const sendShoppingWa = (g: ShoppingGroup) => {
+    const name = g.supplierName.trim();
+    const sup = (g.supplierId ? suppliers.find(s => s.id === g.supplierId) : undefined)
+      ?? (name ? suppliers.find(s => s.name.trim().toLowerCase() === name.toLowerCase()) : undefined);
+    const message = buildShoppingWaMessage(
+      { date: g.date, supplierName: sup?.name ?? name, registeredSupplier: !!sup, items: g.items, notes: g.notes },
+      { storeName: storeHeader.name },
+    );
+    const phone = sup?.phone?.trim() ?? '';
+    const url = shoppingWaUrl(phone, message);
+    if (!phone) toast.success('Nomor supplier belum diisi — pilih kontak di WhatsApp.');
+    if (!window.open(url, '_blank')) window.location.href = url;
+  };
 
   // ── Form buat daftar baru ──
   const openCreate = () => {
@@ -676,6 +693,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                             <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Lihat'}>
                               <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
                             </Tooltip>
+                            <Tooltip label="Kirim WA">
+                              <button aria-label="Kirim WA" onClick={() => sendShoppingWa(g)} className="btn-ghost p-2" style={{ color: 'var(--success)' }}><MessageCircle size={14} /></button>
+                            </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
                                   <button aria-label="Hapus daftar" onClick={() => removeGroup(g)} className="btn-ghost p-2" style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button>
@@ -718,6 +738,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
                             <div className="inline-flex items-center gap-1">
                             <Tooltip label={g.pending.length > 0 ? 'Buka, centang & edit' : 'Lihat'}>
                               <button onClick={() => openDetail(g)} className="btn-ghost p-2">{g.pending.length > 0 ? <Pencil size={14} /> : <Eye size={14} />}</button>
+                            </Tooltip>
+                            <Tooltip label="Kirim WA">
+                              <button aria-label="Kirim WA" onClick={() => sendShoppingWa(g)} className="btn-ghost p-2" style={{ color: 'var(--success)' }}><MessageCircle size={14} /></button>
                             </Tooltip>
                             {g.pending.length > 0 && (
                               <Tooltip label="Hapus daftar">
@@ -989,6 +1012,9 @@ export default function MaterialShoppingPanel({ creds, materials, suppliers, wal
             </div>
           </div>
           <div className="modal-footer">
+            <Tooltip label="Kirim WA">
+              <button aria-label="Kirim WA" onClick={() => sendShoppingWa(detail)} className="btn-ghost" style={{ justifyContent: 'center', padding: '10px 14px', color: 'var(--success)' }}><MessageCircle size={16} /></button>
+            </Tooltip>
             <button onClick={() => setDetailKey(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Tutup</button>
             {detail.pending.length > 0 && (
               <button onClick={submitProcess} disabled={processing || !canProcess} className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
