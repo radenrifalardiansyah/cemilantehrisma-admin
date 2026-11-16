@@ -1575,7 +1575,7 @@ ${pdfUrl}`.trim();
         {/* ════ HUTANG SUPPLIER ════════════════════════════════ */}
         {subTab === 'hutang' && (
           <SupplierPayablesPanel creds={creds} canEdit={canEdit} reloadKey={payablesKey}
-            onChanged={async () => { await loadPurchases(); refetchBalances(); }} />
+            onChanged={async () => { await loadPurchases(); refetchBalances(); }} onOpenPurchases={() => setSubTab('pembelian')} />
         )}
 
         {/* ════ PEMBELIAN ══════════════════════════════════════ */}

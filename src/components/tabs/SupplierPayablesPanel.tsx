@@ -8,6 +8,7 @@ import Tooltip from '@/components/Tooltip';
 import ViewToggle from '@/components/ViewToggle';
 import { useViewMode } from '@/lib/useViewMode';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
+import SupplierPaymentsHistory from '@/components/tabs/SupplierPaymentsHistory';
 import PurchasePaymentDialog, { type PayTarget } from '@/components/tabs/PurchasePaymentDialog';
 import { formatRp } from '@/lib/format';
 import { formatDueDate } from '@/lib/receivable';
@@ -17,6 +18,8 @@ import {
 } from '@/lib/payables-core';
 
 type DueFilter = 'all' | 'alert' | 'overdue';
+type Section = 'active' | 'history';
+const SECTIONS: { id: Section; label: string }[] = [{ id: 'active', label: 'Hutang Aktif' }, { id: 'history', label: 'Riwayat Pembayaran' }];
 
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -31,9 +34,10 @@ function DueBadge({ row }: { row: Pick<PayableRow, 'dueDate' | 'dueStatus' | 'du
 
 // Hutang Supplier: rekap hutang pembelian bahan baku per supplier (total, jumlah pembelian, jatuh tempo terdekat,
 // yang lewat jatuh tempo) dengan daftar pembelian per supplier dan tombol Bayar (cicilan atau lunas).
-export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onChanged }: {
-  creds: string; canEdit: boolean; reloadKey: number; onChanged: () => void | Promise<void>;
+export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onChanged, onOpenPurchases }: {
+  creds: string; canEdit: boolean; reloadKey: number; onChanged: () => void | Promise<void>; onOpenPurchases?: () => void;
 }) {
+  const [section, setSection] = useState<Section>('active');
   const [rows, setRows] = useState<PayableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -147,6 +151,20 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
   return (
     <>
     <div className="p-4 lg:p-6 animate-fade-up space-y-4">
+      <div className="inline-flex max-w-full rounded-xl overflow-x-auto no-scrollbar border" style={{ borderColor: 'var(--border)' }}>
+        {SECTIONS.map(t => (
+          <button key={t.id} onClick={() => setSection(t.id)} aria-pressed={section === t.id}
+            className="px-4 py-2 text-xs font-bold transition-all whitespace-nowrap flex-shrink-0"
+            style={section === t.id ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {section === 'history' ? (
+        <SupplierPaymentsHistory creds={creds} reloadKey={reloadKey} onOpenPurchases={onOpenPurchases} />
+      ) : (
+      <>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="card px-4 py-3">
           <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Total Hutang</p>
@@ -244,6 +262,8 @@ export default function SupplierPayablesPanel({ creds, canEdit, reloadKey, onCha
           <Pagination total={suppliers.length} safePage={safePage} totalPages={totalPages} pageSize={pageSize}
             onPageSize={n => { setPageSize(n); setPage(1); }} onGoPage={setPage} unit="supplier" />
         </>
+      )}
+      </>
       )}
     </div>
     {payTarget && <PurchasePaymentDialog creds={creds} purchase={payTarget} canEdit={canEdit} onClose={() => setPayTarget(null)} onDone={afterPay} />}
