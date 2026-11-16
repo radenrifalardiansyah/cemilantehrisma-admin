@@ -11,7 +11,10 @@ type PgClient = postgres.ISql<{}>;
 //                (amount / total pesanan), sama seperti Laporan Keuangan (lib/installment-payments-report.ts).
 //  - 'order'   : pesanan lunas TANPA baris cicilan (lunas sekaligus) — diakui penuh. Pesanan yang punya
 //                cicilan tidak pernah ditandai di level pesanan (hindari dobel hitung).
-//  - 'recap'   : rekap konsinyasi Mitra yang lunas.
+//  - 'recap'   : rekap konsinyasi Mitra yang lunas TANPA baris pembayaran (lunas sekaligus / rekap lama).
+//  - 'payment' + recapId : satu baris consignment_recap_payments (cicilan rekap Mitra) — diakui PROPORSIONAL per pembayaran
+//                (amount / total_revenue rekap), persis seperti cicilan pesanan. Rekap yang punya cicilan tidak pernah
+//                ditandai closing_id di level rekap (hindari dobel hitung).
 // Tanggal bayar efektif: payment = paid_at; order/recap = coalesce(paid_at, created_at) (paid_at diisi saat
 // "Tandai Lunas" tanpa cicilan; kosong = lunas sejak dibuat). Closing mengambil semua item belum-closing yang
 // tanggal bayarnya (WIB) <= tanggal yang dipilih. Kasir Lapak (stall_sales) TIDAK ikut.
@@ -22,7 +25,7 @@ export type ClosingKind = 'order' | 'payment' | 'recap';
 export interface ClosingLine {
   key: string;
   kind: ClosingKind;
-  orderId?: string; paymentId?: string; recapId?: string;
+  orderId?: string; paymentId?: string; recapId?: string; // kind 'payment': orderId = cicilan pesanan, recapId = cicilan rekap
   invoiceNo: string;
   party: string;
   txDate: string;          // yyyy-mm-dd (WIB) — tanggal transaksi
@@ -76,7 +79,9 @@ export interface PoolPaymentRow { id: string; order_id: string; amount: string; 
 export interface PoolRecapRow {
   id: string; location_name: string; items: unknown; payment_status: string;
   created_at: Date; paid_at: Date | null; closing_id: string | null;
+  total_revenue?: string; // netto — dasar proporsi cicilan; tak dipakai rekap tanpa cicilan
 }
+export interface PoolRecapPaymentRow { id: string; recap_id: string; amount: string; paid_at: Date; closing_id: string | null }
 
 // Satu pesanan → baris "sudah dibayar & belum closing" (per cicilan, atau satu baris bila lunas sekaligus)
 // dan baris piutang (porsi yang belum dibayar). Murni (tanpa DB) supaya bisa diuji.
@@ -138,6 +143,46 @@ export function buildRecapLine(recap: PoolRecapRow, costOf: CostOf): { paid: Clo
     return { paid: { ...base, paidDate: wibDate(recap.paid_at ?? recap.created_at) }, receivable: null };
   }
   return { paid: null, receivable: { ...base, paidDate: null } };
+}
+
+// Satu rekap → baris "sudah dibayar & belum closing" dan baris piutang. Tanpa cicilan = persis buildRecapLine (perilaku lama,
+// tidak berubah). Dengan cicilan: tiap pembayaran diakui proporsional terhadap total_revenue (nilai kumulatif dibulatkan, jadi
+// total semua cicilan = rekap penuh; cicilan pelunas menyerap sisa pembulatan), sisa yang belum dibayar = piutang.
+// `payments` = pembayaran AKTIF (tidak voided), urut paid_at.
+export function buildRecapLines(recap: PoolRecapRow, payments: PoolRecapPaymentRow[], costOf: CostOf): { paid: ClosingLine[]; receivable: ClosingLine | null } {
+  if (payments.length === 0) {
+    const r = buildRecapLine(recap, costOf);
+    return { paid: r.paid ? [r.paid] : [], receivable: r.receivable };
+  }
+  const items = (parseJsonb(recap.items as RecapItemLike[] | string | null) ?? []) as RecapItemLike[];
+  const total = Number(recap.total_revenue) || 0;
+  const full = recapTotals(items, costOf);
+  const part = (f: number) => ({ qty: r2(full.qty * f), revenue: Math.round(full.revenue * f), cogs: Math.round(full.cogs * f) });
+  const base = { recapId: recap.id, invoiceNo: 'Rekap Mitra', party: recap.location_name, txDate: wibDate(recap.created_at) };
+  const settled = recap.payment_status === 'lunas' && total > 0;
+  const paid: ClosingLine[] = [];
+  let cum = 0;
+  let prev = part(0);
+  payments.forEach((p, i) => {
+    const amount = Number(p.amount) || 0;
+    cum += amount;
+    const cumFraction = total > 0 ? (settled && i === payments.length - 1 ? 1 : Math.min(1, cum / total)) : 0;
+    const upTo = part(cumFraction);
+    const t = { qty: r2(upTo.qty - prev.qty), revenue: upTo.revenue - prev.revenue, cogs: upTo.cogs - prev.cogs };
+    prev = upTo;
+    if (p.closing_id) return;
+    const fraction = total > 0 ? Math.min(1, amount / total) : 0;
+    paid.push({ ...base, key: `payment:${p.id}`, kind: 'payment', paymentId: p.id, paidDate: wibDate(p.paid_at), ...t, note: `Cicilan ${Math.round(fraction * 100)}%` });
+  });
+  let receivable: ClosingLine | null = null;
+  if (recap.payment_status === 'belum_lunas') {
+    const rest = total > 0 ? Math.max(0, 1 - cum / total) : 0;
+    if (rest > 0) {
+      const t = { qty: r2(full.qty - prev.qty), revenue: full.revenue - prev.revenue, cogs: full.cogs - prev.cogs };
+      receivable = { ...base, key: `recap:${recap.id}`, kind: 'recap', paidDate: null, ...t, note: `Sisa ${Math.round(rest * 100)}%` };
+    }
+  }
+  return { paid, receivable };
 }
 
 export const closableLines = (lines: ClosingLine[], upTo: string) => lines.filter(l => l.paidDate !== null && l.paidDate <= upTo);
@@ -214,6 +259,15 @@ async function loadPaymentsByOrder(tx: PgClient, orderIds: string[]): Promise<Ma
   return payByOrder;
 }
 
+async function loadPaymentsByRecap(tx: PgClient, recapIds: string[]): Promise<Map<string, PoolRecapPaymentRow[]>> {
+  const rows = recapIds.length > 0
+    ? await tx<PoolRecapPaymentRow[]>`select id, recap_id, amount, paid_at, closing_id from consignment_recap_payments where recap_id in ${tx(recapIds)} and not voided order by paid_at, created_at`
+    : [];
+  const byRecap = new Map<string, PoolRecapPaymentRow[]>();
+  for (const p of rows) { const a = byRecap.get(p.recap_id); if (a) a.push(p); else byRecap.set(p.recap_id, [p]); }
+  return byRecap;
+}
+
 // Semua item yang BELUM closing (sudah dibayar → `paid`; belum dibayar → `receivable`).
 // `lock` = kunci baris pesanan/rekap (for update) — dipakai saat closing supaya edit bersamaan menunggu.
 export async function loadPool(tx: PgClient, lock: boolean): Promise<ClosingPool> {
@@ -234,13 +288,22 @@ export async function loadPool(tx: PgClient, lock: boolean): Promise<ClosingPool
       order by o.created_at, o.id
       ${forUpdate}
     `,
+    // Rekap tanpa cicilan: seperti dulu (belum closing). Rekap ber-cicilan: ikut selama masih piutang atau ada cicilan belum closing.
     tx<PoolRecapRow[]>`
-      select id, location_name, items, payment_status, created_at, paid_at, closing_id
-      from consignment_recaps where closing_id is null order by created_at, id ${forUpdateRecap}
+      select r.id, r.location_name, r.items, r.payment_status, r.total_revenue, r.created_at, r.paid_at, r.closing_id
+      from consignment_recaps r
+      where r.closing_id is null
+        and (
+          not exists (select 1 from consignment_recap_payments p where p.recap_id = r.id and not p.voided)
+          or r.payment_status = 'belum_lunas'
+          or exists (select 1 from consignment_recap_payments p where p.recap_id = r.id and not p.voided and p.closing_id is null)
+        )
+      order by r.created_at, r.id ${forUpdateRecap}
     `,
   ]);
   const costOf = makeCostOf(costRows);
   const payByOrder = await loadPaymentsByOrder(tx, orderRows.map(o => o.id));
+  const payByRecap = await loadPaymentsByRecap(tx, recapRows.map(r => r.id));
 
   const paid: ClosingLine[] = [];
   const receivable: ClosingLine[] = [];
@@ -250,8 +313,8 @@ export async function loadPool(tx: PgClient, lock: boolean): Promise<ClosingPool
     if (r.receivable) receivable.push(r.receivable);
   }
   for (const rc of recapRows) {
-    const r = buildRecapLine(rc, costOf);
-    if (r.paid) paid.push(r.paid);
+    const r = buildRecapLines(rc, payByRecap.get(rc.id) ?? [], costOf);
+    paid.push(...r.paid);
     if (r.receivable) receivable.push(r.receivable);
   }
   return { paid, receivable };
@@ -273,12 +336,16 @@ export async function loadClosingLines(sql: PgClient, closingId: string): Promis
       order by o.created_at, o.id
     `,
     sql<PoolRecapRow[]>`
-      select id, location_name, items, payment_status, created_at, paid_at, closing_id
-      from consignment_recaps where closing_id = ${closingId} order by created_at, id
+      select r.id, r.location_name, r.items, r.payment_status, r.total_revenue, r.created_at, r.paid_at, r.closing_id
+      from consignment_recaps r
+      where r.closing_id = ${closingId}
+        or exists (select 1 from consignment_recap_payments p where p.recap_id = r.id and p.closing_id = ${closingId})
+      order by r.created_at, r.id
     `,
   ]);
   const costOf = makeCostOf(costRows);
   const payByOrder = await loadPaymentsByOrder(sql, orderRows.map(o => o.id));
+  const payByRecap = await loadPaymentsByRecap(sql, recapRows.map(r => r.id));
 
   const lines: ClosingLine[] = [];
   for (const o of orderRows) {
@@ -290,8 +357,16 @@ export async function loadClosingLines(sql: PgClient, closingId: string): Promis
     }
   }
   for (const rc of recapRows) {
-    const l = buildRecapLine({ ...rc, closing_id: null }, costOf).paid;
-    if (l) lines.push(l);
+    const pays = payByRecap.get(rc.id) ?? [];
+    if (pays.length === 0) {
+      // Rekap tanpa cicilan (lunas sekaligus / rekap lama): persis seperti dulu.
+      const l = buildRecapLine({ ...rc, closing_id: null }, costOf).paid;
+      if (l) lines.push(l);
+      continue;
+    }
+    const mine = new Set(pays.filter(p => p.closing_id === closingId).map(p => p.id));
+    const built = buildRecapLines({ ...rc, closing_id: null }, pays.map(p => ({ ...p, closing_id: null })), costOf);
+    for (const l of built.paid) if (l.paymentId && mine.has(l.paymentId)) lines.push(l);
   }
   return lines.sort((a, b) => (a.paidDate ?? '').localeCompare(b.paidDate ?? '') || a.txDate.localeCompare(b.txDate) || a.invoiceNo.localeCompare(b.invoiceNo));
 }
@@ -328,7 +403,8 @@ export async function createClosing(sql: postgres.Sql, a: { upTo: string; note?:
       values (${id}, ${periodFrom}, ${a.upTo}, clock_timestamp(), ${a.username}, ${totals.qty}, ${totals.cogs}, ${totals.revenue}, ${totals.count}, ${a.note?.trim() || null}, 'aktif', false)
     `;
     const orderIds = lines.filter(l => l.kind === 'order').map(l => l.orderId!);
-    const paymentIds = lines.filter(l => l.kind === 'payment').map(l => l.paymentId!);
+    const paymentIds = lines.filter(l => l.kind === 'payment' && !l.recapId).map(l => l.paymentId!);
+    const recapPaymentIds = lines.filter(l => l.kind === 'payment' && l.recapId).map(l => l.paymentId!);
     const recapIds = lines.filter(l => l.kind === 'recap').map(l => l.recapId!);
     // Tiap UPDATE dijaga `closing_id is null` dan jumlah barisnya dicek — kalau ada yang meleset, batalkan semua.
     if (orderIds.length > 0) {
@@ -338,6 +414,10 @@ export async function createClosing(sql: postgres.Sql, a: { upTo: string; note?:
     if (paymentIds.length > 0) {
       const res = await tx`update order_payments set closing_id = ${id} where id in ${tx(paymentIds)} and closing_id is null`;
       if (res.count !== paymentIds.length) throw new ClosingError('Data pembayaran berubah saat closing diproses — coba lagi.');
+    }
+    if (recapPaymentIds.length > 0) {
+      const res = await tx`update consignment_recap_payments set closing_id = ${id} where id in ${tx(recapPaymentIds)} and closing_id is null`;
+      if (res.count !== recapPaymentIds.length) throw new ClosingError('Data pembayaran rekap berubah saat closing diproses — coba lagi.');
     }
     if (recapIds.length > 0) {
       const res = await tx`update consignment_recaps set closing_id = ${id} where id in ${tx(recapIds)} and closing_id is null`;
@@ -362,11 +442,12 @@ export async function reopenClosing(sql: postgres.Sql, a: { id: string; reason: 
     const o = await tx`update orders set closing_id = null where closing_id = ${a.id}`;
     const p = await tx`update order_payments set closing_id = null where closing_id = ${a.id}`;
     const r = await tx`update consignment_recaps set closing_id = null where closing_id = ${a.id}`;
+    const rp = await tx`update consignment_recap_payments set closing_id = null where closing_id = ${a.id}`;
     await tx`
       update closings set status = 'dibuka_ulang', reopened_at = now(), reopened_by = ${a.username}, reopen_reason = ${a.reason.trim().slice(0, 500)}
       where id = ${a.id}
     `;
-    return { id: a.id, periodTo: closing.period_to, released: o.count + p.count + r.count };
+    return { id: a.id, periodTo: closing.period_to, released: o.count + p.count + r.count + rp.count };
   });
 }
 
@@ -408,9 +489,32 @@ export async function paymentClosingLock(tx: PgClient, paymentId: string): Promi
   return row ? lockMessage('Pembayaran ini', row.period_to) : null;
 }
 
+// Rekap terkunci bila rekapnya sendiri (lunas sekaligus) ATAU salah satu cicilannya sudah closing.
 export async function recapClosingLock(tx: PgClient, recapId: string): Promise<string | null> {
+  const [row] = await tx<{ period_to: string }[]>`
+    select c.period_to from closings c
+    where c.id in (
+      select closing_id from consignment_recaps where id = ${recapId} and closing_id is not null
+      union
+      select closing_id from consignment_recap_payments where recap_id = ${recapId} and closing_id is not null
+    )
+    order by c.period_to desc, c.closed_at desc limit 1
+  `;
+  return row ? lockMessage('Rekap ini', row.period_to) : null;
+}
+
+// Hanya bila rekapnya SENDIRI (recaps.closing_id — lunas sekaligus) sudah closing. Cicilan yang sudah closing tidak
+// menghalangi pembayaran sisa (sama seperti orderOwnClosingLock). Dipakai di POST pembayaran rekap / Bayar Sisa.
+export async function recapOwnClosingLock(tx: PgClient, recapId: string): Promise<string | null> {
   const [row] = await tx<{ period_to: string }[]>`
     select c.period_to from consignment_recaps r join closings c on c.id = r.closing_id where r.id = ${recapId}
   `;
   return row ? lockMessage('Rekap ini', row.period_to) : null;
+}
+
+export async function recapPaymentClosingLock(tx: PgClient, paymentId: string): Promise<string | null> {
+  const [row] = await tx<{ period_to: string }[]>`
+    select c.period_to from consignment_recap_payments p join closings c on c.id = p.closing_id where p.id = ${paymentId}
+  `;
+  return row ? lockMessage('Pembayaran ini', row.period_to) : null;
 }

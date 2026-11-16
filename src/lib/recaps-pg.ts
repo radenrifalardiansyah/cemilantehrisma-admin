@@ -1,5 +1,6 @@
 import { parseJsonb } from '@/lib/db';
 import { toTimestamp } from '@/lib/orders-pg';
+import { recapPaymentState, recapRemaining } from '@/lib/recap-payments-core';
 
 // Versi Postgres dari dokumen `consignmentRecaps` (Tahap 13 migrasi Fase 2, lihat plan
 // gleaming-wondering-quokka.md). Shape JSON yang dikembalikan ke frontend dipertahankan sama
@@ -40,6 +41,18 @@ export interface RecapRow {
   // Closing HPP (scripts/add-closings.mjs): tanggal pelunasan lewat Tandai Lunas (null = lunas sejak dibuat) & closing aktif.
   paid_at?: Date | null;
   closing_id?: string | null;
+  // Pembayaran sebagian (scripts/add-recap-payments.mjs): hanya terisi oleh query daftar rekap (subquery jumlah pembayaran aktif).
+  paid_amount?: string | null;
+  has_payments?: boolean | null;
+}
+
+// Ringkasan pembayaran sebagian (hanya bila query menyertakan paid_amount): dibayar, sisa piutang, status turunan.
+function paymentFields(r: RecapRow) {
+  if (r.paid_amount === undefined || r.paid_amount === null) return {};
+  const total = Number(r.total_revenue);
+  const paid = Number(r.paid_amount) || 0;
+  const base = { paymentStatus: r.payment_status, total, paid };
+  return { paidAmount: paid, hasPayments: r.has_payments === true, remaining: recapRemaining(base), paymentState: recapPaymentState(base) };
 }
 
 export function rowToRecap(r: RecapRow) {
@@ -57,6 +70,7 @@ export function rowToRecap(r: RecapRow) {
     totalOtherCosts: Number(r.total_other_costs ?? 0),
     grossRevenue: Number(r.total_revenue) + Number(r.total_other_costs ?? 0),
     paymentStatus: r.payment_status,
+    ...paymentFields(r),
     warehouseId: r.warehouse_id ?? '',
     warehouseName: r.warehouse_name ?? '',
     note: r.note ?? '',

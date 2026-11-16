@@ -8,48 +8,85 @@ import { revalidateStorefront, revalidateProductStock } from '@/lib/revalidate';
 import { writeStockLedgerEntryPg, stockLabel } from '@/lib/stock-pg';
 import { rowToRecap, sanitizeOtherCosts, type RecapRow } from '@/lib/recaps-pg';
 import { recapClosingLock } from '@/lib/closing';
+import { WalletBalanceError, guardWalletBalances } from '@/lib/wallet-balance';
+import { parseDateKey } from '@/lib/validate-input';
+import { PaymentError, paidAtFromDate } from '@/lib/recap-payments-core';
+import { activeRecapPaymentWallets, addRecapPaymentTx, deleteRecapPaymentsTx } from '@/lib/recap-payments';
 
 type Ctx = { params: Promise<{ id: string }> };
 interface RecapItem { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject: number; hargaTitip: number; costPrice?: number }
 interface RecapItemInput { productId: string; productName: string; qtySold: number; qtyRetur: number; qtyReject?: number }
 
-// Tandai Lunas — pendapatan konsinyasi dibaca langsung dari totalRevenue rekap ini di Laporan
-// Keuangan, jadi menandai lunas cukup flip status (tidak perlu bikin dokumen tambahan).
+// Isi rekap yang menentukan nilai & stok (lokasi, gudang, qty per produk, biaya lain-lain) dibandingkan dengan permintaan edit.
+// Dipakai untuk mengunci rekap yang sudah punya pembayaran/cicilan.
+function recapContentChanged(old: { locationId: string; warehouseId: string; items: RecapItem[]; otherCosts: { label: string; amount: number }[] },
+  next: { locationId: string; warehouseId?: string; items: RecapItemInput[]; otherCosts: { label: string; amount: number }[] }): boolean {
+  const tally = (items: { productId: string; qtySold: number; qtyRetur: number; qtyReject?: number }[]) => {
+    const m = new Map<string, string>();
+    const sums = new Map<string, number[]>();
+    for (const it of items) {
+      const a = sums.get(it.productId) ?? [0, 0, 0];
+      a[0] += Number(it.qtySold) || 0; a[1] += Number(it.qtyRetur) || 0; a[2] += Number(it.qtyReject) || 0;
+      sums.set(it.productId, a);
+    }
+    for (const [k, a] of sums) m.set(k, a.join('/'));
+    return [...m.entries()].filter(([, v]) => v !== '0/0/0').sort(([x], [y]) => x.localeCompare(y)).map(([k, v]) => `${k}:${v}`).join('|');
+  };
+  const costs = (c: { label: string; amount: number }[]) => c.map(x => `${x.label}:${x.amount}`).join('|');
+  return old.locationId !== next.locationId
+    || (old.warehouseId || '') !== (next.warehouseId || '')
+    || tally(old.items) !== tally(next.items)
+    || costs(old.otherCosts) !== costs(next.otherCosts);
+}
+
+// "Bayar sisa" (tombol Tandai Lunas): membuat SATU pembayaran sebesar SELURUH sisa piutang lewat fungsi yang sama dengan
+// cicilan (POST .../payments). Rekap belum dicicil → hasilnya lunas penuh seperti dulu (pembayaran sebesar total, paid_at =
+// sekarang, wallet_id = dompet). Rekap yang sudah dicicil → hanya SISA yang dibayar (bukan dobel). Rekap yang sudah lunas
+// tidak diubah (idempoten). Body opsional: { walletId?, date?, note? }. Dompet kosong tetap diterima (perilaku lama: uang masuk
+// ke bucket "Belum Ditentukan").
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'consignment', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const data = await req.json().catch(() => ({})) as { walletId?: string | null };
+  const data = await req.json().catch(() => ({})) as { walletId?: string | null; date?: unknown; note?: unknown };
+  if (data.date !== undefined && data.date !== null && data.date !== '' && !parseDateKey(data.date)) {
+    return Response.json({ error: 'Tanggal bayar tidak valid (format YYYY-MM-DD).' }, { status: 400 });
+  }
+  const paidAt = data.date ? paidAtFromDate(parseDateKey(data.date)!, new Date()) : new Date();
+  const note = typeof data.note === 'string' ? data.note.trim().slice(0, 500) : '';
   const db = getDb();
   const sql = getSql();
-  let before: RecapRow | undefined;
+  let result: Awaited<ReturnType<typeof addRecapPaymentTx>> | null = null;
+  let alreadyPaid = false;
   try {
-    before = await sql.begin(async tx => {
-      const [row] = await tx<RecapRow[]>`select * from consignment_recaps where id = ${id} for update`;
-      if (!row) return undefined;
-      const closingLock = await recapClosingLock(tx, id);
-      if (closingLock) throw new Error(closingLock);
-      // paid_at = tanggal pelunasan (dasar tanggal bayar di Closing); tidak digeser kalau sudah lunas.
-      const paidAt = row.payment_status === 'lunas' ? (row.paid_at ?? null) : new Date();
-      await tx`update consignment_recaps set payment_status = 'lunas', wallet_id = ${data.walletId ?? null}, paid_at = ${paidAt}, updated_at = now() where id = ${id}`;
-      return row;
+    await sql.begin(async tx => {
+      const [row] = await tx<{ payment_status: string }[]>`select payment_status from consignment_recaps where id = ${id} for update`;
+      if (!row) throw new PaymentError('Rekap tidak ditemukan.');
+      if (row.payment_status === 'lunas') { alreadyPaid = true; return; }
+      result = await addRecapPaymentTx(tx, { recapId: id, amount: null, paidAt, walletId: data.walletId || null, requireWallet: false, note: note || 'ditandai lunas', actor: guard.username });
     });
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : 'Gagal menandai lunas.' }, { status: 400 });
+    if (err instanceof PaymentError || err instanceof WalletBalanceError) return Response.json({ error: err.message }, { status: 400 });
+    console.error('Failed to mark consignment recap lunas', err);
+    return Response.json({ error: 'Gagal menandai lunas.' }, { status: 500 });
   }
-  try {
-    await logHistory(db, {
-      entity: 'consignment',
-      entityCollection: 'consignmentRecaps',
-      entityId: id,
-      entityLabel: before?.location_name || id,
-      action: 'update',
-      actor: guard,
-      before: before ? rowToRecap(before) : null,
-      after: before ? { ...rowToRecap(before), paymentStatus: 'lunas', walletId: data.walletId ?? null } : null,
-    });
-  } catch {}
-  revalidateTag('admin-analytics', { expire: 0 });
+  const done = result as Awaited<ReturnType<typeof addRecapPaymentTx>> | null;
+  if (!alreadyPaid && done) {
+    try {
+      await logHistory(db, {
+        entity: 'consignment',
+        entityCollection: 'consignmentRecaps',
+        entityId: id,
+        entityLabel: done.before.locationName || id,
+        action: 'update',
+        actor: guard,
+        before: done.before,
+        after: { ...done.before, paymentStatus: 'lunas', walletId: data.walletId ?? null, paidAmount: done.paidAfter, remaining: 0 },
+        meta: { payment: { id: done.paymentId, amount: done.amount }, settled: true, via: 'bayar-sisa' },
+      });
+    } catch {}
+    revalidateTag('admin-analytics', { expire: 0 });
+  }
   return Response.json({ ok: true });
 }
 
@@ -135,7 +172,13 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      await pgTx`delete from consignment_recaps where id = ${id}`;
+      // Pembayaran/cicilan rekap ikut dihapus (FK RESTRICT). Uangnya keluar lagi dari dompet — ditolak bila saldo jadi minus.
+      // Rekap tanpa pembayaran (lunas lama / belum lunas): tidak ada yang dijaga, perilaku lama.
+      const walletIds = await activeRecapPaymentWallets(pgTx, id);
+      await guardWalletBalances(pgTx, walletIds, async () => {
+        await deleteRecapPaymentsTx(pgTx, id);
+        await pgTx`delete from consignment_recaps where id = ${id}`;
+      });
     });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Gagal menghapus riwayat rekap.' }, { status: 400 });
@@ -225,6 +268,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   interface RecapItemComputed extends RecapItemInput { hargaTitip: number; revenue: number; costPrice: number; cogs: number }
   let recapItems: RecapItemComputed[] = [];
   let totalSold = 0, totalRetur = 0, totalReject = 0, totalRevenue = 0;
+  let lightEdit = false; // rekap yang sudah punya pembayaran: hanya catatan/tanggal/jatuh tempo yang berubah
 
   try {
     await sql.begin(async pgTx => {
@@ -237,6 +281,30 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       }
       const closingLock = await recapClosingLock(pgTx, id);
       if (closingLock) throw new Error(closingLock);
+
+      // Rekap yang sudah punya pembayaran/cicilan: nilai & barangnya terkunci (pembayaran, saldo dompet, dan HPP Closing
+      // proporsional bergantung padanya) — sama seperti pembelian ber-cicilan. Hanya catatan, tanggal, dan jatuh tempo yang
+      // boleh diubah; status bayar & dompet mengikuti pembayaran (tidak diubah dari sini).
+      const [{ n: payCount }] = await pgTx<{ n: number }[]>`select count(*)::int as n from consignment_recap_payments where recap_id = ${id} and not voided`;
+      if (payCount > 0) {
+        if (recapContentChanged({ locationId: oldRecap.locationId, warehouseId: oldRecap.warehouseId, items: oldItems, otherCosts: oldRecap.otherCosts },
+          { locationId: data.locationId, warehouseId: data.warehouseId, items: newItems, otherCosts })) {
+          throw new Error('Rekap ini sudah punya pembayaran/cicilan — lokasi, barang, qty, dan biaya lain-lain tidak bisa diubah. Batalkan pembayarannya dulu lewat tombol Riwayat pembayaran.');
+        }
+        if (data.paymentStatus !== undefined && paymentStatus !== oldRecap.paymentStatus) {
+          throw new Error('Rekap ini sudah punya pembayaran/cicilan — status bayar mengikuti pembayaran dan tidak bisa diubah dari form. Catat atau batalkan pembayaran lewat Riwayat pembayaran.');
+        }
+        await pgTx`
+          update consignment_recaps set
+            note = ${data.note ?? null},
+            created_at = ${data.date ? new Date(data.date) : oldRecapRowPeek.created_at},
+            due_date = ${data.dueDate ? new Date(data.dueDate) : null},
+            overdue_notified_at = null, updated_at = now()
+          where id = ${id}
+        `;
+        lightEdit = true;
+        return;
+      }
 
       // Urutan kunci SERAGAM: produk → stok gudang → stok titip (lihat catatan di atas).
       const [productRows, wsRows, stockRows] = await Promise.all([
@@ -395,7 +463,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       action: 'update',
       actor: guard,
       before: oldRecap,
-      after: { ...oldRecap, locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, otherCosts, totalOtherCosts, paymentStatus },
+      after: lightEdit
+        ? { ...oldRecap, note: data.note ?? '' }
+        : { ...oldRecap, locationId: data.locationId, locationName: data.locationName, items: recapItems, totalSold, totalRetur, totalReject, totalRevenue, otherCosts, totalOtherCosts, paymentStatus },
     });
   } catch (err) {
     console.error('Failed to write history for consignment recap update', err);

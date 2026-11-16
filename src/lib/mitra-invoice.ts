@@ -8,6 +8,7 @@ export interface InvoiceShipment { createdAt?: { seconds: number } | null; items
 export interface InvoiceRecap {
   id: string; createdAt?: { seconds: number } | null; items: RecapNoteItem[];
   totalSold: number; totalRetur: number; totalReject?: number; totalRevenue: number; paymentStatus?: string | null;
+  remaining?: number; // sisa piutang rekap yang sudah dicicil (kosong = belum ada pembayaran sebagian)
 }
 export interface InvoiceLocation { id: string; name: string; code?: string | null; contactName?: string | null; contactPhone?: string | null; address?: string | null }
 
@@ -38,11 +39,17 @@ export function buildMitraInvoiceData(input: {
   const listed = recaps
     .filter(r => r.paymentStatus === 'belum_lunas' || r.totalRetur > 0 || (r.totalReject || 0) > 0)
     .sort((a, b) => sec(a) - sec(b));
+  // Tagihan rekap belum lunas = SISA piutang (rekap yang sudah dicicil: total - dibayar), bukan total rekap.
+  // Cicilan yang sudah diterima untuk rekap belum lunas (total - sisa) — tampil di "Sudah dibayar" supaya revenueAll = paidValue + total.
+  const paidPortionOf = (r: InvoiceRecap) => r.paymentStatus === 'belum_lunas' && r.remaining !== undefined ? Math.max(0, r.totalRevenue - r.remaining) : 0;
+  const dueOf = (r: InvoiceRecap) => r.paymentStatus === 'belum_lunas' ? (r.remaining ?? r.totalRevenue) : r.totalRevenue;
   const unpaid: MitraInvoiceRecap[] = listed.map(r => ({
     date: fmtDateTime(sec(r)), docNo: `RKP-${r.id.slice(-6).toUpperCase()}`, items: r.items,
-    totalSold: r.totalSold, totalRetur: r.totalRetur, totalReject: r.totalReject || 0, totalRevenue: r.totalRevenue,
+    totalSold: r.totalSold, totalRetur: r.totalRetur, totalReject: r.totalReject || 0, totalRevenue: dueOf(r),
     paid: r.paymentStatus !== 'belum_lunas',
+    ...(paidPortionOf(r) > 0 ? { fullRevenue: r.totalRevenue, paidPortion: paidPortionOf(r) } : {}),
   }));
+  const partialRecaps = unpaidRecaps.filter(r => paidPortionOf(r) > 0);
   return {
     docNo: `INV-${(location.code || location.id.slice(-4)).toUpperCase()}-${stamp}`,
     date: now.toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }),
@@ -58,7 +65,7 @@ export function buildMitraInvoiceData(input: {
     recapCount: recaps.length,
     soldQty: sum(recaps, r => r.totalSold), returQty: sum(recaps, r => r.totalRetur), rejectQty: sum(recaps, r => r.totalReject || 0),
     revenueAll: sum(recaps, r => r.totalRevenue),
-    paidValue: sum(paidRecaps, r => r.totalRevenue), paidCount: paidRecaps.length,
-    unpaid, total: sum(unpaidRecaps, r => r.totalRevenue), bank,
+    paidValue: sum(paidRecaps, r => r.totalRevenue) + sum(partialRecaps, paidPortionOf), paidCount: paidRecaps.length, installmentCount: partialRecaps.length,
+    unpaid, total: sum(unpaidRecaps, dueOf), bank,
   };
 }

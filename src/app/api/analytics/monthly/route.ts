@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { stockAdjustmentForPeriod } from '@/lib/stock-adjustment-pg';
 import { fetchInstallmentPayments, installmentRatio } from '@/lib/installment-payments-report';
+import { fetchRecapPaymentRecords } from '@/lib/recap-payments-report';
 
 // Penjualan & laba per BULAN untuk satu tahun / rentang periode (Dashboard → Analitik Bisnis).
 // Aturan hitungnya sama persis dengan /api/analytics/overview (order "belum lunas"/"baru"/dibatalkan
@@ -39,13 +40,15 @@ const lastDay = (month: string) => {
 const compute = unstable_cache(
   async (from: string, to: string) => {
     const sql = getSql();
-    const [orderRows, recapRows, incomeRows, expenseRows, productRows, installments] = await Promise.all([
+    const [orderRows, recapRows, incomeRows, expenseRows, productRows, installments, recapPayments] = await Promise.all([
       sql<{ total: string; source: string; status: string; payment_status: string; created_at: Date; items: unknown; has_payments: boolean }[]>`
         select total, source, status, payment_status, created_at, items, exists(select 1 from order_payments p where p.order_id = orders.id) as has_payments from orders
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
-      sql<{ total_revenue: string; total_other_costs: string | null; payment_status: string; created_at: Date; items: unknown }[]>`
-        select total_revenue, total_other_costs, payment_status, created_at, items from consignment_recaps
+      sql<{ total_revenue: string; total_other_costs: string | null; payment_status: string; created_at: Date; items: unknown; has_payments: boolean }[]>`
+        select total_revenue, total_other_costs, payment_status, created_at, items,
+          exists(select 1 from consignment_recap_payments p where p.recap_id = consignment_recaps.id and not p.voided) as has_payments
+        from consignment_recaps
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       sql<{ amount: string; date: string }[]>`select amount, date from income where date >= ${from} and date <= ${to}`,
@@ -54,6 +57,7 @@ const compute = unstable_cache(
       `,
       sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
       fetchInstallmentPayments(sql, from, to),
+      fetchRecapPaymentRecords(sql, from, to),
     ]);
     const costMap = new Map(productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0]));
     const cost = (stored: number | undefined, productId: string | undefined) =>
@@ -77,8 +81,16 @@ const compute = unstable_cache(
       if (p.source === 'portal') b.online += p.amount; else b.pos += p.amount;
       b.hpp += installmentRatio(p) * p.items.reduce((s, it) => s + it.qty * cost(it.costPrice, it.productId), 0);
     }
+    // Rekap Mitra ber-cicilan: diakui per pembayaran (tanggal uang diterima), proporsional (kotor, biaya lain-lain, HPP).
+    for (const p of recapPayments) {
+      const b = bk(monthOf(wibDateKey(new Date(p.paidAtSeconds * 1000))));
+      if (!b) continue;
+      b.consignment += p.totalRevenue + p.totalOtherCosts;
+      b.beban += p.totalOtherCosts;
+      b.hpp += p.items.reduce((s, it) => s + it.qtySold * cost(it.costPrice, it.productId), 0);
+    }
     for (const r of recapRows) {
-      if (r.payment_status === 'belum_lunas') continue;
+      if (r.payment_status === 'belum_lunas' || r.has_payments) continue;
       const b = bk(monthOf(wibDateKey(r.created_at)));
       if (!b) continue;
       // Kotor; biaya lain-lain rekap dihitung sebagai beban operasional (laba bersih tetap sama).

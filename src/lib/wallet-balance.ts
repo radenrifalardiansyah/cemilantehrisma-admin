@@ -31,6 +31,7 @@ export async function walletHasReferences(db: Firestore, walletId: string): Prom
       or exists(select 1 from orders where wallet_id = ${walletId})
       or exists(select 1 from order_payments where wallet_id = ${walletId})
       or exists(select 1 from consignment_recaps where wallet_id = ${walletId})
+      or exists(select 1 from consignment_recap_payments where wallet_id = ${walletId})
       or exists(select 1 from material_purchases where wallet_id = ${walletId})
       or exists(select 1 from material_purchase_payments where wallet_id = ${walletId})
       as exists
@@ -77,7 +78,11 @@ export async function computeWalletBalance(
       coalesce((select sum(total) from orders where wallet_id = ${walletId} and status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
         and not exists (select 1 from order_payments p where p.order_id = orders.id)), 0)
         + coalesce((select sum(amount) from order_payments where wallet_id = ${walletId}), 0) as total_orders,
-      coalesce((select sum(total_revenue) from consignment_recaps where wallet_id = ${walletId} and payment_status != 'belum_lunas'), 0) as total_recaps
+      -- Rekap tanpa pembayaran (lunas sekaligus / rekap lama): total rekap. Rekap yang punya pembayaran: dihitung PER PEMBAYARAN
+      -- aktif ke dompet pembayarannya, dan total rekapnya TIDAK dihitung lagi (hindari dobel).
+      coalesce((select sum(total_revenue) from consignment_recaps r where r.wallet_id = ${walletId} and r.payment_status != 'belum_lunas'
+        and not exists (select 1 from consignment_recap_payments p where p.recap_id = r.id and not p.voided)), 0)
+        + coalesce((select sum(amount) from consignment_recap_payments where wallet_id = ${walletId} and not voided), 0) as total_recaps
   `;
 
   const totalIncome = Number(pgTotals.total_income) || 0;

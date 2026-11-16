@@ -74,7 +74,7 @@ function exec(s: FakeState, text: string, v: unknown[]): unknown[] {
     const a = Object.values(s.closings).filter(c => c.status === 'aktif').sort((x, y) => y.period_to.localeCompare(x.period_to)); return a[0] ? [{ id: a[0].id, period_to: a[0].period_to }] : [];
   }
   if (text.startsWith('select count(*)::int as n from closing_settlements where closing_id = ?')) return [{ n: s.settlements.filter(x => x.closing_id === v[0]).length }];
-  if (text.startsWith('update orders set closing_id = null') || text.startsWith('update order_payments set closing_id = null') || text.startsWith('update consignment_recaps set closing_id = null')) return [];
+  if (text.startsWith('update orders set closing_id = null') || text.startsWith('update order_payments set closing_id = null') || text.startsWith('update consignment_recaps set closing_id = null') || text.startsWith('update consignment_recap_payments set closing_id = null')) return [];
   if (text.startsWith("update closings set status = 'dibuka_ulang'")) { s.closings[v[2] as string].status = 'dibuka_ulang'; return []; }
   throw new Error(`SQL tak dikenal di fake: ${text}`);
 }

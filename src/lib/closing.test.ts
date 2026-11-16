@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildOrderLines, buildRecapLine, closableLines, closeProblem, isRealDate, orderTotals, paidAtProblem, recapTotals, reopenProblem, sumLines, wibDate,
-  type CostOf, type PoolOrderRow, type PoolPaymentRow, type PoolRecapRow,
+  buildOrderLines, buildRecapLine, buildRecapLines, closableLines, closeProblem, isRealDate, orderTotals, paidAtProblem, recapTotals, reopenProblem, sumLines, wibDate,
+  type CostOf, type PoolOrderRow, type PoolPaymentRow, type PoolRecapPaymentRow, type PoolRecapRow,
 } from './closing';
 
 const costOf: CostOf = (stored, pid) => stored ? stored : (pid === 'p-nocost' ? 700 : 0);
@@ -318,5 +318,78 @@ describe('paidAtProblem', () => {
     expect(msg).toMatch(/buka ulang/);
     expect(paidAtProblem(new Date('2026-11-10T10:00:00+07:00'), now, '2026-11-10')).toBeNull();
     expect(paidAtProblem(new Date('2026-11-11T10:00:00+07:00'), now, '2026-11-10')).toBeNull();
+  });
+});
+
+// ── Rekap Mitra ber-cicilan (consignment_recap_payments) ──────────────────────────────────────────
+describe('buildRecapLines: rekap tanpa cicilan = persis buildRecapLine (regresi data lama)', () => {
+  const recap = (over: Partial<PoolRecapRow>): PoolRecapRow => ({
+    id: 'r1', location_name: 'Toko A', payment_status: 'lunas', created_at: at('2026-11-12'), paid_at: null, closing_id: null,
+    total_revenue: '40000', items: [{ productId: 'p1', qtySold: 5, hargaTitip: 8_000, costPrice: 1_000 }], ...over,
+  });
+  const variants: Partial<PoolRecapRow>[] = [
+    {}, { paid_at: at('2026-11-15') }, { payment_status: 'belum_lunas' }, { closing_id: 'c1' }, { closing_id: 'c1', paid_at: at('2026-11-14') },
+    { total_revenue: undefined }, // baris lama tanpa kolom total_revenue di query
+  ];
+  it.each(variants.map((v, i) => [i, v] as const))('varian %i: paid/receivable identik dengan buildRecapLine', (_i, v) => {
+    const old = buildRecapLine(recap(v), costOf);
+    const neu = buildRecapLines(recap(v), [], costOf);
+    expect(neu.paid).toEqual(old.paid ? [old.paid] : []);
+    expect(neu.receivable).toEqual(old.receivable);
+  });
+  it('baris lama tidak membawa recapId pada kind payment dan tak punya field baru', () => {
+    expect(buildRecapLines(recap({}), [], costOf).paid[0]).toMatchObject({ kind: 'recap', recapId: 'r1' });
+  });
+});
+
+describe('buildRecapLines: cicilan proporsional per pembayaran', () => {
+  // Rekap 10 pcs, harga titip 14.000 → 140.000, HPP 1.000/pcs.
+  const recap = (over: Partial<PoolRecapRow> = {}): PoolRecapRow => ({
+    id: 'r1', location_name: 'Toko A', payment_status: 'belum_lunas', created_at: at('2026-11-12'), paid_at: null, closing_id: null,
+    total_revenue: '140000', items: [{ productId: 'p1', qtySold: 10, hargaTitip: 14_000, costPrice: 1_000 }], ...over,
+  });
+  const rp = (id: string, amount: number, day: string, closing_id: string | null = null): PoolRecapPaymentRow =>
+    ({ id, recap_id: 'r1', amount: String(amount), paid_at: at(day), closing_id });
+
+  it('kasus pengguna: bayar 100.000 dari 140.000 → baris cicilan ~71% + piutang 29%; total = rekap penuh', () => {
+    const r = buildRecapLines(recap(), [rp('p1', 100_000, '2026-11-12')], costOf);
+    expect(r.paid).toHaveLength(1);
+    expect(r.paid[0]).toMatchObject({ kind: 'payment', paymentId: 'p1', recapId: 'r1', invoiceNo: 'Rekap Mitra', revenue: 100_000, cogs: 7_143, paidDate: '2026-11-12', note: 'Cicilan 71%' });
+    expect(r.paid[0].orderId).toBeUndefined();
+    expect(r.receivable).toMatchObject({ kind: 'recap', key: 'recap:r1', paidDate: null, revenue: 40_000, cogs: 2_857, note: 'Sisa 29%' });
+    expect(sumLines([...r.paid, r.receivable!])).toEqual({ count: 2, qty: 10, cogs: 10_000, revenue: 140_000 });
+  });
+
+  it('lunas lewat dua cicilan: pembayaran pelunas menyerap pembulatan; total = rekap penuh; tanpa piutang', () => {
+    const lunas = recap({ payment_status: 'lunas', paid_at: at('2026-11-14') });
+    const r = buildRecapLines(lunas, [rp('p1', 100_000, '2026-11-12'), rp('p2', 40_000, '2026-11-14')], costOf);
+    expect(r.paid.map(l => l.paymentId)).toEqual(['p1', 'p2']);
+    expect(r.receivable).toBeNull();
+    expect(sumLines(r.paid)).toEqual({ count: 2, qty: 10, cogs: 10_000, revenue: 140_000 });
+  });
+
+  it('cicilan pertama sudah closing → hanya cicilan kedua yang ikut closing berikutnya, nilainya tetap benar', () => {
+    const lunas = recap({ payment_status: 'lunas' });
+    const r = buildRecapLines(lunas, [rp('p1', 100_000, '2026-11-12', 'c1'), rp('p2', 40_000, '2026-11-14')], costOf);
+    expect(r.paid.map(l => l.paymentId)).toEqual(['p2']);
+    expect(r.paid[0]).toMatchObject({ revenue: 40_000, cogs: 2_857, paidDate: '2026-11-14' });
+  });
+
+  it('rekap lunas lewat cicilan dan semuanya sudah closing → tidak ada baris sama sekali', () => {
+    const r = buildRecapLines(recap({ payment_status: 'lunas' }), [rp('p1', 100_000, '2026-11-12', 'c1'), rp('p2', 40_000, '2026-11-14', 'c2')], costOf);
+    expect(r.paid).toEqual([]);
+    expect(r.receivable).toBeNull();
+  });
+
+  it('biaya lain-lain: omzet closing tetap kotor (item), proporsi memakai total_revenue netto', () => {
+    // item kotor 150.000, netto 140.000 → bayar 70.000 (50%) = 50% omzet kotor 75.000 dan 50% HPP
+    const r = buildRecapLines(recap({ items: [{ productId: 'p1', qtySold: 10, hargaTitip: 15_000, costPrice: 1_000 }] }), [rp('p1', 70_000, '2026-11-12')], costOf);
+    expect(r.paid[0]).toMatchObject({ revenue: 75_000, cogs: 5_000, qty: 5, note: 'Cicilan 50%' });
+  });
+
+  it('rekap belum lunas tanpa pembayaran aktif (semua dibatalkan) kembali piutang penuh, identik data lama', () => {
+    const r = buildRecapLines(recap(), [], costOf);
+    expect(r.paid).toEqual([]);
+    expect(r.receivable).toMatchObject({ revenue: 140_000, cogs: 10_000, paidDate: null });
   });
 });

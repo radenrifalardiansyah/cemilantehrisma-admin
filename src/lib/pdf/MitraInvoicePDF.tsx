@@ -11,6 +11,7 @@ import type { RecapNoteItem } from './RecapNotePDF';
 export interface MitraInvoiceRecap {
   date: string; docNo: string; items: RecapNoteItem[];
   totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number;
+  fullRevenue?: number; paidPortion?: number; // rekap sudah dicicil: nilai penuh & bagian yang sudah dibayar (totalRevenue = sisa)
   paid?: boolean; // rekap sudah lunas — tampil hanya karena memuat retur/reject, tidak ditagih lagi
 }
 
@@ -19,7 +20,8 @@ export interface MitraInvoiceData {
   locationName: string; locationCode?: string; contactName?: string; contactPhone?: string; address?: string;
   shipmentCount: number; shipmentQty: number; shipmentValue: number;
   recapCount: number; soldQty: number; returQty: number; rejectQty: number; revenueAll: number;
-  paidValue: number; paidCount: number;
+  paidValue: number; paidCount: number; // paidValue = rekap lunas + cicilan yang sudah diterima
+  installmentCount?: number;            // jumlah rekap belum lunas yang sudah dicicil
   unpaid: MitraInvoiceRecap[]; // rekap belum lunas + rekap lunas yang memuat retur/reject, urut tanggal
   total: number;               // total tagihan = jumlah pendapatan rekap belum lunas
   bank?: { name: string; accountNumber: string; accountHolder?: string };
@@ -198,7 +200,7 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
                 </View>
               ))}
               <View style={s.subRow} wrap={false}>
-                <Text style={s.subText}>Subtotal: jual {r.totalSold}, retur {r.totalRetur}, reject {r.totalReject}  ·  {r.paid ? 'sudah lunas, tidak ditagih' : rp(r.totalRevenue)}</Text>
+                <Text style={s.subText}>Subtotal: jual {r.totalSold}, retur {r.totalRetur}, reject {r.totalReject}  ·  {r.paid ? 'sudah lunas, tidak ditagih' : r.paidPortion ? `nilai rekap ${rp(r.fullRevenue ?? 0)}, sudah dibayar ${rp(r.paidPortion)}, sisa ditagih ${rp(r.totalRevenue)}` : rp(r.totalRevenue)}</Text>
               </View>
             </Fragment>
           ))}
@@ -208,7 +210,7 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
           <View style={s.totalsWrap}>
             <View style={s.totalsBox}>
               <View style={s.totalsLine}><Text style={s.totalsKey}>Total nilai penjualan (semua rekap)</Text><Text style={s.totalsVal}>{rp(data.revenueAll)}</Text></View>
-              <View style={s.totalsLine}><Text style={s.totalsKey}>Sudah dibayar ({data.paidCount} rekap lunas)</Text><Text style={[s.totalsVal, { color: C.green }]}>- {rp(data.paidValue)}</Text></View>
+              <View style={s.totalsLine}><Text style={s.totalsKey}>Sudah dibayar ({data.paidCount} rekap lunas{data.installmentCount ? ` + cicilan ${data.installmentCount} rekap` : ''})</Text><Text style={[s.totalsVal, { color: C.green }]}>- {rp(data.paidValue)}</Text></View>
               <View style={s.totalsLine}><Text style={s.totalsKey}>Terjual (belum dibayar)</Text><Text style={s.totalsVal}>{uSold.qty} pcs  ·  {rp(uSold.val)}</Text></View>
               <View style={s.totalsLine}><Text style={[s.totalsKey, { color: C.retur }]}>Retur (tidak ditagih)</Text><Text style={[s.totalsVal, { color: C.retur }]}>{uRetur.qty} pcs  ·  {rp(uRetur.val)}</Text></View>
               <View style={s.totalsLine}><Text style={[s.totalsKey, { color: C.reject }]}>Reject (tidak ditagih)</Text><Text style={[s.totalsVal, { color: C.reject }]}>{uReject.qty} pcs  ·  {rp(uReject.val)}</Text></View>

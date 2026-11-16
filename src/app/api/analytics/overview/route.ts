@@ -7,6 +7,7 @@ import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
 import { stockAdjustmentForPeriod } from '@/lib/stock-adjustment-pg';
 import { isMaterialLowStock } from '@/lib/stock-helpers';
 import { fetchInstallmentPayments, installmentRatio } from '@/lib/installment-payments-report';
+import { fetchRecapPaymentRecords } from '@/lib/recap-payments-report';
 
 interface OrderDoc {
   total?: number; source?: 'kasir' | 'portal'; status?: string; paymentStatus?: 'lunas' | 'belum_lunas';
@@ -17,6 +18,7 @@ interface OrderDoc {
 interface RecapDoc {
   totalRevenue?: number; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAtSeconds: number | null;
+  hasPayments?: boolean; // punya cicilan → diakui per pembayaran (recapPayments), bukan lewat total rekap
   items?: { productId?: string; qtySold: number; costPrice?: number }[];
 }
 interface IncomeDoc { category?: string; amount?: number; date?: string }
@@ -47,8 +49,10 @@ const getRawAnalytics = unstable_cache(
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
-      sql<{ total_revenue: string; total_other_costs: string | null; payment_status: string; created_at: Date; items: unknown }[]>`
-        select total_revenue, total_other_costs, payment_status, created_at, items from consignment_recaps
+      sql<{ total_revenue: string; total_other_costs: string | null; payment_status: string; created_at: Date; items: unknown; has_payments: boolean }[]>`
+        select total_revenue, total_other_costs, payment_status, created_at, items,
+          exists(select 1 from consignment_recap_payments p where p.recap_id = consignment_recaps.id and not p.voided) as has_payments
+        from consignment_recaps
         where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
       `,
       // income pindah ke Postgres (Tahap 4 migrasi)
@@ -66,6 +70,8 @@ const getRawAnalytics = unstable_cache(
       sql<{ id: string; cost_price: string | null }[]>`select id, cost_price from products`,
     ]);
     const installments = await fetchInstallmentPayments(sql, from, to);
+    // Rekap Mitra ber-cicilan diakui per pembayaran (tanggal uang diterima), bukan lewat total rekapnya.
+    const recapPayments = await fetchRecapPaymentRecords(sql, from, to);
 
     return {
       orders: orderRows.map((r): OrderDoc => ({
@@ -79,14 +85,18 @@ const getRawAnalytics = unstable_cache(
         // Kotor (netto + biaya lain-lain) — biayanya dihitung terpisah sebagai beban operasional di `expenses`.
         totalRevenue: Number(r.total_revenue) + Number(r.total_other_costs ?? 0), paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
         createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+        hasPayments: r.has_payments === true,
         items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
       })),
       income: incomeRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date }) as IncomeDoc),
       expenses: [
         ...expenseRows.map(r => ({ category: r.category ?? undefined, amount: Number(r.amount), date: r.date, sourceType: r.source_type ?? undefined, excludeFromPnl: r.exclude_from_pnl === true }) as ExpenseDoc),
         // Biaya lain-lain rekap konsinyasi (biaya admin, ongkir, dll.) → Beban Operasional; sama dengan FinanceReportTab.
-        ...recapRows.filter(r => r.payment_status !== 'belum_lunas' && Number(r.total_other_costs) > 0)
+        ...recapRows.filter(r => r.payment_status !== 'belum_lunas' && !r.has_payments && Number(r.total_other_costs) > 0)
           .map(r => ({ category: 'Biaya Konsinyasi', amount: Number(r.total_other_costs), date: wibDateKey(r.created_at) }) as ExpenseDoc),
+        // Rekap ber-cicilan: biaya lain-lain diakui sebanding tiap pembayaran, di tanggal pembayarannya.
+        ...recapPayments.filter(p => p.totalOtherCosts > 0)
+          .map(p => ({ category: 'Biaya Konsinyasi', amount: p.totalOtherCosts, date: wibDateKey(new Date(p.paidAtSeconds * 1000)) }) as ExpenseDoc),
       ],
       materials: materialRows.map((r): MaterialDoc => ({
         id: r.id, name: r.name, unit: r.unit,
@@ -94,6 +104,7 @@ const getRawAnalytics = unstable_cache(
       })),
       productCosts: productRows.map(r => [r.id, r.cost_price != null ? Number(r.cost_price) : 0] as const),
       installments,
+      recapPayments,
     };
   },
   ['admin-analytics-overview'],
@@ -120,7 +131,9 @@ const getAllTimeCash = unstable_cache(
         coalesce((select sum(total) from orders where status != 'baru' and payment_status != 'belum_lunas' and status != 'dibatalkan'
           and not exists (select 1 from order_payments p where p.order_id = orders.id)), 0)
           + coalesce((select sum(amount) from order_payments), 0) as total_orders,
-        coalesce((select sum(total_revenue) from consignment_recaps where payment_status != 'belum_lunas'), 0) as total_recaps
+        coalesce((select sum(total_revenue) from consignment_recaps r where payment_status != 'belum_lunas'
+          and not exists (select 1 from consignment_recap_payments p where p.recap_id = r.id and not p.voided)), 0)
+          + coalesce((select sum(amount) from consignment_recap_payments where not voided), 0) as total_recaps
     `;
     return {
       totalOrdersRevenue: Number(totals.total_orders) || 0,
@@ -161,7 +174,15 @@ export async function GET(req: NextRequest) {
       count(*) filter (where not open_po and stock_qty <= 0 and published) as out
     from products
   `;
-  const { orders, recaps, income, expenses, materials, productCosts, installments } = raw;
+  const { orders, recaps: recapDocs, income, expenses, materials, productCosts, installments, recapPayments } = raw;
+  // Pembayaran rekap → "rekap semu" lunas (kotor = nominal + biaya lain-lain sebanding), bertanggal uang diterima.
+  const recaps: RecapDoc[] = [
+    ...recapDocs.filter(r => !r.hasPayments),
+    ...recapPayments.map((p): RecapDoc => ({
+      totalRevenue: p.totalRevenue + p.totalOtherCosts, paymentStatus: 'lunas', createdAtSeconds: p.paidAtSeconds,
+      items: p.items as RecapDoc['items'],
+    })),
+  ];
   const productCostMap = new Map(productCosts);
 
   // ── Sama persis dengan FinanceReportTab: order/rekap "Belum Lunas" tidak dihitung sebagai uang

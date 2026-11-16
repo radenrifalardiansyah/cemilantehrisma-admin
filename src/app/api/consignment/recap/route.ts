@@ -47,14 +47,19 @@ function mergeRecapItems(items: RecapItemInput[]): RecapItemInput[] {
 async function fetchRecaps(from: string | null, to: string | null, limit: number) {
   const sql = getSql();
   let rows: RecapRow[];
+  // paid_amount/has_payments = pembayaran sebagian aktif (consignment_recap_payments) → dibayar, sisa piutang, status turunan.
+  const sel = sql`select r.*,
+    coalesce((select sum(p.amount) from consignment_recap_payments p where p.recap_id = r.id and not p.voided), 0) as paid_amount,
+    exists(select 1 from consignment_recap_payments p where p.recap_id = r.id and not p.voided) as has_payments
+    from consignment_recaps r`;
   if (from && to) {
-    rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+    rows = await sql<RecapRow[]>`${sel} where r.created_at >= ${wibDayStart(from).toDate()} and r.created_at <= ${wibDayEnd(to).toDate()} order by r.created_at desc`;
   } else if (from) {
-    rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${wibDayStart(from).toDate()} order by created_at desc`;
+    rows = await sql<RecapRow[]>`${sel} where r.created_at >= ${wibDayStart(from).toDate()} order by r.created_at desc`;
   } else if (to) {
-    rows = await sql<RecapRow[]>`select * from consignment_recaps where created_at <= ${wibDayEnd(to).toDate()} order by created_at desc`;
+    rows = await sql<RecapRow[]>`${sel} where r.created_at <= ${wibDayEnd(to).toDate()} order by r.created_at desc`;
   } else {
-    rows = await sql<RecapRow[]>`select * from consignment_recaps order by created_at desc limit ${limit}`;
+    rows = await sql<RecapRow[]>`${sel} order by r.created_at desc limit ${limit}`;
   }
   return rows.map(rowToRecap);
 }
@@ -88,7 +93,8 @@ export async function GET(req: NextRequest) {
     await notify(db, {
       type: 'consignment_overdue',
       title: 'Konsinyasi jatuh tempo',
-      message: `Rekap konsinyasi ${r.locationName ?? r.id} senilai Rp${(r.totalRevenue ?? 0).toLocaleString('id-ID')} sudah lewat tenggat pembayaran.`,
+      // Rekap yang sudah dicicil: yang ditagih adalah SISA piutang, bukan total.
+      message: `Rekap konsinyasi ${r.locationName ?? r.id} senilai Rp${((r as { remaining?: number }).remaining ?? r.totalRevenue ?? 0).toLocaleString('id-ID')} sudah lewat tenggat pembayaran.`,
       link: 'consignment',
       entityCollection: 'consignmentRecaps', entityId: r.id,
       // Bukan aksi si pembuka halaman — ini terdeteksi otomatis oleh waktu yang lewat, jadi

@@ -20,6 +20,7 @@ import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import MonthlyFinanceSection from '@/components/dashboard/MonthlyFinanceSection';
 import { useSaldoAwal } from '@/lib/useSaldoAwal';
 import type { InstallmentPayment } from '@/lib/installment-payments-report';
+import type { RecapPaymentRecord } from '@/lib/recap-payments-core';
 import type { WalletDoc } from '@/lib/useWallets';
 import { resolveIcon } from '@/lib/icon-registry';
 import PageLoader from '@/components/PageLoader';
@@ -73,6 +74,7 @@ interface RecapRecord {
   createdAt?: { seconds: number };
   items?: { productId?: string; qtySold: number; costPrice?: number; productName?: string }[];
   walletId?: string | null;
+  hasPayments?: boolean; // punya pembayaran sebagian → diakui per pembayaran (recapPayments), bukan lewat total rekap
 }
 interface IncomeRecord { category: string; description: string; amount: number; date: string; createdAt?: { seconds: number }; walletId?: string | null }
 interface ExpenseRecord { category: string; description: string; amount: number; date: string; sourceType?: string; excludeFromPnl?: boolean; createdAt?: { seconds: number }; walletId?: string | null }
@@ -309,6 +311,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const [capital,  setCapital]  = useState<CapitalRecord[]>([]);
   // Cicilan pesanan kredit yang diterima di periode ini (dihitung per tanggal uang diterima).
   const [installments, setInstallments] = useState<InstallmentPayment[]>([]);
+  const [recapPayments, setRecapPayments] = useState<RecapPaymentRecord[]>([]);
   const [exporting, setExporting] = useState(false);
   const [printingPdf, setPrintingPdf] = useState(false);
 
@@ -403,9 +406,11 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
       const capital  = cRes.ok ? (await cRes.json() as { entries: CapitalRecord[] }).entries : [];
       const txBefore = bRes.ok ? (await bRes.json() as { totalTx: number }).totalTx : 0;
       const adj = sRes.ok ? (await sRes.json() as { loss: number; gain: number; net: number }) : { loss: 0, gain: 0, net: 0 };
-      const payments = pRes.ok ? (await pRes.json() as { payments: InstallmentPayment[] }).payments : [];
+      const payData = pRes.ok ? (await pRes.json() as { payments: InstallmentPayment[]; recapPayments?: RecapPaymentRecord[] }) : { payments: [], recapPayments: [] };
+      const payments = payData.payments;
       if (myLoadId !== loadIdRef.current) return;
       setInstallments(payments);
+      setRecapPayments(payData.recapPayments ?? []);
       setOrders(orders);
       setRecaps(recaps);
       setIncome(income);
@@ -446,7 +451,16 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   // Pesanan yang punya cicilan (paidAmount > 0) TIDAK dihitung lewat total pesanannya — uangnya
   // diakui per cicilan di `installments` (tanggal uang diterima), sama seperti saldo dompet.
   const countedOrders = orders.filter(o => (o.status !== 'baru') && o.paymentStatus !== 'belum_lunas' && o.status !== 'dibatalkan' && !(o.paidAmount && o.paidAmount > 0));
-  const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
+  // Rekap Mitra yang punya pembayaran sebagian diakui PER PEMBAYARAN (tanggal uang diterima, nominal & HPP proporsional) —
+  // diubah jadi "rekap semu" lunas supaya semua perhitungan di bawah (omzet, HPP, beban, jurnal kas, tren) otomatis ikut.
+  const recapPaymentRecaps: RecapRecord[] = recapPayments.map(p => ({
+    locationName: p.locationName, totalRevenue: p.totalRevenue, paymentStatus: 'lunas',
+    otherCosts: p.otherCosts, totalOtherCosts: p.totalOtherCosts,
+    createdAt: { seconds: p.paidAtSeconds },
+    items: p.items.map(it => ({ productId: it.productId, productName: it.productName, qtySold: it.qtySold, costPrice: it.costPrice })),
+    walletId: p.walletId,
+  }));
+  const countedRecaps = [...recaps.filter(r => r.paymentStatus !== 'belum_lunas' && !r.hasPayments), ...recapPaymentRecaps];
   const kasirRevenue = countedOrders.filter(o => o.source !== 'portal').reduce((s, o) => s + (o.total ?? 0), 0)
     + installments.filter(p => p.source !== 'portal').reduce((s, p) => s + p.amount, 0);
   const onlineRevenue = countedOrders.filter(o => o.source === 'portal').reduce((s, o) => s + (o.total ?? 0), 0)

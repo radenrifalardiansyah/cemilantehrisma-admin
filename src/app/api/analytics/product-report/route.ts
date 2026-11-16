@@ -13,7 +13,11 @@ interface OrderDoc {
   paidFraction: number;
 }
 interface RecapItemDoc { productId?: string; productName?: string; qtySold: number; revenue?: number; hargaTitip?: number; costPrice?: number }
-interface RecapDoc { paymentStatus?: 'lunas' | 'belum_lunas'; items?: RecapItemDoc[]; createdAtSeconds: number | null }
+interface RecapDoc {
+  paymentStatus?: 'lunas' | 'belum_lunas'; items?: RecapItemDoc[]; createdAtSeconds: number | null;
+  // Porsi rekap yang sudah dibayar (0..1): lunas = 1, belum lunas tanpa cicilan = 0, rekap ber-cicilan = dibayar ÷ total (proporsional).
+  paidFraction: number;
+}
 
 interface ProductRow {
   key: string; productId: string; name: string;
@@ -54,9 +58,12 @@ const getRawProductReport = unstable_cache(
         where o.created_at >= ${wibDayStart(from).toDate()} and o.created_at <= ${wibDayEnd(to).toDate()}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
-      sql<{ payment_status: string; items: unknown; created_at: Date }[]>`
-        select payment_status, items, created_at from consignment_recaps
-        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      sql<{ payment_status: string; items: unknown; created_at: Date; total_revenue: string; paid_sum: string; pay_n: string }[]>`
+        select r.payment_status, r.items, r.created_at, r.total_revenue,
+          (select coalesce(sum(p.amount), 0) from consignment_recap_payments p where p.recap_id = r.id and not p.voided) as paid_sum,
+          (select count(*) from consignment_recap_payments p where p.recap_id = r.id and not p.voided) as pay_n
+        from consignment_recaps r
+        where r.created_at >= ${wibDayStart(from).toDate()} and r.created_at <= ${wibDayEnd(to).toDate()}
       `,
       sql<{ id: string; cost_price: string | null; bg_color: string | null }[]>`select id, cost_price, bg_color from products`,
     ]);
@@ -75,11 +82,18 @@ const getRawProductReport = unstable_cache(
           createdAtSeconds: Math.floor(r.created_at.getTime() / 1000), paidFraction,
         };
       }),
-      recaps: recapRows.map((r): RecapDoc => ({
-        paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
-        items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
-        createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
-      })),
+      recaps: recapRows.map((r): RecapDoc => {
+        const total = Number(r.total_revenue);
+        // Rekap lunas = penuh (termasuk yang lunas lewat cicilan); belum lunas ber-cicilan = proporsional; tanpa cicilan = 0.
+        const paidFraction = r.payment_status === 'lunas' ? 1
+          : Number(r.pay_n) > 0 ? (total > 0 ? Math.min(1, Number(r.paid_sum) / total) : 0) : 0;
+        return {
+          paymentStatus: r.payment_status as 'lunas' | 'belum_lunas',
+          items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
+          createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
+          paidFraction,
+        };
+      }),
     };
   },
   ['admin-analytics-product-report'],
@@ -110,7 +124,7 @@ export async function GET(req: NextRequest) {
   // PROPORSIONAL terhadap uang yang sudah masuk (paidFraction), tetap di tanggal transaksinya;
   // sisanya muncul di kartu "HPP Belum Closing > Belum dibayar" (lihat /api/closings/pending).
   const countedOrders = orders.filter(o => (o.status !== 'baru') && o.status !== 'dibatalkan' && o.paidFraction > 0);
-  const countedRecaps = recaps.filter(r => r.paymentStatus !== 'belum_lunas');
+  const countedRecaps = recaps.filter(r => r.paidFraction > 0);
 
   const keyOf = (productId: string | undefined, name: string | undefined) => productId || `__noid__${name ?? '(tanpa nama)'}`;
   const rows = new Map<string, ProductRow>();
@@ -160,12 +174,13 @@ export async function GET(req: NextRequest) {
     });
   });
   countedRecaps.forEach(rec => {
+    const f = rec.paidFraction;
     (rec.items ?? []).forEach(it => {
       const r = rowFor(it.productId, it.productName);
-      r.qtyConsignment += it.qtySold;
-      r.revenue += it.revenue ?? (it.hargaTitip ?? 0) * it.qtySold;
-      r.cogs += it.qtySold * effectiveCost(it.costPrice, it.productId);
-      addDaily(rec.createdAtSeconds, r.key, it.qtySold);
+      r.qtyConsignment += it.qtySold * f;
+      r.revenue += (it.revenue ?? (it.hargaTitip ?? 0) * it.qtySold) * f;
+      r.cogs += it.qtySold * effectiveCost(it.costPrice, it.productId) * f;
+      addDaily(rec.createdAtSeconds, r.key, it.qtySold * f);
     });
   });
 

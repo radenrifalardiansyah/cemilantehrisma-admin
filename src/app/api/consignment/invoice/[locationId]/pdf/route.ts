@@ -42,7 +42,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ loca
 
     const [shipmentRows, recapRows, settingsRaw] = await Promise.all([
       sql<ShipmentRow[]>`select * from consignment_shipments where location_id = ${locationId} and status = ${SHIPMENT_APPROVED}`,
-      sql<RecapRow[]>`select * from consignment_recaps where location_id = ${locationId}`,
+      sql<RecapRow[]>`
+        select r.*, coalesce((select sum(p.amount) from consignment_recap_payments p where p.recap_id = r.id and not p.voided), 0) as paid_amount
+        from consignment_recaps r where r.location_id = ${locationId}
+      `,
       getSettings(),
     ]);
     const settings = settingsRaw as {

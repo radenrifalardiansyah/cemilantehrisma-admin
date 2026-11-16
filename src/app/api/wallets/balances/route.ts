@@ -92,8 +92,11 @@ export async function GET(req: NextRequest) {
       union all
       select wallet_id, amount, 'order_revenue' as kind from order_payments where true ${byPaidAt}
       union all
-      select wallet_id, total_revenue as amount, 'recap_revenue' as kind from consignment_recaps
-        where payment_status != 'belum_lunas' ${byCreatedAt}
+      select wallet_id, total_revenue as amount, 'recap_revenue' as kind from consignment_recaps r
+        where payment_status != 'belum_lunas'
+          and not exists (select 1 from consignment_recap_payments p where p.recap_id = r.id and not p.voided) ${byCreatedAt}
+      union all
+      select wallet_id, amount, 'recap_revenue' as kind from consignment_recap_payments where not voided ${byPaidAt}
     ) combined
     group by wallet_id
   `;

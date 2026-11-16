@@ -49,6 +49,7 @@ import PageLoader from '@/components/PageLoader';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 import FilterSelect from '@/components/FilterSelect';
+import RecapPaymentDialog from '@/components/tabs/RecapPaymentDialog';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -211,6 +212,8 @@ interface Recap {
   totalSold: number; totalRetur: number; totalReject: number; totalRevenue: number; note?: string;
   otherCosts?: { label: string; amount: number }[]; totalOtherCosts?: number; grossRevenue?: number;
   paymentStatus?: 'lunas' | 'belum_lunas';
+  // Pembayaran sebagian (cicilan): dibayar, sisa piutang, status turunan. Kosong pada rekap lunas lama tanpa cicilan.
+  paidAmount?: number; hasPayments?: boolean; remaining?: number; paymentState?: 'belum_lunas' | 'sebagian' | 'lunas';
   warehouseId?: string; warehouseName?: string;
   createdAt?: { seconds: number };
   walletId?: string | null;
@@ -1663,9 +1666,8 @@ _${storeHeader.name}_`.trim();
   const [submittingRecap,   setSubmittingRecap]   = useState(false);
   const [recaps,        setRecaps]        = useState<Recap[]>([]);
   const [recapsLoading, setRecapsLoading] = useState(true);
-  const [markingRecapId, setMarkingRecapId] = useState<string | null>(null);
-  const [markLunasRecap, setMarkLunasRecap] = useState<Recap | null>(null);
-  const [markLunasRecapWalletId, setMarkLunasRecapWalletId] = useState('');
+  // Dialog pembayaran sebagian / riwayat pembayaran sebuah rekap (dirender di luar pembungkus animate-fade-up).
+  const [payRecap, setPayRecap] = useState<Recap | null>(null);
   const [showBulkMarkLunasRecaps, setShowBulkMarkLunasRecaps] = useState(false);
   const [bulkMarkLunasWalletId, setBulkMarkLunasWalletId] = useState('');
   const [bulkMarkingLunasRecaps, setBulkMarkingLunasRecaps] = useState(false);
@@ -1819,23 +1821,6 @@ _${storeHeader.name}_`.trim();
       await Promise.all([loadRecaps(), loadLocations()]);
       refetchBalances();
     } finally { setSubmittingRecap(false); }
-  };
-
-  const markRecapLunas = async (id: string, walletId: string) => {
-    setMarkingRecapId(id);
-    const r = await fetch(`${API}/api/consignment/recap/${id}`, {
-      method: 'PATCH', headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletId }),
-    });
-    if (r.ok) { toast.success('Rekap ditandai lunas.'); await loadRecaps(); refetchBalances(); }
-    else toast.error('Gagal menandai lunas.');
-    setMarkingRecapId(null);
-  };
-  const confirmMarkRecapLunas = async () => {
-    if (!markLunasRecap || !markLunasRecapWalletId) return;
-    await markRecapLunas(markLunasRecap.id, markLunasRecapWalletId);
-    setMarkLunasRecap(null);
-    setMarkLunasRecapWalletId('');
   };
 
   const exportRecapsExcel = async (rows: Recap[], label: string) => {
@@ -2186,6 +2171,13 @@ _${storeHeader.name}_`.trim();
     const itemLines = data.items
       .map((it, i) => `${i + 1}. ${it.productName}\n   jual ${it.qtySold}${it.qtyRetur ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject ? `, reject ${it.qtyReject}` : ''} · ${formatRp(it.revenue)}`)
       .join('\n');
+    // Rekap yang sudah dicicil: yang ditagih adalah SISA piutang (bukan total), dan pembayaran yang sudah masuk disebutkan.
+    const unpaidInGroup = recaps.filter(r => group.recapIds.includes(r.id) && r.paymentStatus === 'belum_lunas');
+    const paidSoFar = unpaidInGroup.reduce((a, r) => a + (r.paidAmount ?? 0), 0);
+    const dueAmount = paidSoFar > 0 ? unpaidInGroup.reduce((a, r) => a + (r.remaining ?? r.totalRevenue), 0) : data.totalRevenue;
+    const dueLines = paidSoFar > 0
+      ? `Sudah dibayar : ${formatRp(paidSoFar)}\n*Sisa Tagihan : ${formatRp(dueAmount)}*`
+      : `*Total Tagihan : ${formatRp(dueAmount)}*`;
     const message = `*${storeHeader.name.toUpperCase()}*
 ${storeHeader.address ? `${storeHeader.address}\n` : ''}${storeHeader.phone ? `${storeHeader.phone}\n` : ''}${SEP}
 
@@ -2196,7 +2188,7 @@ Periode : ${data.date}
 ${SEP}
 ${itemLines}
 ${SEP}
-*Total Tagihan : ${formatRp(data.totalRevenue)}*
+${dueLines}
 ${SEP}
 Nota Rekap PDF:
 ${pdfUrl}
@@ -2275,6 +2267,23 @@ _${storeHeader.name}_`.trim();
     else toast.error(`Hanya ${okCount} dari ${ids.length} rekap berhasil ditandai lunas.`);
     setBulkMarkingLunasRecaps(false);
   };
+
+  // Badge status bayar sebuah rekap: Belum Lunas / Sebagian (sudah ada cicilan). Rekap lunas tidak diberi badge (seperti dulu).
+  const recapStatusBadge = (r: Recap, extra = '') => {
+    if (r.paymentStatus !== 'belum_lunas') return null;
+    return r.paymentState === 'sebagian'
+      ? <span className={`badge badge-blue ${extra}`}>Sebagian</span>
+      : <span className={`badge badge-amber ${extra}`}>Belum Lunas</span>;
+  };
+  // Tombol ikon "Lihat Detail" (sama dengan Pesanan / Hutang Supplier): dialog pembayaran + riwayat. Hanya untuk rekap yang
+  // belum lunas atau punya cicilan — rekap lunas lama tanpa cicilan tidak punya apa-apa untuk ditampilkan.
+  const recapDetailButton = (r: Recap) => (r.paymentStatus === 'belum_lunas' || r.hasPayments) ? (
+    <Tooltip label="Lihat Detail">
+      <button aria-label="Lihat Detail" onClick={() => setPayRecap(r)} className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+        <ChevronRight size={12} />
+      </button>
+    </Tooltip>
+  ) : null;
 
   const filteredRecaps = recaps.filter(r => {
     if (recapOnlyBelumLunas && r.paymentStatus !== 'belum_lunas') return false;
@@ -3336,19 +3345,24 @@ _${storeHeader.name}_`.trim();
                                       {locations.find(l => l.id === r.locationId)?.code}
                                     </span>
                                   )}
-                                  {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber">Belum Lunas</span>}
+                                  {recapStatusBadge(r)}
                                   {r.totalReject > 0 && <span className="badge badge-red" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
-                                  <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
-                                  {r.paymentStatus === 'belum_lunas' && (
-                                    <button onClick={() => { setMarkLunasRecap(r); setMarkLunasRecapWalletId(r.walletId ?? ''); }} disabled={markingRecapId === r.id}
+                                  <span className="text-sm font-bold tabular" style={{ color: r.paymentState === 'sebagian' ? 'var(--warning, #D97706)' : 'var(--success)' }}>{formatRp(r.paymentStatus === 'belum_lunas' && r.remaining !== undefined ? r.remaining : r.totalRevenue)}</span>
+                                  {r.paymentStatus === 'belum_lunas' && can('edit') && (
+                                    <button onClick={() => setPayRecap(r)}
                                       className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                                      {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
+                                      Bayar
                                     </button>
                                   )}
                                 </div>
                               </div>
+                              {r.paymentState === 'sebagian' && (
+                                <p className="text-[11px] mt-0.5 text-right tabular" style={{ color: 'var(--text-muted)' }}>
+                                  dibayar {formatRp(r.paidAmount ?? 0)} dari {formatRp(r.totalRevenue)} · sisa piutang
+                                </p>
+                              )}
                               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                                 {formatDate(r.createdAt?.seconds)} · {r.totalSold} pcs terjual{r.totalRetur > 0 ? ` · ${r.totalRetur} pcs retur` : ''}{r.totalReject > 0 ? ` · ${r.totalReject} pcs reject` : ''}
                                 {r.warehouseName ? ` · ke ${r.warehouseName}` : ''}
@@ -3384,6 +3398,7 @@ _${storeHeader.name}_`.trim();
                                   {deletingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                 </button>
                               </Tooltip>
+                              {recapDetailButton(r)}
                             </div>
                           </div>
                           {auditHistoryId === r.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={r.id} />}
@@ -3409,7 +3424,7 @@ _${storeHeader.name}_`.trim();
                                   {locations.find(l => l.id === r.locationId)?.code}
                                 </span>
                               )}
-                              {r.paymentStatus === 'belum_lunas' && <span className="badge badge-amber flex-shrink-0">Belum Lunas</span>}
+                              {recapStatusBadge(r, 'flex-shrink-0')}
                               {r.totalReject > 0 && <span className="badge badge-red flex-shrink-0" style={{ gap: 4 }}><Ban size={9} /> {r.totalReject} pcs reject</span>}
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 <Tooltip label="Cetak Rekap PDF">
@@ -3445,13 +3460,20 @@ _${storeHeader.name}_`.trim();
                               {r.items.map(it => `${it.productName} (jual ${it.qtySold}${it.qtyRetur > 0 ? `, retur ${it.qtyRetur}` : ''}${it.qtyReject > 0 ? `, reject ${it.qtyReject}` : ''})`).join(', ')}
                             </p>
                             <div className="flex items-center justify-between mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
-                              <span className="text-sm font-bold tabular" style={{ color: 'var(--success)' }}>{formatRp(r.totalRevenue)}</span>
-                              {r.paymentStatus === 'belum_lunas' && (
-                                <button onClick={() => { setMarkLunasRecap(r); setMarkLunasRecapWalletId(r.walletId ?? ''); }} disabled={markingRecapId === r.id}
-                                  className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
-                                  {markingRecapId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Tandai Lunas'}
-                                </button>
-                              )}
+                              <div className="min-w-0">
+                                <span className="text-sm font-bold tabular" style={{ color: r.paymentState === 'sebagian' ? 'var(--warning, #D97706)' : 'var(--success)' }}>{formatRp(r.paymentStatus === 'belum_lunas' && r.remaining !== undefined ? r.remaining : r.totalRevenue)}</span>
+                                {r.paymentState === 'sebagian' && (
+                                  <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>sisa · dibayar {formatRp(r.paidAmount ?? 0)} dari {formatRp(r.totalRevenue)}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {r.paymentStatus === 'belum_lunas' && can('edit') && (
+                                  <button onClick={() => setPayRecap(r)} className="btn-ghost px-2.5 py-1 text-xs font-semibold" style={{ color: 'var(--success)' }}>
+                                    Bayar
+                                  </button>
+                                )}
+                                {recapDetailButton(r)}
+                              </div>
                             </div>
                           </div>
                           {auditHistoryId === r.id && <RecordHistoryPanel creds={creds} entity="consignment" entityId={r.id} />}
@@ -3736,40 +3758,14 @@ _${storeHeader.name}_`.trim();
         />
       )}
 
-      {markLunasRecap && (
-        <Modal onClose={() => setMarkLunasRecap(null)} className="modal-sm">
-          <div className="modal-accent" />
-          <span className="modal-handle" />
-          <div className="modal-header">
-            <div className="modal-header-left">
-              <div className="modal-icon"><PackageCheck size={17} /></div>
-              <div>
-                <p className="modal-title">Tandai Lunas</p>
-                <p className="modal-subtitle">Rekap {markLunasRecap.locationName}</p>
-              </div>
-            </div>
-            <Tooltip label="Tutup"><button onClick={() => setMarkLunasRecap(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
-          </div>
-          <Field label="Uang masuk ke dompet mana?" required className="modal-body">
-            <SearchSelect value={markLunasRecapWalletId} onChange={setMarkLunasRecapWalletId}
-              options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
-            {markLunasRecapWalletId && (
-              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                Saldo saat ini: {formatRp(walletBalances[markLunasRecapWalletId] ?? 0)}
-              </p>
-            )}
-          </Field>
-          <div className="modal-footer">
-            <button onClick={() => setMarkLunasRecap(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>
-              Batal
-            </button>
-            <button onClick={confirmMarkRecapLunas} disabled={!markLunasRecapWalletId || markingRecapId === markLunasRecap.id}
-              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
-              {markingRecapId === markLunasRecap.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              Tandai Lunas
-            </button>
-          </div>
-        </Modal>
+      {payRecap && (
+        <RecapPaymentDialog
+          creds={creds}
+          recap={{ id: payRecap.id, locationName: payRecap.locationName, total: payRecap.totalRevenue, remaining: payRecap.remaining ?? (payRecap.paymentStatus === 'belum_lunas' ? payRecap.totalRevenue : 0), walletId: payRecap.walletId ?? null }}
+          canEdit={can('edit')}
+          onClose={() => setPayRecap(null)}
+          onDone={async () => { await loadRecaps(); refetchBalances(); }}
+        />
       )}
 
       {showBulkMarkLunasRecaps && (
@@ -3956,7 +3952,7 @@ _${storeHeader.name}_`.trim();
                 <label className="field-label">Status Pembayaran</label>
                 <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
                   {(['lunas', 'belum_lunas'] as const).map(s => (
-                    <button key={s} type="button" onClick={() => setRecapPaymentStatus(s)}
+                    <button key={s} type="button" onClick={() => setRecapPaymentStatus(s)} disabled={!!editingRecap?.hasPayments}
                       className="flex-1 px-3.5 py-2.5 text-xs font-bold transition-all"
                       style={recapPaymentStatus === s ? { background: 'linear-gradient(135deg,#E8821A,#C96018)', color: 'white' } : { color: 'var(--text-muted)' }}>
                       {s === 'lunas' ? 'Lunas' : 'Belum Lunas'}
@@ -3965,7 +3961,12 @@ _${storeHeader.name}_`.trim();
                 </div>
                 {recapPaymentStatus === 'belum_lunas' && (
                   <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                    Belum ikut dihitung sebagai pendapatan di Laporan Keuangan sampai ditandai Lunas (mitra sudah setor).
+                    Uang baru ikut dihitung sebagai pendapatan di Laporan Keuangan saat mitra membayar — bisa dicicil lewat tombol Bayar di daftar rekap.
+                  </p>
+                )}
+                {editingRecap?.hasPayments && (
+                  <p className="text-[11px] mt-1.5 font-semibold" style={{ color: 'var(--danger)' }}>
+                    Rekap ini sudah punya pembayaran/cicilan: barang, qty, dan biaya lain-lain terkunci (hanya catatan, tanggal, dan jatuh tempo yang bisa diubah). Batalkan pembayarannya dulu bila perlu mengubahnya.
                   </p>
                 )}
               </div>

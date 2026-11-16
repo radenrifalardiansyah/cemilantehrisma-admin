@@ -15,6 +15,7 @@ interface RecapDoc {
   locationId?: string; locationName?: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAtSeconds: number | null;
   totalSold?: number; totalRetur?: number; totalReject?: number; totalRevenue?: number;
+  paidAmount?: number; // pembayaran sebagian aktif — piutang rekap belum lunas = totalRevenue - paidAmount
   items?: { productId?: string; productName?: string; qtySold: number; revenue?: number }[];
 }
 interface StockDoc { locationId?: string; productId?: string; stockQty?: number; hargaTitip?: number }
@@ -40,10 +41,11 @@ const getRawConsignmentAnalytics = unstable_cache(
           and status = ${SHIPMENT_APPROVED}
       `,
       // `consignment_recaps` pindah ke Postgres (Tahap 13 migrasi Fase 2).
-      sql<{ location_id: string; location_name: string; payment_status: string; created_at: Date; total_sold: string; total_retur: string; total_reject: string; total_revenue: string; items: unknown }[]>`
-        select location_id, location_name, payment_status, created_at, total_sold, total_retur, total_reject, total_revenue, items
-        from consignment_recaps
-        where created_at >= ${wibDayStart(from).toDate()} and created_at <= ${wibDayEnd(to).toDate()}
+      sql<{ location_id: string; location_name: string; payment_status: string; created_at: Date; total_sold: string; total_retur: string; total_reject: string; total_revenue: string; items: unknown; paid_amount: string }[]>`
+        select r.location_id, r.location_name, r.payment_status, r.created_at, r.total_sold, r.total_retur, r.total_reject, r.total_revenue, r.items,
+          (select coalesce(sum(p.amount), 0) from consignment_recap_payments p where p.recap_id = r.id and not p.voided) as paid_amount
+        from consignment_recaps r
+        where r.created_at >= ${wibDayStart(from).toDate()} and r.created_at <= ${wibDayEnd(to).toDate()}
       `,
       sql<{ location_id: string | null; product_id: string | null; stock_qty: string; harga_titip: string | null }[]>`
         select location_id, product_id, stock_qty, harga_titip from consignment_stock
@@ -63,6 +65,7 @@ const getRawConsignmentAnalytics = unstable_cache(
         createdAtSeconds: Math.floor(r.created_at.getTime() / 1000),
         totalSold: Number(r.total_sold), totalRetur: Number(r.total_retur),
         totalReject: Number(r.total_reject), totalRevenue: Number(r.total_revenue),
+        paidAmount: Number(r.paid_amount) || 0,
         items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
       })),
       stock: stockRows.map(r => ({
@@ -127,7 +130,11 @@ export async function GET(req: NextRequest) {
     a.jual += r.totalSold ?? 0;
     a.retur += r.totalRetur ?? 0;
     a.reject += r.totalReject ?? 0;
-    if (r.paymentStatus === 'belum_lunas') { a.belumLunasAmount += r.totalRevenue ?? 0; a.belumLunasCount += 1; }
+    // Piutang = SISA (rekap yang sudah dicicil: total - dibayar); bagian yang sudah dibayar dihitung ke "lunas" (jumlah tetap = total rekap).
+    if (r.paymentStatus === 'belum_lunas') {
+      const paid = Math.min(r.paidAmount ?? 0, r.totalRevenue ?? 0);
+      a.belumLunasAmount += (r.totalRevenue ?? 0) - paid; a.belumLunasCount += 1; a.lunasAmount += paid;
+    }
     else { a.lunasAmount += r.totalRevenue ?? 0; a.lunasCount += 1; }
 
     (r.items ?? []).forEach(it => {
