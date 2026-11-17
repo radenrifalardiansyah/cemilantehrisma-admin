@@ -66,9 +66,11 @@ function exec(s: FakeState, text: string, v: unknown[]): unknown[] {
     return [];
   }
   if (text.startsWith('update consignment_stock set stock_qty')) {
-    s.cs[v[1] as string] = { ...(s.cs[v[1] as string] ?? { harga: null }), qty: v[0] as number };
+    // values: qty, harga, key (reverse kini juga menulis harga_titip hasil keluaran kontribusi kiriman)
+    s.cs[v[2] as string] = { ...(s.cs[v[2] as string] ?? { harga: null }), qty: v[0] as number, harga: v[1] as number };
     return [];
   }
+  if (text.startsWith('select items from consignment_shipments')) return []; // kiriman approved lain (rentang harga reverse)
   throw new Error(`SQL tak dikenal di fake: ${text}`);
 }
 

@@ -45,7 +45,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
       if (shipment.status === 'approved') {
         await reverseShipmentEffect(pgTx, {
-          locationId: shipment.locationId ?? '', locationName: shipment.locationName ?? '',
+          id, locationId: shipment.locationId ?? '', locationName: shipment.locationName ?? '',
           warehouseId: shipment.warehouseId, warehouseName: shipment.warehouseName, items: shipment.items,
         }, { context: 'delete' });
       }
@@ -139,7 +139,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           ],
         });
         await reverseShipmentEffect(pgTx, {
-          locationId: oldShipment.locationId ?? '', locationName: oldShipment.locationName ?? '',
+          id, locationId: oldShipment.locationId ?? '', locationName: oldShipment.locationName ?? '',
           warehouseId: oldShipment.warehouseId, warehouseName: oldShipment.warehouseName, items: oldItems,
         }, { context: 'edit' });
         await applyShipmentEffect(pgTx, {

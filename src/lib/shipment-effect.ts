@@ -1,4 +1,5 @@
 import type postgres from 'postgres';
+import { parseJsonb } from '@/lib/db';
 import { ShipmentActionError } from '@/lib/shipment-status';
 import { writeStockLedgerEntryPg, stockLabel, captureAndSetWs, readWarehouseShortagesPg, type WsSnapshot } from '@/lib/stock-pg';
 
@@ -16,6 +17,8 @@ type PgTx = postgres.ISql<{}>;
 
 export interface ShipmentEffectItem { productId: string; productName: string; qty: number; hargaTitip: number }
 export interface ShipmentEffectInput {
+  // id kiriman yang dibalik — dikecualikan saat mencari harga kiriman approved LAIN (jepit rentang di reverse).
+  id?: string;
   locationId: string;
   locationName: string;
   warehouseId?: string | null;
@@ -127,13 +130,54 @@ export async function reverseShipmentEffect(pgTx: PgTx, s: ShipmentEffectInput, 
   const stockKeys = items.map(it => stockKeyOf(s.locationId, it.productId));
   const { productById, stockById } = await lockShipmentRows(pgTx, { productIds, warehouseId: s.warehouseId, stockKeys });
 
-  const curStock = new Map([...stockById].map(([id, r]) => [id, Number(r.stock_qty) || 0]));
+  // Harga kiriman approved LAIN di lokasi yang sama per produk (rentang harga yang sah untuk stok sisa).
+  // Rekap hanya mengurangi qty dan tidak mengubah harga_titip, jadi rumus mentah di bawah bisa meleset
+  // bila sebagian stok kiriman yang dibalik sudah terjual — hasilnya dijepit ke rentang ini.
+  const otherPrices = new Map<string, { lo: number; hi: number; wSum: number; qSum: number }>();
+  if (s.locationId && productIds.length > 0) {
+    const rows = await pgTx<{ items: unknown }[]>`
+      select items from consignment_shipments where location_id = ${s.locationId} and status = 'approved' and id <> ${s.id ?? ''}
+    `;
+    const wanted = new Set(productIds);
+    for (const r of rows) {
+      for (const o of (parseJsonb(r.items as string | ShipmentEffectItem[] | null) ?? [])) {
+        const price = Number(o.hargaTitip), q = Number(o.qty);
+        if (!wanted.has(o.productId) || !Number.isFinite(price) || price < 0) continue;
+        const k = stockKeyOf(s.locationId, o.productId);
+        const cur = otherPrices.get(k) ?? { lo: price, hi: price, wSum: 0, qSum: 0 };
+        cur.lo = Math.min(cur.lo, price); cur.hi = Math.max(cur.hi, price);
+        if (Number.isFinite(q) && q > 0) { cur.wSum += q * price; cur.qSum += q; }
+        otherPrices.set(k, cur);
+      }
+    }
+  }
+
+  // harga_titip = rata-rata tertimbang harga kiriman (lihat applyShipmentEffect), jadi saat sebuah kiriman
+  // dibalik, kontribusi harganya dikeluarkan: raw = (Q*H - q*p) / (Q-q). Cabang:
+  //  (a) sisa qty = 0 → harga 0.
+  //  (b) ada kiriman lain → raw dijepit ke [min,max] harga kiriman lain (raw tak finite → H lama dijepit sama).
+  //  (c) tak ada kiriman lain, sisa > 0 (stok dari sumber lain) → raw bila finite & > 0, selain itu H lama.
+  //  (d) tak pernah menulis NaN/negatif/-0. Baris duplikat diproses berurutan per kunci.
+  const curStock = new Map([...stockById].map(([id, r]) => [id, { qty: Number(r.stock_qty) || 0, harga: r.harga_titip != null ? Number(r.harga_titip) || 0 : 0 }]));
   const shortages: string[] = [];
   items.forEach((it, i) => {
     const key = stockKeys[i];
-    const cur = curStock.get(key) ?? 0;
-    if (cur < it.qty) shortages.push(`${it.productName} (stok titip tersisa ${cur}, butuh ${it.qty})`);
-    curStock.set(key, cur - it.qty);
+    const cur = curStock.get(key) ?? { qty: 0, harga: 0 };
+    if (cur.qty < it.qty) shortages.push(`${it.productName} (stok titip tersisa ${cur.qty}, butuh ${it.qty})`);
+    const remaining = cur.qty - it.qty;
+    let harga = 0;
+    if (remaining > 0) {
+      const raw = (cur.qty * cur.harga - it.qty * (Number(it.hargaTitip) || 0)) / remaining;
+      const others = otherPrices.get(key);
+      const clamp = (v: number) => others ? Math.min(others.hi, Math.max(others.lo, v)) : v;
+      if (Number.isFinite(raw)) harga = others ? clamp(raw) : (raw > 0 ? raw : cur.harga);
+      else harga = clamp(cur.harga);
+      // Bulatkan ke 1e-6 (buang noise floating point) tapi tetap di dalam rentang jepit.
+      harga = clamp(Math.round(harga * 1e6) / 1e6);
+      if (!Number.isFinite(harga) || harga <= 0) harga = others ? clamp(Math.max(0, cur.harga)) : Math.max(0, cur.harga);
+      if (!(harga > 0)) harga = 0; // buang -0/NaN
+    }
+    curStock.set(key, { qty: remaining, harga });
   });
   if (shortages.length > 0) {
     throw new ShipmentActionError(opts.context === 'delete'
@@ -154,7 +198,8 @@ export async function reverseShipmentEffect(pgTx: PgTx, s: ShipmentEffectInput, 
       await pgTx`update products set stock_qty = ${newQty}, stock = ${stockLabel(productRow.open_po, newQty)}, updated_at = now() where id = ${it.productId}`;
     }
     const key = stockKeys[i];
-    await pgTx`update consignment_stock set stock_qty = ${curStock.get(key) ?? 0}, updated_at = now() where id = ${key}`;
+    const fin = curStock.get(key) ?? { qty: 0, harga: 0 };
+    await pgTx`update consignment_stock set stock_qty = ${fin.qty}, harga_titip = ${fin.harga}, updated_at = now() where id = ${key}`;
     // (curStock sudah memuat hasil pengurangan seluruh baris duplikat; update berulang menulis nilai akhir yang sama)
 
     if (s.warehouseId) {
