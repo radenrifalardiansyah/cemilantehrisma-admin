@@ -32,6 +32,8 @@ import ShipmentNotePDF, { ShipmentNotePDFPage } from '@/lib/pdf/ShipmentNotePDF'
 import { buildMitraInvoiceData } from '@/lib/mitra-invoice';
 import MitraInvoicePDF, { type MitraInvoiceData } from '@/lib/pdf/MitraInvoicePDF';
 import ShipmentHistoryPDF from '@/lib/pdf/ShipmentHistoryPDF';
+import { buildShipmentPlanWaMessage } from '@/lib/shipment-plan-wa';
+import { shoppingWaFits, shoppingWaUrl } from '@/lib/shopping-wa';
 import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
 import { groupAndMergeShipments } from '@/lib/consignment-shipment-merge';
@@ -1501,6 +1503,21 @@ Terima kasih!
 _${storeHeader.name}_`.trim();
 
     window.open(`https://wa.me/${normalizePhone(phone)}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  // Rencana kirim stok (draf terpilih) → satu pesan WA ke nomor WA toko: item + pcs per mitra (tanpa harga),
+  // total per produk dan total semua — untuk tahu berapa pcs yang harus dibuat dan dikirim ke mitra mana.
+  const sendShipmentPlanWhatsApp = () => {
+    const drafts = shipments.filter(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'draft');
+    if (drafts.length === 0) { toast.error('Pilih minimal satu pengiriman berstatus draft.'); return; }
+    const message = buildShipmentPlanWaMessage(drafts.map(s => ({
+      locationId: s.locationId, locationName: s.locationName, note: s.note,
+      items: s.items.map(it => ({ productId: it.productId, productName: it.productName, qty: it.qty })),
+    })), { storeName: storeHeader.name });
+    if (!shoppingWaFits(message)) { toast.error('Pesan terlalu panjang untuk WhatsApp. Pilih lebih sedikit draft.'); return; }
+    const phone = storeInfo.whatsapp?.trim();
+    if (!phone) toast.success('Nomor WhatsApp toko belum diisi di Pengaturan — pilih kontak di WhatsApp.');
+    window.open(shoppingWaUrl(phone, message), '_blank');
   };
 
   const bulkDeleteShipments = async () => {
@@ -4280,6 +4297,14 @@ _${storeHeader.name}_`.trim();
                 style={{ background: 'var(--success)', color: '#fff' }}>
                 {bulkApprovingShipments ? <Loader2 size={13} className="animate-spin" /> : <CircleCheck size={13} />}
                 Approve
+              </button>
+            )}
+            {shipments.some(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'draft') && (
+              <button onClick={sendShipmentPlanWhatsApp}
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+                style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }} title="Kirim rencana kirim stok (tanpa harga) ke WhatsApp toko">
+                <MessageCircle size={13} />
+                WA Rencana Kirim
               </button>
             )}
             <button onClick={() => exportShipmentsExcel(shipments.filter(s => selectedShipments.has(s.id)), 'terpilih')} disabled={exportingShipments || !shipments.some(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'approved')}
