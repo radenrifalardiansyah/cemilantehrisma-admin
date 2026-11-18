@@ -289,7 +289,9 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const filtered = wallets
     .filter(w => !search
       || w.name.toLowerCase().includes(search.toLowerCase())
-      || WALLET_TYPE_LABEL[w.type].toLowerCase().includes(search.toLowerCase()));
+      || WALLET_TYPE_LABEL[w.type].toLowerCase().includes(search.toLowerCase()))
+    // Dompet nonaktif di paling bawah; urutan asal tetap dalam tiap kelompok (sort stabil).
+    .sort((x, y) => Number(y.isActive) - Number(x.isActive));
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage   = Math.min(page, totalPages);
   const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
