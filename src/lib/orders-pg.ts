@@ -41,6 +41,9 @@ export interface OrderRow {
   wallet_id: string | null;
   shift_id: string | null;
   due_date?: string | null;
+  fulfillment_status?: string | null;
+  shipping_courier?: string | null;
+  tracking_no?: string | null;
   voucher_code?: string | null;
   is_free?: boolean | null;
   free_reason?: string | null;
@@ -93,6 +96,9 @@ export function rowToOrder(r: OrderRow) {
     walletId: r.wallet_id,
     shiftId: r.shift_id ?? undefined,
     dueDate: r.due_date ?? undefined,
+    fulfillmentStatus: r.fulfillment_status ?? undefined,
+    shippingCourier: r.shipping_courier ?? undefined,
+    trackingNo: r.tracking_no ?? undefined,
     voucherCode: r.voucher_code ?? undefined,
     isFree: r.is_free === true,
     freeReason: r.free_reason ?? undefined,

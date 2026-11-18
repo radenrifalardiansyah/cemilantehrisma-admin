@@ -16,6 +16,7 @@ import { isValidDueDate } from '@/lib/receivable';
 import { paidAmountOf } from '@/lib/order-payments-pg';
 import { voidStoreConsignSaleForOrder } from '@/lib/store-consign';
 import { orderClosingLock } from '@/lib/closing';
+import { hasFulfillmentKeys, validateFulfillmentUpdate } from '@/lib/order-fulfillment';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -63,7 +64,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const guard = await requirePermission(req, 'orders', 'edit');
   if (guard instanceof Response) return guard;
   const { id } = await ctx.params;
-  const body = await req.json() as { status?: string; paymentStatus?: string; walletId?: string | null; items?: OrderItemInput[] } & Partial<OrderEditInput>;
+  const body = await req.json() as { status?: string; paymentStatus?: string; walletId?: string | null; rejectProof?: boolean; items?: OrderItemInput[] } & Partial<OrderEditInput>;
   const qtyError = invalidQtyMessage(body.items);
   if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const db = getDb();
@@ -74,6 +75,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   // dikunci (`for update`) di awal, jadi tidak perlu lagi baca-ulang "fresh" di tengah untuk cegah
   // race seperti versi Firestore sebelumnya, dan tidak ada lagi kompensasi cross-database.
   if (Array.isArray(body.items)) {
+    if (hasFulfillmentKeys(body)) return Response.json({ error: 'Status layanan tidak boleh digabung dengan edit item.' }, { status: 400 });
     const data = body as OrderEditInput;
     let txResult: { orderBefore: ReturnType<typeof rowToOrder>; orderAfter: Record<string, unknown>; stockDeltas: Map<string, number> };
 
@@ -213,6 +215,85 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return Response.json({ ok: true });
   }
 
+  // Status layanan/pengiriman pesanan website (diproses/dikirim/siap diambil). Jalur terpisah: hanya
+  // menyentuh 3 kolom fulfillment — TIDAK memotong stok dan tidak mengubah nilai uang/status pesanan,
+  // jadi kunci Closing (orderClosingLock) sengaja tidak dicek di sini. Tidak boleh digabung dengan status/pembayaran.
+  if (hasFulfillmentKeys(body)) {
+    if (body.status !== undefined || body.paymentStatus !== undefined || body.walletId !== undefined) {
+      return Response.json({ error: 'Status layanan harus diubah terpisah dari status pesanan/pembayaran.' }, { status: 400 });
+    }
+    let fulfillmentBefore: ReturnType<typeof rowToOrder>;
+    let columns: { fulfillment_status: string; shipping_courier: string | null; tracking_no: string | null };
+    try {
+      ({ before: fulfillmentBefore, columns } = await sql.begin(async pgTx => {
+        const [orderRow] = await pgTx<OrderRow[]>`select * from orders where id = ${id} for update`;
+        if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
+        const order = rowToOrder(orderRow);
+        const result = validateFulfillmentUpdate(
+          { source: order.source, status: order.status, deliveryMethod: order.deliveryMethod, fulfillmentStatus: order.fulfillmentStatus },
+          body as { fulfillmentStatus?: unknown; shippingCourier?: unknown; trackingNo?: unknown },
+        );
+        if (!result.ok) throw new OrderValidationError(result.error);
+        const updateCols: Record<string, unknown> = { ...result.columns, updated_at: new Date() };
+        await pgTx`update orders set ${pgTx(updateCols, ...Object.keys(updateCols))} where id = ${id}`;
+        return { before: order, columns: result.columns };
+      }));
+    } catch (err) {
+      if (err instanceof OrderNotFoundError) return Response.json({ error: err.message }, { status: 404 });
+      if (err instanceof OrderValidationError) return Response.json({ error: err.message }, { status: 400 });
+      return Response.json({ error: err instanceof Error ? err.message : 'Gagal memperbarui status layanan.' }, { status: 400 });
+    }
+    try {
+      await logHistory(db, {
+        entity: 'orders', entityId: id, entityLabel: `Pesanan ${fulfillmentBefore.invoiceNo ?? id}`,
+        action: 'update', actor: guard, before: fulfillmentBefore,
+        after: { fulfillmentStatus: columns.fulfillment_status, shippingCourier: columns.shipping_courier, trackingNo: columns.tracking_no },
+      });
+    } catch (err) {
+      console.error('Failed to write history for order fulfillment update', err);
+    }
+    return Response.json({ ok: true });
+  }
+
+  // Tolak bukti transfer pelanggan (pesanan website): kosongkan bukti saja (metode/bank dibiarkan: itu pilihan pelanggan saat checkout) supaya pelanggan kembali
+  // melihat "belum bayar". Hanya untuk pesanan aktif, belum lunas, tanpa cicilan, dan belum masuk Closing.
+  if (body.rejectProof === true) {
+    if (body.status !== undefined || body.paymentStatus !== undefined || body.walletId !== undefined) {
+      return Response.json({ error: 'Tolak bukti harus dilakukan terpisah dari perubahan status.' }, { status: 400 });
+    }
+    let proofBefore: ReturnType<typeof rowToOrder>;
+    try {
+      proofBefore = await sql.begin(async pgTx => {
+        const [orderRow] = await pgTx<OrderRow[]>`select * from orders where id = ${id} for update`;
+        if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
+        const order = rowToOrder(orderRow);
+        if (order.status === 'dibatalkan') throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diubah.');
+        if (order.paymentStatus === 'lunas') throw new OrderValidationError('Pesanan sudah lunas — bukti tidak bisa ditolak.');
+        if (!order.transferProofUrl) throw new OrderValidationError('Pesanan ini tidak punya bukti transfer.');
+        const closingLock = await orderClosingLock(pgTx, id);
+        if (closingLock) throw new OrderValidationError(closingLock);
+        if (await paidAmountOf(pgTx, id) > 0) throw new OrderValidationError('Pesanan ini sudah ada pembayaran cicilan — bukti tidak bisa ditolak.');
+        await pgTx`update orders set transfer_proof_url = null, updated_at = ${new Date()} where id = ${id}`;
+        return order;
+      });
+    } catch (err) {
+      if (err instanceof OrderNotFoundError) return Response.json({ error: err.message }, { status: 404 });
+      if (err instanceof OrderValidationError) return Response.json({ error: err.message }, { status: 400 });
+      return Response.json({ error: err instanceof Error ? err.message : 'Gagal menolak bukti.' }, { status: 400 });
+    }
+    try {
+      await logHistory(db, {
+        entity: 'orders', entityId: id, entityLabel: `Pesanan ${proofBefore.invoiceNo ?? id}`,
+        action: 'update', actor: guard, before: proofBefore,
+        after: { transferProofUrl: null, note: 'Bukti transfer ditolak admin' },
+      });
+    } catch (err) {
+      console.error('Failed to write history for order proof rejection', err);
+    }
+    revalidateTag('admin-analytics', { expire: 0 });
+    return Response.json({ ok: true });
+  }
+
   // Update status/paymentStatus saja (batalkan, tandai selesai, tandai lunas)
   const { status, paymentStatus, walletId } = body;
   // Hanya status yang dikenali — status sembarang (typo) membuat pesanan lepas dari semua filter,
@@ -234,6 +315,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const order = rowToOrder(orderRow);
       if (status !== undefined && order.status === 'dibatalkan') {
         throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diubah statusnya lagi.');
+      }
+      if (status === 'baru' && order.status === 'selesai') {
+        throw new OrderValidationError('Pesanan yang sudah selesai tidak bisa dikembalikan ke status baru.');
+      }
+      if (paymentStatus !== undefined && order.status === 'dibatalkan') {
+        throw new OrderValidationError('Pesanan yang sudah dibatalkan tidak bisa diubah status pembayarannya.');
       }
       const paidSoFar = await paidAmountOf(pgTx, id);
       // Pesanan yang sudah masuk Closing terkunci. Satu-satunya yang boleh: melunasi SISA cicilan (menambah baris

@@ -30,6 +30,11 @@ import { dueInfo, formatDueDate } from '@/lib/receivable';
 import { computeReturn } from '@/lib/order-return';
 import { paymentProblem } from '@/lib/installment';
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
+import { SHIPPING_COURIERS } from '@/lib/shipping-couriers';
+import {
+  FULFILLMENT_LABEL, TRACKING_NO_MAX, buildFulfillmentMessage, nextFulfillmentActions, whatsAppStateOf,
+  isFulfillmentStatus, type FulfillmentStatus,
+} from '@/lib/order-fulfillment';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -57,6 +62,7 @@ interface Order {
   stockRestored?: boolean;
   walletId?: string | null;
   dueDate?: string;
+  fulfillmentStatus?: FulfillmentStatus; shippingCourier?: string; trackingNo?: string;
   returns?: { at: string; amount: number }[];
   paidAmount?: number;
 }
@@ -82,6 +88,20 @@ function StatusBadge({ status }: { status: string }) {
   if (status === 'selesai') return <span className="badge badge-green">Selesai</span>;
   return null;
 }
+
+// Status layanan pesanan Website (terpisah dari StatusBadge): hanya untuk pesanan Website yang masih 'baru'.
+function FulfillmentBadge({ o }: { o: Order }) {
+  if (o.source !== 'portal' || o.status !== 'baru') return null;
+  if (!isFulfillmentStatus(o.fulfillmentStatus)) return <span className="badge badge-amber">Menunggu konfirmasi</span>;
+  return (
+    <span className="badge badge-blue" title={o.fulfillmentStatus === 'dikirim' && o.trackingNo ? `${o.shippingCourier ?? ''} ${o.trackingNo}`.trim() : undefined}>
+      {FULFILLMENT_LABEL[o.fulfillmentStatus]}
+    </span>
+  );
+}
+
+// Bukti transfer sudah diunggah pelanggan tapi pesanan belum ditandai lunas — admin perlu mengecek.
+const isProofPending = (o: Order) => !!o.transferProofUrl && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan';
 
 // Belum Lunas bisa terjadi di transaksi Kredit (Reseller) dari Kasir — order lain selalu lunas seketika.
 function PaymentStatusBadge({ paymentStatus, dueDate, status, paid }: { paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string; status?: string; paid?: number }) {
@@ -189,6 +209,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [onlyBelumLunas, setOnlyBelumLunas] = useState(false);
+  const [onlyProof, setOnlyProof] = useState(false);
   const [page,     setPage]     = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -590,10 +611,87 @@ _${storeName}_`.trim();
     setMarkingId(null);
   };
 
+  // ── Status layanan pesanan Website (diproses / dikirim / siap diambil) ──
+  // Tidak mengubah status pesanan dan tidak memotong stok; stok tetap hanya dipotong saat "Tandai Selesai".
+  const [fulfillingId, setFulfillingId] = useState<string | null>(null);
+  const [shipOrder, setShipOrder] = useState<Order | null>(null);
+  const [shipCourier, setShipCourier] = useState('');
+  const [shipTracking, setShipTracking] = useState('');
+  const setFulfillment = async (o: Order, fulfillmentStatus: FulfillmentStatus, courier?: string, trackingNo?: string): Promise<boolean> => {
+    if (fulfillingId) return false;
+    setFulfillingId(o.id);
+    try {
+      const r = await fetch(`${API}/api/orders/${o.id}`, {
+        method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fulfillmentStatus, ...(fulfillmentStatus === 'dikirim' ? { shippingCourier: courier, trackingNo } : {}) }),
+      });
+      if (!r.ok) {
+        const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(error ?? 'Gagal mengubah status layanan.');
+        return false;
+      }
+      setOrders(list => list.map(x => x.id === o.id ? {
+        ...x, fulfillmentStatus,
+        shippingCourier: fulfillmentStatus === 'dikirim' ? courier : undefined,
+        trackingNo: fulfillmentStatus === 'dikirim' ? trackingNo?.trim() : undefined,
+      } : x));
+      toast.success(`Status layanan: ${FULFILLMENT_LABEL[fulfillmentStatus]}.`);
+      return true;
+    } catch {
+      toast.error('Gagal mengubah status layanan.');
+      return false;
+    } finally {
+      setFulfillingId(null);
+    }
+  };
+  const openShip = (o: Order) => { setShipOrder(o); setShipCourier(o.shippingCourier ?? ''); setShipTracking(o.trackingNo ?? ''); };
+  const confirmShip = async () => {
+    if (!shipOrder || !shipCourier || !shipTracking.trim()) return;
+    if (await setFulfillment(shipOrder, 'dikirim', shipCourier, shipTracking)) { setShipOrder(null); setShipCourier(''); setShipTracking(''); }
+  };
+  const sendFulfillmentWhatsApp = (o: Order) => {
+    const state = whatsAppStateOf(o);
+    if (!state) return;
+    const phone = o.customerPhone?.trim();
+    if (!phone) { toast.error('Nomor WhatsApp pelanggan belum diisi di pesanan ini.'); return; }
+    if (!isValidIdMobile(phone)) { toast.error(`Nomor WhatsApp "${phone}" tidak valid — periksa lagi di pesanan atau data pelanggan.`); return; }
+    openWhatsApp(phone, buildFulfillmentMessage({
+      storeName, storeAddress: storeAddress || undefined, customerName: o.customerName, invoiceNo: o.invoiceNo,
+      state, courier: o.shippingCourier, trackingNo: o.trackingNo,
+    }));
+  };
+  // Tombol aksi layanan (Terima / Kirim / Siap diambil) — dipakai di tampilan tabel dan kartu.
+  const renderFulfillmentButtons = (o: Order) => nextFulfillmentActions(o).map(next => {
+    const busy = fulfillingId === o.id;
+    const cfg = next === 'diproses'
+      ? { label: 'Terima Pesanan', icon: <Check size={12} />, onClick: () => setFulfillment(o, 'diproses') }
+      : next === 'dikirim'
+        ? { label: 'Kirim Pesanan (kurir & resi)', icon: <Truck size={12} />, onClick: () => openShip(o) }
+        : { label: 'Tandai Siap Diambil', icon: <Package size={12} />, onClick: () => setFulfillment(o, 'siap_diambil') };
+    return (
+      <Tooltip key={next} label={cfg.label}>
+        <button onClick={cfg.onClick} disabled={busy}
+          className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title={cfg.label}>
+          {busy ? <Loader2 size={12} className="animate-spin" /> : cfg.icon}
+        </button>
+      </Tooltip>
+    );
+  });
+  const renderFulfillmentWaButton = (o: Order) => whatsAppStateOf(o) && o.customerPhone ? (
+    <Tooltip label="Kirim Status Pesanan via WhatsApp">
+      <button onClick={() => sendFulfillmentWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Kirim Status Pesanan via WhatsApp">
+        <MessageCircle size={12} />
+      </button>
+    </Tooltip>
+  ) : null;
+
   const [markingLunasId, setMarkingLunasId] = useState<string | null>(null);
   const [markLunasOrder, setMarkLunasOrder] = useState<Order | null>(null);
   const [markLunasWalletId, setMarkLunasWalletId] = useState('');
   const markLunas = async (id: string, walletId: string) => {
+    // Lunas sekaligus pada pesanan 'baru' baru dihitung di dompet/laporan/Closing setelah pesanan Selesai (cicilan tidak begitu).
+    const target = orders.find(x => x.id === id);
+    const wasBaru = target?.status === 'baru' && (target.paidAmount ?? 0) === 0;
     setMarkingLunasId(id);
     const r = await fetch(`${API}/api/orders/${id}`, {
       method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
@@ -602,9 +700,12 @@ _${storeName}_`.trim();
     if (r.ok) {
       setOrders(o => o.map(x => x.id === id ? { ...x, paymentStatus: 'lunas', walletId } : x));
       refetchBalances();
-      toast.success('Pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.');
+      toast.success(wasBaru
+        ? 'Ditandai lunas. Uang masuk laporan setelah pesanan Selesai.'
+        : 'Pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.');
     } else {
-      toast.error('Gagal menandai lunas.');
+      const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+      toast.error(error ?? 'Gagal menandai lunas.');
     }
     setMarkingLunasId(null);
   };
@@ -618,7 +719,8 @@ _${storeName}_`.trim();
   const [showBulkMarkLunas, setShowBulkMarkLunas] = useState(false);
   const [bulkMarkLunasWalletId, setBulkMarkLunasWalletId] = useState('');
   const [bulkMarkingLunas, setBulkMarkingLunas] = useState(false);
-  const belumLunasSelected = orders.filter(o => selected.has(o.id) && o.paymentStatus === 'belum_lunas');
+  const belumLunasSelected = orders.filter(o => selected.has(o.id) && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan');
+  const belumLunasBaruCount = belumLunasSelected.filter(o => o.status === 'baru' && (o.paidAmount ?? 0) === 0).length;
   const confirmBulkMarkLunas = async () => {
     if (!bulkMarkLunasWalletId || belumLunasSelected.length === 0) return;
     setBulkMarkingLunas(true);
@@ -633,7 +735,9 @@ _${storeName}_`.trim();
     setSelected(new Set());
     setShowBulkMarkLunas(false);
     setBulkMarkLunasWalletId('');
-    if (okCount === ids.length) toast.success(`${okCount} pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.`);
+    if (okCount === ids.length) toast.success(belumLunasBaruCount > 0
+      ? `${okCount} pesanan ditandai lunas. Uang dari ${belumLunasBaruCount} pesanan berstatus Baru masuk laporan setelah pesanannya Selesai.`
+      : `${okCount} pesanan ditandai lunas — sudah ikut terhitung di Laporan Keuangan.`);
     else toast.error(`Hanya ${okCount} dari ${ids.length} pesanan berhasil ditandai lunas.`);
     setBulkMarkingLunas(false);
   };
@@ -641,12 +745,44 @@ _${storeName}_`.trim();
   // ─── Pencarian & seleksi massal ─────────────────────────────────────────────
   const filtered = orders.filter(o => {
     if (onlyBelumLunas && o.paymentStatus !== 'belum_lunas') return false;
+    if (onlyProof && !isProofPending(o)) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return o.customerName?.toLowerCase().includes(q)
       || o.invoiceNo?.toLowerCase().includes(q)
-      || o.customerPhone?.toLowerCase().includes(q);
+      || o.customerPhone?.toLowerCase().includes(q)
+      || o.trackingNo?.toLowerCase().includes(q);
   });
+
+  const proofPendingCount = orders.filter(isProofPending).length;
+
+  const [rejectingProofId, setRejectingProofId] = useState<string | null>(null);
+  const rejectProof = async (o: Order) => {
+    if (rejectingProofId) return;
+    if (!await confirm({
+      title: 'Tolak Bukti Transfer',
+      message: `Tolak bukti transfer pesanan ${o.invoiceNo ?? ''}? Bukti dihapus dan pelanggan akan melihat pesanannya kembali "belum bayar". Pelanggan tidak diberi tahu otomatis — hubungi lewat WhatsApp bila perlu.`,
+      danger: true, confirmLabel: 'Tolak Bukti',
+    })) return;
+    setRejectingProofId(o.id);
+    try {
+      const r = await fetch(`${API}/api/orders/${o.id}`, {
+        method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rejectProof: true }),
+      });
+      if (r.ok) {
+        setOrders(list => list.map(x => x.id === o.id ? { ...x, transferProofUrl: undefined } : x));
+        toast.success('Bukti transfer ditolak.');
+      } else {
+        const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
+        toast.error(error ?? 'Gagal menolak bukti transfer.');
+      }
+    } catch {
+      toast.error('Gagal menolak bukti transfer.');
+    } finally {
+      setRejectingProofId(null);
+    }
+  };
 
   const receivables = orders.reduce((acc, o) => {
     if (o.paymentStatus !== 'belum_lunas' || o.status === 'dibatalkan') return acc;
@@ -1210,6 +1346,20 @@ _${storeName}_`.trim();
             <AlertTriangle size={14} /> <span className="hidden sm:inline">Belum Lunas</span>
           </button>
         )}
+        {(proofPendingCount > 0 || onlyProof) && (
+          <button
+            onClick={() => { setOnlyProof(v => !v); resetPage(); }}
+            aria-pressed={onlyProof}
+            className="px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0"
+            style={{
+              height: HEADER_BTN_H,
+              background: onlyProof ? 'linear-gradient(135deg,#E8821A,#C96018)' : 'var(--surface-2)',
+              color: onlyProof ? 'white' : 'var(--text-muted)',
+            }}
+          >
+            <Receipt size={14} /> <span className="hidden sm:inline">Bukti menunggu cek</span> ({proofPendingCount})
+          </button>
+        )}
         <div className="flex items-center gap-2 sm:justify-end flex-shrink-0">
           <Tooltip label="Unduh Template">
             <button onClick={downloadOrderTemplate} aria-label="Unduh Template" className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
@@ -1292,6 +1442,7 @@ _${storeName}_`.trim();
             const isSelected = selected.has(o.id);
             const actionButtons = (
               <>
+                {renderFulfillmentButtons(o)}
                 {o.status === 'baru' && (
                   <Tooltip label="Tandai Selesai">
                     <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
@@ -1307,9 +1458,9 @@ _${storeName}_`.trim();
                     </button>
                   </Tooltip>
                 )}
-                {o.paymentStatus === 'belum_lunas' && (
+                {o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
                   <button onClick={() => { setMarkLunasOrder(o); setMarkLunasWalletId(o.walletId ?? ''); }} disabled={markingLunasId === o.id}
-                    className="btn-ghost px-2 py-2 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
+                    className="btn-ghost h-7 px-2.5 !py-0 rounded-lg inline-flex items-center justify-center text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
                     {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Tandai Lunas'}
                   </button>
                 )}
@@ -1333,11 +1484,12 @@ _${storeName}_`.trim();
                 </Tooltip>
                 {o.customerPhone && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
                   <Tooltip label="Kirim Pengingat Tagihan">
-                    <button onClick={() => sendReminderWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--warning-bg, var(--surface-2))', color: 'var(--warning, var(--text-secondary))' }} title="Kirim Pengingat Tagihan">
+                    <button onClick={() => sendReminderWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--warning, var(--text-secondary))' }} title="Kirim Pengingat Tagihan">
                       <AlertTriangle size={12} />
                     </button>
                   </Tooltip>
                 )}
+                {renderFulfillmentWaButton(o)}
                 {o.customerPhone && (
                   <Tooltip label="Kirim Invoice via WhatsApp">
                     <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
@@ -1391,7 +1543,9 @@ _${storeName}_`.trim();
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
+                      <FulfillmentBadge o={o} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
+                      {isProofPending(o) && <span className="badge badge-amber" title="Pelanggan sudah mengunggah bukti transfer — cek lalu Tandai Lunas atau Tolak bukti">Bukti menunggu cek</span>}
                       {o.isFree && <span className="badge badge-amber" title={o.freeReason}>Gratis{o.freeReason ? ` · ${o.freeReason}` : ''}</span>}
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
@@ -1421,7 +1575,7 @@ _${storeName}_`.trim();
                 </div>
               </div>
 
-              {expandedId === o.id && <OrderDetail o={o} />}
+              {expandedId === o.id && <OrderDetail o={o} onRejectProof={rejectProof} rejecting={rejectingProofId === o.id} />}
               {historyId === o.id && <RecordHistoryPanel creds={creds} entity="orders" entityId={o.id} />}
             </div>
             );
@@ -1448,7 +1602,9 @@ _${storeName}_`.trim();
                       <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{o.customerName}</p>
                       <SourceBadge source={o.source} />
                       <StatusBadge status={o.status} />
+                      <FulfillmentBadge o={o} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
+                      {isProofPending(o) && <span className="badge badge-amber" title="Pelanggan sudah mengunggah bukti transfer — cek lalu Tandai Lunas atau Tolak bukti">Bukti menunggu cek</span>}
                       {o.isFree && <span className="badge badge-amber" title={o.freeReason}>Gratis{o.freeReason ? ` · ${o.freeReason}` : ''}</span>}
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
@@ -1477,11 +1633,12 @@ _${storeName}_`.trim();
                     </Tooltip>
                     {o.customerPhone && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
                       <Tooltip label="Kirim Pengingat Tagihan">
-                        <button onClick={() => sendReminderWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--warning-bg, var(--surface-2))', color: 'var(--warning, var(--text-secondary))' }} title="Kirim Pengingat Tagihan">
+                        <button onClick={() => sendReminderWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--warning, var(--text-secondary))' }} title="Kirim Pengingat Tagihan">
                           <AlertTriangle size={12} />
                         </button>
                       </Tooltip>
                     )}
+                    {renderFulfillmentWaButton(o)}
                     {o.customerPhone && (
                       <Tooltip label="Kirim Invoice via WhatsApp">
                         <button onClick={() => sendInvoiceWhatsApp(o)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Kirim Invoice via WhatsApp">
@@ -1518,6 +1675,7 @@ _${storeName}_`.trim();
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
                   </div>
                   <div className="flex items-center gap-1">
+                    {renderFulfillmentButtons(o)}
                     {o.status === 'baru' && (
                       <Tooltip label="Tandai Selesai">
                         <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
@@ -1533,9 +1691,9 @@ _${storeName}_`.trim();
                         </button>
                       </Tooltip>
                     )}
-                    {o.paymentStatus === 'belum_lunas' && (
+                    {o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan' && (
                       <button onClick={() => { setMarkLunasOrder(o); setMarkLunasWalletId(o.walletId ?? ''); }} disabled={markingLunasId === o.id}
-                        className="btn-ghost px-2 py-1.5 text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
+                        className="btn-ghost h-7 px-2.5 !py-0 rounded-lg inline-flex items-center justify-center text-xs font-semibold" style={{ color: 'var(--success)' }} title="Tandai Lunas">
                         {markingLunasId === o.id ? <Loader2 size={13} className="animate-spin" /> : 'Lunas'}
                       </button>
                     )}
@@ -1547,7 +1705,7 @@ _${storeName}_`.trim();
                 </div>
               </div>
 
-              {expandedId === o.id && <OrderDetail o={o} />}
+              {expandedId === o.id && <OrderDetail o={o} onRejectProof={rejectProof} rejecting={rejectingProofId === o.id} />}
               {historyId === o.id && <RecordHistoryPanel creds={creds} entity="orders" entityId={o.id} />}
             </div>
             );
@@ -1777,6 +1935,43 @@ _${storeName}_`.trim();
         </Modal>
       )}
 
+      {shipOrder && (
+        <Modal onClose={() => fulfillingId !== shipOrder.id && setShipOrder(null)} className="modal-sm">
+          <div className="modal-accent" />
+          <span className="modal-handle" />
+          <div className="modal-header">
+            <div className="modal-header-left">
+              <div className="modal-icon"><Truck size={17} /></div>
+              <div>
+                <p className="modal-title">Kirim Pesanan</p>
+                <p className="modal-subtitle">Pesanan {shipOrder.invoiceNo}</p>
+              </div>
+            </div>
+            <Tooltip label="Tutup"><button onClick={() => setShipOrder(null)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
+          </div>
+          <div className="modal-body space-y-3">
+            <div>
+              <label className="field-label">Kurir <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <SearchSelect value={shipCourier} onChange={setShipCourier}
+                options={SHIPPING_COURIERS.map(c => ({ value: c, label: c }))} placeholder="– Pilih Kurir –" searchPlaceholder="Cari kurir…" />
+            </div>
+            <div>
+              <label className="field-label">No. Resi <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <input className="input text-sm w-full" value={shipTracking} maxLength={TRACKING_NO_MAX}
+                onChange={e => setShipTracking(e.target.value)} placeholder="Nomor resi pengiriman" />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setShipOrder(null)} className="btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: '10px 0' }}>Batal</button>
+            <button onClick={confirmShip} disabled={!shipCourier || !shipTracking.trim() || fulfillingId === shipOrder.id}
+              className="btn-primary" style={{ flex: 2, justifyContent: 'center', padding: '10px 0' }}>
+              {fulfillingId === shipOrder.id ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />}
+              Tandai Dikirim
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {markLunasOrder && (
         <Modal onClose={() => setMarkLunasOrder(null)} className="modal-sm">
           <div className="modal-accent" />
@@ -1795,6 +1990,11 @@ _${storeName}_`.trim();
             {(markLunasOrder.paidAmount ?? 0) > 0 && (
               <p className="text-xs mb-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}>
                 Sudah dicicil {formatRp(markLunasOrder.paidAmount ?? 0)} — yang masuk ke dompet sekarang hanya <strong>sisa {formatRp(Math.max(0, markLunasOrder.total - (markLunasOrder.paidAmount ?? 0)))}</strong>.
+              </p>
+            )}
+            {markLunasOrder.status === 'baru' && (markLunasOrder.paidAmount ?? 0) === 0 && (
+              <p className="text-xs mb-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--text-primary)' }} role="note">
+                <strong>Perhatian:</strong> pesanan ini masih berstatus <strong>Baru</strong>. Uangnya baru masuk ke dompet dan Laporan Keuangan setelah pesanan ditandai <strong>Selesai</strong>.
               </p>
             )}
             <label className="field-label">Uang masuk ke dompet mana? <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -1834,6 +2034,11 @@ _${storeName}_`.trim();
             <Tooltip label="Tutup"><button onClick={() => setShowBulkMarkLunas(false)} className="modal-close" aria-label="Tutup"><X size={14} /></button></Tooltip>
           </div>
           <Field label="Uang masuk ke dompet mana?" required className="modal-body">
+            {belumLunasBaruCount > 0 && (
+              <p className="text-xs mb-3 px-3 py-2 rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--text-primary)' }} role="note">
+                <strong>Perhatian:</strong> {belumLunasBaruCount} pesanan masih berstatus <strong>Baru</strong>. Uangnya baru masuk ke dompet dan Laporan Keuangan setelah pesanan ditandai <strong>Selesai</strong>.
+              </p>
+            )}
             <SearchSelect value={bulkMarkLunasWalletId} onChange={setBulkMarkLunasWalletId}
               options={walletOptions} placeholder="– Pilih Dompet –" searchPlaceholder="Cari dompet…" />
             {bulkMarkLunasWalletId && (
@@ -2101,7 +2306,7 @@ _${storeName}_`.trim();
   );
 }
 
-function OrderDetail({ o }: { o: Order }) {
+function OrderDetail({ o, onRejectProof, rejecting }: { o: Order; onRejectProof: (o: Order) => void; rejecting: boolean }) {
   const [proofOpen, setProofOpen] = useState(false);
   return (
     <div className="px-4 pb-4 pt-3 space-y-3" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border-2)' }}>
@@ -2150,6 +2355,14 @@ function OrderDetail({ o }: { o: Order }) {
           className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--accent)' }}>
           <Receipt size={12} /> Lihat Bukti Transfer →
         </button>
+      )}
+      {isProofPending(o) && (
+        <div>
+          <button type="button" onClick={() => onRejectProof(o)} disabled={rejecting}
+            className="btn-ghost h-7 px-2.5 !py-0 rounded-lg inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--danger)' }}>
+            {rejecting ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />} Tolak bukti
+          </button>
+        </div>
       )}
       {proofOpen && o.transferProofUrl && (
         <ImageLightbox images={[o.transferProofUrl]} index={0} title="Bukti Transfer"
