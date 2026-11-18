@@ -670,6 +670,16 @@ _${storeName}_`.trim();
       </button>
     </Tooltip>
   ) : null;
+  // Kirim dinonaktifkan bila belum lunas: tombol tetap tampil (abu, tidak bisa diklik) dengan penjelasan.
+  const renderShipBlocked = (o: Order) => o.source === 'portal' && o.status === 'baru' && o.deliveryMethod === 'delivery'
+    && o.paymentStatus === 'belum_lunas' && !o.fulfillmentStatus?.match(/^(dikirim|siap_diambil)$/) ? (
+    <Tooltip label="Belum lunas: catat pembayaran dulu sebelum dikirim">
+      <button disabled aria-label="Belum lunas, belum bisa dikirim" className="w-7 h-7 rounded-lg flex items-center justify-center cursor-not-allowed opacity-50"
+        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }} title="Belum lunas: catat pembayaran dulu sebelum dikirim">
+        <Truck size={12} />
+      </button>
+    </Tooltip>
+  ) : null;
   const renderFulfillmentButtons = (o: Order) => nextFulfillmentActions(o).map(next => {
     const busy = fulfillingId === o.id;
     const cfg = next === 'diproses'
@@ -1451,7 +1461,7 @@ _${storeName}_`.trim();
             const isSelected = selected.has(o.id);
             const actionButtons = (
               <>
-                {renderFulfillmentButtons(o)}{renderFulfillmentEditButton(o)}
+                {renderFulfillmentButtons(o)}{renderShipBlocked(o)}{renderFulfillmentEditButton(o)}
                 {o.status === 'baru' && (
                   <Tooltip label="Tandai Selesai">
                     <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
@@ -1684,7 +1694,7 @@ _${storeName}_`.trim();
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    {renderFulfillmentButtons(o)}{renderFulfillmentEditButton(o)}
+                    {renderFulfillmentButtons(o)}{renderShipBlocked(o)}{renderFulfillmentEditButton(o)}
                     {o.status === 'baru' && (
                       <Tooltip label="Tandai Selesai">
                         <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
