@@ -40,9 +40,9 @@ const s = StyleSheet.create({
   infoLabel:   { fontSize: 9, width: 38 },
   infoColon:   { fontSize: 9, width: 6 },
   senderName:  { fontSize: 9, fontFamily: 'Helvetica-Bold' },
-  phoneRow:    { flexDirection: 'row', marginTop: 1 },
+  phoneRow:    { flexDirection: 'row', marginTop: 4 },
   senderPhone: { fontSize: 9 },
-  senderRow: { flexDirection: 'row', marginTop: 1 },
+  senderRow: { flexDirection: 'row', marginTop: 4 },
   table:    { marginTop: 12, borderWidth: 0.8, borderColor: C.line },
   tr:       { flexDirection: 'row', height: 22 },
   trBorder: { borderTopWidth: 0.8, borderTopColor: C.line },
@@ -54,16 +54,16 @@ const s = StyleSheet.create({
 
   // Kotak Total menempel di bawah kolom Jml (berbagi garis tepi dengan tabel) — tanpa jarak vertikal.
   bottom:     { flexDirection: 'row', alignItems: 'center' },
-    parafWrap:  { flexGrow: 1, flexDirection: 'row', justifyContent: 'space-between', height: 22, paddingLeft: 3, paddingRight: 6, paddingTop: 6, borderLeftWidth: BORDER, borderBottomWidth: BORDER, borderColor: C.line },
-  parafText:  { fontSize: 9 },
+    parafWrap:  { flexGrow: 1, flexDirection: 'row', justifyContent: 'space-between', height: 22, paddingLeft: 3, paddingRight: 6, paddingTop: 6, borderLeftWidth: 0.5, borderBottomWidth: 0.5, borderColor: C.cut, borderStyle: 'dashed' },
+  // Label Paraf/Keterangan dimulai di x yang sama (padding 3 + garis kiri 0.5); lebar Paraf dikurangi supaya titik duanya segaris dengan Mitra/Pengirim/No. Telp.
+  parafLabel: { fontSize: 9, width: 38 - 3.5 },
+  parafColon: { fontSize: 9, width: 6 },
   totalLabel: { fontSize: 9 },
   totalBox:   { width: JML_W + 2 * BORDER, height: 22, borderLeftWidth: BORDER, borderRightWidth: BORDER, borderBottomWidth: BORDER, borderColor: C.line },
 
-  // Keterangan: label + dua garis tulis tangan.
-  ketRow:     { flexDirection: 'row', alignItems: 'flex-end', marginTop: 5 },
+  // Keterangan: label sejajar dengan Paraf, isi dibiarkan kosong (ditulis tangan).
+  ketRow:     { height: 34, paddingLeft: 3.5, paddingTop: 5 },
   ketLabel:   { fontSize: 9 },
-  ketLine:    { flexGrow: 1, borderBottomWidth: 0.5, borderBottomColor: C.line, marginLeft: 3, height: 10 },
-  ketLine2:   { borderBottomWidth: 0.5, borderBottomColor: C.line, height: 12, marginBottom: 4 },
 
   footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 4, alignItems: 'center' },
   footerInfo: { alignItems: 'center' },
@@ -131,7 +131,7 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
 
       <View style={s.bottom}>
         <View style={s.parafWrap}>
-          <Text style={s.parafText}>Paraf :</Text>
+          <View style={{ flexDirection: 'row' }}><Text style={s.parafLabel}>Paraf</Text><Text style={s.parafColon}>:</Text></View>
           <Text style={s.totalLabel}>Total</Text>
         </View>
         <View style={s.totalBox} />
@@ -139,9 +139,7 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
 
       <View style={s.ketRow}>
         <Text style={s.ketLabel}>Keterangan :</Text>
-        <View style={s.ketLine} />
       </View>
-      <View style={s.ketLine2} />
 
       <View style={s.footer}>
         <View style={s.footerInfo}>
