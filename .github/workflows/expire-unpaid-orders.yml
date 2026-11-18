@@ -1,0 +1,44 @@
+name: Batalkan otomatis pesanan belum dibayar
+
+# Memanggil endpoint yang membatalkan pesanan website yang belum dibayar lebih dari 24 jam (stok dan kuota
+# voucher dikembalikan, admin dapat SATU notifikasi ringkasan bila ada yang dibatalkan) — lihat
+# src/app/api/cron/expire-unpaid-orders/route.ts. Pesanan yang sudah upload bukti bayar tidak disentuh.
+#
+# Memakai 2 secret yang SAMA dengan workflow overdue-orders (Settings → Secrets and variables → Actions):
+#   ADMIN_BASE_URL — alamat aplikasi admin tanpa garis miring akhir, mis. https://admin-anda.vercel.app
+#   CRON_SECRET    — isinya HARUS sama dengan environment variable CRON_SECRET di hosting admin
+# JADWAL OTOMATIS SENGAJA DIMATIKAN dulu — belum ada bukti kedua secret itu sudah terpasang (workflow lain
+# yang memakainya juga masih manual). Langkah mengaktifkan:
+#   1. Pastikan secret ADMIN_BASE_URL dan CRON_SECRET sudah ada di GitHub, dan CRON_SECRET ada di hosting admin.
+#   2. Jalankan manual sekali (tab Actions → Run workflow) dan cek hasil JSON {cancelled, skipped, failed}.
+#   3. Hapus tanda # pada 2 baris `schedule` di bawah (tiap jam, menit ke-7).
+on:
+  # schedule:
+  #   - cron: '7 * * * *' # tiap jam pada menit ke-7 (UTC)
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Cegah dua run berjalan bersamaan.
+concurrency:
+  group: expire-unpaid-orders
+  cancel-in-progress: false
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Panggil endpoint batalkan pesanan belum dibayar
+        env:
+          ADMIN_BASE_URL: ${{ secrets.ADMIN_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$ADMIN_BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Secret ADMIN_BASE_URL dan CRON_SECRET belum diisi di GitHub."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --max-time 90 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${ADMIN_BASE_URL%/}/api/cron/expire-unpaid-orders"
+          echo

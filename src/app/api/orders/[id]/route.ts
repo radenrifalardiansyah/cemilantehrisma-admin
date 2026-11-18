@@ -5,7 +5,7 @@ import { getDb } from '@/lib/firebase-admin';
 import { getSql } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { invalidQtyMessage } from '@/lib/validate-items';
-import { restoreOrderStockInTxPg, RestorableOrderItem } from '@/lib/order-stock-pg';
+import { restoreOrderStockInTxPg } from '@/lib/order-stock-pg';
 import { readProductsForDeltasPg, readWarehouseShortagesPg, applyStockDeltaPg, writeStockLedgerEntryPg } from '@/lib/stock-pg';
 import { logHistory } from '@/lib/history';
 import { getSettings } from '@/lib/settings-pg';
@@ -16,6 +16,7 @@ import { isValidDueDate } from '@/lib/receivable';
 import { paidAmountOf } from '@/lib/order-payments-pg';
 import { voidStoreConsignSaleForOrder } from '@/lib/store-consign';
 import { orderClosingLock } from '@/lib/closing';
+import { applyOrderCancellationInTx, toRestorable } from '@/lib/order-cancel';
 import { hasFulfillmentKeys, validateFulfillmentUpdate } from '@/lib/order-fulfillment';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -46,18 +47,6 @@ function qtyByProduct(items: OrderItemInput[]): Map<string, number> {
     map.set(it.productId, (map.get(it.productId) ?? 0) + it.qty);
   }
   return map;
-}
-
-function toRestorable(order: ReturnType<typeof rowToOrder>) {
-  return {
-    items: order.items as RestorableOrderItem[],
-    source: order.source,
-    invoiceNo: order.invoiceNo,
-    stockCut: order.stockCut,
-    stockRestored: order.stockRestored,
-    warehouseId: order.warehouseId,
-    warehouseName: order.warehouseName,
-  };
 }
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
@@ -402,15 +391,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       // Batalkan pesanan → kembalikan stok yang sudah dipotong (sekali saja per pesanan)
       if (status === 'dibatalkan') {
-        await restoreOrderStockInTxPg(pgTx, toRestorable(order));
-        // Bagian titipan (penjualan lapak Toko) ikut dibatalkan.
-        await voidStoreConsignSaleForOrder(pgTx, { orderId: id, username: guard.username, reason: 'Pesanan dibatalkan' });
-        // Kuota voucher yang dipakai pesanan ini dikembalikan (sekali — kode dikosongkan).
-        if (order.voucherCode) {
-          await pgTx`update vouchers set used_count = greatest(used_count - 1, 0) where code = ${order.voucherCode}`;
-          updateCols.voucher_code = null;
-        }
-        updateCols.stock_restored = true;
+        Object.assign(updateCols, await applyOrderCancellationInTx(pgTx, order, { orderId: id, username: guard.username }));
         stockTouched = true;
       }
 

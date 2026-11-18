@@ -27,6 +27,7 @@ import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWal
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import PageLoader from '@/components/PageLoader';
 import { dueInfo, formatDueDate } from '@/lib/receivable';
+import { UNPAID_ORDER_EXPIRY_HOURS, isExpirableUnpaidOrder } from '@/lib/order-expiry';
 import { computeReturn } from '@/lib/order-return';
 import { paymentProblem } from '@/lib/installment';
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
@@ -104,6 +105,12 @@ function FulfillmentBadge({ o }: { o: Order }) {
 const isProofPending = (o: Order) => !!o.transferProofUrl && o.paymentStatus === 'belum_lunas' && o.status !== 'dibatalkan';
 
 // Belum Lunas bisa terjadi di transaksi Kredit (Reseller) dari Kasir — order lain selalu lunas seketika.
+// Pesanan website belum dibayar > 24 jam tanpa bukti bayar: akan/sudah dibatalkan otomatis oleh cron (src/lib/order-expiry.ts).
+const isUnpaidExpired = (o: Order) => !!o.createdAt && isExpirableUnpaidOrder({
+  source: o.source, status: o.status, paymentStatus: o.paymentStatus, transferProofUrl: o.transferProofUrl,
+  fulfillmentStatus: o.fulfillmentStatus, createdAtMs: o.createdAt.seconds * 1000,
+});
+
 function PaymentStatusBadge({ paymentStatus, dueDate, status, paid }: { paymentStatus?: 'lunas' | 'belum_lunas'; dueDate?: string; status?: string; paid?: number }) {
   if (paymentStatus !== 'belum_lunas') return null;
   const due = status === 'dibatalkan' ? null : dueInfo(dueDate);
@@ -1565,6 +1572,7 @@ _${storeName}_`.trim();
                       <FulfillmentBadge o={o} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
                       {isProofPending(o) && <span className="badge badge-amber" title="Pelanggan sudah mengunggah bukti transfer — cek lalu Tandai Lunas atau Tolak bukti">Bukti menunggu cek</span>}
+                      {isUnpaidExpired(o) && <span className="badge badge-red" title={`Belum dibayar lebih dari ${UNPAID_ORDER_EXPIRY_HOURS} jam tanpa bukti bayar — dibatalkan otomatis oleh sistem`}>Kedaluwarsa</span>}
                       {o.isFree && <span className="badge badge-amber" title={o.freeReason}>Gratis{o.freeReason ? ` · ${o.freeReason}` : ''}</span>}
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
@@ -1624,6 +1632,7 @@ _${storeName}_`.trim();
                       <FulfillmentBadge o={o} />
                       <PaymentStatusBadge paymentStatus={o.paymentStatus} dueDate={o.dueDate} status={o.status} paid={o.paidAmount} />
                       {isProofPending(o) && <span className="badge badge-amber" title="Pelanggan sudah mengunggah bukti transfer — cek lalu Tandai Lunas atau Tolak bukti">Bukti menunggu cek</span>}
+                      {isUnpaidExpired(o) && <span className="badge badge-red" title={`Belum dibayar lebih dari ${UNPAID_ORDER_EXPIRY_HOURS} jam tanpa bukti bayar — dibatalkan otomatis oleh sistem`}>Kedaluwarsa</span>}
                       {o.isFree && <span className="badge badge-amber" title={o.freeReason}>Gratis{o.freeReason ? ` · ${o.freeReason}` : ''}</span>}
                       {o.returns && o.returns.length > 0 && <span className="badge badge-amber">Ada retur</span>}
                     </div>
