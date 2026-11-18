@@ -661,6 +661,15 @@ _${storeName}_`.trim();
     }));
   };
   // Tombol aksi layanan (Terima / Kirim / Siap diambil) — dipakai di tampilan tabel dan kartu.
+  // Koreksi kurir/resi setelah Dikirim (server mengizinkan dikirim -> dikirim).
+  const renderFulfillmentEditButton = (o: Order) => o.source === 'portal' && o.status === 'baru' && o.fulfillmentStatus === 'dikirim' ? (
+    <Tooltip label="Ubah Kurir / No. Resi">
+      <button onClick={() => openShip(o)} disabled={fulfillingId === o.id}
+        className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--surface-2)', color: 'var(--accent)' }} title="Ubah Kurir / No. Resi">
+        <Pencil size={12} />
+      </button>
+    </Tooltip>
+  ) : null;
   const renderFulfillmentButtons = (o: Order) => nextFulfillmentActions(o).map(next => {
     const busy = fulfillingId === o.id;
     const cfg = next === 'diproses'
@@ -1442,7 +1451,7 @@ _${storeName}_`.trim();
             const isSelected = selected.has(o.id);
             const actionButtons = (
               <>
-                {renderFulfillmentButtons(o)}
+                {renderFulfillmentButtons(o)}{renderFulfillmentEditButton(o)}
                 {o.status === 'baru' && (
                   <Tooltip label="Tandai Selesai">
                     <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
@@ -1675,7 +1684,7 @@ _${storeName}_`.trim();
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{o.items?.length ?? 0} produk</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    {renderFulfillmentButtons(o)}
+                    {renderFulfillmentButtons(o)}{renderFulfillmentEditButton(o)}
                     {o.status === 'baru' && (
                       <Tooltip label="Tandai Selesai">
                         <button onClick={() => markSelesai(o.id)} disabled={markingId === o.id}
