@@ -54,8 +54,7 @@ const s = StyleSheet.create({
 
   // Kotak Total menempel di bawah kolom Jml (berbagi garis tepi dengan tabel) — tanpa jarak vertikal.
   bottom:     { flexDirection: 'row', alignItems: 'center' },
-  // Sisi kiri & bawah Paraf sengaja berwarna abu tipis (seperti garis footer), bukan garis tegas seperti tabel.
-  parafWrap:  { flexGrow: 1, flexDirection: 'row', justifyContent: 'space-between', height: 22, paddingLeft: 3, paddingRight: 6, paddingTop: 6, borderLeftWidth: 0.5, borderBottomWidth: 0.5, borderColor: C.cut },
+    parafWrap:  { flexGrow: 1, flexDirection: 'row', justifyContent: 'space-between', height: 22, paddingLeft: 3, paddingRight: 6, paddingTop: 6, borderLeftWidth: BORDER, borderBottomWidth: BORDER, borderColor: C.line },
   parafText:  { fontSize: 9 },
   totalLabel: { fontSize: 9 },
   totalBox:   { width: JML_W + 2 * BORDER, height: 22, borderLeftWidth: BORDER, borderRightWidth: BORDER, borderBottomWidth: BORDER, borderColor: C.line },
@@ -119,7 +118,7 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
         <View style={[s.tr, s.thead]}>
           <View style={s.cNo}><Text style={s.tText}>No</Text></View>
           <View style={s.cMenu}><Text style={s.tText}>Menu</Text></View>
-          <View style={s.cJml}><Text style={s.tText}>Jml</Text></View>
+          <View style={s.cJml}><Text style={s.tText}>Jumlah</Text></View>
         </View>
         {Array.from({ length: ROWS }, (_, i) => (
           <View key={i} style={[s.tr, s.trBorder]}>
