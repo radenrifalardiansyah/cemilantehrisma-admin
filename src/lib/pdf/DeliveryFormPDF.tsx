@@ -60,6 +60,12 @@ const s = StyleSheet.create({
   totalLabel: { fontSize: 9 },
   totalBox:   { width: JML_W + 2 * BORDER, height: 22, borderLeftWidth: BORDER, borderRightWidth: BORDER, borderBottomWidth: BORDER, borderColor: C.line },
 
+  // Keterangan: label + dua garis tulis tangan.
+  ketRow:     { flexDirection: 'row', alignItems: 'flex-end', marginTop: 5 },
+  ketLabel:   { fontSize: 9 },
+  ketLine:    { flexGrow: 1, borderBottomWidth: 0.5, borderBottomColor: C.line, marginLeft: 3, height: 10 },
+  ketLine2:   { borderBottomWidth: 0.5, borderBottomColor: C.line, height: 12, marginBottom: 4 },
+
   footer:     { marginTop: 'auto', borderTopWidth: 0.5, borderTopColor: C.cut, paddingTop: 4, alignItems: 'center' },
   footerInfo: { alignItems: 'center' },
   footerText: { fontSize: 6.5, color: C.muted, lineHeight: 1.35, textAlign: 'center' },
@@ -131,6 +137,12 @@ function Form({ store, index }: { store: StoreHeader; index: number }) {
         </View>
         <View style={s.totalBox} />
       </View>
+
+      <View style={s.ketRow}>
+        <Text style={s.ketLabel}>Keterangan :</Text>
+        <View style={s.ketLine} />
+      </View>
+      <View style={s.ketLine2} />
 
       <View style={s.footer}>
         <View style={s.footerInfo}>
