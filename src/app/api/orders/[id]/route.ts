@@ -230,7 +230,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         if (!orderRow) throw new OrderNotFoundError('Pesanan tidak ditemukan.');
         const order = rowToOrder(orderRow);
         const result = validateFulfillmentUpdate(
-          { source: order.source, status: order.status, deliveryMethod: order.deliveryMethod, fulfillmentStatus: order.fulfillmentStatus },
+          { source: order.source, status: order.status, deliveryMethod: order.deliveryMethod, fulfillmentStatus: order.fulfillmentStatus, paymentStatus: order.paymentStatus },
           body as { fulfillmentStatus?: unknown; shippingCourier?: unknown; trackingNo?: unknown },
         );
         if (!result.ok) throw new OrderValidationError(result.error);

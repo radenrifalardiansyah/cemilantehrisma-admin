@@ -110,3 +110,22 @@ describe('celah validasi resi (review QA)', () => {
     expect(msg).not.toMatch(/No\. Resi : [^\n]*\n[^\n]*\n\nTerima kasih/); // resi tidak menambah baris
   });
 });
+
+describe('pembatasan Dikirim untuk pesanan belum lunas', () => {
+  const base = { source: 'portal', status: 'baru', deliveryMethod: 'delivery', fulfillmentStatus: 'diproses' as string | null, paymentStatus: 'belum_lunas' };
+  const kirim = { fulfillmentStatus: 'dikirim', shippingCourier: 'JNE', trackingNo: 'JNE123' };
+  it('belum lunas: Dikirim ditolak dan tombol Kirim tidak muncul', () => {
+    expect(validateFulfillmentUpdate(base, kirim).ok).toBe(false);
+    expect(nextFulfillmentActions(base)).toEqual([]);
+  });
+  it('lunas: Dikirim boleh', () => {
+    expect(validateFulfillmentUpdate({ ...base, paymentStatus: 'lunas' }, kirim).ok).toBe(true);
+    expect(nextFulfillmentActions({ ...base, paymentStatus: 'lunas' })).toEqual(['dikirim']);
+  });
+  it('sudah Dikirim lalu belum lunas: koreksi resi tetap boleh', () => {
+    expect(validateFulfillmentUpdate({ ...base, fulfillmentStatus: 'dikirim' }, kirim).ok).toBe(true);
+  });
+  it('pickup belum lunas: Siap diambil tetap boleh', () => {
+    expect(validateFulfillmentUpdate({ ...base, deliveryMethod: 'pickup' }, { fulfillmentStatus: 'siap_diambil' }).ok).toBe(true);
+  });
+});

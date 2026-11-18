@@ -23,6 +23,7 @@ export interface FulfillmentOrderState {
   status: string;
   deliveryMethod?: string;
   fulfillmentStatus?: string | null;
+  paymentStatus?: string | null;
 }
 
 export interface FulfillmentInput {
@@ -62,7 +63,8 @@ export function nextFulfillmentActions(o: FulfillmentOrderState): FulfillmentSta
   const out: FulfillmentStatus[] = [];
   if (cur === null) out.push('diproses');
   if (rank(cur) < 2) {
-    if (o.deliveryMethod === 'delivery') out.push('dikirim');
+    // Pesanan belum lunas tidak boleh dikirim (siap diambil tetap boleh).
+    if (o.deliveryMethod === 'delivery') { if (o.paymentStatus !== 'belum_lunas') out.push('dikirim'); }
     else if (o.deliveryMethod === 'pickup') out.push('siap_diambil');
   }
   return out;
@@ -79,6 +81,8 @@ export function validateFulfillmentUpdate(o: FulfillmentOrderState, input: Fulfi
 
   if (next === 'dikirim') {
     if (o.deliveryMethod !== 'delivery') return fail('Hanya pesanan antar (delivery) yang bisa berstatus Dikirim.');
+    // Koreksi kurir/resi pada pesanan yang sudah Dikirim tetap boleh.
+    if (o.paymentStatus === 'belum_lunas' && o.fulfillmentStatus !== 'dikirim') return fail('Pesanan belum lunas, tidak bisa ditandai Dikirim. Catat pembayaran dulu.');
     if (!isShippingCourier(input.shippingCourier)) return fail('Pilih kurir dari daftar.');
     const resi = typeof input.trackingNo === 'string' ? input.trackingNo.trim() : '';
     if (!resi) return fail('No. resi wajib diisi.');
