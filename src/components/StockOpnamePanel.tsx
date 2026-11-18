@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { Loader2, Search, ClipboardCheck, RefreshCw } from 'lucide-react';
-import SearchSelect from '@/components/SearchSelect';
+import FilterSelect from '@/components/FilterSelect';
+import { HEADER_BTN_H } from '@/lib/ui-constants';
 import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
@@ -85,21 +86,22 @@ export default function StockOpnamePanel({ creds, warehouses, products, onDone }
   return (
     <div className="p-4 lg:p-6 animate-fade-up space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-        <div className="sm:w-72">
-          <SearchSelect value={warehouseId} onChange={v => { setWarehouseId(v); setCounted({}); if (v) load(v); }}
-            options={warehouses.map(w => ({ value: w.id, label: w.name }))}
-            placeholder="– Pilih Gudang –" searchPlaceholder="Cari gudang…" />
+        <div className="sm:w-72 flex-shrink-0">
+          <FilterSelect value={warehouseId} onChange={v => { setWarehouseId(v); setCounted({}); if (v) load(v); }}
+            height={HEADER_BTN_H}
+            options={[{ value: '', label: '– Pilih Gudang –' }, ...warehouses.map(w => ({ value: w.id, label: w.name }))]}
+            searchPlaceholder="Cari gudang…" />
         </div>
         {warehouseId && (
-          <>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="relative flex-1 min-w-0">
               <Search size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-              <input value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-full" style={{ paddingLeft: 38, height: 34 }} placeholder="Cari produk…" />
+              <input value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-full" style={{ paddingLeft: 38, height: HEADER_BTN_H }} placeholder="Cari produk…" />
             </div>
-            <button onClick={() => load(warehouseId)} className="btn-ghost p-0 flex items-center justify-center" style={{ height: 34, width: 34 }} title="Muat ulang stok sistem">
+            <button onClick={() => load(warehouseId)} className="btn-ghost p-0 flex items-center justify-center flex-shrink-0" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }} title="Muat ulang stok sistem" aria-label="Muat ulang stok sistem">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             </button>
-          </>
+          </div>
         )}
       </div>
 
@@ -122,11 +124,11 @@ export default function StockOpnamePanel({ creds, warehouses, products, onDone }
                   <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>Sistem: {p.sys}</p>
                 </div>
                 <input
-                  type="number" inputMode="numeric" min={0} step={1}
+                  type="text" inputMode="numeric" autoComplete="off" aria-label={`Hitung fisik ${p.name}`}
                   value={counted[p.id] ?? ''} placeholder="Fisik"
-                  onChange={e => setCounted(c => ({ ...c, [p.id]: e.target.value }))}
-                  className="input text-sm text-right tabular" style={{ width: 90, height: 34 }} />
-                <span className="w-14 text-right text-xs font-extrabold tabular"
+                  onChange={e => { const v = e.target.value.replace(/\D/g, ''); setCounted(c => ({ ...c, [p.id]: v })); }}
+                  className="input text-sm text-right tabular flex-shrink-0" style={{ width: 88, height: HEADER_BTN_H, padding: '0 12px' }} />
+                <span className="w-14 flex-shrink-0 flex items-center justify-end text-right text-xs font-extrabold tabular"
                   style={{ color: !p.has || p.diff === 0 ? 'var(--text-muted)' : p.diff > 0 ? 'var(--success)' : 'var(--danger)' }}>
                   {!p.has ? '–' : p.diff === 0 ? 'Sesuai' : p.diff > 0 ? `+${p.diff}` : p.diff}
                 </span>
@@ -134,9 +136,9 @@ export default function StockOpnamePanel({ creds, warehouses, products, onDone }
             ))}
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} className="input flex-1" style={{ resize: 'vertical' }} placeholder="Catatan opname (opsional), mis. opname akhir bulan" />
-            <button onClick={save} disabled={saving || changed.length === 0} className="btn-primary text-xs" style={{ height: 38 }}>
+          <div className="flex flex-col sm:flex-row sm:items-start gap-2">
+            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} className="input flex-1 text-sm" style={{ resize: 'none' }} placeholder="Catatan opname (opsional), mis. opname akhir bulan" />
+            <button onClick={save} disabled={saving || changed.length === 0} className="btn-primary text-xs justify-center w-full sm:w-auto flex-shrink-0" style={{ height: HEADER_BTN_H }}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
               Simpan Opname{changed.length > 0 ? ` (${changed.length} selisih)` : ''}
             </button>
