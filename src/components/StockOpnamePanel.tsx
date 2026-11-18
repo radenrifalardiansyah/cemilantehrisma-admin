@@ -124,10 +124,10 @@ export default function StockOpnamePanel({ creds, warehouses, products, onDone }
                   <p className="text-[11px] tabular" style={{ color: 'var(--text-muted)' }}>Sistem: {p.sys}</p>
                 </div>
                 <input
-                  type="text" inputMode="numeric" autoComplete="off" aria-label={`Hitung fisik ${p.name}`}
+                  type="number" inputMode="numeric" min={0} step={1} autoComplete="off" aria-label={`Hitung fisik ${p.name}`}
                   value={counted[p.id] ?? ''} placeholder="Fisik"
-                  onChange={e => { const v = e.target.value.replace(/\D/g, ''); setCounted(c => ({ ...c, [p.id]: v })); }}
-                  className="input text-sm text-right tabular flex-shrink-0" style={{ width: 88, height: HEADER_BTN_H, padding: '0 12px' }} />
+                  onChange={e => setCounted(c => ({ ...c, [p.id]: e.target.value }))}
+                  className="input text-sm text-right tabular flex-shrink-0" style={{ width: 104, height: HEADER_BTN_H }} />
                 <span className="w-14 flex-shrink-0 flex items-center justify-end text-right text-xs font-extrabold tabular"
                   style={{ color: !p.has || p.diff === 0 ? 'var(--text-muted)' : p.diff > 0 ? 'var(--success)' : 'var(--danger)' }}>
                   {!p.has ? '–' : p.diff === 0 ? 'Sesuai' : p.diff > 0 ? `+${p.diff}` : p.diff}
