@@ -264,6 +264,8 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
     return (!df.from || d >= df.from) && (!df.to || d <= df.to);
   });
   const filterActive = !!(df.q || df.from || df.to);
+  // Total mengikuti filter (semua halaman), bukan hanya baris yang tampil.
+  const lineTotals = filteredLines.reduce((a, l) => ({ qty: a.qty + l.qty, cogs: a.cogs + l.cogs }), { qty: 0, cogs: 0 });
   const dPg = paginate(filteredLines, detailPage, detailPageSize);
   const setHf = (patch: Partial<typeof EMPTY_HF>) => { setHistFilter(f => ({ ...f, ...patch })); setHistPage(1); };
   const hq = histFilter.q.trim().toLowerCase();
@@ -485,6 +487,10 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                       </div>
                     </li>
                   ))}
+                  <li className="px-3 py-2.5 flex items-center justify-between gap-2 text-xs font-bold" style={{ borderTop: '1px solid var(--border-2)', background: 'var(--surface-2)' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Total ({filteredLines.length} data · {formatQty(lineTotals.qty)} unit)</span>
+                    <span className="tabular" style={{ color: 'var(--text-primary)' }}>{formatRp(lineTotals.cogs)}</span>
+                  </li>
                 </ul>
                 <div className="hidden md:block overflow-x-auto rounded-xl" style={{ border: '1px solid var(--border-2)' }}>
                   <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
@@ -513,6 +519,13 @@ export default function ClosingPanel({ creds, can, canWallet, isSuperAdmin, onCh
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr style={{ background: 'var(--surface-2)' }}>
+                        <td className={`${cell} font-bold`} colSpan={4} style={{ color: 'var(--text-secondary)' }}>Total ({filteredLines.length} data)</td>
+                        <td className={`${cell} text-right tabular font-bold`} style={{ color: 'var(--text-primary)' }}>{formatQty(lineTotals.qty)}</td>
+                        <td className={`${cell} text-right tabular font-bold`} style={{ color: 'var(--text-primary)' }}>{formatRp(lineTotals.cogs)}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
                 </>
