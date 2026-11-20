@@ -10,6 +10,8 @@ export interface ShipmentPlanDraft {
   locationName: string;
   items: { productId: string; productName: string; qty: number }[];
   note?: string;
+  /** Nomor urutan pengiriman (kecil = lebih dulu); kosong = di bawah yang bernomor. */
+  deliverySeq?: number | null;
 }
 
 const qtyLabel = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
@@ -18,10 +20,12 @@ export function buildShipmentPlanWaMessage(drafts: ShipmentPlanDraft[], opts: { 
   const store = opts.storeName?.trim() || SHOPPING_WA_DEFAULT_STORE;
 
   // Beberapa draf untuk mitra yang sama digabung jadi satu bagian.
-  const byMitra = new Map<string, { name: string; items: Map<string, { name: string; qty: number }>; notes: string[] }>();
+  const byMitra = new Map<string, { name: string; seq: number | null; order: number; items: Map<string, { name: string; qty: number }>; notes: string[] }>();
   for (const d of drafts) {
     const key = d.locationId || `n:${d.locationName.trim().toLowerCase()}`;
-    const m = byMitra.get(key) ?? { name: d.locationName.trim() || '-', items: new Map<string, { name: string; qty: number }>(), notes: [] as string[] };
+    const m = byMitra.get(key) ?? { name: d.locationName.trim() || '-', seq: null as number | null, order: byMitra.size, items: new Map<string, { name: string; qty: number }>(), notes: [] as string[] };
+    // Beberapa draf mitra yang sama: pakai nomor terkecil.
+    if (typeof d.deliverySeq === 'number' && (m.seq === null || d.deliverySeq < m.seq)) m.seq = d.deliverySeq;
     for (const it of d.items) {
       if (!(it.qty > 0)) continue;
       const k = it.productId || `n:${it.productName.trim().toLowerCase()}`;
@@ -33,9 +37,12 @@ export function buildShipmentPlanWaMessage(drafts: ShipmentPlanDraft[], opts: { 
     if (note && !m.notes.includes(note)) m.notes.push(note);
     byMitra.set(key, m);
   }
-  const mitras = [...byMitra.values()].filter(m => m.items.size > 0);
+  // Urut sesuai urutan pengiriman; yang belum bernomor di bawah, mengikuti urutan input (sort stabil lewat `order`).
+  const mitras = [...byMitra.values()].filter(m => m.items.size > 0)
+    .sort((a, b) => (a.seq ?? Infinity) - (b.seq ?? Infinity) || a.order - b.order);
 
   const lines: string[] = [`*RENCANA KIRIM STOK - ${store}*`, `Jumlah mitra: ${mitras.length}`];
+  if (mitras.some(m => m.seq !== null)) lines.push('Urutan sesuai urutan pengiriman');
   const perProduct = new Map<string, { name: string; qty: number }>();
   let grand = 0;
   mitras.forEach((m, i) => {

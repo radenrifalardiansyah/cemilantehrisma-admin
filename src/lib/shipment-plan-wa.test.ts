@@ -41,4 +41,28 @@ describe('buildShipmentPlanWaMessage', () => {
     const drafts = Array.from({ length: 10 }, (_, i) => d({ locationId: `l${i}`, locationName: `Mitra ${i + 1}`, items: Array.from({ length: 6 }, (_, j) => ({ productId: `p${j}`, productName: `Produk ${j + 1}`, qty: 10 + j })) }));
     expect(shoppingWaFits(buildShipmentPlanWaMessage(drafts))).toBe(true);
   });
+
+  it('mitra diurutkan sesuai urutan pengiriman, tanpa nomor di bawah (stabil)', () => {
+    const m = buildShipmentPlanWaMessage([
+      d({ locationId: 'x', locationName: 'Tanpa Nomor 1' }),
+      d({ locationId: 'a', locationName: 'Urutan 3', deliverySeq: 3 }),
+      d({ locationId: 'b', locationName: 'Urutan 1', deliverySeq: 1 }),
+      d({ locationId: 'y', locationName: 'Tanpa Nomor 2' }),
+      d({ locationId: 'c', locationName: 'Urutan 2', deliverySeq: 2 }),
+    ]);
+    const order = ['Urutan 1', 'Urutan 2', 'Urutan 3', 'Tanpa Nomor 1', 'Tanpa Nomor 2'].map(n => m.indexOf(`*${n}*`));
+    expect(order.every(i => i > 0)).toBe(true);
+    expect([...order].sort((p, q) => p - q)).toEqual(order);
+    expect(m).toContain('Urutan sesuai urutan pengiriman');
+    expect(m).toContain('1. *Urutan 1*');
+  });
+  it('draf mitra sama memakai nomor terkecil; tanpa nomor sama sekali tidak ada keterangan urutan', () => {
+    const m = buildShipmentPlanWaMessage([
+      d({ locationId: 'a', locationName: 'A', deliverySeq: 5 }),
+      d({ locationId: 'b', locationName: 'B', deliverySeq: 2 }),
+      d({ locationId: 'a', locationName: 'A', deliverySeq: 1 }),
+    ]);
+    expect(m.indexOf('*A*')).toBeLessThan(m.indexOf('*B*'));
+    expect(buildShipmentPlanWaMessage([d()])).not.toContain('Urutan sesuai');
+  });
 });

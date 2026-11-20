@@ -10,6 +10,7 @@ import { logHistory } from '@/lib/history';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 import { normalizeShipmentStatus, type ShipmentStatus } from '@/lib/shipment-status';
 import { mergeItems, type SendItemInput } from '@/lib/shipment-items';
+import { parseDeliverySeq } from '@/lib/shipment-seq';
 
 // Sama seperti orders/route.ts & consignment/recap/route.ts: dibaca tanpa batas tanggal oleh tab
 // Konsinyasi setiap kali dibuka (plus tiap tampilan laporan berperiode). TTL pendek (15s, sama
@@ -56,8 +57,10 @@ export async function POST(req: NextRequest) {
   if (guard instanceof Response) return guard;
   const data = await req.json() as {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
-    note?: string; items: SendItemInput[]; date?: string;
+    note?: string; items: SendItemInput[]; date?: string; deliverySeq?: number | string | null;
   };
+  const deliverySeq = parseDeliverySeq(data.deliverySeq);
+  if (deliverySeq === 'invalid') return Response.json({ error: 'Urutan pengiriman harus bilangan bulat 1-999.' }, { status: 400 });
   const qtyError = invalidQtyMessage(data.items);
   if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   const items = mergeItems(data.items ?? []);
@@ -77,8 +80,8 @@ export async function POST(req: NextRequest) {
   // 'approved' supaya baris/kode lama aman.
   try {
     await sql`
-      insert into consignment_shipments (id, location_id, location_name, warehouse_id, warehouse_name, items, note, created_at, status, created_by)
-      values (${shipmentId}, ${data.locationId}, ${data.locationName}, ${data.warehouseId}, ${data.warehouseName ?? ''}, ${JSON.stringify(itemsWithSubtotal)}, ${data.note ?? ''}, ${createdAt}, 'draft', ${guard.username})
+      insert into consignment_shipments (id, location_id, location_name, warehouse_id, warehouse_name, items, note, created_at, status, created_by, delivery_seq)
+      values (${shipmentId}, ${data.locationId}, ${data.locationName}, ${data.warehouseId}, ${data.warehouseName ?? ''}, ${JSON.stringify(itemsWithSubtotal)}, ${data.note ?? ''}, ${createdAt}, 'draft', ${guard.username}, ${deliverySeq})
     `;
   } catch (err) {
     // FK location/warehouse (23503) = id tidak ada.

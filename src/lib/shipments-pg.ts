@@ -28,6 +28,8 @@ export interface ShipmentRow {
   rejected_at: Date | null;
   reject_reason: string | null;
   created_by: string | null;
+  // Nomor urutan pengiriman (opsional); kolom baru bisa undefined bila migrasi belum dijalankan (`select *`).
+  delivery_seq?: number | null;
 }
 
 export function rowToShipment(r: ShipmentRow) {
@@ -48,5 +50,6 @@ export function rowToShipment(r: ShipmentRow) {
     rejectedAt: toTimestamp(r.rejected_at),
     rejectReason: r.reject_reason ?? null,
     createdBy: r.created_by ?? null,
+    deliverySeq: r.delivery_seq ?? null,
   };
 }

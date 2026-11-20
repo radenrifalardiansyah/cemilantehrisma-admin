@@ -1,3 +1,4 @@
+import { parseDeliverySeq } from '@/lib/shipment-seq';
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getDb } from '@/lib/firebase-admin';
@@ -89,8 +90,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const data = await req.json() as {
     locationId: string; locationName: string; warehouseId: string; warehouseName?: string;
-    note?: string; items: SendItemInput[]; date?: string; status?: string;
+    note?: string; items: SendItemInput[]; date?: string; status?: string; deliverySeq?: number | string | null;
   };
+  // deliverySeq hanya ditimpa bila kuncinya dikirim; kalau tidak, nilai lama dipertahankan.
+  const seqProvided = 'deliverySeq' in data;
+  const parsedSeq = parseDeliverySeq(data.deliverySeq);
+  if (parsedSeq === 'invalid') return Response.json({ error: 'Urutan pengiriman harus bilangan bulat 1-999.' }, { status: 400 });
   const qtyError = invalidQtyMessage(data.items);
   if (qtyError) return Response.json({ error: qtyError }, { status: 400 });
   // Normalisasi sama seperti POST (qty Number, harga dibulatkan, baris ganda digabung) + tolak qty <= 0/NaN.
@@ -155,6 +160,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           location_id = ${data.locationId}, location_name = ${data.locationName},
           warehouse_id = ${data.warehouseId}, warehouse_name = ${data.warehouseName ?? ''},
           items = ${JSON.stringify(itemsWithSubtotal)}, note = ${data.note ?? ''},
+          delivery_seq = ${seqProvided ? parsedSeq : (shipmentRow.delivery_seq ?? null)},
           created_at = ${newCreatedAt}, updated_at = now()
         where id = ${id}
       `;

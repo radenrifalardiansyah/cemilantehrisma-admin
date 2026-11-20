@@ -204,7 +204,7 @@ interface Shipment {
   id: string; locationId?: string; locationName: string; warehouseId?: string; warehouseName?: string;
   items: ShipmentItem[]; note?: string; createdAt?: { seconds: number };
   // Draft = hanya dokumen (tanpa efek stok/laporan); approved = berlaku; ditolak = final. Baris lama = approved.
-  status?: ShipmentStatus; approvedBy?: string | null; approvedAt?: { seconds: number } | null;
+  status?: ShipmentStatus; approvedBy?: string | null; approvedAt?: { seconds: number } | null; deliverySeq?: number | null;
   rejectedBy?: string | null; rejectedAt?: { seconds: number } | null; rejectReason?: string | null;
 }
 const shipmentStatusOf = (s: Shipment): ShipmentStatus => normalizeShipmentStatus(s.status);
@@ -943,6 +943,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
   const [sendWarehouseId, setSendWarehouseId] = useState('');
   const [sendRows,       setSendRows]       = useState<SendRow[]>([{ ...EMPTY_SEND_ROW }]);
   const [sendNote,       setSendNote]       = useState('');
+  const [sendSeq,        setSendSeq]        = useState(''); // urutan pengiriman (opsional) untuk WA Rencana Kirim
   const [sendDate,       setSendDate]       = useState(() => toLocalDateTimeInput(new Date()));
   const [sending,        setSending]        = useState(false);
   const [shipments,        setShipments]        = useState<Shipment[]>([]);
@@ -1018,7 +1019,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     && sendRows.some(r => r.productId && (parseFloat(r.qty) || 0) > 0 && (parseFloat(r.hargaTitip) || 0) > 0);
 
   const openCreateSend = () => {
-    setEditingShipment(null); setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
+    setEditingShipment(null); setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote(''); setSendSeq('');
     setSendDate(toLocalDateTimeInput(new Date()));
     setShowSendForm(true);
   };
@@ -1036,6 +1037,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     // dibulatkan dulu (sama seperti bug avgCost Bahan Baku).
     setSendRows(s.items.map(it => ({ productId: it.productId, qty: String(it.qty), hargaTitip: String(Math.round(it.hargaTitip)) })));
     setSendNote(s.note ?? '');
+    setSendSeq(s.deliverySeq ? String(s.deliverySeq) : '');
     setSendDate(s.createdAt?.seconds ? toLocalDateTimeInput(new Date(s.createdAt.seconds * 1000)) : toLocalDateTimeInput(new Date()));
     setShowSendForm(true);
   };
@@ -1062,6 +1064,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
         locationId: location.id, locationName: location.name,
         warehouseId: warehouse.id, warehouseName: warehouse.name,
         items, note: sendNote, date: new Date(sendDate).toISOString(),
+        deliverySeq: sendSeq.trim() === '' ? null : Number(sendSeq),
       });
       const res = editingShipment
         ? await fetch(`${API}/api/consignment/send/${editingShipment.id}`, {
@@ -1084,7 +1087,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
       else if (approveNow) toast.success(`Pengiriman ke "${location.name}" disimpan dan di-approve.`);
       else toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Draft pengiriman ke "${location.name}" disimpan — perlu di-approve agar stok berpindah.`);
       setShowSendForm(false); setEditingShipment(null);
-      setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote('');
+      setSendLocationId(''); setSendWarehouseId(''); setSendRows([{ ...EMPTY_SEND_ROW }]); setSendNote(''); setSendSeq('');
       await Promise.all([loadShipments(), loadLocations()]);
     } finally { setSending(false); }
   };
@@ -1511,7 +1514,7 @@ _${storeHeader.name}_`.trim();
     const drafts = shipments.filter(s => selectedShipments.has(s.id) && shipmentStatusOf(s) === 'draft');
     if (drafts.length === 0) { toast.error('Pilih minimal satu pengiriman berstatus draft.'); return; }
     const message = buildShipmentPlanWaMessage(drafts.map(s => ({
-      locationId: s.locationId, locationName: s.locationName, note: s.note,
+      locationId: s.locationId, locationName: s.locationName, note: s.note, deliverySeq: s.deliverySeq ?? null,
       items: s.items.map(it => ({ productId: it.productId, productName: it.productName, qty: it.qty })),
     })), { storeName: storeHeader.name });
     if (!shoppingWaFits(message)) { toast.error('Pesan terlalu panjang untuk WhatsApp. Pilih lebih sedikit draft.'); return; }
@@ -1546,6 +1549,20 @@ _${storeHeader.name}_`.trim();
     return <span className={`badge ${SHIPMENT_STATUS_BADGE[st]}`} style={{ fontSize: 10, padding: '1px 6px' }}>{SHIPMENT_STATUS_LABEL[st]}</span>;
   };
 
+  // Simpan nomor urutan kirim satu draf (tanpa efek stok); gagal -> toast dan nilai server dimuat ulang.
+  const saveShipmentSeq = async (s: Shipment, raw: string) => {
+    const next = raw.trim() === '' ? null : Number(raw);
+    if ((next ?? null) === (s.deliverySeq ?? null)) return;
+    try {
+      const res = await fetch(`${API}/api/consignment/send/${s.id}/seq`, {
+        method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ deliverySeq: next }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) toast.error(data.error ?? 'Gagal menyimpan urutan pengiriman.');
+    } catch { toast.error('Gagal menyimpan urutan pengiriman, periksa koneksi.'); }
+    await loadShipments();
+  };
+
   // Info tambahan per status: alasan penolakan (ditolak) / "belum berefek ke stok" (draft).
   const renderShipmentExtra = (s: Shipment) => {
     const st = shipmentStatusOf(s);
@@ -1554,7 +1571,21 @@ _${storeHeader.name}_`.trim();
         Ditolak{s.rejectedBy ? ` oleh ${s.rejectedBy}` : ''}{s.rejectedAt?.seconds ? ` · ${formatDate(s.rejectedAt.seconds)}` : ''}{s.rejectReason ? ` — ${s.rejectReason}` : ''}
       </p>
     );
-    if (st === 'draft') return <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Draft — belum mengubah stok; menunggu approval.</p>;
+    if (st === 'draft') return (
+      <div className="mt-1">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Draft — belum mengubah stok; menunggu approval.</p>
+        {can('edit') && (
+          <label className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+            Urutan kirim
+            <input key={`${s.id}-${s.deliverySeq ?? ''}`} type="number" inputMode="numeric" min={1} max={999} step={1}
+              defaultValue={s.deliverySeq ?? ''} placeholder="-" aria-label={`Urutan pengiriman ${s.locationName}`}
+              onBlur={e => saveShipmentSeq(s, e.currentTarget.value)}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              className="input tabular text-center" style={{ width: 64, height: 28, padding: '0 6px' }} />
+          </label>
+        )}
+      </div>
+    );
     return null;
   };
 
@@ -3737,6 +3768,10 @@ _${storeHeader.name}_`.trim();
                   <Plus size={12} /> Tambah Baris Produk
                 </button>
               </div>
+
+              <Field label="Urutan Pengiriman (opsional)">
+                <input type="number" inputMode="numeric" min={1} max={999} step={1} value={sendSeq} onChange={e => setSendSeq(e.target.value)} placeholder="Mis. 1 = dikirim pertama" className="input" />
+              </Field>
 
               <Field label="Catatan">
                 <textarea rows={4} value={sendNote} onChange={e => setSendNote(e.target.value)} placeholder="Catatan tambahan (opsional)" className="input" style={{ resize: 'vertical' }} />
