@@ -31,7 +31,8 @@ export interface FinanceReportPDFData {
   journal: FinanceReportJournalRow[];
   // Margin & penilaian usaha
   marginBersihPct: number;
-  gradeLabel: string; // mis. "B - Sehat"
+  gradeLabel: string; // mis. "B - Sehat" (dari margin setelah gaji pemilik bila diisi)
+  ownerSalary?: number; labaSetelahGaji?: number; marginSetelahGajiPct?: number; // gaji pemilik periode (0/undefined = tidak dihitung)
   // Pendapatan − Pengeluaran (kas) dan rekonsiliasi ke perubahan saldo kas periode
   labaBersihKas: number;
   rekonsiliasi: { selisihStok: number; modalMasuk: number; prive: number; selisihWaktu: number; nonPnl: number; perubahanKas: number };
@@ -200,6 +201,11 @@ export default function FinanceReportPDF({ data, store }: { data: FinanceReportP
         <Text style={[s.note, { marginTop: 6 }]}>
           Margin bersih {data.marginBersihPct.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% dari Omzet · Penilaian usaha: {data.gradeLabel}
         </Text>
+        {(data.ownerSalary ?? 0) > 0 && (
+          <Text style={s.note}>
+            Setelah gaji pemilik {rp(data.ownerSalary ?? 0)}: untung sebenarnya {rp(data.labaSetelahGaji ?? 0)} (margin {(data.marginSetelahGajiPct ?? 0).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%). Penilaian usaha memakai angka ini.
+          </Text>
+        )}
 
         {data.trend.length > 0 && (
           <View wrap={false}>

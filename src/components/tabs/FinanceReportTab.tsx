@@ -19,6 +19,8 @@ import Tooltip from '@/components/Tooltip';
 import { type PeriodKey, PERIOD_OPTIONS, periodRange } from '@/lib/period';
 import MonthlyFinanceSection from '@/components/dashboard/MonthlyFinanceSection';
 import { useSaldoAwal } from '@/lib/useSaldoAwal';
+import { useOwnerSalary } from '@/lib/useOwnerSalary';
+import { ownerSalaryForPeriod, breakEvenOmzet, marginHistory, previousMonths, type MonthlyPoint } from '@/lib/business-health';
 import type { InstallmentPayment } from '@/lib/installment-payments-report';
 import type { RecapPaymentRecord } from '@/lib/recap-payments-core';
 import type { WalletDoc } from '@/lib/useWallets';
@@ -334,6 +336,10 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
 
   // Saldo Awal disimpan di server (bukan localStorage) supaya sama di semua perangkat/akun.
   const { raw: saldoAwalRaw, saldoAwal, update: setSaldoAwalRaw } = useSaldoAwal(creds);
+  // Gaji pemilik per bulan (opsional): tenaga pemilik yang belum dibukukan sebagai beban, dikurangkan dari laba untuk "untung sebenarnya".
+  const { raw: ownerSalaryRaw, monthly: ownerSalaryMonthly, update: setOwnerSalaryRaw } = useOwnerSalary(creds);
+  // 6 bulan kalender sebelum periode terpilih (dari analitik bulanan) untuk membandingkan margin dengan riwayat toko sendiri.
+  const [historyPoints, setHistoryPoints] = useState<MonthlyPoint[] | null>(null);
 
   // ── Saldo Kas Saat Ini ───────────────────────────────────────
   // Independen dari filter periode di atas: tarik SEMUA transaksi sejak awal pencatatan (bukan cuma
@@ -421,6 +427,17 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
     } finally { if (myLoadId === loadIdRef.current) setLoading(false); }
   };
   useEffect(() => { load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let cancelled = false;
+    setHistoryPoints(null);
+    const months = previousMonths(from, 6);
+    const [ly, lm] = [Number(months[5].slice(0, 4)), Number(months[5].slice(5, 7))];
+    const lastDay = String(new Date(Date.UTC(ly, lm, 0)).getUTCDate()).padStart(2, '0');
+    fetch(`${API}/api/analytics/monthly?from=${months[0]}-01&to=${months[5]}-${lastDay}`, { headers })
+      .then(async r => { if (r.ok && !cancelled) setHistoryPoints(((await r.json()) as { months: MonthlyPoint[] }).months); })
+      .catch(() => { if (!cancelled) setHistoryPoints([]); });
+    return () => { cancelled = true; };
+  }, [from]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Harga Modal (costPrice) TERKINI per produk — dipakai sebagai fallback HPP kalau snapshot di item
   // transaksi 0/kosong (mis. transaksinya terjadi sebelum Harga Modal produknya diisi). Tombol "Hitung
@@ -505,7 +522,14 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
   const selisihStok = stockAdj.net;
   const labaBersih = labaKotor - totalBebanOperasional + selisihStok;
   const marginBersihPct = pct(labaBersih, totalPendapatan);
-  const gradeUsaha = gradeMarginBersih(marginBersihPct);
+  // "Untung sebenarnya": setelah gaji pemilik (dibagi rata per hari sepanjang periode). Grade memakai angka ini
+  // bila gaji pemilik diisi; kalau 0, sama dengan Laba Bersih biasa.
+  const ownerSalaryPeriod = ownerSalaryForPeriod(ownerSalaryMonthly, from, to);
+  const labaSetelahGaji = labaBersih - ownerSalaryPeriod;
+  const marginSetelahGajiPct = pct(labaSetelahGaji, totalPendapatan);
+  const gradeUsaha = gradeMarginBersih(marginSetelahGajiPct);
+  const omzetImpas = breakEvenOmzet(totalBebanOperasional + ownerSalaryPeriod, totalPendapatan, labaKotor);
+  const history = historyPoints ? marginHistory(historyPoints, ownerSalaryMonthly) : null;
 
   // Versi lama (sebelum HPP akrual ada): Total Pendapatan − Total Beban kas (termasuk Bahan Baku/
   // Produksi langsung sebagai beban). Tetap ditampilkan terpisah di bawah supaya tidak hilang, tapi
@@ -796,6 +820,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             totalModalMasuk, totalPrive,
             saldoAwal: saldoAwalPeriode, journal: journalRows,
             marginBersihPct, gradeLabel: `${gradeUsaha.grade} - ${gradeUsaha.label}`,
+            ownerSalary: ownerSalaryPeriod, labaSetelahGaji, marginSetelahGajiPct,
             labaBersihKas: labaBersihKasLama,
             rekonsiliasi: { selisihStok, modalMasuk: totalModalMasuk, prive: totalPrive, selisihWaktu: selisihWaktuPersediaan, nonPnl: totalBebanNonPnl, perubahanKas: perubahanSaldoKasPeriode },
             saldoSaatIni,
@@ -1101,8 +1126,86 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
                 <Award size={15} /> Penilaian Usaha: {gradeUsaha.label}
               </p>
               <p className="text-[12px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-                {gradeUsaha.desc} Margin Bersih periode ini <span className="font-bold tabular">{formatPct(marginBersihPct)}</span> dari Omzet.
+                {gradeUsaha.desc} Margin Bersih{ownerSalaryPeriod > 0 ? ' (setelah gaji pemilik)' : ''} periode ini <span className="font-bold tabular">{formatPct(marginSetelahGajiPct)}</span> dari Omzet.
               </p>
+            </div>
+          </div>
+
+
+          {/* Untung sebenarnya, titik impas, dan perbandingan dengan riwayat toko sendiri — dihitung dari data toko, bukan patokan umum. */}
+          <div className="card p-4 space-y-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Gaji pemilik per bulan (opsional)</label>
+              <NumberInput value={ownerSalaryRaw} onChange={raw => setOwnerSalaryRaw(raw)}
+                className="input w-full sm:w-[180px]" style={{ height: 36 }} placeholder="0" />
+              <p className="text-[11px] flex-1 min-w-[220px]" style={{ color: 'var(--text-muted)' }}>
+                Nilai wajar tenaga pemilik yang belum dibukukan sebagai beban (mis. setara upah orang yang menggantikan). Dikurangkan dari laba, dibagi rata per hari. Tidak mengubah data transaksi.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>Laba Bersih (belum gaji pemilik)</p>
+                <p className="text-base font-extrabold tabular mt-0.5" style={{ color: labaBersih >= 0 ? 'var(--text-primary)' : 'var(--danger)' }}>{formatRp(labaBersih)}</p>
+              </div>
+              <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+                <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>Gaji pemilik periode ini</p>
+                <p className="text-base font-extrabold tabular mt-0.5" style={{ color: 'var(--text-primary)' }}>{formatRp(ownerSalaryPeriod)}</p>
+              </div>
+              <div className="rounded-xl p-3" style={{ background: labaSetelahGaji >= 0 ? 'var(--success-bg)' : 'var(--danger-bg)' }}>
+                <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>Untung sebenarnya</p>
+                <p className="text-base font-extrabold tabular mt-0.5" style={{ color: labaSetelahGaji >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatRp(labaSetelahGaji)}</p>
+              </div>
+            </div>
+            <p className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+              {ownerSalaryMonthly <= 0
+                ? 'Gaji pemilik belum diisi, jadi angka di atas belum memperhitungkan tenaga pemilik. Isi supaya terlihat apakah usaha benar-benar untung.'
+                : labaSetelahGaji >= 0
+                  ? 'Usaha masih untung setelah menghitung gaji pemilik.'
+                  : `Usaha belum menutup gaji pemilik: kurang ${formatRp(-labaSetelahGaji)} di periode ini.`}
+            </p>
+
+            <div className="pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+              <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Titik impas periode ini</p>
+              {omzetImpas === null ? (
+                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>Belum bisa dihitung: belum ada omzet, atau margin kotor (omzet dikurangi HPP) nol/negatif.</p>
+              ) : (
+                <>
+                  <p className="text-[12px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Omzet minimal agar tidak rugi: <span className="font-bold tabular">{formatRp(omzetImpas)}</span>. Omzet sekarang <span className="font-bold tabular">{formatRp(totalPendapatan)}</span>
+                    {totalPendapatan >= omzetImpas ? ', sudah melewati titik impas.' : `, kurang ${formatRp(omzetImpas - totalPendapatan)} lagi.`}
+                  </p>
+                  <div className="h-2 rounded-full mt-2 overflow-hidden" style={{ background: 'var(--surface-2)' }} role="progressbar" aria-label="Omzet terhadap titik impas" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(omzetImpas > 0 ? (totalPendapatan / omzetImpas) * 100 : 100))}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, omzetImpas > 0 ? (totalPendapatan / omzetImpas) * 100 : 100)}%`, background: totalPendapatan >= omzetImpas ? 'var(--success)' : 'var(--warning)' }} />
+                  </div>
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Perkiraan: biaya tetap = seluruh Beban Operasional + gaji pemilik, dibagi margin kotor ({formatPct(pct(labaKotor, totalPendapatan))}). Sebagian beban sebenarnya ikut omzet, jadi angka ini sedikit lebih tinggi dari titik impas riil.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+              <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>Dibanding 6 bulan sebelumnya</p>
+              {history === null ? (
+                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>Memuat riwayat...</p>
+              ) : history.avgMarginPct === null ? (
+                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>Belum ada omzet di 6 bulan sebelum periode ini, jadi belum ada pembanding.</p>
+              ) : (
+                <>
+                  <p className="text-[12px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Margin periode ini <span className="font-bold tabular">{formatPct(marginSetelahGajiPct)}</span> vs rata-rata <span className="font-bold tabular">{formatPct(history.avgMarginPct)}</span> (ditimbang omzet, setelah gaji pemilik)
+                    {Math.abs(marginSetelahGajiPct - history.avgMarginPct) < 0.5 ? ': hampir sama.' : marginSetelahGajiPct > history.avgMarginPct ? `: lebih baik ${formatPct(marginSetelahGajiPct - history.avgMarginPct)} poin.` : `: lebih rendah ${formatPct(history.avgMarginPct - marginSetelahGajiPct)} poin.`}
+                  </p>
+                  <div className="flex gap-2 flex-wrap mt-2">
+                    {history.months.map(m => (
+                      <span key={m.month} className="text-[11px] tabular rounded-lg px-2 py-1" style={{ background: 'var(--surface-2)', color: m.marginPct < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                        {m.month}: {formatPct(m.marginPct)}
+                      </span>
+                    ))}
+                  </div>
+                  {period === 'month' && <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Bulan berjalan belum penuh, jadi marginnya bisa masih bergerak.</p>}
+                </>
+              )}
             </div>
           </div>
 
@@ -1119,7 +1222,7 @@ export default function FinanceReportTab({ creds, onOpenOrder }: { creds: string
             {showGradeScale && (
               <div className="px-5 pb-5" style={{ borderTop: '1px solid var(--border-2)' }}>
                 <p className="text-[11px] my-3" style={{ color: 'var(--text-muted)' }}>
-                  Patokan umum untuk usaha kuliner/UMKM skala rumahan, bukan standar akuntansi baku — sekadar bantu baca cepat sehat tidaknya margin laba.
+                  Indikator internal berdasarkan patokan kasar usaha kuliner/UMKM skala rumahan, bukan standar resmi atau akuntansi baku. Untuk keputusan, andalkan Untung sebenarnya, titik impas, dan perbandingan dengan riwayat toko sendiri di atas.
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[360px] text-left" style={{ borderCollapse: 'collapse' }}>
