@@ -1518,6 +1518,7 @@ _${storeHeader.name}_`.trim();
     const phone = storeInfo.whatsapp?.trim();
     if (!phone) toast.success('Nomor WhatsApp toko belum diisi di Pengaturan — pilih kontak di WhatsApp.');
     window.open(shoppingWaUrl(phone, message), '_blank');
+    setSelectedShipments(new Set()); // centang dibersihkan setelah WhatsApp dibuka
   };
 
   const bulkDeleteShipments = async () => {
