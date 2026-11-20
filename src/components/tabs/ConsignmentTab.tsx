@@ -1547,21 +1547,15 @@ _${storeHeader.name}_`.trim();
 
   const renderShipmentStatusBadge = (s: Shipment) => {
     const st = shipmentStatusOf(s);
-    return <span className={`badge ${SHIPMENT_STATUS_BADGE[st]}`} style={{ fontSize: 10, padding: '1px 6px' }}>{SHIPMENT_STATUS_LABEL[st]}</span>;
-  };
-
-  // Simpan nomor urutan kirim satu draf (tanpa efek stok); gagal -> toast dan nilai server dimuat ulang.
-  const saveShipmentSeq = async (s: Shipment, raw: string) => {
-    const next = raw.trim() === '' ? null : Number(raw);
-    if ((next ?? null) === (s.deliverySeq ?? null)) return;
-    try {
-      const res = await fetch(`${API}/api/consignment/send/${s.id}/seq`, {
-        method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ deliverySeq: next }),
-      });
-      const data = await res.json().catch(() => ({})) as { error?: string };
-      if (!res.ok) toast.error(data.error ?? 'Gagal menyimpan urutan pengiriman.');
-    } catch { toast.error('Gagal menyimpan urutan pengiriman, periksa koneksi.'); }
-    await loadShipments();
+    return (
+      <>
+        <span className={`badge ${SHIPMENT_STATUS_BADGE[st]}`} style={{ fontSize: 10, padding: '1px 6px' }}>{SHIPMENT_STATUS_LABEL[st]}</span>
+        {/* Nomor urutan kirim: informasi saja (diubah lewat tombol Edit), tampil untuk draf yang sudah diberi urutan. */}
+        {st === 'draft' && s.deliverySeq ? (
+          <span className="badge badge-gray" style={{ fontSize: 10, padding: '1px 6px' }} title="Urutan pengiriman (ubah lewat Edit)">Urutan {s.deliverySeq}</span>
+        ) : null}
+      </>
+    );
   };
 
   // Info tambahan per status: alasan penolakan (ditolak) / "belum berefek ke stok" (draft).
@@ -1572,21 +1566,7 @@ _${storeHeader.name}_`.trim();
         Ditolak{s.rejectedBy ? ` oleh ${s.rejectedBy}` : ''}{s.rejectedAt?.seconds ? ` · ${formatDate(s.rejectedAt.seconds)}` : ''}{s.rejectReason ? ` — ${s.rejectReason}` : ''}
       </p>
     );
-    if (st === 'draft') return (
-      <div className="mt-1">
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Draft — belum mengubah stok; menunggu approval.</p>
-        {can('edit') && (
-          <label className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-            Urutan kirim
-            <input key={`${s.id}-${s.deliverySeq ?? ''}`} type="number" inputMode="numeric" min={1} max={999} step={1}
-              defaultValue={s.deliverySeq ?? ''} placeholder="-" aria-label={`Urutan pengiriman ${s.locationName}`}
-              onBlur={e => saveShipmentSeq(s, e.currentTarget.value)}
-              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-              className="input tabular text-center" style={{ width: 64, height: 28, padding: '0 6px' }} />
-          </label>
-        )}
-      </div>
-    );
+    if (st === 'draft') return <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Draft — belum mengubah stok; menunggu approval.</p>;
     return null;
   };
 
