@@ -1,4 +1,5 @@
 import { SHOPPING_WA_DEFAULT_STORE, plainText } from './shopping-wa';
+import { formatDate } from './format';
 
 // Pesan WA "Rencana Kirim Stok" ke nomor WA toko sendiri: gabungan semua draf kirim stok terpilih, per mitra
 // (item + pcs, TANPA harga) plus total per produk dan total keseluruhan — untuk tahu berapa pcs yang harus dibuat
@@ -12,7 +13,23 @@ export interface ShipmentPlanDraft {
   note?: string;
   /** Nomor urutan pengiriman (kecil = lebih dulu); kosong = di bawah yang bernomor. */
   deliverySeq?: number | null;
+  /** Tanggal kirim (tanggal dokumen pengiriman): Date/ISO/epoch ms; kosong = tidak ditampilkan. */
+  date?: Date | string | number | null;
 }
+
+const WIB_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
+/** Kunci hari WIB (yyyy-mm-dd), null bila tanggal kosong/tidak valid. */
+const wibDay = (d: ShipmentPlanDraft['date']): string | null => {
+  if (d === null || d === undefined || d === '') return null;
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? null : WIB_DAY.format(t);
+};
+const WEEKDAY = new Intl.DateTimeFormat('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
+/** Contoh: "Sabtu, 21 Nov 2026". */
+const dayLabel = (key: string) => {
+  const noon = new Date(`${key}T12:00:00+07:00`);
+  return `${WEEKDAY.format(noon)}, ${formatDate(noon, 'short', 'Asia/Jakarta')}`;
+};
 
 const qtyLabel = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
 
@@ -41,7 +58,12 @@ export function buildShipmentPlanWaMessage(drafts: ShipmentPlanDraft[], opts: { 
   const mitras = [...byMitra.values()].filter(m => m.items.size > 0)
     .sort((a, b) => (a.seq ?? Infinity) - (b.seq ?? Infinity) || a.order - b.order);
 
-  const lines: string[] = [`*RENCANA KIRIM STOK - ${store}*`, `Jumlah mitra: ${mitras.length}`];
+  // Tanggal kirim: satu tanggal bila semua sama; beda-beda tampil sebagai rentang (terawal s/d terakhir).
+  const days = [...new Set(drafts.map(d => wibDay(d.date)).filter((k): k is string => k !== null))].sort();
+  const dateText = days.length === 0 ? null : days.length === 1 ? dayLabel(days[0]) : `${dayLabel(days[0])} s/d ${dayLabel(days[days.length - 1])}`;
+  const lines: string[] = [`*RENCANA KIRIM STOK - ${store}*`];
+  if (dateText) lines.push(`Tanggal kirim: ${dateText}`);
+  lines.push(`Jumlah mitra: ${mitras.length}`);
   if (mitras.some(m => m.seq !== null)) lines.push('Urutan sesuai urutan pengiriman');
   const perProduct = new Map<string, { name: string; qty: number }>();
   let grand = 0;

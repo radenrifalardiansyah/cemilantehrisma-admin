@@ -1515,6 +1515,7 @@ _${storeHeader.name}_`.trim();
     if (drafts.length === 0) { toast.error('Pilih minimal satu pengiriman berstatus draft.'); return; }
     const message = buildShipmentPlanWaMessage(drafts.map(s => ({
       locationId: s.locationId, locationName: s.locationName, note: s.note, deliverySeq: s.deliverySeq ?? null,
+      date: s.createdAt?.seconds ? s.createdAt.seconds * 1000 : null,
       items: s.items.map(it => ({ productId: it.productId, productName: it.productName, qty: it.qty })),
     })), { storeName: storeHeader.name });
     if (!shoppingWaFits(message)) { toast.error('Pesan terlalu panjang untuk WhatsApp. Pilih lebih sedikit draft.'); return; }

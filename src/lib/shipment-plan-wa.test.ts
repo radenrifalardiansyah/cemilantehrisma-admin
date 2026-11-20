@@ -65,4 +65,18 @@ describe('buildShipmentPlanWaMessage', () => {
     expect(m.indexOf('*A*')).toBeLessThan(m.indexOf('*B*'));
     expect(buildShipmentPlanWaMessage([d()])).not.toContain('Urutan sesuai');
   });
+
+  it('tanggal kirim tampil di judul: satu tanggal, rentang, atau tidak ada', () => {
+    const one = buildShipmentPlanWaMessage([d({ date: '2026-11-21T03:00:00.000Z' }), d({ locationId: 'b', locationName: 'B', date: '2026-11-21T10:00:00.000Z' })]);
+    expect(one).toMatch(/Tanggal kirim: Sabtu, 21 Nov 2026/);
+    expect(one.indexOf('Tanggal kirim')).toBeLessThan(one.indexOf('Jumlah mitra'));
+    const range = buildShipmentPlanWaMessage([d({ date: '2026-11-21T03:00:00.000Z' }), d({ locationId: 'b', locationName: 'B', date: '2026-11-23T03:00:00.000Z' })]);
+    expect(range).toMatch(/Tanggal kirim: Sabtu, 21 Nov 2026 s\/d Senin, 23 Nov 2026/);
+    expect(buildShipmentPlanWaMessage([d()])).not.toContain('Tanggal kirim');
+  });
+  it('tanggal memakai hari WIB (UTC 18.00 sudah hari berikutnya di WIB) dan tetap ASCII', () => {
+    const m = buildShipmentPlanWaMessage([d({ date: '2026-11-21T18:00:00.000Z' })]);
+    expect(m).toMatch(/Tanggal kirim: Minggu, 22 Nov 2026/);
+    expect(/^[\x0a\x20-\x7e]*$/.test(m)).toBe(true);
+  });
 });
