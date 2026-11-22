@@ -157,6 +157,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
     const w = walletId ? wallets.find(x => x.id === walletId) : undefined;
     return w ? <span className="badge badge-gray text-[10px] inline-flex items-center gap-1" title="Dompet"><Wallet size={10} aria-hidden="true" />{w.name}</span> : null;
   };
+  const walletNameOf = (walletId?: string | null) => (walletId ? wallets.find(x => x.id === walletId)?.name ?? '' : '');
 
   const [income,      setIncome]      = useState<Income[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -165,6 +166,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
   const toggleHistory = (id: string) => setHistoryId(cur => cur === id ? null : id);
   const [search,      setSearch]      = useState('');
   const [categoryFilter, setCategoryFilter] = useState('semua');
+  const [walletFilter, setWalletFilter] = useState('semua'); // 'semua' | 'tanpa' (tanpa dompet) | id dompet
   const [page,        setPage]        = useState(1);
   const [pageSize,    setPageSize]    = useState(10);
   const [view, setView] = useViewMode('income');
@@ -344,14 +346,21 @@ export default function IncomeTab({ creds }: { creds: string }) {
     ...[...new Set([...INCOME_CATEGORIES, ...income.map(i => i.category)])].map(c => ({ value: c, label: c })),
   ];
 
+  const walletFilterOptions = [
+    { value: 'semua', label: 'Semua Dompet' },
+    ...wallets.map(w => ({ value: w.id, label: w.isActive ? w.name : `${w.name} (nonaktif)` })),
+    { value: 'tanpa', label: 'Tanpa Dompet' },
+  ];
+
   const filtered = income
     .filter(i => {
       const matchCat = categoryFilter === 'semua' || i.category === categoryFilter;
+      const matchWallet = walletFilter === 'semua' || (walletFilter === 'tanpa' ? !i.walletId : i.walletId === walletFilter);
       const matchQ = !search
         || i.description.toLowerCase().includes(search.toLowerCase())
         || i.category.toLowerCase().includes(search.toLowerCase())
         || (i.note ?? '').toLowerCase().includes(search.toLowerCase());
-      return matchCat && matchQ;
+      return matchCat && matchWallet && matchQ;
     })
     .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -381,10 +390,10 @@ export default function IncomeTab({ creds }: { creds: string }) {
       const ws = wb.addWorksheet('Pemasukan');
       ws.columns = [
         { key: 'tgl', width: 16 }, { key: 'kat', width: 18 }, { key: 'ket', width: 32 },
-        { key: 'jml', width: 18 }, { key: 'catatan', width: 32 },
+        { key: 'dompet', width: 22 }, { key: 'jml', width: 18 }, { key: 'catatan', width: 32 },
       ];
 
-      ws.mergeCells(1, 1, 1, 5);
+      ws.mergeCells(1, 1, 1, 6);
       const t = ws.getCell(1, 1);
       t.value = 'DAFTAR PEMASUKAN LAIN-LAIN — CEMILAN TEH RISMA';
       t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
@@ -392,7 +401,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC96018' } };
       ws.getRow(1).height = 28;
 
-      ws.mergeCells(2, 1, 2, 5);
+      ws.mergeCells(2, 1, 2, 6);
       const s = ws.getCell(2, 1);
       s.value = `${rows.length} pemasukan (${label})`;
       s.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
@@ -401,7 +410,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       ws.getRow(2).height = 20;
 
       const headerRow = ws.getRow(3);
-      ['Tanggal', 'Kategori', 'Keterangan', 'Jumlah', 'Catatan'].forEach((h, i) => { headerRow.getCell(i + 1).value = h; });
+      ['Tanggal', 'Kategori', 'Keterangan', 'Dompet', 'Jumlah', 'Catatan'].forEach((h, i) => { headerRow.getCell(i + 1).value = h; });
       headerRow.height = 24;
       headerRow.eachCell(cell => {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8821A' } };
@@ -416,9 +425,10 @@ export default function IncomeTab({ creds }: { creds: string }) {
         row.getCell(1).value = formatDateDisplay(i.date);
         row.getCell(2).value = i.category;
         row.getCell(3).value = i.description;
-        row.getCell(4).value = i.amount;
-        row.getCell(4).numFmt = '"Rp"#,##0';
-        row.getCell(5).value = i.note ?? '';
+        row.getCell(4).value = walletNameOf(i.walletId);
+        row.getCell(5).value = i.amount;
+        row.getCell(5).numFmt = '"Rp"#,##0';
+        row.getCell(6).value = i.note ?? '';
         row.eachCell(cell => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFFFF7ED' : 'FFFFFFFF' } };
           cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
@@ -451,13 +461,14 @@ export default function IncomeTab({ creds }: { creds: string }) {
             label,
             generatedAt: new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
             columns: [
-              { header: 'Tanggal', width: '14%' },
-              { header: 'Kategori', width: '16%' },
-              { header: 'Keterangan', width: '30%' },
+              { header: 'Tanggal', width: '12%' },
+              { header: 'Kategori', width: '14%' },
+              { header: 'Keterangan', width: '24%' },
+              { header: 'Dompet', width: '16%' },
               { header: 'Jumlah', width: '16%', align: 'right', bold: true },
-              { header: 'Catatan', width: '24%' },
+              { header: 'Catatan', width: '18%' },
             ],
-            rows: rows.map(i => [formatDateDisplay(i.date), i.category, i.description, formatRp(i.amount), i.note || '']),
+            rows: rows.map(i => [formatDateDisplay(i.date), i.category, i.description, walletNameOf(i.walletId) || '-', formatRp(i.amount), i.note || '']),
           }}
         />
       ).toBlob();
@@ -527,6 +538,17 @@ export default function IncomeTab({ creds }: { creds: string }) {
               height={HEADER_BTN_H}
               searchPlaceholder="Cari kategori…"
               options={categoryOptions}
+            />
+          </div>
+        )}
+        {income.length > 0 && wallets.length > 0 && (
+          <div className="w-full sm:w-[200px] flex-shrink-0">
+            <FilterSelect
+              value={walletFilter}
+              onChange={v => { setWalletFilter(v); resetPage(); }}
+              height={HEADER_BTN_H}
+              searchPlaceholder="Cari dompet…"
+              options={walletFilterOptions}
             />
           </div>
         )}
