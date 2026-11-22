@@ -127,6 +127,12 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
+  // Badge nama dompet di daftar (kosong bila transaksi tanpa dompet / dompet tidak ditemukan).
+  const walletBadge = (walletId?: string | null) => {
+    const w = walletId ? wallets.find(x => x.id === walletId) : undefined;
+    return w ? <span className="badge badge-gray text-[10px] inline-flex items-center gap-1" title="Dompet"><Wallet size={10} aria-hidden="true" />{w.name}</span> : null;
+  };
+
   const [expenses,    setExpenses]    = useState<Expense[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
@@ -537,6 +543,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{e.description}</p>
                           <span className="badge badge-gray text-[10px]">{e.category}</span>
+{walletBadge(e.walletId)}
                           {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                           {e.excludeFromPnl && <span className="badge badge-gray text-[10px]">Non-Operasional</span>}
                         </div>
@@ -596,6 +603,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
                       <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{e.description}</p>
                       <div className="flex items-center gap-1">
                         <span className="badge badge-gray text-[10px]">{e.category}</span>
+{walletBadge(e.walletId)}
                         {e.sourceType && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                         {e.excludeFromPnl && <span className="badge badge-gray text-[10px]">Non-Operasional</span>}
                       </div>

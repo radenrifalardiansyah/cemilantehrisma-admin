@@ -152,6 +152,12 @@ export default function IncomeTab({ creds }: { creds: string }) {
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
+  // Badge nama dompet di daftar (kosong bila transaksi tanpa dompet / dompet tidak ditemukan).
+  const walletBadge = (walletId?: string | null) => {
+    const w = walletId ? wallets.find(x => x.id === walletId) : undefined;
+    return w ? <span className="badge badge-gray text-[10px] inline-flex items-center gap-1" title="Dompet"><Wallet size={10} aria-hidden="true" />{w.name}</span> : null;
+  };
+
   const [income,      setIncome]      = useState<Income[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
@@ -604,6 +610,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{i.description}</p>
                           <span className="badge badge-gray text-[10px]">{i.category}</span>
+{walletBadge(i.walletId)}
                           {i.auto && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                         </div>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date, i.createdAt)}</p>
@@ -664,6 +671,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
                       <p className="text-sm font-bold truncate max-w-full" style={{ color: 'var(--text-primary)' }}>{i.description}</p>
                       <div className="flex items-center gap-1">
                         <span className="badge badge-gray text-[10px]">{i.category}</span>
+{walletBadge(i.walletId)}
                         {i.auto && <span className="badge badge-blue text-[10px]">Otomatis</span>}
                       </div>
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDateDisplay(i.date, i.createdAt)}</p>
