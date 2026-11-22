@@ -208,9 +208,18 @@ export default function AppShell({
   const ADMIN_BILLING_TAB: ClickableTab | null = role === 'admin' ? { key: 'tagihan-admin-fee', id: 'tagihan-admin-fee', label: 'Tagihan Biaya Admin', Icon: Receipt } : null;
   const PINNED_TAB = SUPER_ADMIN_TAB ?? ADMIN_BILLING_TAB;
   const MORE_TABS_DISPLAY = PINNED_TAB ? [...MORE_TABS, PINNED_TAB] : MORE_TABS;
-  const filteredMoreTabs = moreQuery.trim()
-    ? MORE_TABS_DISPLAY.filter(t => t.label.toLowerCase().includes(moreQuery.trim().toLowerCase()))
-    : MORE_TABS_DISPLAY;
+  const moreQ = moreQuery.trim().toLowerCase();
+  const matchesMore = (t: ClickableTab) => !moreQ || t.label.toLowerCase().includes(moreQ);
+  // Sheet "Lainnya" dikelompokkan per Modul (urutan sama dengan sidebar). Menu yang sudah ada di bottom bar
+  // tidak diulang; kelompok kosong (semua menunya di bottom bar atau tidak cocok pencarian) disembunyikan.
+  // Menu pin (Biaya Admin / Tagihan) masuk kelompok "Lainnya" di akhir.
+  const moreGroups: { id: string; label: string; tabs: ClickableTab[] }[] = [
+    ...NAV_GROUPS.map(g => ({
+      id: g.id, label: g.label,
+      tabs: flattenClickable(g.tabs).filter(t => !primaryIds.has(t.id) && matchesMore(t)),
+    })),
+    ...(PINNED_TAB && matchesMore(PINNED_TAB) ? [{ id: '__pinned', label: 'Lainnya', tabs: [PINNED_TAB] }] : []),
+  ].filter(g => g.tabs.length > 0);
 
   // Desktop sidebar search — filters the nested NAV_GROUPS tree by label, keeping a
   // parent tab whenever it or any of its children match so results stay navigable.
@@ -850,49 +859,53 @@ export default function AppShell({
                   }}
                 />
               </div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-muted)' }}>
-                Menu Lainnya
-              </p>
-              {filteredMoreTabs.length === 0 && (
+              {moreGroups.length === 0 && (
                 <p className="text-xs text-center" style={{ color: 'var(--text-muted)', padding: '20px 0' }}>
                   Menu tidak ditemukan
                 </p>
               )}
-              <div className="grid grid-cols-4 gap-3">
-                {filteredMoreTabs.map(tab => {
-                  const isActive = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => go(tab.id)}
-                      className="flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-2xl transition-all"
-                      style={{
-                        background: isActive ? 'var(--accent-bg)' : 'var(--surface-2)',
-                        border: `1.5px solid ${isActive ? 'var(--accent-light)' : 'transparent'}`,
-                      }}
-                    >
-                      <span className="relative">
-                        <tab.Icon
-                          size={22}
-                          strokeWidth={isActive ? 2.5 : 1.8}
-                          style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
-                        />
-                        {(badges[tab.id] ?? 0) > 0 && (
-                          <span className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
-                            {badges[tab.id]}
+              {moreGroups.map((group, gi) => (
+                <section key={group.id} aria-label={group.label} className={gi > 0 ? 'mt-5' : undefined}>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-2.5" style={{ color: 'var(--text-muted)' }}>
+                    {group.label}
+                  </p>
+                  <div className="grid grid-cols-4 gap-3">
+                    {group.tabs.map(tab => {
+                      const isActive = activeTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => go(tab.id)}
+                          className="flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-2xl transition-all"
+                          style={{
+                            background: isActive ? 'var(--accent-bg)' : 'var(--surface-2)',
+                            border: `1.5px solid ${isActive ? 'var(--accent-light)' : 'transparent'}`,
+                          }}
+                        >
+                          <span className="relative">
+                            <tab.Icon
+                              size={22}
+                              strokeWidth={isActive ? 2.5 : 1.8}
+                              style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
+                            />
+                            {(badges[tab.id] ?? 0) > 0 && (
+                              <span className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+                                {badges[tab.id]}
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                      <span
-                        className="text-[11px] font-semibold text-center leading-tight px-0.5"
-                        style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
-                      >
-                        {tab.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                          <span
+                            className="text-[11px] font-semibold text-center leading-tight px-0.5"
+                            style={{ color: isActive ? 'var(--accent)' : 'var(--text-secondary)' }}
+                          >
+                            {tab.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
 
               <div className="mt-4 pt-4 flex flex-col gap-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
                 <button
