@@ -648,15 +648,33 @@ export default function AdminPage() {
   }, [authed, activeTab, dashSubView, dashData]);
 
   // ── Dynamic sidebar data — Struktur Menu / Modul drive the real nav ──
+  // Gagal sesaat (jaringan HP putus-nyambung, server cold start, 5xx) dulu diabaikan diam-diam sehingga
+  // modules/menus tetap kosong dan seluruh menu (bottom nav HP + sidebar) hilang sampai halaman dimuat ulang.
+  // Sekarang dicoba ulang beberapa kali; 401/403 tidak diulang (bukan gangguan sesaat).
   const fetchNav = useCallback(async (token: string) => {
-    try {
-      const res = await fetch('/api/menus', { headers: { 'x-admin-auth': token } });
-      if (res.ok) {
-        const { modules, menus } = await res.json() as { modules: ModuleDoc[]; menus: MenuDoc[] };
-        setModules(modules); setMenus(menus);
-      }
-    } catch {}
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch('/api/menus', { headers: { 'x-admin-auth': token } });
+        if (res.ok) {
+          const { modules, menus } = await res.json() as { modules: ModuleDoc[]; menus: MenuDoc[] };
+          setModules(modules); setMenus(menus);
+          return;
+        }
+        if (res.status === 401 || res.status === 403) return;
+      } catch {}
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    }
   }, []);
+
+  // Menu masih kosong setelah login (semua percobaan di atas gagal): coba lagi saat aplikasi kembali terlihat
+  // atau jaringan pulih, supaya menu muncul sendiri tanpa harus memuat ulang halaman.
+  useEffect(() => {
+    if (!authed || menus.length > 0) return;
+    const retry = () => { if (document.visibilityState === 'visible') void fetchNav(creds); };
+    document.addEventListener('visibilitychange', retry);
+    window.addEventListener('online', retry);
+    return () => { document.removeEventListener('visibilitychange', retry); window.removeEventListener('online', retry); };
+  }, [authed, menus.length, creds, fetchNav]);
 
   // ── Badge notifikasi "Pesanan" — pesanan yang belum ditandai selesai (Website, atau
   // Kasir yang berisi item "Buka PO"). Dipakai supaya badge di sidebar sudah muncul sebelum
