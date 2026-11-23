@@ -33,6 +33,7 @@ import { buildMitraInvoiceData } from '@/lib/mitra-invoice';
 import MitraInvoicePDF, { type MitraInvoiceData } from '@/lib/pdf/MitraInvoicePDF';
 import ShipmentHistoryPDF from '@/lib/pdf/ShipmentHistoryPDF';
 import { buildShipmentPlanWaMessage } from '@/lib/shipment-plan-wa';
+import { buildLocationStockWaMessage } from '@/lib/location-stock-wa';
 import { shoppingWaFits, shoppingWaUrl } from '@/lib/shopping-wa';
 import RecapNotePDF, { RecapNotePDFPage } from '@/lib/pdf/RecapNotePDF';
 import { groupAndMergeRecaps } from '@/lib/consignment-recap-merge';
@@ -591,6 +592,21 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
   };
 
   const locationStatsFor = (id: string): LocationStats => locationStats[id] ?? EMPTY_LOCATION_STATS;
+
+  // Sisa stok di mitra terpilih -> satu pesan WA ke nomor WA toko (stok diambil dari data yang sudah dimuat di layar).
+  const sendLocationStockWhatsApp = () => {
+    const selected = locations.filter(l => selectedLocations.has(l.id));
+    if (selected.length === 0) { toast.error('Pilih minimal satu mitra.'); return; }
+    const message = buildLocationStockWaMessage(selected.map(l => ({
+      locationName: l.name,
+      stock: (locationStock[l.id] ?? []).map(s => ({ productId: s.productId, productName: s.productName, stockQty: s.stockQty })),
+    })), { storeName: storeHeader.name });
+    if (!shoppingWaFits(message)) { toast.error('Pesan terlalu panjang untuk WhatsApp. Pilih lebih sedikit mitra.'); return; }
+    const phone = storeInfo.whatsapp?.trim();
+    if (!phone) toast.success('Nomor WhatsApp toko belum diisi di Pengaturan — pilih kontak di WhatsApp.');
+    window.open(shoppingWaUrl(phone, message), '_blank');
+    setSelectedLocations(new Set()); // centang dibersihkan setelah WhatsApp dibuka
+  };
 
   const bulkDeleteLocations = async () => {
     if (selectedLocations.size === 0) return;
@@ -4276,6 +4292,12 @@ _${storeHeader.name}_`.trim();
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>
             <span className="text-sm font-bold flex-shrink-0 whitespace-nowrap">{selectedLocations.size} dipilih</span>
             <div className="w-px h-4 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }} />
+            <button onClick={sendLocationStockWhatsApp}
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }} title="Kirim sisa stok di mitra terpilih ke WhatsApp toko">
+              <MessageCircle size={13} />
+              WA Stok
+            </button>
             <button onClick={() => exportLocationsExcel(locations.filter(l => selectedLocations.has(l.id)), 'terpilih')} disabled={exportingLocations}
               className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap"
               style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
