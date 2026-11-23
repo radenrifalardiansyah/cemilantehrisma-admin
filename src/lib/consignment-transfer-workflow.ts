@@ -309,7 +309,7 @@ async function runEffects(kind: 'approve' | 'cancel', t: ConsignmentTransfer, ac
     (async () => {
       try {
         await notify(db, {
-          type: 'consignment_send', title, message, link: 'consignment',
+          type: 'consignment_transfer', title, message, link: 'consignment',
           entityCollection: 'consignmentTransfers', entityId: t.id, actor,
         });
       } catch (err) { console.error(`Failed to send notification for consignment transfer ${kind}`, err); }

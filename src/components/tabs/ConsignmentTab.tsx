@@ -327,9 +327,9 @@ function LocationStatTiles({ stockQty, stockValue, stats, dense = false }: { sto
   );
 }
 
-export default function ConsignmentTab({ creds, products, can, highlightShipmentId, highlightRecapId, onHighlightHandled }: {
+export default function ConsignmentTab({ creds, products, can, highlightShipmentId, highlightRecapId, highlightTransferId, onHighlightHandled }: {
   creds: string; products: PosProduct[]; can: (a: Action) => boolean;
-  highlightShipmentId?: string | null; highlightRecapId?: string | null; onHighlightHandled?: () => void;
+  highlightShipmentId?: string | null; highlightRecapId?: string | null; highlightTransferId?: string | null; onHighlightHandled?: () => void;
 }) {
   const toast   = useToast();
   const confirm = useConfirm();
@@ -1676,6 +1676,9 @@ _${storeHeader.name}_`.trim();
     return () => clearTimeout(t);
   }, [highlightShipmentId, shipments]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Klik "Lihat" notifikasi transfer: buka sub-tab Transfer Mitra (panel yang menyorot barisnya).
+  useEffect(() => { if (highlightTransferId) setSubTab('transfer'); }, [highlightTransferId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const togglePageAllShipments = () => {
     const pageIds     = paginatedShipments.map(s => s.id);
     const allSelected = pageIds.every(id => selectedShipments.has(id));
@@ -2747,7 +2750,8 @@ _${storeHeader.name}_`.trim();
         {/* ════ TRANSFER MITRA (polling & modal ada di dalam panel) ═══ */}
         {subTab === 'transfer' && (
           <TransferMitraPanel creds={creds} can={can} locations={locations} locationStock={locationStock}
-            onStockChanged={loadLocations} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)} />
+            onStockChanged={loadLocations} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)}
+            highlightId={highlightTransferId} onHighlightHandled={onHighlightHandled} />
         )}
 
         {/* ════ LOKASI ═════════════════════════════════════════ */}

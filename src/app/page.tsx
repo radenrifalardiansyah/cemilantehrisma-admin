@@ -361,6 +361,7 @@ export default function AdminPage() {
   const [materialsOpenSubTab, setMaterialsOpenSubTab] = useState<'hutang' | null>(null);
   const [openGrId, setOpenGrId] = useState<string | null>(null);
   const [highlightShipmentId, setHighlightShipmentId] = useState<string | null>(null);
+  const [highlightTransferId, setHighlightTransferId] = useState<string | null>(null);
   const [highlightRecapId, setHighlightRecapId] = useState<string | null>(null);
 
   // Klik "Lihat" di modal detail notifikasi (NotificationBell) — pindah tab & sorot item terkait.
@@ -373,6 +374,7 @@ export default function AdminPage() {
       case 'consignment_overdue':
       case 'consignment_recap': setHighlightRecapId(n.entityId); break;
       case 'consignment_send': setHighlightShipmentId(n.entityId); break;
+      case 'consignment_transfer': setHighlightTransferId(n.entityId); break;
       case 'payable_due': setMaterialsOpenSubTab('hutang'); break;
     }
     if (n.link) setActiveTab(n.link as TabId);
@@ -1789,8 +1791,8 @@ export default function AdminPage() {
       {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {activeTab === 'consignment' && (
         <ConsignmentTab creds={creds} products={posProducts} can={(a: Action) => can('consignment', a)}
-          highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId}
-          onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); }} />
+          highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId} highlightTransferId={highlightTransferId}
+          onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); setHighlightTransferId(null); }} />
       )}
       {activeTab === 'mitra-report' && <MitraDailyReportTab creds={creds} />}
       {activeTab === 'wa-forward' && <WaForwardTab creds={creds} can={(a: Action) => can('wa-forward', a)} />}

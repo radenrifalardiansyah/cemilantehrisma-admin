@@ -33,6 +33,8 @@ export interface ConsignmentAnalyticsData {
     kirim: number; kirimQty: number; pendapatan: number; selisih: number; sellThroughPct: number;
     jual: number; retur: number; reject: number;
     stockValue: number; lunasAmount: number; belumLunasAmount: number;
+    // Transfer stok antar mitra (approved); opsional untuk respons lama. Selisih = kirim + transferMasukNilai - transferKeluarNilai - pendapatan.
+    transferMasukQty?: number; transferKeluarQty?: number; transferMasukNilai?: number; transferKeluarNilai?: number;
   }[];
   topProducts: { productId: string; productName: string; qtySold: number; revenue: number }[];
   paymentStatus: { status: 'lunas' | 'belum_lunas'; label: string; count: number; amount: number }[];
@@ -274,13 +276,14 @@ export default function ConsignmentAnalyticsSection({
         {
           title: 'Rincian per Lokasi Mitra', emptyText: 'Belum ada lokasi mitra.',
           columns: [
-            { header: 'No', width: '5%', align: 'center' }, { header: 'Mitra', width: '23%', bold: true },
-            { header: 'Dikirim', width: '14%', align: 'right' }, { header: 'Pendapatan', width: '14%', align: 'right', bold: true },
-            { header: 'Selisih', width: '12%', align: 'right' }, { header: 'Terjual', width: '8%', align: 'right' },
-            { header: 'Lunas', width: '12%', align: 'right' }, { header: 'Belum Lunas', width: '12%', align: 'right' },
+            { header: 'No', width: '4%', align: 'center' }, { header: 'Mitra', width: '18%', bold: true },
+            { header: 'Dikirim', width: '11%', align: 'right' }, { header: 'Pendapatan', width: '11%', align: 'right', bold: true },
+            { header: 'Trf. Masuk', width: '9%', align: 'right' }, { header: 'Trf. Keluar', width: '9%', align: 'right' },
+            { header: 'Selisih', width: '11%', align: 'right' }, { header: 'Terjual', width: '6%', align: 'right' },
+            { header: 'Lunas', width: '10%', align: 'right' }, { header: 'Belum Lunas', width: '11%', align: 'right' },
           ],
-          rows: data.topLocations.map((l, i) => [i + 1, l.name, pdfRp(l.kirim), pdfRp(l.pendapatan), pdfRp(l.selisih), `${l.sellThroughPct}%`, pdfRp(l.lunasAmount), pdfRp(l.belumLunasAmount)]),
-          total: ['', `Total (${data.topLocations.length} mitra)`, pdfRp(sumLoc(l => l.kirim)), pdfRp(sumLoc(l => l.pendapatan)), pdfRp(sumLoc(l => l.selisih)), `${sm.sellThroughPct}%`, pdfRp(sumLoc(l => l.lunasAmount)), pdfRp(sumLoc(l => l.belumLunasAmount))],
+          rows: data.topLocations.map((l, i) => [i + 1, l.name, pdfRp(l.kirim), pdfRp(l.pendapatan), pdfRp(l.transferMasukNilai ?? 0), pdfRp(l.transferKeluarNilai ?? 0), pdfRp(l.selisih), `${l.sellThroughPct}%`, pdfRp(l.lunasAmount), pdfRp(l.belumLunasAmount)]),
+          total: ['', `Total (${data.topLocations.length} mitra)`, pdfRp(sumLoc(l => l.kirim)), pdfRp(sumLoc(l => l.pendapatan)), pdfRp(sumLoc(l => l.transferMasukNilai ?? 0)), pdfRp(sumLoc(l => l.transferKeluarNilai ?? 0)), pdfRp(sumLoc(l => l.selisih)), `${sm.sellThroughPct}%`, pdfRp(sumLoc(l => l.lunasAmount)), pdfRp(sumLoc(l => l.belumLunasAmount))],
         },
         {
           title: 'Produk Terlaris di Mitra', emptyText: 'Belum ada penjualan di periode ini.',
@@ -644,6 +647,11 @@ export default function ConsignmentAnalyticsSection({
                         <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                           Terjual {l.jual} · Retur {l.retur} · Reject {l.reject} · {l.sellThroughPct}% terjual
                         </p>
+                        {((l.transferMasukQty ?? 0) > 0 || (l.transferKeluarQty ?? 0) > 0) && (
+                          <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                            Transfer masuk {l.transferMasukQty ?? 0} pcs ({formatRp(l.transferMasukNilai ?? 0)}) · keluar {l.transferKeluarQty ?? 0} pcs ({formatRp(l.transferKeluarNilai ?? 0)})
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center justify-between sm:contents pl-12 sm:pl-0">

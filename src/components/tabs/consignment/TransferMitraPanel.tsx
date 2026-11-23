@@ -103,7 +103,7 @@ interface FormRow { productId: string; qty: string }
 const EMPTY_ROW: FormRow = { productId: '', qty: '' };
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
-export default function TransferMitraPanel({ creds, can, locations, locationStock, onStockChanged, preset, onPresetHandled }: {
+export default function TransferMitraPanel({ creds, can, locations, locationStock, onStockChanged, preset, onPresetHandled, highlightId, onHighlightHandled }: {
   creds: string;
   can: (a: Action) => boolean;
   locations: TransferLocation[];
@@ -114,6 +114,9 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
   /** Tombol cepat dari tab Lokasi: buka form dengan Mitra Asal terisi. `n` berubah tiap klik. */
   preset?: { locationId: string; n: number } | null;
   onPresetHandled?: () => void;
+  /** Dari klik "Lihat" notifikasi: sorot dan gulir ke dokumen ini setelah daftar dimuat. */
+  highlightId?: string | null;
+  onHighlightHandled?: () => void;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -179,6 +182,25 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Sorot dokumen dari notifikasi: reset filter, buka halamannya, gulir, lalu sorot 2,5 detik.
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [flashId, setFlashId] = useState<string | null>(null);
+  // Efek ini sengaja memicu state sebagai respons notifikasi dari induk (sama seperti sorot kiriman/rekap di ConsignmentTab).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!highlightId || transfers.length === 0) return;
+    const idx = transfers.findIndex(t => t.id === highlightId);
+    if (idx === -1) { onHighlightHandled?.(); return; }
+    setStatusFilter('semua'); setSearch('');
+    setPage(Math.floor(idx / pageSize) + 1);
+    setFlashId(highlightId);
+    requestAnimationFrame(() => rowRefs.current[highlightId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    onHighlightHandled?.();
+    const timer = setTimeout(() => setFlashId(null), 2500);
+    return () => clearTimeout(timer);
+  }, [highlightId, transfers]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const toggleSelect = (id: string) => setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allPageSelected = paginated.length > 0 && paginated.every(t => selected.has(t.id));
@@ -544,7 +566,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
                   const isSel = selected.has(t.id);
                   const num = (safePage - 1) * pageSize + i + 1;
                   return (
-                    <div key={t.id} className="flex items-start gap-3 px-4 py-3" style={{ background: isSel ? 'rgba(212,105,30,0.05)' : undefined }}>
+                    <div key={t.id} ref={el => { rowRefs.current[t.id] = el; }} className="flex items-start gap-3 px-4 py-3" style={{ transition: 'background-color 0.6s ease', background: flashId === t.id ? 'var(--accent-bg)' : isSel ? 'rgba(212,105,30,0.05)' : undefined }}>
                       <span className="pt-0.5 w-6 text-xs font-bold text-right flex-shrink-0 tabular" style={{ color: 'var(--text-muted)' }}>{num}</span>
                       <div className="pt-0.5"><Checkbox label={`Pilih ${t.docNumber}`} checked={isSel} onChange={() => toggleSelect(t.id)} /></div>
                       <div className="flex-1 min-w-0">
@@ -570,7 +592,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
                 {paginated.map(t => {
                   const isSel = selected.has(t.id);
                   return (
-                    <div key={t.id} className="card overflow-hidden p-4" style={{ outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
+                    <div key={t.id} ref={el => { rowRefs.current[t.id] = el; }} className="card overflow-hidden p-4" style={{ transition: 'background-color 0.6s ease', background: flashId === t.id ? 'var(--accent-bg)' : undefined, outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: -2 }}>
                       <div className="flex items-center gap-2 mb-2">
                         <Checkbox label={`Pilih ${t.docNumber}`} checked={isSel} onChange={() => toggleSelect(t.id)} />
                         <span className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded truncate min-w-0"
