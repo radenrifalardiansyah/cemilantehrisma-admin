@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   Loader2, RefreshCw, Search, Package, Boxes, TrendingUp, ShoppingCart, Globe, Store,
-  ChevronLeft, ChevronRight, LineChart as LineChartIcon,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Clock, LineChart as LineChartIcon,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -73,7 +73,8 @@ interface ProductRow {
   revenue: number; cogs: number; qtyFree: number; cogsFree: number;
 }
 interface TrendProduct { key: string; name: string; color?: string | null }
-interface UnpaidSummary { recapCount: number; recapQty: number; recapRevenue: number; orderCount: number; orderQty: number; orderRevenue: number; qty: number; revenue: number }
+interface UnpaidProduct { key: string; productId: string; name: string; qtyRecap: number; qtyOrder: number; qty: number; revenue: number }
+interface UnpaidSummary { recapCount: number; recapQty: number; recapRevenue: number; orderCount: number; orderQty: number; orderRevenue: number; qty: number; revenue: number; byProduct: UnpaidProduct[] }
 
 // Warna tema produk (bgColor di Produk); fallback ke palet tetap kalau kosong.
 const trendColor = (p: TrendProduct, i: number) => p.color || TREND_COLORS[i];
@@ -97,6 +98,7 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
   const [totalQty, setTotalQty] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [unpaid, setUnpaid] = useState<UnpaidSummary | null>(null);
+  const [showUnpaidDetail, setShowUnpaidDetail] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const [trendProducts, setTrendProducts] = useState<TrendProduct[]>([]);
@@ -499,7 +501,7 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
       ) : (
         <div className="space-y-5">
           {/* Ringkasan */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--success-bg)' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(21,128,61,0.15)', color: 'var(--success)' }}>
                 <Boxes size={16} />
@@ -507,6 +509,15 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
               <div className="min-w-0">
                 <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--success)' }}>{totalQty.toLocaleString('id-ID')}</p>
                 <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Total Unit Terjual</p>
+              </div>
+            </div>
+            <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(180,83,9,0.15)', color: 'var(--warning)' }}>
+                <Clock size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-extrabold tabular leading-none truncate" style={{ color: 'var(--warning)' }}>{(unpaid?.qty ?? 0).toLocaleString('id-ID')}</p>
+                <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Unit Belum Dibayar{unpaid && unpaid.revenue > 0 ? ` · ${formatRp(unpaid.revenue)}` : ''}</p>
               </div>
             </div>
             <div className="card p-4 flex items-center gap-3" style={{ background: 'var(--accent-bg)' }}>
@@ -528,7 +539,7 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
               </div>
             </div>
             {unpaid && unpaid.revenue > 0 && (
-              <div className="card p-4 sm:col-span-3" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
+              <div className="card p-4 col-span-full" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
                 <p className="text-xs font-bold" style={{ color: 'var(--warning)' }}>
                   Sudah dicatat tapi belum terbayar: {formatRp(unpaid.revenue)} · {unpaid.qty.toLocaleString('id-ID')} unit
                 </p>
@@ -539,10 +550,54 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
                   ].filter(Boolean).join(' · ')}.
                   {' '}Belum termasuk di angka penjualan di atas; baru dihitung setelah dibayar (yang dicicil dihitung sebesar yang sudah masuk).
                 </p>
+                {unpaid.byProduct.length > 0 && (
+                  <>
+                    <button type="button" onClick={() => setShowUnpaidDetail(v => !v)} aria-expanded={showUnpaidDetail}
+                      className="mt-2 inline-flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--accent)' }}>
+                      {showUnpaidDetail ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      {showUnpaidDetail ? 'Sembunyikan' : 'Lihat'} rincian per produk ({unpaid.byProduct.length})
+                    </button>
+                    {showUnpaidDetail && (
+                      <div className="mt-2 overflow-x-auto rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border-2)' }}>
+                        <table className="w-full min-w-[420px] text-left text-xs" style={{ borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ color: 'var(--text-muted)' }}>
+                              <th className="px-3 py-2 font-bold">Produk</th>
+                              <th className="px-3 py-2 font-bold text-right">Konsinyasi</th>
+                              <th className="px-3 py-2 font-bold text-right">Pesanan</th>
+                              <th className="px-3 py-2 font-bold text-right">Total unit</th>
+                              <th className="px-3 py-2 font-bold text-right">Nilai</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {unpaid.byProduct.map(p => (
+                              <tr key={p.key} style={{ borderTop: '1px solid var(--border-2)', color: 'var(--text-secondary)' }}>
+                                <td className="px-3 py-2 font-semibold" style={{ color: 'var(--text-primary)' }}>{p.name}</td>
+                                <td className="px-3 py-2 text-right tabular">{p.qtyRecap > 0 ? p.qtyRecap.toLocaleString('id-ID') : '-'}</td>
+                                <td className="px-3 py-2 text-right tabular">{p.qtyOrder > 0 ? p.qtyOrder.toLocaleString('id-ID') : '-'}</td>
+                                <td className="px-3 py-2 text-right tabular font-bold">{p.qty.toLocaleString('id-ID')}</td>
+                                <td className="px-3 py-2 text-right tabular font-bold" style={{ color: 'var(--warning)' }}>{formatRp(p.revenue)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                              <td className="px-3 py-2 font-extrabold">Total</td>
+                              <td className="px-3 py-2 text-right tabular font-bold">{unpaid.recapQty.toLocaleString('id-ID')}</td>
+                              <td className="px-3 py-2 text-right tabular font-bold">{unpaid.orderQty.toLocaleString('id-ID')}</td>
+                              <td className="px-3 py-2 text-right tabular font-extrabold">{unpaid.qty.toLocaleString('id-ID')}</td>
+                              <td className="px-3 py-2 text-right tabular font-extrabold">{formatRp(unpaid.revenue)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
             {footerTotals.qtyFree > 0 && (
-              <div className="card p-4 sm:col-span-3" style={{ background: 'var(--surface-2)' }}>
+              <div className="card p-4 col-span-full" style={{ background: 'var(--surface-2)' }}>
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
                   Barang digratiskan: {footerTotals.qtyFree.toLocaleString('id-ID')} unit · HPP {formatRp(footerTotals.cogsFree)} (tidak dihitung di Total HPP)
                 </p>

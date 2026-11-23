@@ -28,6 +28,21 @@ describe('computeUnpaid', () => {
     expect(r.orderCount).toBe(1); expect(r.orderQty).toBe(2); expect(r.orderRevenue).toBe(90_000);
   });
   it('kosong -> semua nol', () => {
-    expect(computeUnpaid([], [])).toEqual({ recapCount: 0, recapQty: 0, recapRevenue: 0, orderCount: 0, orderQty: 0, orderRevenue: 0, qty: 0, revenue: 0 });
+    expect(computeUnpaid([], [])).toEqual({ recapCount: 0, recapQty: 0, recapRevenue: 0, orderCount: 0, orderQty: 0, orderRevenue: 0, qty: 0, revenue: 0, byProduct: [] });
+  });
+
+  it('rincian per produk: gabungan rekap dan pesanan, urut omzet terbesar, jumlahnya cocok dengan total', () => {
+    const r = computeUnpaid(
+      [{ status: 'selesai', paidFraction: 0.5, total: 100_000, items: [{ productId: 'a', name: 'Keripik', qty: 10, subtotal: 100_000 }] }],
+      [
+        { paidFraction: 0, items: [{ productId: 'a', productName: 'Keripik', qtySold: 4, revenue: 40_000 }, { productId: 'b', productName: 'Basreng', qtySold: 20, revenue: 150_000 }] },
+        { paidFraction: 1, items: [{ productId: 'c', productName: 'Lunas', qtySold: 9, revenue: 90_000 }] },
+      ],
+    );
+    expect(r.byProduct.map(p => p.name)).toEqual(['Basreng', 'Keripik']);
+    expect(r.byProduct[0]).toMatchObject({ productId: 'b', qtyRecap: 20, qtyOrder: 0, qty: 20, revenue: 150_000 });
+    expect(r.byProduct[1]).toMatchObject({ productId: 'a', qtyRecap: 4, qtyOrder: 5, qty: 9, revenue: 90_000 });
+    expect(r.byProduct.reduce((s, p) => s + p.revenue, 0)).toBe(r.revenue);
+    expect(r.byProduct.reduce((s, p) => s + p.qty, 0)).toBeCloseTo(r.qty);
   });
 });
