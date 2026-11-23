@@ -73,6 +73,7 @@ interface ProductRow {
   revenue: number; cogs: number; qtyFree: number; cogsFree: number;
 }
 interface TrendProduct { key: string; name: string; color?: string | null }
+interface UnpaidSummary { recapCount: number; recapQty: number; recapRevenue: number; orderCount: number; orderQty: number; orderRevenue: number; qty: number; revenue: number }
 
 // Warna tema produk (bgColor di Produk); fallback ke palet tetap kalau kosong.
 const trendColor = (p: TrendProduct, i: number) => p.color || TREND_COLORS[i];
@@ -95,6 +96,7 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [totalQty, setTotalQty] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [unpaid, setUnpaid] = useState<UnpaidSummary | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const [trendProducts, setTrendProducts] = useState<TrendProduct[]>([]);
@@ -155,13 +157,14 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
       const res = await fetch(`${API}/api/analytics/product-report?from=${from}&to=${to}`, { headers });
       if (!res.ok) return;
       const data = await res.json() as {
-        products: ProductRow[]; totalQty: number; totalRevenue: number;
+        products: ProductRow[]; totalQty: number; totalRevenue: number; unpaid?: UnpaidSummary;
         trendProducts: TrendProduct[]; dailyTrend: Record<string, string | number>[];
       };
       if (myLoadId !== loadIdRef.current) return;
       setProducts(data.products);
       setTotalQty(data.totalQty);
       setTotalRevenue(data.totalRevenue);
+      setUnpaid(data.unpaid ?? null);
       setTrendProducts(data.trendProducts);
       setDailyTrend(data.dailyTrend);
       setHiddenTrendKeys(new Set());
@@ -524,6 +527,20 @@ export default function ProductReportTab({ creds, can, canWallet, isSuperAdmin }
                 <p className="text-[11px] font-medium mt-1" style={{ color: 'var(--text-muted)' }}>Jenis Produk Terjual</p>
               </div>
             </div>
+            {unpaid && unpaid.revenue > 0 && (
+              <div className="card p-4 sm:col-span-3" style={{ background: 'var(--warning-bg, #FEF3C7)' }}>
+                <p className="text-xs font-bold" style={{ color: 'var(--warning)' }}>
+                  Sudah dicatat tapi belum terbayar: {formatRp(unpaid.revenue)} · {unpaid.qty.toLocaleString('id-ID')} unit
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  {[
+                    unpaid.recapCount > 0 ? `Rekap konsinyasi ${formatRp(unpaid.recapRevenue)} (${unpaid.recapCount} rekap, ${unpaid.recapQty.toLocaleString('id-ID')} unit)` : null,
+                    unpaid.orderCount > 0 ? `Pesanan kredit ${formatRp(unpaid.orderRevenue)} (${unpaid.orderCount} pesanan, ${unpaid.orderQty.toLocaleString('id-ID')} unit)` : null,
+                  ].filter(Boolean).join(' · ')}.
+                  {' '}Belum termasuk di angka penjualan di atas; baru dihitung setelah dibayar (yang dicicil dihitung sebesar yang sudah masuk).
+                </p>
+              </div>
+            )}
             {footerTotals.qtyFree > 0 && (
               <div className="card p-4 sm:col-span-3" style={{ background: 'var(--surface-2)' }}>
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>

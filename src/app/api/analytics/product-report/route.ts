@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache';
 import { getSql, parseJsonb } from '@/lib/db';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
+import { computeUnpaid } from '@/lib/product-report-unpaid';
 
 interface OrderItemDoc { productId?: string; name?: string; qty: number; price?: number; subtotal?: number; costPrice?: number }
 interface OrderDoc {
@@ -210,5 +211,8 @@ export async function GET(req: NextRequest) {
     return row;
   });
 
-  return Response.json({ period: { from, to }, products, totalQty, totalRevenue, totalCogs, totalQtyFree, totalCogsFree, trendProducts, dailyTrend });
+  // Sudah tercatat tapi belum terbayar (rekap konsinyasi & pesanan kredit): TIDAK masuk angka penjualan di atas, ditampilkan terpisah.
+  const unpaid = computeUnpaid(orders, recaps);
+
+  return Response.json({ period: { from, to }, products, totalQty, totalRevenue, totalCogs, totalQtyFree, totalCogsFree, unpaid, trendProducts, dailyTrend });
 }
