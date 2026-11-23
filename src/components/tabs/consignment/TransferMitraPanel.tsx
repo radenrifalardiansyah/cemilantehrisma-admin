@@ -103,7 +103,7 @@ interface FormRow { productId: string; qty: string }
 const EMPTY_ROW: FormRow = { productId: '', qty: '' };
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
-export default function TransferMitraPanel({ creds, can, locations, locationStock, onStockChanged, preset, onPresetHandled, highlightId, onHighlightHandled }: {
+export default function TransferMitraPanel({ creds, can, locations, locationStock, onStockChanged, preset, onPresetHandled, highlightId, onHighlightHandled, active = true }: {
   creds: string;
   can: (a: Action) => boolean;
   locations: TransferLocation[];
@@ -117,6 +117,8 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
   /** Dari klik "Lihat" notifikasi: sorot dan gulir ke dokumen ini setelah daftar dimuat. */
   highlightId?: string | null;
   onHighlightHandled?: () => void;
+  /** false = sub-tab Transfer Mitra tidak sedang dibuka: daftar/bulk bar disembunyikan dan tidak ada polling, tetapi form (modal) tetap bisa dibuka, mis. dari tombol cepat di tab Lokasi. */
+  active?: boolean;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -168,7 +170,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
     // gagal: biarkan data lama; polling berikutnya mencoba lagi
     setLoading(false);
   };
-  useVisiblePolling(load, POLL_MS, []);
+  useVisiblePolling(() => { if (active) void load(); }, POLL_MS, [active]);
 
   // ── Filter + paging ─────────────────────────────────────────
   const filtered = transfers.filter(t => {
@@ -504,10 +506,11 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
   const selDrafts = selectedList.filter(t => t.status === 'draft').length;
   const selDeletable = selectedList.filter(t => canDeleteStatus(t.status)).length;
 
-  if (loading && transfers.length === 0) return <PageLoader />;
+  if (active && loading && transfers.length === 0) return <PageLoader />;
 
   return (
     <>
+      {active && (
       <div className="p-4 lg:p-6 animate-fade-up space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
           {transfers.length > 0 && (
@@ -621,6 +624,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
           </>
         )}
       </div>
+      )}
 
       {/* Modal dirender di luar pembungkus animate-fade-up (transform membuat fixed ikut relatif ke pembungkus). */}
       {showForm && (
@@ -778,7 +782,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
         </Modal>
       )}
 
-      {selected.size > 0 && (
+      {active && selected.size > 0 && (
         <div className="fixed bottom-20 lg:bottom-6 z-40 bulk-action-bar">
           <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 rounded-2xl shadow-xl overflow-x-auto no-scrollbar animate-fade-up"
             style={{ background: 'var(--text-primary)', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.22)' }}>

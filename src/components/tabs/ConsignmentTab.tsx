@@ -1050,8 +1050,8 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
   };
   const openTransferForLocation = (l: ConsignmentLocation) => {
     if (l.isActive === false) { toast.error('Mitra nonaktif tidak bisa jadi asal transfer.'); return; }
+    // Form transfer dibuka di tempat (modal), seperti Kirim/Rekap cepat: tidak pindah sub-tab.
     setTransferPreset({ locationId: l.id, n: Date.now() });
-    setSubTab('transfer');
   };
   const openEditSend = (s: Shipment) => {
     setEditingShipment(s);
@@ -2747,12 +2747,11 @@ _${storeHeader.name}_`.trim();
       </div>
 
       <div className="flex-1 overflow-y-auto thin-scrollbar">
-        {/* ════ TRANSFER MITRA (polling & modal ada di dalam panel) ═══ */}
-        {subTab === 'transfer' && (
-          <TransferMitraPanel creds={creds} can={can} locations={locations} locationStock={locationStock}
-            onStockChanged={loadLocations} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)}
-            highlightId={highlightTransferId} onHighlightHandled={onHighlightHandled} />
-        )}
+        {/* ════ TRANSFER MITRA — selalu ter-mount supaya form bisa dibuka dari tab Lokasi tanpa pindah tab; daftar tampil hanya di sub-tab ini ═══ */}
+        <TransferMitraPanel creds={creds} can={can} locations={locations} locationStock={locationStock}
+          active={subTab === 'transfer'}
+          onStockChanged={loadLocations} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)}
+          highlightId={highlightTransferId} onHighlightHandled={onHighlightHandled} />
 
         {/* ════ LOKASI ═════════════════════════════════════════ */}
         {subTab === 'lokasi' && (locationsLoading && locations.length === 0) && <PageLoader />}
