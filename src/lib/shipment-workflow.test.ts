@@ -71,6 +71,7 @@ function exec(s: FakeState, text: string, v: unknown[]): unknown[] {
     return [];
   }
   if (text.startsWith('select items from consignment_shipments')) return []; // kiriman approved lain (rentang harga reverse)
+  if (text.startsWith('select items from consignment_transfers')) return []; // transfer masuk approved (rentang harga reverse)
   throw new Error(`SQL tak dikenal di fake: ${text}`);
 }
 
@@ -326,9 +327,9 @@ describe('applyShipmentEffect / reverseShipmentEffect (kesetaraan dengan kode la
     h.state.cs.L1_P1.qty = 4; // 6 sudah terjual/direkap
     const before = stockSnapshot(h.state);
     await expect(reverseShipmentEffect(tx(), ship([item(10)]), { context: 'delete' }))
-      .rejects.toThrow('Tidak bisa menghapus — sebagian stok kiriman ini sudah terjual/direkap: Keripik (stok titip tersisa 4, butuh 10)');
+      .rejects.toThrow('Tidak bisa menghapus — sebagian stok kiriman ini mungkin sudah dipindah ke mitra lain atau terjual/direkap: Keripik (stok titip tersisa 4, butuh 10)');
     await expect(reverseShipmentEffect(tx(), ship([item(10)]), { context: 'edit' }))
-      .rejects.toThrow('Tidak bisa mengubah — sebagian stok kiriman lama sudah terjual/direkap');
+      .rejects.toThrow('Tidak bisa mengubah — sebagian stok kiriman lama mungkin sudah dipindah ke mitra lain atau terjual/direkap');
     expect(stockSnapshot(h.state)).toBe(before);
   });
 

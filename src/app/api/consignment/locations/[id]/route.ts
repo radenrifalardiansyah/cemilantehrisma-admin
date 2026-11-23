@@ -88,6 +88,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     );
   }
 
+  const [{ count: transferCount }] = await sql<{ count: string }[]>`select count(*)::int as count from consignment_transfers where from_location_id = ${id} or to_location_id = ${id}`;
+  if (Number(transferCount) > 0) {
+    return Response.json(
+      { error: 'Lokasi ini masih punya riwayat transfer stok antar mitra — tidak bisa dihapus.' },
+      { status: 400 },
+    );
+  }
+
   const [before] = await sql<LocationRow[]>`select name, code, contact_name, contact_phone, address, note from consignment_locations where id = ${id}`;
   try {
     await sql`delete from consignment_locations where id = ${id}`;

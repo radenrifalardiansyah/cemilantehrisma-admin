@@ -6,7 +6,7 @@ import {
   Store, Send, ClipboardList, Plus, Pencil, Trash2, X, Check, Loader2, RefreshCw,
   Clock, AlertTriangle, Phone, MapPin, StickyNote,
   Search, ChevronRight, Upload,
-  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText, CircleCheck, CircleX, HandCoins,
+  History, Warehouse, Ban, MessageCircle, PackageCheck, PieChart, ScanLine, FileText, CircleCheck, CircleX, HandCoins, ArrowRightLeft,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon, DeliveryFormIcon } from '@/components/FileTypeIcons';
 import ImageUploadBox from '@/components/ImageUploadBox';
@@ -54,6 +54,7 @@ import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 import FilterSelect from '@/components/FilterSelect';
 import RecapPaymentDialog from '@/components/tabs/RecapPaymentDialog';
 import MitraReceivablesPanel from '@/components/tabs/MitraReceivablesPanel';
+import TransferMitraPanel from '@/components/tabs/consignment/TransferMitraPanel';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -112,10 +113,11 @@ function normalizePhone(raw: string) {
   return d.startsWith('62') ? d : d.startsWith('0') ? '62' + d.slice(1) : '62' + d;
 }
 
-type SubTab = 'lokasi' | 'kirim' | 'rekap' | 'piutang' | 'analitik';
+type SubTab = 'lokasi' | 'kirim' | 'transfer' | 'rekap' | 'piutang' | 'analitik';
 const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'lokasi', label: 'Lokasi',      Icon: Store },
   { id: 'kirim',  label: 'Kirim Stok',  Icon: Send },
+  { id: 'transfer', label: 'Transfer Mitra', Icon: ArrowRightLeft },
   { id: 'rekap',  label: 'Rekap Harian', Icon: ClipboardList },
   { id: 'piutang', label: 'Piutang Mitra', Icon: HandCoins },
   { id: 'analitik', label: 'Analitik',  Icon: PieChart },
@@ -337,6 +339,8 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
   const [subTab, setSubTab] = useState<SubTab>('lokasi');
+  // Tombol cepat "Transfer stok dari mitra ini" di tab Lokasi -> buka form Transfer Mitra dengan Mitra Asal terisi.
+  const [transferPreset, setTransferPreset] = useState<{ locationId: string; n: number } | null>(null);
 
   // ── Analitik Mitra (kirim/pendapatan/pelunasan lintas lokasi) — agregasi server-side ──
   const [analyticsPeriod, setAnalyticsPeriod] = useState<PeriodKey>('month');
@@ -1043,6 +1047,11 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     if (l.isActive === false) { toast.error('Mitra nonaktif tidak bisa dikirimi stok.'); return; }
     openCreateSend();
     setSendLocationId(l.id);
+  };
+  const openTransferForLocation = (l: ConsignmentLocation) => {
+    if (l.isActive === false) { toast.error('Mitra nonaktif tidak bisa jadi asal transfer.'); return; }
+    setTransferPreset({ locationId: l.id, n: Date.now() });
+    setSubTab('transfer');
   };
   const openEditSend = (s: Shipment) => {
     setEditingShipment(s);
@@ -2579,8 +2588,17 @@ _${storeHeader.name}_`.trim();
     try {
       const bankNo = storeInfo.storeBankAccountNumber?.trim();
       const now = new Date();
+      // Transfer approved dari/ke mitra ini, supaya angka invoice sama dengan PDF dari link server/WA.
+      let transfers: { docDate?: { seconds: number } | null; fromLocationId?: string | null; toLocationId?: string | null; items: { qty: number; hargaTitip?: number }[] }[] = [];
+      try {
+        const tr = await fetch(`${API}/api/consignment/transfers?status=approved`, { headers });
+        if (tr.ok) {
+          transfers = ((await tr.json()) as { transfers: typeof transfers }).transfers
+            .filter(t => t.fromLocationId === historyLocation.id || t.toLocationId === historyLocation.id);
+        } else toast.error('Data transfer gagal dimuat, invoice dibuat tanpa informasi transfer.');
+      } catch { toast.error('Data transfer gagal dimuat, invoice dibuat tanpa informasi transfer.'); }
       const data: MitraInvoiceData = buildMitraInvoiceData({
-        location: historyLocation, shipments: historyShipments, recaps: historyRecaps, now, from: invoiceFrom || undefined, to: invoiceTo || undefined,
+        location: historyLocation, shipments: historyShipments, recaps: historyRecaps, transfers, now, from: invoiceFrom || undefined, to: invoiceTo || undefined,
         bank: bankNo ? { name: storeInfo.storeBankName?.trim() || 'Bank', accountNumber: bankNo, accountHolder: storeInfo.storeBankAccountHolder?.trim() || undefined } : undefined,
       });
       const blob = await pdf(<MitraInvoicePDF store={storeHeader} data={data} />).toBlob();
@@ -2726,6 +2744,12 @@ _${storeHeader.name}_`.trim();
       </div>
 
       <div className="flex-1 overflow-y-auto thin-scrollbar">
+        {/* ════ TRANSFER MITRA (polling & modal ada di dalam panel) ═══ */}
+        {subTab === 'transfer' && (
+          <TransferMitraPanel creds={creds} can={can} locations={locations} locationStock={locationStock}
+            onStockChanged={loadLocations} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)} />
+        )}
+
         {/* ════ LOKASI ═════════════════════════════════════════ */}
         {subTab === 'lokasi' && (locationsLoading && locations.length === 0) && <PageLoader />}
         {subTab === 'lokasi' && !(locationsLoading && locations.length === 0) && (
@@ -2935,6 +2959,13 @@ _${storeHeader.name}_`.trim();
                                 <Send size={12} />
                               </button>
                             </Tooltip>
+                            {can('create') && (
+                              <Tooltip label={l.isActive === false ? 'Transfer stok — mitra nonaktif' : 'Transfer stok dari mitra ini'}>
+                                <button onClick={() => openTransferForLocation(l)} disabled={l.isActive === false} aria-label="Transfer stok dari mitra ini" className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                                  <ArrowRightLeft size={12} />
+                                </button>
+                              </Tooltip>
+                            )}
                             <Tooltip label={l.isActive === false ? 'Rekap Harian — mitra nonaktif' : 'Rekap Harian'}>
                               <button onClick={() => openRecapForLocation(l)} disabled={l.isActive === false} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
                                 <ClipboardList size={12} />
@@ -2995,6 +3026,13 @@ _${storeHeader.name}_`.trim();
                                   <Send size={12} />
                                 </button>
                               </Tooltip>
+                              {can('create') && (
+                                <Tooltip label={l.isActive === false ? 'Transfer stok — mitra nonaktif' : 'Transfer stok dari mitra ini'}>
+                                  <button onClick={() => openTransferForLocation(l)} disabled={l.isActive === false} aria-label="Transfer stok dari mitra ini" className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                                    <ArrowRightLeft size={12} />
+                                  </button>
+                                </Tooltip>
+                              )}
                               <Tooltip label={l.isActive === false ? 'Rekap Harian — mitra nonaktif' : 'Rekap Harian'}>
                                 <button onClick={() => openRecapForLocation(l)} disabled={l.isActive === false} className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }} title="Rekap Harian">
                                   <ClipboardList size={12} />

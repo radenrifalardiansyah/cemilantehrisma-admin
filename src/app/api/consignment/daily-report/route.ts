@@ -5,6 +5,8 @@ import { wibDayStart } from '@/lib/date';
 import { SHIPMENT_APPROVED } from '@/lib/shipment-status';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
+import { TRANSFER_APPROVED } from '@/lib/consignment-transfer-status';
+import { rowToTransfer, type ConsignmentTransferRow } from '@/lib/consignment-transfers-pg';
 import { buildMitraDailyReport, type DailyReportRecap } from '@/lib/mitra-daily-report';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -12,7 +14,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 interface LocationRow { id: string; name: string; code: string | null; contact_name: string | null; contact_phone: string | null; is_active: boolean | null }
 interface StockRow { location_id: string; product_id: string; product_name: string; stock_qty: string | number; harga_titip: string | number | null }
 
-// Laporan Harian Mitra: per mitra, per hari, per produk — kirim, jual, retur, reject, stok akhir.
+// Laporan Harian Mitra: per mitra, per hari, per produk — kirim, transfer masuk/keluar, jual, retur, reject, stok akhir.
 // Dihitung di server dalam satu kali jalan (bukan N+1 per mitra). Stok akhir hari D dihitung mundur dari
 // stok saat ini, jadi cukup membaca kirim/rekap sejak awal rentang (`from`) — yang lebih lama tidak
 // memengaruhi stok akhir hari mana pun di dalam rentang. Izin sendiri ('mitra-report'), terpisah dari Mitra.
@@ -28,11 +30,13 @@ export async function GET(req: NextRequest) {
 
   const sql = getSql();
   const since = wibDayStart(from).toDate();
-  const [locRows, stockRows, shipRows, recapRows] = await Promise.all([
+  const [locRows, stockRows, shipRows, recapRows, transferRows] = await Promise.all([
     sql<LocationRow[]>`select id, name, code, contact_name, contact_phone, is_active from consignment_locations order by name asc`,
     sql<StockRow[]>`select location_id, product_id, product_name, stock_qty, harga_titip from consignment_stock`,
     sql<ShipmentRow[]>`select * from consignment_shipments where created_at >= ${since} and status = ${SHIPMENT_APPROVED}`,
     sql<RecapRow[]>`select * from consignment_recaps where created_at >= ${since}`,
+    // Transfer antar mitra approved sejak awal rentang (tanggal dokumen) — mengikuti hitung mundur stok akhir hari.
+    sql<ConsignmentTransferRow[]>`select * from consignment_transfers where doc_date >= ${since} and status = ${TRANSFER_APPROVED}`,
   ]);
 
   const stockByLocation: Record<string, { productId: string; productName: string; stockQty: number; hargaTitip: number }[]> = {};
@@ -45,6 +49,7 @@ export async function GET(req: NextRequest) {
     stockByLocation,
     shipments: shipRows.map(rowToShipment),
     recaps: recapRows.map(rowToRecap) as unknown as DailyReportRecap[], // items = jsonb RecapItem[]
+    transfers: transferRows.map(rowToTransfer),
     from, to,
   });
 

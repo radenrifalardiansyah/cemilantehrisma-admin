@@ -9,7 +9,7 @@ const at = (iso: string) => ({ seconds: Math.floor(new Date(`${iso}+07:00`).getT
 const item = (id: string, name: string, qty: number, harga: number) => ({ productId: id, productName: name, qty, hargaTitip: harga, subtotal: qty * harga });
 const ritem = (id: string, name: string, sold: number, retur: number, reject: number, harga: number) => ({ productId: id, productName: name, qtySold: sold, qtyRetur: retur, qtyReject: reject, hargaTitip: harga, revenue: sold * harga });
 
-function build(from: string, to: string) {
+function build(from: string, to: string, withTransfer = false) {
   return buildMitraDailyReport({
     locations: [{ id: 'a', name: 'BGM 1' }, { id: 'b', name: 'BGM 2' }, { id: 'c', name: 'Mba' }],
     stockByLocation: {
@@ -25,6 +25,9 @@ function build(from: string, to: string) {
       { locationId: 'a', createdAt: at('2026-11-01T17:00:00'), items: [ritem('p1', 'Keripik Pedas', 18, 2, 1, 8500), ritem('p2', 'Basreng Original', 5, 0, 0, 12000)] },
       { locationId: 'b', createdAt: at('2026-11-01T17:30:00'), items: [ritem('p1', 'Keripik Pedas', 7, 0, 0, 8500)] },
     ],
+    transfers: withTransfer ? [
+      { status: 'approved', fromLocationId: 'a', toLocationId: 'b', docDate: at('2026-11-02T10:00:00'), items: [{ productId: 'p1', productName: 'Keripik Pedas', qty: 4, hargaTitip: 8500 }] },
+    ] : [],
     from, to,
   }).map(s => ({ ...s, code: 'MTR001' }));
 }
@@ -48,5 +51,15 @@ describe('MitraDailyReportPDF', () => {
     const one = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-02', generatedAt: 'now', summaryOnly: true, sections: build('2026-11-01', '2026-11-02').slice(0, 1) }} />);
     expect(one.subarray(0, 4).toString()).toBe('%PDF');
     if (process.env.PDF_OUT) { writeFileSync(`${process.env.PDF_OUT}/sum_multi.pdf`, multi); writeFileSync(`${process.env.PDF_OUT}/sum_one.pdf`, one); }
+  });
+  it('merender transfer antar mitra: data transfer ada di laporan dan PDF tetap valid', async () => {
+    const sections = build('2026-11-01', '2026-11-02', true);
+    expect(sections.find(x => x.locationId === 'a')?.totals.transferKeluar).toBe(4);
+    expect(sections.find(x => x.locationId === 'b')?.totals.transferMasuk).toBe(4);
+    const full = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-02', generatedAt: 'now', sections }} />);
+    expect(full.subarray(0, 4).toString()).toBe('%PDF');
+    const sumOnly = await renderToBuffer(<MitraDailyReportPDF store={store} data={{ from: '2026-11-01', to: '2026-11-02', generatedAt: 'now', summaryOnly: true, sections }} />);
+    expect(sumOnly.subarray(0, 4).toString()).toBe('%PDF');
+    if (process.env.PDF_OUT) writeFileSync(`${process.env.PDF_OUT}/transfer.pdf`, full);
   });
 });

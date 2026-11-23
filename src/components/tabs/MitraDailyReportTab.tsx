@@ -62,20 +62,21 @@ function downloadBlob(blob: Blob, filename: string) {
 const pctText = (n: number | null) => (n === null ? '-' : `${n.toLocaleString('id-ID')}%`);
 
 function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[]; totalLabel?: string }) {
-  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
+  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih' | 'transferMasuk' | 'transferKeluar' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
   const th = 'px-2.5 py-2 text-[11px] font-bold uppercase text-right whitespace-nowrap';
   const td = 'px-2.5 py-2 text-xs tabular text-right whitespace-nowrap';
   const dash = (n: number) => (n ? n : '-');
   const dashRp = (n: number) => (n ? formatRp(n) : '-');
   return (
     <div className="card overflow-x-auto" style={{ borderColor: 'var(--border-2)' }}>
-      <table className="w-full" style={{ minWidth: 820 }}>
+      <table className="w-full" style={{ minWidth: 960 }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
             <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">No</th>
             <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">Produk</th>
             <th className={th}>Stok Awal</th><th className={th}>Harga Satuan</th><th className={th}>Kirim</th><th className={th}>Nilai Kirim</th>
             <th className={th}>Terjual</th><th className={th}>Nilai Terjual</th><th className={th}>Retur</th><th className={th}>Reject</th>
+            <th className={th}>Transfer Masuk</th><th className={th}>Transfer Keluar</th>
             <th className={th}>Selisih</th><th className={th}>Stok Akhir</th>
           </tr>
         </thead>
@@ -88,6 +89,7 @@ function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[];
               <td className={td}>{dash(r.jual)}</td><td className={td}>{dashRp(r.nilaiJual)}</td>
               <td className={td} style={r.retur ? { color: 'var(--info, #1D4ED8)', fontWeight: 700 } : undefined}>{dash(r.retur)}</td>
               <td className={td} style={r.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(r.reject)}</td>
+              <td className={td}>{dash(r.transferMasuk)}</td><td className={td}>{dash(r.transferKeluar)}</td>
               <td className={td} style={r.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{r.selisih ? formatRp(r.selisih) : '-'}</td>
               <td className={`${td} font-bold`}>{r.stokAkhir}</td>
             </tr>
@@ -97,6 +99,7 @@ function ProductTable({ rows, totalLabel = 'Total' }: { rows: DailyProductRow[];
             <td className={`${td} font-bold`}>{sum('kirim')}</td><td className={`${td} font-bold`}>{formatRp(sum('nilaiKirim'))}</td>
             <td className={`${td} font-bold`}>{sum('jual')}</td><td className={`${td} font-bold`}>{formatRp(sum('nilaiJual'))}</td>
             <td className={`${td} font-bold`}>{sum('retur')}</td><td className={`${td} font-bold`}>{sum('reject')}</td>
+            <td className={`${td} font-bold`}>{sum('transferMasuk')}</td><td className={`${td} font-bold`}>{sum('transferKeluar')}</td>
             <td className={`${td} font-bold`}>{formatRp(sum('selisih'))}</td><td className={`${td} font-bold`}>{sum('stokAkhir')}</td>
           </tr>
         </tbody>
@@ -206,7 +209,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     return n;
   });
 
-  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih') => filtered.reduce((t, s) => t + s.totals[k], 0);
+  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'selisih' | 'transferMasuk' | 'transferKeluar') => filtered.reduce((t, s) => t + s.totals[k], 0);
   const rowOffset = Number.isFinite(pageSize) ? (safePage - 1) * pageSize : 0;
   const activeCount = filtered.filter(hasActivity).length;
   const previewSection = previewId ? sections.find(s => s.locationId === previewId) ?? null : null;
@@ -259,16 +262,16 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
       };
 
       addSheet('Ringkasan', 'LAPORAN HARIAN MITRA — RINGKASAN',
-        ['No', 'Mitra', 'Kode', 'Status', 'Hari Aktif', 'Kirim (pcs)', 'Nilai Kirim', 'Terjual (pcs)', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih (Kirim - Terjual)', '% Terealisasi', 'Stok Awal Periode', 'Stok Akhir Periode', 'Stok Saat Ini (pcs)', 'Nilai Stok Saat Ini'],
-        [6, 28, 10, 11, 10, 11, 16, 11, 16, 9, 9, 20, 13, 12, 12, 13, 17],
-        rows.map((s, i) => [i + 1, s.locationName, s.code, s.isActive ? 'Aktif' : 'Nonaktif', s.days.length, s.totals.kirim, s.totals.nilaiKirim, s.totals.jual, s.totals.nilaiJual, s.totals.retur, s.totals.reject, s.totals.selisih, s.realisasiPct === null ? '-' : `${s.realisasiPct}%`, s.stokAwalPeriode, s.stokAkhirPeriode, s.currentStock, s.currentStockValue]),
-        [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], [6, 8, 11, 16]);
+        ['No', 'Mitra', 'Kode', 'Status', 'Hari Aktif', 'Kirim (pcs)', 'Nilai Kirim', 'Terjual (pcs)', 'Nilai Terjual', 'Retur', 'Reject', 'Transfer Masuk (pcs)', 'Transfer Keluar (pcs)', 'Selisih (Kirim - Terjual)', '% Terealisasi', 'Stok Awal Periode', 'Stok Akhir Periode', 'Stok Saat Ini (pcs)', 'Nilai Stok Saat Ini'],
+        [6, 28, 10, 11, 10, 11, 16, 11, 16, 9, 9, 13, 13, 20, 13, 12, 12, 13, 17],
+        rows.map((s, i) => [i + 1, s.locationName, s.code, s.isActive ? 'Aktif' : 'Nonaktif', s.days.length, s.totals.kirim, s.totals.nilaiKirim, s.totals.jual, s.totals.nilaiJual, s.totals.retur, s.totals.reject, s.totals.transferMasuk, s.totals.transferKeluar, s.totals.selisih, s.realisasiPct === null ? '-' : `${s.realisasiPct}%`, s.stokAwalPeriode, s.stokAkhirPeriode, s.currentStock, s.currentStockValue]),
+        [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], [6, 8, 13, 18]);
 
-      const productCols = ['No', 'Mitra', 'Produk', 'Stok Awal', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Terjual (pcs)', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih (Kirim - Terjual)', 'Stok Akhir'];
-      const productWidths = [6, 26, 30, 11, 15, 11, 16, 11, 16, 9, 9, 20, 11];
-      const productNum = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-      const productRp = [4, 6, 8, 11];
-      const productVals = (no: number, mitra: string, r: DailyProductRow) => [no, mitra, r.productName, r.stokAwal, r.harga, r.kirim, r.nilaiKirim, r.jual, r.nilaiJual, r.retur, r.reject, r.selisih, r.stokAkhir];
+      const productCols = ['No', 'Mitra', 'Produk', 'Stok Awal', 'Harga Satuan', 'Kirim (pcs)', 'Nilai Kirim', 'Terjual (pcs)', 'Nilai Terjual', 'Retur', 'Reject', 'Transfer Masuk (pcs)', 'Nilai Transfer Masuk', 'Transfer Keluar (pcs)', 'Nilai Transfer Keluar', 'Selisih (Kirim - Terjual)', 'Stok Akhir'];
+      const productWidths = [6, 26, 30, 11, 15, 11, 16, 11, 16, 9, 9, 13, 16, 13, 16, 20, 11];
+      const productNum = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+      const productRp = [4, 6, 8, 12, 14, 15];
+      const productVals = (no: number, mitra: string, r: DailyProductRow) => [no, mitra, r.productName, r.stokAwal, r.harga, r.kirim, r.nilaiKirim, r.jual, r.nilaiJual, r.retur, r.reject, r.transferMasuk, r.nilaiTransferMasuk, r.transferKeluar, r.nilaiTransferKeluar, r.selisih, r.stokAkhir];
 
       const perProduct: (string | number)[][] = [];
       for (const s of rows) s.products.forEach((r, i) => perProduct.push(productVals(i + 1, s.locationName, r)));
@@ -322,6 +325,11 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
           <p className="text-sm font-bold tabular" style={{ color: label === 'Stok' ? 'var(--accent)' : 'var(--text-primary)' }}>{val}</p>
         </div>
       ))}
+      {(s.totals.transferMasuk > 0 || s.totals.transferKeluar > 0) && (
+        <p className="col-span-5 text-[11px] tabular text-left mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          Transfer masuk <b style={{ color: 'var(--text-secondary)' }}>{s.totals.transferMasuk}</b> · keluar <b style={{ color: 'var(--text-secondary)' }}>{s.totals.transferKeluar}</b> pcs
+        </p>
+      )}
       <p className="col-span-5 text-[11px] tabular text-left mt-0.5" style={{ color: 'var(--text-muted)' }}>
         Kirim {formatRp(s.totals.nilaiKirim)} · Terjual {formatRp(s.totals.nilaiJual)} · Selisih <b style={{ color: s.totals.selisih < 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{formatRp(s.totals.selisih)}</b>
       </p>
@@ -464,13 +472,13 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             </div>
           ) : view === 'table' ? (
             <div className="card overflow-x-auto" style={{ borderColor: 'var(--border-2)' }}>
-              <table className="w-full" style={{ minWidth: 1080 }}>
+              <table className="w-full" style={{ minWidth: 1250 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                     <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">No</th>
                     <th className="px-1 py-2" style={{ width: 28 }} />
                     <th className="px-2.5 py-2 text-[11px] font-bold uppercase text-left">Mitra</th>
-                    {['Stok Awal', 'Kirim', 'Nilai Kirim', 'Terjual', 'Nilai Terjual', 'Retur', 'Reject', 'Selisih', 'Stok Akhir'].map(h => (
+                    {['Stok Awal', 'Kirim', 'Nilai Kirim', 'Terjual', 'Nilai Terjual', 'Retur', 'Reject', 'Transfer Masuk', 'Transfer Keluar', 'Selisih', 'Stok Akhir'].map(h => (
                       <th key={h} className="px-2.5 py-2 text-[11px] font-bold uppercase text-right whitespace-nowrap"
                         style={h === 'Retur' ? { color: '#1D4ED8' } : h === 'Reject' ? { color: 'var(--danger)' } : undefined}>{h}</th>
                     ))}
@@ -503,6 +511,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                         <td className={td}>{s.totals.nilaiJual ? formatRp(s.totals.nilaiJual) : '-'}</td>
                         <td className={td} style={s.totals.retur ? { color: '#1D4ED8', fontWeight: 700 } : undefined}>{dash(s.totals.retur)}</td>
                         <td className={td} style={s.totals.reject ? { color: 'var(--danger)', fontWeight: 700 } : undefined}>{dash(s.totals.reject)}</td>
+                        <td className={td}>{dash(s.totals.transferMasuk)}</td>
+                        <td className={td}>{dash(s.totals.transferKeluar)}</td>
                         <td className={td} style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? formatRp(s.totals.selisih) : '-'}</td>
                         <td className={`${td} font-bold`}>{s.stokAkhirPeriode}</td>
                         <td className="px-2.5 py-2.5">
@@ -521,7 +531,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                     <td className="px-2.5 py-2.5 text-xs font-bold">Total ({filtered.length} mitra)</td>
                     {[
                       filtered.reduce((a, s) => a + s.stokAwalPeriode, 0), sum('kirim'), formatRp(sum('nilaiKirim')), sum('jual'), formatRp(sum('nilaiJual')),
-                      sum('retur'), sum('reject'), formatRp(sum('selisih')), filtered.reduce((a, s) => a + s.stokAkhirPeriode, 0),
+                      sum('retur'), sum('reject'), sum('transferMasuk'), sum('transferKeluar'), formatRp(sum('selisih')), filtered.reduce((a, s) => a + s.stokAkhirPeriode, 0),
                     ].map((v, i) => <td key={i} className="px-2.5 py-2.5 text-xs tabular text-right font-bold whitespace-nowrap">{v}</td>)}
                     <td />
                   </tr>
@@ -612,10 +622,10 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
           </Tooltip>
           </div>
           {summaryOpen && <div className="card overflow-x-auto mt-3" style={{ borderColor: 'var(--border-2)' }}>
-            <table className="w-full" style={{ minWidth: 560 }}>
+            <table className="w-full" style={{ minWidth: 700 }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                  {['No', 'Mitra', 'Total Kirim', 'Total Terjual', 'Selisih', '% Real.', 'Stok'].map((h, i) => (
+                  {['No', 'Mitra', 'Total Kirim', 'Total Terjual', 'Selisih', 'Transfer Masuk', 'Transfer Keluar', '% Real.', 'Stok'].map((h, i) => (
                     <th key={h} className={`px-2.5 py-2 text-[11px] font-bold uppercase ${i < 2 ? 'text-left' : 'text-right'}`}>{h}</th>
                   ))}
                 </tr>
@@ -628,6 +638,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                     <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiKirim ? formatRp(s.totals.nilaiKirim) : '-'}</td>
                     <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.nilaiJual ? formatRp(s.totals.nilaiJual) : '-'}</td>
                     <td className="px-2.5 py-2 text-xs tabular text-right" style={s.totals.selisih < 0 ? { color: 'var(--danger)' } : undefined}>{s.totals.selisih ? formatRp(s.totals.selisih) : '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.transferMasuk || '-'}</td>
+                    <td className="px-2.5 py-2 text-xs tabular text-right">{s.totals.transferKeluar || '-'}</td>
                     <td className="px-2.5 py-2 text-xs tabular text-right">{pctText(s.realisasiPct)}</td>
                     <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{s.currentStock}</td>
                   </tr>
@@ -637,6 +649,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{formatRp(sum('nilaiKirim'))}</td>
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{formatRp(sum('nilaiJual'))}</td>
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{formatRp(sum('selisih'))}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{sum('transferMasuk')}</td>
+                  <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{sum('transferKeluar')}</td>
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{pctText(sum('nilaiKirim') > 0 ? Math.round((sum('nilaiJual') / sum('nilaiKirim')) * 1000) / 10 : null)}</td>
                   <td className="px-2.5 py-2 text-xs tabular text-right font-bold">{filtered.reduce((a, s) => a + s.currentStock, 0)}</td>
                 </tr>
@@ -742,6 +756,8 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
                 ['Total Terjual', `${previewSection.totals.jual} pcs · ${formatRp(previewSection.totals.nilaiJual)}`, 'var(--success)'],
                 ['Total Retur', `${previewSection.totals.retur} pcs · ${formatRp(previewSection.products.reduce((a, r) => a + r.retur * r.harga, 0))}`, '#1D4ED8'],
                 ['Total Reject', `${previewSection.totals.reject} pcs · ${formatRp(previewSection.products.reduce((a, r) => a + r.reject * r.harga, 0))}`, 'var(--danger)'],
+                ['Total Transfer Masuk', `${previewSection.totals.transferMasuk} pcs · ${formatRp(previewSection.products.reduce((a, r) => a + r.nilaiTransferMasuk, 0))}`, undefined],
+                ['Total Transfer Keluar', `${previewSection.totals.transferKeluar} pcs · ${formatRp(previewSection.products.reduce((a, r) => a + r.nilaiTransferKeluar, 0))}`, undefined],
                 ['% Terealisasi (terjual / kirim)', pctText(previewSection.realisasiPct), undefined],
                 ['Stok Awal Periode', `${previewSection.stokAwalPeriode} pcs`, undefined],
                 ['Stok Akhir Periode', `${previewSection.stokAkhirPeriode} pcs`, undefined],
@@ -759,7 +775,7 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
             </div>
             </>}
             <p className="text-[11px] mt-4" style={{ color: 'var(--text-muted)' }}>
-              Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim & rekap sesudah hari tersebut.
+              Stok akhir dihitung dari stok titip saat ini dikurangi/ditambah kirim, rekap, & transfer antar mitra sesudah hari tersebut. Stok Akhir = Stok Awal + Kirim + Transfer Masuk - Terjual - Retur - Reject - Transfer Keluar.
             </p>
           </div>
         </Modal>

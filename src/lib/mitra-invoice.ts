@@ -5,6 +5,11 @@ import { formatDate } from '@/lib/format';
 // Penyusun data invoice tagihan mitra — dipakai di client (tombol Invoice di riwayat lokasi) dan di
 // server (link publik invoice yang dikirim ke mitra lewat WhatsApp), supaya angkanya selalu sama.
 export interface InvoiceShipment { createdAt?: { seconds: number } | null; items: { qty: number; subtotal: number }[] }
+// Transfer stok antar mitra (approved). docDate = tanggal dokumen; dipakai membatasi periode.
+export interface InvoiceTransfer {
+  docDate?: { seconds: number } | null; fromLocationId?: string | null; toLocationId?: string | null;
+  items: { qty: number; hargaTitip?: number }[];
+}
 export interface InvoiceRecap {
   id: string; createdAt?: { seconds: number } | null; items: RecapNoteItem[];
   totalSold: number; totalRetur: number; totalReject?: number; totalRevenue: number; paymentStatus?: string | null;
@@ -18,7 +23,7 @@ const fmtDateTime = (sec?: number) => sec ? formatDate(sec * 1000, 'datetime', T
 const fmtDate = (d: Date) => formatDate(d, 'short', TZ);
 
 export function buildMitraInvoiceData(input: {
-  location: InvoiceLocation; shipments: InvoiceShipment[]; recaps: InvoiceRecap[];
+  location: InvoiceLocation; shipments: InvoiceShipment[]; recaps: InvoiceRecap[]; transfers?: InvoiceTransfer[];
   bank?: MitraInvoiceData['bank']; now?: Date;
   from?: string; to?: string; // YYYY-MM-DD (WIB), opsional — membatasi kirim & rekap pada periode ini
 }): MitraInvoiceData {
@@ -28,6 +33,16 @@ export function buildMitraInvoiceData(input: {
   const inRange = (x: { createdAt?: { seconds: number } | null }) => { const s = x.createdAt?.seconds ?? 0; return s >= fromSec && s <= toSec; };
   const shipments = input.shipments.filter(inRange);
   const recaps = input.recaps.filter(inRange);
+  // Transfer masuk/keluar pada periode — info tambahan (tidak dicampur ke "Dikirim"); kosong = field tidak ditambahkan.
+  const transfers = (input.transfers ?? []).filter(t => { const s = t.docDate?.seconds ?? 0; return s >= fromSec && s <= toSec; });
+  const tally = (rows: InvoiceTransfer[]) => ({
+    qty: sum(rows, t => sum(t.items, it => it.qty)), value: sum(rows, t => sum(t.items, it => it.qty * (it.hargaTitip ?? 0))),
+  });
+  const transferIn = tally(transfers.filter(t => t.toLocationId === location.id));
+  const transferOut = tally(transfers.filter(t => t.fromLocationId === location.id));
+  const transferInfo = transferIn.qty > 0 || transferOut.qty > 0
+    ? { transferInQty: transferIn.qty, transferInValue: transferIn.value, transferOutQty: transferOut.qty, transferOutValue: transferOut.value }
+    : {};
   const now = input.now ?? new Date();
   const sec = (x: { createdAt?: { seconds: number } | null }) => x.createdAt?.seconds ?? 0;
   const unpaidRecaps = recaps.filter(r => r.paymentStatus === 'belum_lunas').sort((a, b) => sec(a) - sec(b));
@@ -62,6 +77,7 @@ export function buildMitraInvoiceData(input: {
     shipmentCount: shipments.length,
     shipmentQty: sum(shipments, sh => sum(sh.items, it => it.qty)),
     shipmentValue: sum(shipments, sh => sum(sh.items, it => it.subtotal)),
+    ...transferInfo,
     recapCount: recaps.length,
     soldQty: sum(recaps, r => r.totalSold), returQty: sum(recaps, r => r.totalRetur), rejectQty: sum(recaps, r => r.totalReject || 0),
     revenueAll: sum(recaps, r => r.totalRevenue),

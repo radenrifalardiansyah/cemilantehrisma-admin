@@ -40,6 +40,7 @@ function fakeTx(db: Db) {
       const excl = v[1] as string;
       return Promise.resolve([...db.shipments].filter(([id, sh]) => id !== excl && sh.locationId === v[0]).map(([, sh]) => ({ items: sh.items })));
     }
+    if (t.startsWith('select items from consignment_transfers')) return Promise.resolve([]); // transfer masuk: tidak ada di fake ini
     if (t.startsWith('select id from warehouse_stock')) return Promise.resolve([]);
     if (t.startsWith('select stock_qty from warehouse_stock')) return Promise.resolve([{ stock_qty: '1000' }]);
     if (t.startsWith('select id, stock_qty, harga_titip from consignment_stock')) {
@@ -152,7 +153,7 @@ describe('harga titip rata-rata: reverse mengeluarkan kontribusi harga', () => {
 
   it('validasi stok tak cukup tetap menolak dan tidak mengubah apa pun', async () => {
     const db = newDb({ qty: 1, harga: 1000 });
-    await expect(reverseShipmentEffect(fakeTx(db), ship([{ qty: 3, hargaTitip: 1000 }]), { context: 'delete' })).rejects.toThrow(/sudah terjual/);
+    await expect(reverseShipmentEffect(fakeTx(db), ship([{ qty: 3, hargaTitip: 1000 }]), { context: 'delete' })).rejects.toThrow(/terjual\/direkap/);
     expect(row(db)).toEqual({ qty: 1, harga: 1000 });
   });
 });

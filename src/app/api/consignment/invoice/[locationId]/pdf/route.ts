@@ -7,6 +7,8 @@ import { getSettings } from '@/lib/settings-pg';
 import { rowToRecap, type RecapRow } from '@/lib/recaps-pg';
 import { SHIPMENT_APPROVED } from '@/lib/shipment-status';
 import { rowToShipment, type ShipmentRow } from '@/lib/shipments-pg';
+import { TRANSFER_APPROVED } from '@/lib/consignment-transfer-status';
+import { rowToTransfer, type ConsignmentTransferRow } from '@/lib/consignment-transfers-pg';
 import MitraInvoicePDF from '@/lib/pdf/MitraInvoicePDF';
 import type { StoreHeader } from '@/lib/pdf/ShipmentNotePDF';
 import type { RecapNoteItem } from '@/lib/pdf/RecapNotePDF';
@@ -40,11 +42,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ loca
     `;
     if (!loc) return new NextResponse('Invoice tidak ditemukan.', { status: 404 });
 
-    const [shipmentRows, recapRows, settingsRaw] = await Promise.all([
+    const [shipmentRows, recapRows, transferRows, settingsRaw] = await Promise.all([
       sql<ShipmentRow[]>`select * from consignment_shipments where location_id = ${locationId} and status = ${SHIPMENT_APPROVED}`,
       sql<RecapRow[]>`
         select r.*, coalesce((select sum(p.amount) from consignment_recap_payments p where p.recap_id = r.id and not p.voided), 0) as paid_amount
         from consignment_recaps r where r.location_id = ${locationId}
+      `,
+      sql<ConsignmentTransferRow[]>`
+        select * from consignment_transfers where (from_location_id = ${locationId} or to_location_id = ${locationId}) and status = ${TRANSFER_APPROVED}
       `,
       getSettings(),
     ]);
@@ -69,6 +74,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ loca
       from, to,
       location: { id: loc.id, name: loc.name, code: loc.code, contactName: loc.contact_name, contactPhone: loc.contact_phone, address: loc.address },
       shipments: shipmentRows.map(rowToShipment),
+      transfers: transferRows.map(rowToTransfer),
       recaps: recapRows.map(row => {
         const r = rowToRecap(row);
         return { ...r, items: r.items as RecapNoteItem[] };

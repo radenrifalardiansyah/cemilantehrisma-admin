@@ -19,6 +19,8 @@ export interface MitraInvoiceData {
   docNo: string; date: string; printedAt: string; periodText: string;
   locationName: string; locationCode?: string; contactName?: string; contactPhone?: string; address?: string;
   shipmentCount: number; shipmentQty: number; shipmentValue: number;
+  // Transfer stok antar mitra (opsional, hanya bila ada pada periode): pindahan masuk dari / keluar ke mitra lain.
+  transferInQty?: number; transferInValue?: number; transferOutQty?: number; transferOutValue?: number;
   recapCount: number; soldQty: number; returQty: number; rejectQty: number; revenueAll: number;
   paidValue: number; paidCount: number; // paidValue = rekap lunas + cicilan yang sudah diterima
   installmentCount?: number;            // jumlah rekap belum lunas yang sudah dicicil
@@ -113,7 +115,7 @@ const s = StyleSheet.create({
 });
 
 export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceData; store: StoreHeader }) {
-  const sisa = data.shipmentQty - data.soldQty - data.returQty - data.rejectQty;
+  const sisa = data.shipmentQty + (data.transferInQty ?? 0) - (data.transferOutQty ?? 0) - data.soldQty - data.returQty - data.rejectQty;
   // Total khusus rekap yang ditagihkan (belum lunas): pcs dan nilai titip (qty x harga titip) per kategori.
   const billed = data.unpaid.filter(r => !r.paid);
   const tally = (rows: MitraInvoiceRecap[], pick: (it: RecapNoteItem) => number) => rows.reduce(
@@ -164,10 +166,12 @@ export default function MitraInvoicePDF({ data, store }: { data: MitraInvoiceDat
         <View style={s.sumWrap} wrap={false}>
           <Text style={s.sumHead}>RINGKASAN KONSINYASI</Text>
           <View style={s.sumRow}><Text style={s.sumKey}>Dikirim ({data.shipmentCount} pengiriman)</Text><Text style={s.sumVal}>{data.shipmentQty} pcs  ·  {rp(data.shipmentValue)}</Text></View>
+          {(data.transferInQty ?? 0) > 0 && <View style={s.sumRow}><Text style={s.sumKey}>Pindahan masuk dari mitra lain</Text><Text style={s.sumVal}>{data.transferInQty} pcs  ·  {rp(data.transferInValue ?? 0)}</Text></View>}
+          {(data.transferOutQty ?? 0) > 0 && <View style={s.sumRow}><Text style={s.sumKey}>Pindahan keluar ke mitra lain</Text><Text style={s.sumVal}>{data.transferOutQty} pcs  ·  {rp(data.transferOutValue ?? 0)}</Text></View>}
           <View style={s.sumRow}><Text style={s.sumKey}>Terjual ({data.recapCount} rekap)</Text><Text style={s.sumVal}>{data.soldQty} pcs  ·  {rp(data.revenueAll)}</Text></View>
           <View style={s.sumRow}><Text style={[s.sumKey, { color: C.retur }]}>Retur</Text><Text style={[s.sumVal, { color: C.retur }]}>{data.returQty} pcs</Text></View>
           <View style={s.sumRow}><Text style={[s.sumKey, { color: C.reject }]}>Reject</Text><Text style={[s.sumVal, { color: C.reject }]}>{data.rejectQty} pcs</Text></View>
-          <View style={s.sumRow}><Text style={s.sumKey}>Sisa stok di mitra (kirim - jual - retur - reject)</Text><Text style={s.sumVal}>{sisa} pcs</Text></View>
+          <View style={s.sumRow}><Text style={s.sumKey}>Sisa stok di mitra (kirim{data.transferInQty || data.transferOutQty ? ' ± pindahan' : ''} - jual - retur - reject)</Text><Text style={s.sumVal}>{sisa} pcs</Text></View>
         </View>
 
         <Text style={s.secTitle}>RINCIAN REKAP ({billed.length} BELUM DIBAYAR{data.unpaid.length > billed.length ? `, ${data.unpaid.length - billed.length} LUNAS MEMUAT RETUR/REJECT` : ''})</Text>

@@ -97,7 +97,7 @@ const s = StyleSheet.create({
 });
 
 // Lebar kolom (% dari lebar tabel) — total 100.
-const W = { no: '4%', name: '13.5%', harga: '8.8%', qty: '6.2%', qtyL: '6%', rp: '11.5%', stok: '7%' };
+const W = { no: '3.5%', name: '10.5%', harga: '8%', qty: '5.5%', qtyL: '5.5%', tr: '6%', rp: '11%', stok: '5.5%' };
 
 function ProductRows({ rows }: { rows: DailyProductRow[] }) {
   return (
@@ -114,6 +114,8 @@ function ProductRows({ rows }: { rows: DailyProductRow[] }) {
           <Text style={[s.tCell, s.right, { width: W.rp }]}>{dashRp(r.nilaiJual)}</Text>
           <Text style={[s.tCell, s.right, { width: W.qtyL }, ...(r.retur > 0 ? [s.returCell] : [s.zeroCell])]}>{r.retur}</Text>
           <Text style={[s.tCell, s.right, { width: W.qtyL }, ...(r.reject > 0 ? [s.rejectCell] : [s.zeroCell])]}>{r.reject}</Text>
+          <Text style={[s.tCell, s.right, { width: W.tr }]}>{dash(r.transferMasuk)}</Text>
+          <Text style={[s.tCell, s.right, { width: W.tr }]}>{dash(r.transferKeluar)}</Text>
           <Text style={[s.tCell, s.right, { width: W.rp }, ...(r.selisih < 0 ? [{ color: C.reject }] : [])]}>{r.selisih ? rp(r.selisih) : '-'}</Text>
           <Text style={[s.tCell, s.right, s.bold, { width: W.stok }]}>{r.stokAkhir}</Text>
         </View>
@@ -124,7 +126,7 @@ function ProductRows({ rows }: { rows: DailyProductRow[] }) {
 
 // Baris subtotal/total: angka sejajar tepat di bawah kolomnya masing-masing.
 function TotalRow({ rows, label }: { rows: DailyProductRow[]; label: string }) {
-  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
+  const sum = (k: 'kirim' | 'nilaiKirim' | 'jual' | 'nilaiJual' | 'retur' | 'reject' | 'transferMasuk' | 'transferKeluar' | 'stokAwal' | 'stokAkhir') => rows.reduce((t, r) => t + r[k], 0);
   const selisih = sum('nilaiKirim') - sum('nilaiJual');
   return (
     <View style={s.totalRow} wrap={false}>
@@ -138,6 +140,8 @@ function TotalRow({ rows, label }: { rows: DailyProductRow[]; label: string }) {
       <Text style={[s.tCell, s.right, s.bold, { width: W.rp }]}>{rp(sum('nilaiJual'))}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.qtyL }, ...(sum('retur') > 0 ? [{ color: C.retur }] : [])]}>{sum('retur')}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.qtyL }, ...(sum('reject') > 0 ? [{ color: C.reject }] : [])]}>{sum('reject')}</Text>
+      <Text style={[s.tCell, s.right, s.bold, { width: W.tr }]}>{sum('transferMasuk')}</Text>
+      <Text style={[s.tCell, s.right, s.bold, { width: W.tr }]}>{sum('transferKeluar')}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.rp }, ...(selisih < 0 ? [{ color: C.reject }] : [])]}>{rp(selisih)}</Text>
       <Text style={[s.tCell, s.right, s.bold, { width: W.stok }]}>{sum('stokAkhir')}</Text>
     </View>
@@ -237,6 +241,8 @@ function TableHead() {
       <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>{'Nilai\nTerjual'}</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.retur }]}>Retur</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.qtyL, backgroundColor: C.reject }]}>Reject</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.tr }]}>{'Trf.\nMasuk'}</Text>
+      <Text style={[s.tHeadCell, s.right, { width: W.tr }]}>{'Trf.\nKeluar'}</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.rp }]}>Selisih</Text>
       <Text style={[s.tHeadCell, s.right, { width: W.stok }]}>{'Stok\nAkhir'}</Text>
     </View>
@@ -244,14 +250,15 @@ function TableHead() {
 }
 
 // Ringkasan semua mitra — halaman terakhir bila laporan memuat lebih dari satu mitra.
-const OV = { no: '6%', name: '28%', rp: '16%', pct: '9%', stok: '9%' };
+const OV = { no: '5%', name: '22%', rp: '14%', tr: '8%', pct: '8%', stok: '7%' };
 function OverviewPage({ data, store }: { data: MitraDailyReportData; store: StoreHeader }) {
   const t = data.sections.reduce((a, x) => ({
     kirim: a.kirim + x.totals.nilaiKirim, jual: a.jual + x.totals.nilaiJual, stok: a.stok + x.currentStock,
-  }), { kirim: 0, jual: 0, stok: 0 });
+    tMasuk: a.tMasuk + x.totals.transferMasuk, tKeluar: a.tKeluar + x.totals.transferKeluar,
+  }), { kirim: 0, jual: 0, stok: 0, tMasuk: 0, tKeluar: 0 });
   const head: [string, string, boolean][] = [
     ['No', OV.no, false], ['Mitra', OV.name, false], ['Total Kirim', OV.rp, true], ['Total Terjual', OV.rp, true],
-    ['Selisih', OV.rp, true], ['% Real.', OV.pct, true], ['Stok', OV.stok, true],
+    ['Selisih', OV.rp, true], ['Transfer Masuk', OV.tr, true], ['Transfer Keluar', OV.tr, true], ['% Real.', OV.pct, true], ['Stok', OV.stok, true],
   ];
   return (
     <Page size="A4" style={s.page} wrap>
@@ -276,6 +283,8 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
             <Text style={[s.tCell, s.right, { width: OV.rp }]}>{dashRp(x.totals.nilaiKirim)}</Text>
             <Text style={[s.tCell, s.right, { width: OV.rp }]}>{dashRp(x.totals.nilaiJual)}</Text>
             <Text style={[s.tCell, s.right, { width: OV.rp }, ...(x.totals.selisih < 0 ? [{ color: C.reject }] : [])]}>{x.totals.selisih ? rp(x.totals.selisih) : '-'}</Text>
+            <Text style={[s.tCell, s.right, { width: OV.tr }]}>{dash(x.totals.transferMasuk)}</Text>
+            <Text style={[s.tCell, s.right, { width: OV.tr }]}>{dash(x.totals.transferKeluar)}</Text>
             <Text style={[s.tCell, s.right, { width: OV.pct }]}>{pct(x.realisasiPct)}</Text>
             <Text style={[s.tCell, s.right, s.bold, { width: OV.stok }]}>{x.currentStock}</Text>
           </View>
@@ -286,6 +295,8 @@ function OverviewPage({ data, store }: { data: MitraDailyReportData; store: Stor
           <Text style={[s.tCell, s.right, s.bold, { width: OV.rp }]}>{rp(t.kirim)}</Text>
           <Text style={[s.tCell, s.right, s.bold, { width: OV.rp }]}>{rp(t.jual)}</Text>
           <Text style={[s.tCell, s.right, s.bold, { width: OV.rp }]}>{rp(t.kirim - t.jual)}</Text>
+          <Text style={[s.tCell, s.right, s.bold, { width: OV.tr }]}>{t.tMasuk}</Text>
+          <Text style={[s.tCell, s.right, s.bold, { width: OV.tr }]}>{t.tKeluar}</Text>
           <Text style={[s.tCell, s.right, s.bold, { width: OV.pct }]}>{pct(t.kirim > 0 ? Math.round((t.jual / t.kirim) * 1000) / 10 : null)}</Text>
           <Text style={[s.tCell, s.right, s.bold, { width: OV.stok }]}>{t.stok}</Text>
         </View>
@@ -353,6 +364,12 @@ function MitraPage({ sec, data, store, no }: { sec: MitraDailyReportData['sectio
           <ProductRows rows={sec.products} />
           <TotalRow rows={sec.products} label="Total periode" />
         </View>
+      )}
+
+      {sec.days.length > 0 && !data.summaryOnly && (
+        <Text style={{ fontSize: 7.5, color: C.muted, marginTop: 8 }}>
+          Trf. = transfer stok antar mitra. Stok Akhir = Stok Awal + Kirim + Trf. Masuk - Terjual - Retur - Reject - Trf. Keluar.
+        </Text>
       )}
 
       <View wrap={false}>

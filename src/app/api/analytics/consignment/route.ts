@@ -5,12 +5,15 @@ import { getSql, parseJsonb } from '@/lib/db';
 import { seq } from '@/lib/db-seq';
 import { requirePermission } from '@/lib/rbac';
 import { wibDayStart, wibDayEnd, wibDateKey } from '@/lib/date';
+import { TRANSFER_APPROVED } from '@/lib/consignment-transfer-status';
+import { CONSIGNMENT_ANALYTICS_TAG } from '@/lib/consignment-transfers-pg';
 
 interface LocationDoc { id: string; name?: string; code?: string }
 interface ShipmentDoc {
   locationId?: string; locationName?: string; createdAtSeconds: number | null;
   items?: { productId?: string; productName?: string; qty: number; subtotal?: number }[];
 }
+interface TransferDoc { fromLocationId: string; toLocationId: string; items?: { qty: number; hargaTitip?: number }[] }
 interface RecapDoc {
   locationId?: string; locationName?: string; paymentStatus?: 'lunas' | 'belum_lunas';
   createdAtSeconds: number | null;
@@ -31,7 +34,7 @@ const getRawConsignmentAnalytics = unstable_cache(
   async (from: string, to: string) => {
     const sql = getSql();
     // Berurutan (seq) supaya tidak menumpuk di pool bersama request Analitik lain — lihat db-seq.ts.
-    const [locRows, shipRows, recapRows, stockRows] = await seq([
+    const [locRows, shipRows, recapRows, stockRows, transferRows] = await seq([
       sql<{ id: string; name: string; code: string | null }[]>`select id, name, code from consignment_locations`,
       // `consignment_shipments` pindah ke Postgres (Tahap 18a migrasi Fase 2).
       sql<{ location_id: string | null; location_name: string | null; created_at: Date; items: unknown }[]>`
@@ -49,6 +52,13 @@ const getRawConsignmentAnalytics = unstable_cache(
       `,
       sql<{ location_id: string | null; product_id: string | null; stock_qty: string; harga_titip: string | null }[]>`
         select location_id, product_id, stock_qty, harga_titip from consignment_stock
+      `,
+      // Transfer stok antar mitra yang approved pada periode (tanggal dokumen).
+      sql<{ from_location_id: string; to_location_id: string; items: unknown }[]>`
+        select from_location_id, to_location_id, items
+        from consignment_transfers
+        where doc_date >= ${wibDayStart(from).toDate()} and doc_date <= ${wibDayEnd(to).toDate()}
+          and status = ${TRANSFER_APPROVED}
       `,
     ]);
 
@@ -68,6 +78,10 @@ const getRawConsignmentAnalytics = unstable_cache(
         paidAmount: Number(r.paid_amount) || 0,
         items: (parseJsonb(r.items) as RecapDoc['items']) ?? [],
       })),
+      transfers: transferRows.map((r): TransferDoc => ({
+        fromLocationId: r.from_location_id, toLocationId: r.to_location_id,
+        items: (parseJsonb(r.items) as TransferDoc['items']) ?? [],
+      })),
       stock: stockRows.map(r => ({
         locationId: r.location_id ?? undefined, productId: r.product_id ?? undefined,
         stockQty: Number(r.stock_qty) || 0, hargaTitip: r.harga_titip != null ? Number(r.harga_titip) : 0,
@@ -75,7 +89,8 @@ const getRawConsignmentAnalytics = unstable_cache(
     };
   },
   ['admin-analytics-consignment'],
-  { revalidate: 180 }
+  // Tag: transfer stok (approve/batal) membuangnya supaya angka langsung mutakhir, tanpa menunggu 3 menit.
+  { revalidate: 180, tags: [CONSIGNMENT_ANALYTICS_TAG] }
 );
 
 export async function GET(req: NextRequest) {
@@ -89,7 +104,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Parameter from & to (yyyy-mm-dd) wajib diisi.' }, { status: 400 });
   }
 
-  const { locations, shipments, recaps, stock } = await getRawConsignmentAnalytics(from, to);
+  const { locations, shipments, recaps, stock, transfers } = await getRawConsignmentAnalytics(from, to);
 
   const locationName = new Map(locations.map(l => [l.id, l.name ?? '(Lokasi dihapus)']));
   const locationCode = new Map(locations.map(l => [l.id, l.code ?? '']));
@@ -105,13 +120,13 @@ export async function GET(req: NextRequest) {
 
   // ── Agregasi per lokasi — kirim (nilai titip dikirim), pendapatan (rekap terjual), jual/retur/reject ──
   interface LocAgg {
-    kirim: number; kirimQty: number; pendapatan: number; jual: number; retur: number; reject: number;
+    kirim: number; kirimQty: number; transferMasukQty: number; transferKeluarQty: number; transferMasukNilai: number; transferKeluarNilai: number; pendapatan: number; jual: number; retur: number; reject: number;
     lunasAmount: number; belumLunasAmount: number; lunasCount: number; belumLunasCount: number;
   }
   const locAgg = new Map<string, LocAgg>();
   const getLocAgg = (id: string): LocAgg => {
     let a = locAgg.get(id);
-    if (!a) { a = { kirim: 0, kirimQty: 0, pendapatan: 0, jual: 0, retur: 0, reject: 0, lunasAmount: 0, belumLunasAmount: 0, lunasCount: 0, belumLunasCount: 0 }; locAgg.set(id, a); }
+    if (!a) { a = { kirim: 0, kirimQty: 0, transferMasukQty: 0, transferKeluarQty: 0, transferMasukNilai: 0, transferKeluarNilai: 0, pendapatan: 0, jual: 0, retur: 0, reject: 0, lunasAmount: 0, belumLunasAmount: 0, lunasCount: 0, belumLunasCount: 0 }; locAgg.set(id, a); }
     return a;
   };
 
@@ -120,6 +135,14 @@ export async function GET(req: NextRequest) {
     const a = getLocAgg(s.locationId);
     a.kirim += (s.items ?? []).reduce((sum, it) => sum + (it.subtotal ?? 0), 0);
     a.kirimQty += (s.items ?? []).reduce((sum, it) => sum + (it.qty ?? 0), 0);
+  });
+
+  // Transfer approved: keluar dari mitra asal, masuk ke mitra tujuan. Nilai = qty x harga titip snapshot approve.
+  transfers.forEach(t => {
+    const qty = (t.items ?? []).reduce((sum, it) => sum + (it.qty ?? 0), 0);
+    const nilai = (t.items ?? []).reduce((sum, it) => sum + (it.qty ?? 0) * (it.hargaTitip ?? 0), 0);
+    const out = getLocAgg(t.fromLocationId); out.transferKeluarQty += qty; out.transferKeluarNilai += nilai;
+    const inn = getLocAgg(t.toLocationId); inn.transferMasukQty += qty; inn.transferMasukNilai += nilai;
   });
 
   const productAgg = new Map<string, { productId: string; productName: string; qtySold: number; revenue: number }>();
@@ -154,7 +177,11 @@ export async function GET(req: NextRequest) {
       const totalUnits = a.jual + a.retur + a.reject;
       return {
         id, name: locationName.get(id) ?? '(Lokasi dihapus)', code: locationCode.get(id) ?? '',
-        kirim: a.kirim, kirimQty: a.kirimQty, pendapatan: a.pendapatan, selisih: a.kirim - a.pendapatan,
+        // selisih per mitra memakai kirim BERSIH = kirim + transfer masuk - transfer keluar (nilai Rp).
+        kirim: a.kirim, kirimQty: a.kirimQty, pendapatan: a.pendapatan,
+        selisih: a.kirim + a.transferMasukNilai - a.transferKeluarNilai - a.pendapatan,
+        transferMasukQty: a.transferMasukQty, transferKeluarQty: a.transferKeluarQty,
+        transferMasukNilai: a.transferMasukNilai, transferKeluarNilai: a.transferKeluarNilai,
         sellThroughPct: totalUnits > 0 ? Math.round((a.jual / totalUnits) * 1000) / 10 : 0,
         jual: a.jual, retur: a.retur, reject: a.reject,
         stockValue: stockValueByLocation.get(id) ?? 0,
