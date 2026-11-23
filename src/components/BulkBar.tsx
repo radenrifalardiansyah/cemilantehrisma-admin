@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, MessageCircle, Trash2 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 
 interface BulkBarProps {
@@ -13,11 +13,14 @@ interface BulkBarProps {
   onDelete: () => void;
   deleting: boolean;
   onClear: () => void;
+  /** Opsional: tombol kirim via WhatsApp (mis. saldo dompet terpilih ke WA toko). */
+  onWhatsApp?: () => void;
+  whatsAppLabel?: string;
 }
 
 /** Bilah aksi massal melayang (Export / PDF / Hapus / Batal) untuk daftar dengan checkbox. */
 export default function BulkBar({
-  count, onExportExcel, onExportPdf, exporting, exportingPdf, onDelete, deleting, onClear,
+  count, onExportExcel, onExportPdf, exporting, exportingPdf, onDelete, deleting, onClear, onWhatsApp, whatsAppLabel = 'WA',
 }: BulkBarProps) {
   const chip = 'flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors flex-shrink-0 whitespace-nowrap';
   return (
@@ -36,6 +39,12 @@ export default function BulkBar({
           {exportingPdf ? <Loader2 size={13} className="animate-spin" /> : <PdfIcon size={13} />}
           PDF
         </button>
+        {onWhatsApp && (
+          <button onClick={onWhatsApp} className={chip} style={{ background: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+            <MessageCircle size={13} />
+            {whatsAppLabel}
+          </button>
+        )}
         <button onClick={onDelete} disabled={deleting} className={chip}
           style={{ background: 'var(--danger)', color: '#fff' }}>
           {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}

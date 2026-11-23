@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Wallet as WalletIcon, Plus, Pencil, Trash2, X, Check, Loader2, Power, ArrowRightLeft,
-  Search, ChevronLeft, ChevronRight, RefreshCw,
+  Search, ChevronLeft, ChevronRight, RefreshCw, MessageCircle,
 } from 'lucide-react';
 import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import ExcelJS from 'exceljs';
@@ -30,6 +30,8 @@ import PageLoader from '@/components/PageLoader';
 import { DateInput } from '@/components/DateTimeInput';
 import TransferClosingPicker, { closingLinksProblem, type PayableClosing } from '@/components/tabs/TransferClosingPicker';
 import { closingPeriodLabel } from '@/lib/closing-settlement-core';
+import { buildWalletBalanceWaMessage } from '@/lib/wallet-balance-wa';
+import { shoppingWaFits, shoppingWaUrl } from '@/lib/shopping-wa';
 
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
@@ -677,6 +679,18 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
   const totalAktif = wallets.filter(w => w.isActive).reduce((s, w) => s + (balances[w.id] ?? 0), 0);
 
+  // Kirim saldo dompet ke WA toko (nomor dari Pengaturan): 'semua' = seluruh dompet aktif, 'terpilih' = yang dicentang.
+  const sendBalancesWhatsApp = (scope: 'semua' | 'terpilih') => {
+    const rows = (scope === 'semua' ? wallets.filter(w => w.isActive) : wallets.filter(w => selected.has(w.id)))
+      .map(w => ({ name: w.name, balance: balances[w.id] ?? 0, isActive: w.isActive }));
+    if (rows.length === 0) { toast.error(scope === 'semua' ? 'Belum ada dompet aktif.' : 'Pilih minimal satu dompet.'); return; }
+    const message = buildWalletBalanceWaMessage(rows, { storeName: storeHeader.name, scope });
+    if (!shoppingWaFits(message)) { toast.error('Pesan terlalu panjang untuk WhatsApp. Pilih lebih sedikit dompet.'); return; }
+    if (!storeHeader.phone) toast.success('Nomor WhatsApp toko belum diisi di Pengaturan — pilih kontak di WhatsApp.');
+    window.open(shoppingWaUrl(storeHeader.phone, message), '_blank');
+    if (scope === 'terpilih') setSelected(new Set());
+  };
+
   if (loading) return <PageLoader />;
 
   return (
@@ -740,6 +754,14 @@ export default function WalletsTab({ creds }: { creds: string }) {
               <button onClick={() => exportPdf(filtered, 'sesuai filter')} disabled={exportingPdf} aria-label="Export PDF"
                 className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
                 {exportingPdf ? <Loader2 size={14} className="animate-spin" /> : <PdfIcon size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {wallets.length > 0 && (
+            <Tooltip label="Kirim saldo semua dompet aktif via WhatsApp">
+              <button onClick={() => sendBalancesWhatsApp('semua')} aria-label="Kirim saldo semua dompet via WhatsApp"
+                className="btn-ghost p-0 flex items-center justify-center" style={{ height: HEADER_BTN_H, width: HEADER_BTN_H }}>
+                <MessageCircle size={14} />
               </button>
             </Tooltip>
           )}
@@ -935,7 +957,8 @@ export default function WalletsTab({ creds }: { creds: string }) {
       {selected.size > 0 && (
         <BulkBar count={selected.size} onExportExcel={() => exportExcel(wallets.filter(w => selected.has(w.id)), 'terpilih')} exporting={exporting}
           onExportPdf={() => exportPdf(wallets.filter(w => selected.has(w.id)), 'terpilih')} exportingPdf={exportingPdf}
-          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())} />
+          onDelete={bulkDelete} deleting={bulkDeleting} onClear={() => setSelected(new Set())}
+          onWhatsApp={() => sendBalancesWhatsApp('terpilih')} whatsAppLabel="WA Saldo" />
       )}
 
       {/* Riwayat transfer antar dompet */}
