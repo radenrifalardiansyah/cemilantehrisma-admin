@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Banknote, Undo2, HandCoins, Loader2 } from 'lucide-react';
 import SearchSelect from '@/components/SearchSelect';
 import FilterSelect from '@/components/FilterSelect';
@@ -9,7 +9,7 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { periodRange, type PeriodKey } from '@/lib/period';
-import { useBumpData } from '@/lib/data-sync';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 import DataList, { DetailPanel, type ExportCol } from '../titip-jual/DataList';
 import PeriodBar from '../titip-jual/PeriodBar';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, qtyText } from '../titip-jual/shared';
@@ -190,7 +190,10 @@ function CreateModal({ creds, stalls, initialStallId, onClose, onCreated }: {
   const [error, setError] = useState('');
   const range = all ? { from: '2000-01-01', to: todayKey() } : periodRange(period, customFrom, customTo);
 
+  // Satu penjaga urutan untuk muat biasa dan segar-ulang senyap: muat baru (ganti lapak/periode/"Semua") membatalkan segar-ulang yang masih berjalan.
+  const refreshSeq = useRef(0);
   useEffect(() => {
+    refreshSeq.current++;
     if (!stallId) return;
     let alive = true;
     fetch(`${API}/api/stall-own/settlements/preview?stallId=${stallId}&from=${range.from}&to=${range.to}`, { headers: { 'x-admin-auth': creds } })
@@ -198,6 +201,17 @@ function CreateModal({ creds, stalls, initialStallId, onClose, onCreated }: {
       .then(d => { if (alive) setPreview(d); });
     return () => { alive = false; };
   }, [creds, stallId, range.from, range.to]);
+
+  // Mode jendela: penjualan/void/retur di Kasir Lapak mem-bump 'consign' -> segarkan preview senyap (tanpa spinner, tanpa menyentuh isian form).
+  // Gagal = pertahankan preview lama; hanya respons terbaru yang dipakai. Klasik: revisi tetap 0, tidak ada fetch.
+  useOnDataRevision('consign', () => {
+    if (!stallId) return;
+    const seq = ++refreshSeq.current;
+    fetch(`${API}/api/stall-own/settlements/preview?stallId=${stallId}&from=${range.from}&to=${range.to}`, { headers: { 'x-admin-auth': creds } })
+      .then(r => r.ok ? r.json() as Promise<Preview> : null)
+      .then(d => { if (d && seq === refreshSeq.current) setPreview(d); })
+      .catch(() => {});
+  }, 'stall-own-tab');
 
   const create = async () => {
     setSaving(true); setError('');

@@ -11,6 +11,7 @@ import { ModalShell, Badge, rupiah, qtyText } from '../titip-jual/shared';
 import type { Settlement } from '../titip-jual/settlementPdf';
 import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
 import type { PosStall } from './types';
+import { useBumpData } from '@/lib/data-sync';
 
 interface Payable { consignorId: string; consignorName: string; amount: number; qty: number; lines: number; firstDate: string; lastDate: string }
 interface Result { payables: Payable[]; settlements: Settlement[] }
@@ -37,6 +38,7 @@ export default function RekapModal({ creds, stall, canCreate, ownerPhone, storeN
     return () => { alive = false; };
   }, [creds, stall.id]);
 
+  const bumpData = useBumpData();
   const create = async (p: Payable) => {
     if (!await confirm({ message: `Buat rekap untuk ${p.consignorName} sebesar ${rupiah(p.amount)}? Penjualan yang masuk rekap tidak bisa dibatalkan lagi.` })) return;
     setBusy(p.consignorId);
@@ -45,7 +47,7 @@ export default function RekapModal({ creds, stall, canCreate, ownerPhone, storeN
       body: JSON.stringify({ stallId: stall.id, consignorId: p.consignorId }),
     });
     const d = await r.json().catch(() => ({})) as { docNumber?: string; error?: string };
-    if (r.ok && d.docNumber) { toast.success(`Rekap ${d.docNumber} dibuat. Unduh PDF-nya untuk dilaporkan ke owner.`); await load(); }
+    if (r.ok && d.docNumber) { toast.success(`Rekap ${d.docNumber} dibuat. Unduh PDF-nya untuk dilaporkan ke owner.`); try { await load(); } finally { bumpData('consign', 'stall-pos-tab'); } }
     else toast.error(d.error ?? 'Gagal membuat rekap.');
     setBusy(null);
   };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import AppTile from './AppTile';
 import type { DesktopItem } from './types';
@@ -23,8 +23,25 @@ export default function Dock({ items, openTabs, launchpadOpen, onLaunchpad, onIt
   };
   const reset = () => { for (const b of buttons()) b.style.transform = ''; };
 
+  // Roda mouse vertikal menggulir dock mendatar bila isinya meluap. Listener native non-passive (React memasang wheel sebagai passive sehingga
+  // preventDefault tidak bekerja); bila dock tidak meluap, gulir halaman tidak diganggu.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const sc = el.querySelector<HTMLElement>('.dsk-dock-scroll');
+      if (!sc || sc.scrollWidth <= sc.clientWidth) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      sc.scrollLeft += e.deltaY;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   return (
     <div ref={ref} className="dsk-dock" role="toolbar" aria-label="Dock" onMouseMove={magnify} onMouseLeave={reset}>
+      <div className="dsk-dock-scroll">
       <button type="button" className="dsk-dk" aria-label="Launchpad" aria-haspopup="dialog" aria-expanded={launchpadOpen} onClick={onLaunchpad}>
         <AppTile Icon={LayoutGrid} color="#5A4A3F" />
         <span className="tip">Launchpad</span>
@@ -38,6 +55,7 @@ export default function Dock({ items, openTabs, launchpadOpen, onLaunchpad, onIt
           {i.badge > 0 && <span className="dsk-badge" aria-hidden="true">{i.badge > 99 ? '99+' : i.badge}</span>}
         </button>
       ))}
+      </div>
     </div>
   );
 }

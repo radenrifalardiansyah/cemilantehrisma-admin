@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Camera, ImagePlus, X, ExternalLink, Banknote, Undo2, Loader2, HandCoins, MessageCircle, Pencil, Trash2, Wallet, CheckCircle2 } from 'lucide-react';
 import { PdfIcon } from '@/components/FileTypeIcons';
 import SearchSelect from '@/components/SearchSelect';
@@ -12,6 +12,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
+import { useOnDataRevision } from '@/lib/data-sync';
 import DataList, { DetailPanel, type ExportCol } from './DataList';
 import PeriodBar from './PeriodBar';
 import { waLink, settlementMessage } from '@/lib/stall-whatsapp';
@@ -331,7 +332,10 @@ function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
   const range = all ? { from: '2000-01-01', to: todayKey() } : periodRange(period, customFrom, customTo);
   const ready = !!stallId && !!consignorId;
 
+  // Satu penjaga urutan untuk muat biasa dan segar-ulang senyap: muat baru (ganti lapak/penitip/periode) membatalkan segar-ulang yang masih berjalan.
+  const refreshSeq = useRef(0);
   useEffect(() => {
+    refreshSeq.current++;
     if (!ready) return;
     let alive = true;
     fetch(`${API}/api/consign/settlements/preview?stallId=${stallId}&consignorId=${consignorId}&from=${range.from}&to=${range.to}${editing ? `&settlementId=${editing.id}` : ''}`, { headers: { 'x-admin-auth': creds } })
@@ -339,6 +343,17 @@ function CreateModal({ creds, data, initial, editing, onClose, onCreated }: {
       .then(d => { if (alive) setPreview(d); });
     return () => { alive = false; };
   }, [creds, ready, stallId, consignorId, range.from, range.to, editing]);
+
+  // Mode jendela: penjualan/void/retur di Kasir Lapak mem-bump 'consign' -> segarkan preview senyap (tanpa spinner, tanpa menyentuh isian form).
+  // Gagal = pertahankan preview lama; hanya respons terbaru yang dipakai. Klasik: revisi tetap 0, tidak ada fetch.
+  useOnDataRevision('consign', () => {
+    if (!ready) return;
+    const seq = ++refreshSeq.current;
+    fetch(`${API}/api/consign/settlements/preview?stallId=${stallId}&consignorId=${consignorId}&from=${range.from}&to=${range.to}${editing ? `&settlementId=${editing.id}` : ''}`, { headers: { 'x-admin-auth': creds } })
+      .then(r => r.ok ? r.json() as Promise<Preview> : null)
+      .then(d => { if (d && seq === refreshSeq.current) setPreview(d); })
+      .catch(() => {});
+  }, 'titip-jual-tab:main');
 
   const create = async () => {
     setSaving(true); setError('');

@@ -77,13 +77,17 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
   const [torchSupported, setTorchSupported] = useState(false);
   const [zoom, setZoom] = useState<{ min: number; max: number; step: number; value: number } | null>(null);
 
+  const stopInstance = useCallback(async (s: Html5Qrcode) => {
+    try { if (s.isScanning) await s.stop(); } catch { /* already stopped */ }
+    try { s.clear(); } catch { /* no-op */ }
+  }, []);
+
   const stopScanner = useCallback(async () => {
     const s = scannerRef.current;
     scannerRef.current = null;
     if (!s) return;
-    try { if (s.isScanning) await s.stop(); } catch { /* already stopped */ }
-    try { s.clear(); } catch { /* no-op */ }
-  }, []);
+    await stopInstance(s);
+  }, [stopInstance]);
 
   const start = useCallback(async (deviceId?: string) => {
     setStatus('init');
@@ -102,6 +106,9 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       return;
     }
 
+    // Instance lokal: bila modal di-unmount saat scanner.start masih berjalan, cleanup sudah meng-null scannerRef,
+    // jadi instance inilah yang harus dihentikan sendiri supaya stream kamera dilepas.
+    let scanner: Html5Qrcode | null = null;
     try {
       let list = cameras;
       if (list.length === 0) {
@@ -113,14 +120,15 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
         ?? list.find(c => /back|rear|environment/i.test(c.label))?.id
         ?? list[list.length - 1]?.id;
 
-      const scanner = new Html5Qrcode(REGION_ID, { verbose: false });
-      scannerRef.current = scanner;
+      const sc = new Html5Qrcode(REGION_ID, { verbose: false });
+      scanner = sc;
+      scannerRef.current = sc;
 
       const cameraTarget: MediaTrackConstraints = target
         ? { deviceId: { exact: target } }
         : { facingMode: 'environment' };
 
-      await scanner.start(
+      await sc.start(
         cameraTarget,
         {
           fps: 20,
@@ -151,11 +159,11 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
         () => {},
       );
 
-      if (!mountedRef.current) { await stopScanner(); return; }
+      if (!mountedRef.current) { await stopInstance(sc); return; }
       setStatus('scanning');
 
       try {
-        const caps = scanner.getRunningTrackCameraCapabilities();
+        const caps = sc.getRunningTrackCameraCapabilities();
         setTorchSupported(caps.torchFeature().isSupported());
 
         const zoomCap = caps.zoomFeature();
@@ -179,13 +187,13 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       // running track rather than the constraints passed to getUserMedia at
       // start() time, so this is a belt-and-suspenders follow-up.
       try {
-        const rawCaps = scanner.getRunningTrackCapabilities() as MediaTrackCapabilities & { focusMode?: string[] };
+        const rawCaps = sc.getRunningTrackCapabilities() as MediaTrackCapabilities & { focusMode?: string[] };
         if (rawCaps.focusMode?.includes('continuous')) {
-          scanner.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => {});
+          sc.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => {});
         }
       } catch { /* focus capability not reported */ }
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) { if (scanner) await stopInstance(scanner); return; }
       const name = (err as { name?: string })?.name;
       const msg = name === 'NotAllowedError'
         ? 'Izin kamera ditolak. Aktifkan izin kamera untuk situs ini di pengaturan browser HP kamu.'
@@ -195,7 +203,7 @@ export default function BarcodeScannerModal({ title = 'Scan Produk', subtitle, o
       setErrorMsg(msg);
       setStatus('error');
     }
-  }, [cameras, onDetect, playBeep, stopScanner]);
+  }, [cameras, onDetect, playBeep, stopScanner, stopInstance]);
 
   useEffect(() => {
     mountedRef.current = true;

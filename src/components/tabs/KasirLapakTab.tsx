@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Plus, Minus, Trash2, ShoppingCart, RefreshCw, History, Lock, Unlock, Printer, CheckCircle2, Loader2, Package, PackagePlus, ClipboardList, ScanLine, PauseCircle, MessageCircle, Tag, Banknote, User, Phone } from 'lucide-react';
 import Image from 'next/image';
 import SearchSelect from '@/components/SearchSelect';
@@ -26,6 +26,8 @@ import { toDataUri } from '@/lib/pdf/logo';
 import Receipt from './kasir-lapak/Receipt';
 import StallProductCard, { itemEmoji } from './kasir-lapak/ProductCard';
 import { PAY_LABEL, itemKey, type PosStall, type CatalogItem, type Sale, type PaymentMethod } from './kasir-lapak/types';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
+import { useWindowVisible } from '@/components/desktop/window-visible';
 
 type KindFilter = 'all' | 'consign' | 'own';
 const KIND_TABS: { id: KindFilter; label: string }[] = [
@@ -85,6 +87,8 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
   const [rekapOpen, setRekapOpen] = useState(false);
   const [stockUpdateOpen, setStockUpdateOpen] = useState(false);
 
+  useEffect(() => { cartRef.current = cart; });
+
   useEffect(() => {
     let alive = true;
     fetchStalls(creds).then(list => {
@@ -110,14 +114,75 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
     if (!stallId) return;
     let alive = true;
     Promise.resolve().then(() => { if (alive) setHeld(readHeld(stallId)); });
-    fetchCatalog(creds, stallId).then(c => { if (alive) setCatalog(c); });
+    const mySeq = ++issueSeq.current;
+    fetchCatalog(creds, stallId).then(c => { if (alive && shouldApply(mySeq)) setCatalog(c); });
     return () => { alive = false; };
   }, [creds, stallId]);
 
+  // Penjaga urutan respons yang DIBAGI semua pemuat katalog (muat awal, reloadAll, muat ulang senyap): respons lambat yang kalah balapan
+  // tidak boleh menimpa katalog/stok yang lebih baru.
+  // Setiap permintaan mengambil nomor; respons hanya diterapkan bila belum ada respons bernomor LEBIH BARU yang sudah diterapkan. Permintaan yang
+  // gagal tidak menerapkan apa pun, jadi hasil sah terakhir tidak ikut terbuang (tidak ada stok basi karena segar-ulang lain yang gagal).
+  const issueSeq = useRef(0);
+  const appliedSeq = useRef(0);
+  const shouldApply = (id: number) => { if (id <= appliedSeq.current) return false; appliedSeq.current = id; return true; };
+  // Keranjang terkini untuk disinkronkan setelah katalog dimuat ulang (dibaca di luar render).
+  const cartRef = useRef<Record<string, number>>({});
+  const commitCatalog = useCallback((cat: Catalog) => {
+    setCatalog(cat);
+    const cur = cartRef.current;
+    const next: Record<string, number> = {};
+    let changed = false;
+    for (const [key, qty] of Object.entries(cur)) {
+      const item = cat.items.find(i => itemKey(i.kind, i.productId) === key);
+      if (!item || item.blocked) { changed = true; continue; }
+      const q = Math.min(qty, item.stock);
+      if (q !== qty) changed = true;
+      if (q > 0) next[key] = q; else changed = true;
+    }
+    if (changed) { setCart(next); toast.error('Stok berubah, keranjang disesuaikan.'); }
+  }, [toast]);
+
   const reloadAll = useCallback(async () => {
+    const mySeq = ++issueSeq.current;
     const [list, cat] = await Promise.all([fetchStalls(creds), stallId ? fetchCatalog(creds, stallId) : Promise.resolve(null)]);
-    setStalls(list); if (cat) setCatalog(cat);
-  }, [creds, stallId]);
+    if (!shouldApply(mySeq)) return;     // sudah ada hasil yang lebih baru diterapkan
+    setStalls(list); if (cat) commitCatalog(cat);
+  }, [creds, stallId, commitCatalog]);
+
+  // Mode jendela. (a) Penulisan berhasil (penjualan, buka/tutup shift, terima/retur barang, void/retur) memuat ulang lalu mem-bump 'consign'
+  // (pembaca: Laporan Penjualan Kasir Lapak, Laporan/Analitik Lapak, Titip Jual, Produk Toko). Hanya dipanggil SESUDAH sukses; Refresh tidak mem-bump.
+  // (b) Perubahan dari jendela lain memuat ulang stok/harga katalog dan status lapak secara senyap: keranjang/form tidak disentuh dan bila server
+  // gagal tampilan lama dipertahankan.
+  const bumpData = useBumpData();
+  // Bump dilakukan walau muat ulang sesudahnya gagal (finally): penulisan SUDAH berhasil di server. `products` hanya bila stok produk toko ('own')
+  // ikut berubah (penjualan baris 'own', void, retur): stok global products/warehouse_stock berubah (pembaca: Produk, Kasir toko, Gudang).
+  const reloadAfterWrite = useCallback(async (opts?: { products?: boolean }) => {
+    try { await reloadAll(); } finally {
+      bumpData('consign', 'stall-pos-tab');
+      if (opts?.products) bumpData('products', 'stall-pos-tab');
+    }
+  }, [reloadAll, bumpData]);
+  useOnDataRevision('consign', () => {
+    void (async () => {
+      try {
+        const mySeq = ++issueSeq.current;
+        const [sr, cr] = await Promise.all([
+          fetch('/api/stall-pos/stalls', { headers: { 'x-admin-auth': creds } }),
+          stallId ? fetch(`/api/stall-pos/catalog?stallId=${stallId}`, { headers: { 'x-admin-auth': creds } }) : Promise.resolve(null),
+        ]);
+        if (!sr.ok || (cr && !cr.ok)) return;
+        const stallsJson = ((await sr.json()) as { stalls: PosStall[] }).stalls;
+        const catJson = cr ? { stallId, ...(await cr.json() as { items: CatalogItem[]; hasWarehouse: boolean }) } : null;
+        if (!shouldApply(mySeq)) return;   // respons basi: hasil yang lebih baru sudah diterapkan
+        setStalls(stallsJson);
+        if (catJson) commitCatalog(catJson);
+      } catch { /* pertahankan tampilan lama */ }
+    })();
+  }, 'stall-pos-tab');
+  // Kamera scanner: saat jendela dikecilkan modal ditutup (stream berhenti) dan TIDAK dibuka lagi otomatis saat dipulihkan (tanpa prompt izin kamera mengejutkan).
+  const windowVisible = useWindowVisible();
+  if (!windowVisible && scanOpen) setScanOpen(false);
 
   const stall = stalls?.find(s => s.id === stallId) ?? null;
   const items = catalog && catalog.stallId === stallId ? catalog.items : null;
@@ -157,6 +222,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
     if (!stall) return;
     setProcessing(true); setError('');
     try {
+    const soldOwn = lines.some(l => l.item.kind === 'own');
     const r = await fetch('/api/stall-pos/sales', {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -167,7 +233,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
     const d = await r.json().catch(() => ({})) as { sale?: Sale; error?: string };
     if (r.ok && d.sale) {
       setDone(d.sale); setCart({}); setDiscount(''); setPaid(''); setNote(''); setCustomerName(''); setCustomerPhone(''); setCartOpen(false);
-      await reloadAll();
+      await reloadAfterWrite({ products: soldOwn });
     } else {
       const msg = d.error ?? 'Gagal menyimpan transaksi.';
       setError(msg); toast.error(msg);
@@ -465,7 +531,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div className="kasir-lapak-grid grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
               {shown.map(i => {
                 const key = itemKey(i.kind, i.productId);
                 return (
@@ -500,10 +566,10 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
 
       {shiftModal && stall && (
         <ShiftModal creds={creds} stall={stall} mode={shiftModal} onClose={() => setShiftModal(null)}
-          onDone={async () => { setShiftModal(null); await reloadAll(); }} />
+          onDone={async () => { setShiftModal(null); await reloadAfterWrite(); }} />
       )}
       {receiveOpen && stall && (
-        <ReceiveModal creds={creds} stall={stall} items={items ?? []} onClose={() => setReceiveOpen(false)} onDone={reloadAll} />
+        <ReceiveModal creds={creds} stall={stall} items={items ?? []} onClose={() => setReceiveOpen(false)} onDone={() => reloadAfterWrite()} />
       )}
       {stockUpdateOpen && stall && <StockUpdateModal creds={creds} stall={stall} onClose={() => setStockUpdateOpen(false)} />}
       {rekapOpen && stall && (
@@ -511,7 +577,7 @@ export default function KasirLapakTab({ creds, can }: { creds: string; can: (a: 
           onPdf={async (s: Settlement) => downloadSettlementPdf(s, { name: store.name, address: store.address, logo: await toDataUri(store.logo) })} />
       )}
       {historyOpen && stall && (
-        <HistoryModal creds={creds} stall={stall} canVoid={can('delete')} onClose={() => setHistoryOpen(false)} onChanged={reloadAll} onPrint={print} />
+        <HistoryModal creds={creds} stall={stall} canVoid={can('delete')} onClose={() => setHistoryOpen(false)} onChanged={() => reloadAfterWrite({ products: true })} onPrint={print} />
       )}
 
       {done && (

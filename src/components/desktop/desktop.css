@@ -127,9 +127,15 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-mbar .dsk-tray button[title] { height: 22px; width: 22px; }
 
 /* ── dock (Mac) ── */
-/* dock ramping (bila terlalu banyak ikon, ikon menyusut agar dock tetap di dalam layar): ikon 42px, kapsul ~54px tinggi, jarak 6px dari tepi bawah (inset bawah skin = 66) */
+/* dock ramping. Ikon tidak menyusut: bila jendela terlalu banyak, isi dock (.dsk-dock-scroll) digulir mendatar (roda mouse vertikal diterjemahkan Dock.tsx; trackpad
+   mendatar bawaan; scrollbar disembunyikan). Wadah gulir memotong apa pun di luar kotaknya (overflow), jadi kotaknya diperbesar ke atas (64px) dan ke samping (34px)
+   agar tooltip dan ikon yang membesar 1.45x tidak terpotong; margin negatif menyeimbangkan sehingga tinggi/lebar dock di layout tidak berubah, dan wadah gulir
+   tembus pointer (hanya ikonnya yang menerima) sehingga area overhang tidak menutupi jendela. Saat banyak ikon tooltip ikon terluar tetap bisa terpotong sebagian. Ikon 42px, kapsul ~54px tinggi, jarak 6px dari tepi bawah (inset bawah skin = 66) */
 .dsk-dock { position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 6px; display: flex; align-items: flex-end; gap: 7px; padding: 5px 9px; border-radius: 17px; background: rgba(255,255,255,.28); border: 1px solid rgba(255,255,255,.4); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); z-index: 5000; max-width: calc(100% - 16px); }
-.dsk-dk { position: relative; width: 42px; height: 42px; border: 0; padding: 0; background: transparent; transform-origin: 50% 100%; transition: transform .12s ease-out; flex-shrink: 1; min-width: 16px; }
+.dsk-dock-scroll { display: flex; align-items: flex-end; gap: 7px; max-width: calc(100% + 68px); margin: -64px -34px 0; padding: 64px 40px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; pointer-events: none; }
+.dsk-dock-scroll::-webkit-scrollbar { display: none; }
+.dsk-dock-scroll > * { pointer-events: auto; }
+.dsk-dk { position: relative; width: 42px; height: 42px; border: 0; padding: 0; background: transparent; transform-origin: 50% 100%; transition: transform .12s ease-out; flex-shrink: 0; min-width: 24px; }
 .dsk-dk .dsk-tile { width: 100%; height: auto; aspect-ratio: 1; position: absolute; left: 0; bottom: 0; }
 .dsk-dk .dot { position: absolute; left: 50%; bottom: -4px; width: 3px; height: 3px; border-radius: 50%; background: #fff; transform: translateX(-50%); display: none; }
 .dsk-dk[data-open="true"] .dot { display: block; }
@@ -199,8 +205,14 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-chat-slot { display: flex; align-items: center; margin: 0; padding: 0; }
 .dsk-chat-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: transparent; color: #EDD9C4; border: 0; padding: 0; }
 .dsk-chat-btn:hover, .dsk-chat-btn[aria-expanded="true"] { background: rgba(255,255,255,.12); }
+/* tombol layar penuh di tray/menu bar: flat seperti chat/bel (36px; 22px di menu bar Mac lewat aturan button[title]) */
+.dsk-fs-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: transparent; color: #EDD9C4; border: 0; padding: 0; flex-shrink: 0; }
+.dsk-fs-btn:hover { background: rgba(255,255,255,.12); }
 /* tombol tray/menu bar FLAT: hanya ikon (tanpa kotak/border); highlight halus saat hover; fokus keyboard tetap lewat :focus-visible */
 .dsk-tray button[title="Notifikasi"]:hover { background: rgba(255,255,255,.12) !important; }
+
+/* Kasir Lapak di jendela: kolom katalog mengikuti lebar jendela (bukan breakpoint viewport) supaya tidak terjepit di jendela sempit. */
+.dsk-win .kasir-lapak-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 
 /* ── Pengaturan tampilan Desktop (warna dasar, latar, kerapatan, ukuran teks). SEMUA di bawah .dsk-root: tidak bocor ke Klasik. ──
    Warna dasar dan latar dipasang sebagai variabel inline pada .dsk-root (--accent*, --dsk-wallpaper) oleh appearance-style.ts. */

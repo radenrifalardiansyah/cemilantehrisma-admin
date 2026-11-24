@@ -370,3 +370,43 @@ describe('pengaturan tampilan terpasang di .dsk-root saja', () => {
     expect(open).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('layar penuh browser (tray Windows dan menu bar Mac)', () => {
+  let fsEl: Element | null = null;
+  const enable = (v: boolean | undefined) => {
+    Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, get: () => v });
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fsEl });
+  };
+  afterEach(() => { delete (document as unknown as Record<string, unknown>).fullscreenEnabled; delete (document as unknown as Record<string, unknown>).fullscreenElement; fsEl = null; });
+
+  for (const skin of ['windows', 'mac'] as const) {
+    it(`${skin}: tombol ada di paling kiri tray (sebelum slot chat dan bel), aria-pressed mengikuti state, klik memanggil requestFullscreen`, async () => {
+      enable(true);
+      const request = vi.fn(async () => { fsEl = document.documentElement; document.dispatchEvent(new Event('fullscreenchange')); });
+      document.documentElement.requestFullscreen = request as unknown as () => Promise<void>;
+      mount(skin, 'dashboard');
+      const btn = q('.dsk-tray .dsk-fs-btn')!;
+      expect(btn).not.toBeNull();
+      expect(btn.nextElementSibling!.classList.contains('dsk-chat-slot')).toBe(true);
+      expect(btn.getAttribute('aria-label')).toBe('Layar penuh');
+      expect(btn.getAttribute('aria-pressed')).toBe('false');
+      await act(async () => { btn.click(); });
+      expect(request).toHaveBeenCalledTimes(1);
+      const after = q('.dsk-tray .dsk-fs-btn')!;
+      expect(after.getAttribute('aria-pressed')).toBe('true');
+      expect(after.getAttribute('aria-label')).toBe('Keluar dari layar penuh');
+    });
+    it(`${skin}: tidak didukung -> tombol tidak dirender`, () => {
+      enable(false);
+      mount(skin, 'dashboard');
+      expect(q('.dsk-fs-btn')).toBeNull();
+    });
+  }
+
+  it('menu akun memuat item layar penuh hanya bila didukung', () => {
+    enable(true);
+    mount('windows', 'dashboard');
+    click(q('button[aria-label="Menu akun"]'));
+    expect(Array.from(document.querySelectorAll('.dsk-pop button')).some(b => b.textContent?.includes('Layar penuh'))).toBe(true);
+  });
+});

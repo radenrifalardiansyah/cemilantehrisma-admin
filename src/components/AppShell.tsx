@@ -19,6 +19,7 @@ import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
 import { isDesktopCapable, isDesktopShown, isWindowTab, type UiLayout } from '@/lib/ui-layout';
 import DesktopBoot from '@/components/desktop/DesktopBoot';
+import ClassicFullscreenButton from '@/components/ClassicFullscreenButton';
 import BackToDesktop from '@/components/desktop/BackToDesktop';
 import PosHostMount, { posTopbarContext } from '@/components/desktop/PosHostMount';
 import { TopbarSlotContext } from '@/components/TopbarPortal';
@@ -803,6 +804,7 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <div id="topbar-slot" className="flex items-center gap-1 sm:gap-2" />
+            {!desktopShown && <ClassicFullscreenButton />}
             {!desktopShown && <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />}
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"

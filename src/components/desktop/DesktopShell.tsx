@@ -6,6 +6,8 @@ import { isShortcutTab, type UiLayout } from '@/lib/ui-layout';
 import { DEFAULT_APPEARANCE, type Appearance } from '@/lib/appearance';
 import { appearanceStyle } from '@/lib/appearance-style';
 import AccountMenu from './AccountMenu';
+import FullscreenButton from './FullscreenButton';
+import { useFullscreen } from '@/lib/use-fullscreen';
 import AppMenuPanel from './AppMenuPanel';
 import DesktopIcons from './DesktopIcons';
 import Dock from './Dock';
@@ -63,6 +65,9 @@ export default function DesktopShell(p: Props) {
   const { skin, wm, groups, actions } = p;
   const [menuOpen, setMenuOpen] = useState(false);
   const ap = p.appearance ?? DEFAULT_APPEARANCE;
+  // Layar penuh browser (satu state untuk tombol tray/menu bar dan item menu akun).
+  const fs = useFullscreen();
+  const fsButton = <FullscreenButton supported={fs.supported} isFullscreen={fs.isFullscreen} onToggle={() => { void fs.toggle(); }} />;
   const { onChatSlot } = p;
   const chatSlotRef = useCallback((el: HTMLElement | null) => onChatSlot?.(el), [onChatSlot]);
 
@@ -89,7 +94,8 @@ export default function DesktopShell(p: Props) {
 
   const account = (side: 'up' | 'down') => (
     <AccountMenu username={p.username} avatar={p.avatar} roleLabel={p.roleLabel} storeUrl={p.storeUrl} side={side}
-      onEditProfile={p.onEditProfile} onAbout={p.onAbout} onLogout={p.onLogout} onAppearance={p.onOpenAppearance} />
+      onEditProfile={p.onEditProfile} onAbout={p.onAbout} onLogout={p.onLogout} onAppearance={p.onOpenAppearance}
+      fullscreen={fs.supported ? { isFullscreen: fs.isFullscreen, onToggle: () => { void fs.toggle(); } } : undefined} />
   );
 
   return (
@@ -114,10 +120,10 @@ export default function DesktopShell(p: Props) {
       {skin === 'windows' ? (
         <Taskbar startOpen={menuOpen} onToggleStart={() => setMenuOpen(o => !o)} onWindowClick={toggleFromBar}
           windows={wm.windows.map(w => ({ item: itemFor(w.tabId), minimized: w.minimized, focused: focused === w.tabId }))}
-          tray={<><span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('up')}{account('up')}</>} />
+          tray={<>{fsButton}<span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('up')}{account('up')}</>} />
       ) : (
         <>
-          <MenuBar title={focused ? itemFor(focused).label : 'Desktop'} tray={<><span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('down')}{account('down')}</>} />
+          <MenuBar title={focused ? itemFor(focused).label : 'Desktop'} tray={<>{fsButton}<span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('down')}{account('down')}</>} />
           <Dock items={windowedItems.filter(i => isShortcutTab(i.tab) || openTabs.has(i.tab))} openTabs={openTabs} launchpadOpen={menuOpen} onLaunchpad={() => setMenuOpen(o => !o)}
             onItem={i => (focused === i.tab ? actions.minimize(i.tab) : actions.open(i.tab))} />
         </>

@@ -34,9 +34,9 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // menu pinned, bukan MenuDoc, dua sisi dari satu fitur). Tahap 17: 'roles' (Role). 'role-permissions', 'modules', 'menus' dan
 // Titip Jual/Lapak tetap non-jendela.
 // Tahap 18: 'consign' (Titip Jual; sub-tab Produk/Penitip/Lapak/Stok/Penerimaan/Rekap di DALAM tabnya). Tahap 19: 'consign-opname' (Opname Titipan, mode opname). Tahap 20: 'consign-journal' (Dompet Lapak, mode journal).
-// Tahap 21: 'stall-own' (Produk Toko di Lapak) dan 'stall-sales-report' (Laporan Penjualan per Kasir Lapak). 'stall-pos' (Kasir Lapak: laci/shift) sengaja belum berjendela; navigasi ke sana memakai kerangka Klasik sementara.
+// Tahap 21: 'stall-own' (Produk Toko di Lapak) dan 'stall-sales-report' (Laporan Penjualan per Kasir Lapak). Tahap 22: 'stall-pos' (Kasir Lapak; mount biasa, keranjang tidak bertahan lintas tab di Klasik, held di localStorage).
 export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
-  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications', 'categories', 'resellers', 'customers', 'storefront-customers', 'reviews', 'admin-fee', 'tagihan-admin-fee', 'roles', 'consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-sales-report'] as const;
+  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications', 'categories', 'resellers', 'customers', 'storefront-customers', 'reviews', 'admin-fee', 'tagihan-admin-fee', 'roles', 'consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-sales-report', 'stall-pos'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,

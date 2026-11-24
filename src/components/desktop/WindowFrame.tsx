@@ -6,6 +6,7 @@ import { TopbarSlotContext } from '@/components/TopbarPortal';
 import AppTile from './AppTile';
 import type { DesktopItem } from './types';
 import { renderRect, type WinArea, type WinState } from './window-reducer';
+import { WindowVisibleContext } from './window-visible';
 
 interface Props {
   win: WinState;
@@ -96,7 +97,9 @@ export default function WindowFrame({ win, area, item, focused, zIndex, onFocus,
         </span>
       </div>
       <div className="dsk-body">
-        <TopbarSlotContext.Provider value={slot}>{children}</TopbarSlotContext.Provider>
+        <WindowVisibleContext.Provider value={!win.minimized}>
+          <TopbarSlotContext.Provider value={slot}>{children}</TopbarSlotContext.Provider>
+        </WindowVisibleContext.Provider>
       </div>
       <span className="dsk-rs e" data-drag="e" aria-hidden="true" {...dragProps} />
       <span className="dsk-rs s" data-drag="s" aria-hidden="true" {...dragProps} />

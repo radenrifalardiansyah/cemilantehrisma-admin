@@ -67,19 +67,23 @@ describe('sinkron geometri dock Mac: reducer, CSS, skeleton boot', () => {
     expect(css).not.toMatch(/data-skin="mac"\]\) \.chat-fab \{ bottom/);
   });
 
-  it('dock Mac tetap di dalam layar 1024px walau semua menu berjendela terbuka sekaligus (ikon menyusut)', () => {
+  it('dock Mac tahan jumlah jendela berapa pun: ikon tidak menyusut (min 24px), wadah dock ber-max-width dan isinya bisa digulir mendatar', () => {
     const dock = rule('.dsk-dock');
     const dk = rule('.dsk-dk');
-    const gap = px(dock, 'gap');
-    const pad = Number(/padding:\s*(\d+)px/.exec(dock)![1]);
-    const reserve = Number(/max-width:\s*calc\(100% - (\d+)px\)/.exec(dock)![1]);
-    expect(1024 - reserve).toBeGreaterThan(0);
-    // ikon boleh menyusut (flex-shrink 1) sampai min-width, dan lebar minimum semua ikon muat dalam max-width
-    expect(dk).toMatch(/flex-shrink:\s*1/);
-    const minIcon = px(dk, 'min-width');
-    const n = 1 + WINDOW_TABS.length;
-    const minWidth = n * minIcon + (n + 1) * gap + 5 + 2 * pad + 2;
-    expect(minWidth).toBeLessThanOrEqual(1024 - reserve);
+    const scroll = rule('.dsk-dock-scroll');
+    expect(px(dk, 'min-width')).toBeGreaterThanOrEqual(24);
+    expect(dk).toMatch(/flex-shrink:\s*0/);
+    expect(dock).toMatch(/max-width:\s*calc\(100% - \d+px\)/);
+    expect(scroll).toMatch(/max-width:\s*calc\(100% \+ \d+px\)/);
+    expect(scroll).toMatch(/overflow-x:\s*auto/);
+    expect(scroll).toMatch(/scrollbar-width:\s*none/);
+    // ruang atas untuk tooltip dan efek membesar di dalam batas gulir (tidak terpotong), dikompensasi margin negatif agar tinggi dock tidak berubah
+    const pad = px(scroll, 'padding');
+    expect(pad).toBeGreaterThanOrEqual(30);
+    const mt = /margin:\s*-(\d+)px -(\d+)px 0/.exec(scroll)!;
+    expect(Number(mt[1])).toBe(pad);                                   // overhang atas diimbangi margin negatif: tinggi dock tidak berubah
+    expect(Number(/padding:\s*\d+px (\d+)px/.exec(scroll)![1]) - Number(mt[2])).toBe(6);   // ikon tetap pada posisi semula di kapsul
+    expect(css).toMatch(/\.dsk-dock-scroll > \* \{ pointer-events: auto; \}/);
   });
 
   it('jendela terbesar (ukuran awal tiap tab) di layar 1024x768 Mac tetap di atas dock dan di bawah menu bar', () => {
@@ -257,5 +261,17 @@ describe('slot titlebar: satu baris, tidak menimpa kontrol jendela', () => {
     expect(css).toMatch(/\.dsk-win\[data-narrow="true"\] \.dsk-tbslot \.btn-ghost > span:not\(\.absolute\) \{ display: none; \}/);
     expect(css).toMatch(/\.dsk-win\[data-narrow="true"\] \.dsk-tbslot \.btn-ghost > span\.absolute \{ display: flex; \}/);
     for (const line of css.split('\n')) if (/data-narrow/.test(line) && /\{/.test(line) && !line.trimStart().startsWith('/*')) expect(line.trimStart().startsWith('.dsk-win[data-narrow')).toBe(true);
+  });
+});
+
+describe('tombol layar penuh tray/menu bar', () => {
+  it('flat seperti chat/bel: 36px, tanpa border/latar, hover halus; di menu bar Mac mengikuti aturan button[title] 22px (atribut title dipasang komponen)', () => {
+    const b = rule('.dsk-fs-btn');
+    expect(px(b, 'width')).toBe(36);
+    expect(px(b, 'height')).toBe(36);
+    expect(b).toMatch(/background:\s*transparent/);
+    expect(b).toMatch(/border:\s*0/);
+    expect(css).toMatch(/\.dsk-fs-btn:hover \{ background: rgba\(255,255,255,\.12\); \}/);
+    expect(css).toMatch(/\.dsk-mbar \.dsk-tray button\[title\] \{ height: 22px; width: 22px; \}/);
   });
 });
