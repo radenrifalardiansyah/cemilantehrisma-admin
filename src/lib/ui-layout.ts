@@ -25,9 +25,10 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // bukan bagian Pengaturan dan tetap non-jendela.
 // Tahap 8: 'users' (Pengguna). 'roles', 'role-permissions', 'modules', 'menus' (keluarga RBAC_MANAGEMENT_KEYS) sengaja belum berjendela:
 // modul/menu mengubah navigasi itu sendiri (fetchNav) dan izin role mempengaruhi menu yang sedang terbuka.
+// Tahap 9: 'history' (Riwayat; HistoryTab hanya butuh creds, tanpa polling atau tautan keluar).
 // Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
 export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
-  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users'] as const;
+  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,
