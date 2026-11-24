@@ -36,8 +36,8 @@ describe('useWindowManager: desktop mulai kosong (edge)', () => {
     expect(read().ids).toEqual(['dashboard']);
   });
   it('activeTab non-jendela tidak membuka apa pun; berpindah ke tab jendela sesudah aktif membuka', () => {
-    render(<H tab="users" />);
-    render(<H tab="users" nonce={1} />);
+    render(<H tab="history" />);
+    render(<H tab="history" nonce={1} />);
     expect(read().count).toBe(0);
     render(<H tab="orders" nonce={2} />);
     expect(read().ids).toEqual(['orders']);
