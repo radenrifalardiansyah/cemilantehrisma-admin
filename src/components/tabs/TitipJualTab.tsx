@@ -17,6 +17,7 @@ import ReceiptsSection from './titip-jual/ReceiptsSection';
 import SettlementsSection from './titip-jual/SettlementsSection';
 import AdjustmentsSection from './titip-jual/AdjustmentsSection';
 import WalletOverview from './titip-jual/WalletOverview';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 type SubTab = 'products' | 'consignors' | 'stalls' | 'stock' | 'receipts' | 'settlements';
 // 'main' = halaman Titip Jual bertab; 'opname' & 'journal' = menu sendiri di sidebar (satu layar penuh).
@@ -59,6 +60,16 @@ export default function TitipJualTab({ creds, can, mode, journalStallId = '', on
   const [data, setData] = useState<TitipJualData | null>(null);
 
   const load = useCallback(async () => { setData(await fetchAll(creds)); }, [creds]);
+  // Mode jendela: semua mutasi Titip Jual (terima/retur/penyesuaian/transfer stok, produk/penitip/lapak, rekap, dompet lapak) memanggil
+  // `reload` SESUDAH berhasil; di titik pusat itu data tab dimuat ulang lalu domain 'consign' di-bump (pembaca: Laporan Lapak, Analitik Lapak).
+  const bumpData = useBumpData();
+  const reloadAfterWrite = useCallback(async () => { await load(); bumpData('consign', 'titip-jual-tab'); }, [load, bumpData]);
+  // Kategori diubah di jendela Kategori -> hanya kategori yang dimuat ulang (tanpa spinner penuh, sub-tab/filter tidak tersentuh).
+  useOnDataRevision('categories', () => {
+    fetch(`${API}/api/categories`, { headers: { 'x-admin-auth': creds } })
+      .then(async r => { if (r.ok) { const { categories } = await r.json() as { categories: Category[] }; setData(d => (d ? { ...d, categories } : d)); } })
+      .catch(() => {});
+  });
   useEffect(() => {
     let alive = true;
     fetchAll(creds).then(d => { if (alive) setData(d); });
@@ -67,7 +78,7 @@ export default function TitipJualTab({ creds, can, mode, journalStallId = '', on
 
   if (!data) return <PageLoader />;
 
-  const props = { creds, data, reload: load, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub, journalStallId, openJournal: onOpenJournal };
+  const props = { creds, data, reload: reloadAfterWrite, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a), goTo: setSub, journalStallId, openJournal: onOpenJournal };
 
   return (
     <div className="flex flex-col h-full">

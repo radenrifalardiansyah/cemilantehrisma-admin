@@ -16,6 +16,7 @@ import { pdfRp, pdfDate, pdfNow } from '@/lib/pdf/analytics-format';
 import type { AnalyticsReportData } from '@/lib/pdf/AnalyticsReportPDF';
 import { periodRange, type PeriodKey } from '@/lib/period';
 import { formatRp } from '@/lib/format';
+import { useDataRevision } from '@/lib/data-sync';
 
 interface LapakAnalytics {
   period: { from: string; to: string; prevFrom: string; prevTo: string; days: number };
@@ -150,6 +151,8 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
   const [data, setData] = useState<LapakAnalytics | null>(null);
   const [state, setState] = useState<'loading' | 'ok' | 'denied' | 'error'>('loading');
   const { from, to } = periodRange(period, customFrom, customTo);
+  // Mode jendela: Titip Jual menulis data lapak -> muat ulang analitik satu kali per perubahan (0 di Klasik).
+  const consignRev = useDataRevision('consign');
 
   useEffect(() => {
     let alive = true;
@@ -162,7 +165,7 @@ export default function LapakAnalyticsSection({ creds }: { creds: string }) {
       })
       .catch(() => { if (alive) setState('error'); });
     return () => { alive = false; };
-  }, [creds, from, to, stallId]);
+  }, [creds, from, to, stallId, consignRev]);
 
   const header = (
     <div className="flex items-center justify-between gap-2.5 pt-2 flex-wrap">

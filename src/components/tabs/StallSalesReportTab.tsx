@@ -12,6 +12,7 @@ import { periodRange, type PeriodKey } from '@/lib/period';
 import PeriodBar from './titip-jual/PeriodBar';
 import { exportExcel, exportPdf, type ExportCol } from './titip-jual/exporters';
 import { HEADER_BTN_H, Badge, StatCard, rupiah, qtyText } from './titip-jual/shared';
+import { useDataRevision } from '@/lib/data-sync';
 
 interface Report {
   stallOptions: { id: string; name: string }[];
@@ -43,12 +44,14 @@ export default function StallSalesReportTab({ creds }: { creds: string }) {
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState('');
   const { from, to } = periodRange(period, customFrom, customTo);
+  // Mode jendela: Titip Jual menulis data lapak -> muat ulang laporan satu kali per perubahan (0 di Klasik).
+  const consignRev = useDataRevision('consign');
 
   useEffect(() => {
     let alive = true;
     fetchReport(creds, from, to, stallId).then(d => { if (alive) setReport(d); });
     return () => { alive = false; };
-  }, [creds, from, to, stallId]);
+  }, [creds, from, to, stallId, consignRev]);
 
   const label = `${from === to ? from : `${from} s/d ${to}`}${stallId ? ` · ${report?.stallOptions.find(s => s.id === stallId)?.name ?? ''}` : ' · semua lapak'}`;
 

@@ -6,14 +6,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 // memuat ulang datanya. Di mode jendela beberapa tab ter-mount bersamaan, sehingga tab yang memuat datanya saat mount tidak
 // tahu bahwa tab lain mengubah data. Penulis memanggil bump(domain) setelah penulisan BERHASIL; pembaca memuat ulang saat
 // revisi berubah. Tanpa provider / di Klasik (enabled=false): bump no-op, revisi tetap 0 -> tidak ada fetch tambahan.
-export type DataDomain = 'products' | 'categories' | 'procurement' | 'wallets' | 'customers' | 'roles';
+export type DataDomain = 'products' | 'categories' | 'procurement' | 'wallets' | 'customers' | 'roles' | 'consign';
 
 type Revs = Record<DataDomain, number>;
 type Srcs = Record<DataDomain, string | null>;
 interface Ctx { rev: Revs; src: Srcs; bump: (domain: DataDomain, source?: string) => void }
 
-const ZERO: Revs = { products: 0, categories: 0, procurement: 0, wallets: 0, customers: 0, roles: 0 };
-const NO_SRC: Srcs = { products: null, categories: null, procurement: null, wallets: null, customers: null, roles: null };
+const ZERO: Revs = { products: 0, categories: 0, procurement: 0, wallets: 0, customers: 0, roles: 0, consign: 0 };
+const NO_SRC: Srcs = { products: null, categories: null, procurement: null, wallets: null, customers: null, roles: null, consign: null };
 const BUMP_DEBOUNCE_MS = 120;
 const NOOP = () => {};
 
