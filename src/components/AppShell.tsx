@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import dynamic from 'next/dynamic';
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import { getToken } from 'firebase/messaging';
@@ -19,6 +18,7 @@ import NotificationBell, { type NotificationDoc } from '@/components/Notificatio
 import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
 import { isDesktopCapable, isDesktopShown, isWindowTab, type UiLayout } from '@/lib/ui-layout';
+import DesktopBoot from '@/components/desktop/DesktopBoot';
 import BackToDesktop from '@/components/desktop/BackToDesktop';
 import PosHostMount, { posTopbarContext } from '@/components/desktop/PosHostMount';
 import { TopbarSlotContext } from '@/components/TopbarPortal';
@@ -30,7 +30,8 @@ import { getClientMessaging } from '@/lib/firebase-client';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
 // Mode Desktop dimuat hanya bila dipakai (pengguna Klasik tidak mengunduh kodenya).
-const DesktopShell = dynamic(() => import('@/components/desktop/DesktopShell'), { ssr: false });
+// Suspense menampilkan DesktopBoot (bukan Klasik) selama chunk dimuat.
+const DesktopShell = lazy(() => import('@/components/desktop/DesktopShell'));
 
 // Notification.permission sudah 'granted' berarti device ini pernah getToken() lewat
 // NotificationBell — panggil lagi di sini akan mengembalikan token yang SAMA (deterministik per
@@ -1027,6 +1028,7 @@ export default function AppShell({
       )}
 
       {desktopShown && (
+        <Suspense fallback={<DesktopBoot skin={layout === 'mac' ? 'mac' : 'windows'} />}>
         <DesktopShell
           skin={layout === 'mac' ? 'mac' : 'windows'} layout={layout} layoutBusy={layoutBusy}
           wm={wm} groups={desktopGroups} content={windowContent}
@@ -1039,6 +1041,7 @@ export default function AppShell({
           onChangeLayout={next => onLayoutChange?.(next)}
           onEditProfile={() => setProfileOpen(true)} onAbout={() => setAboutOpen(true)} onLogout={handleLogout}
         />
+        </Suspense>
       )}
       {desktopEnabled && !desktopShown && (
         <BackToDesktop onClick={() => { const top = topTabId(wm); if (top) setActiveTab(top as TabId); else setDeskHomeAt(activeTab); }} />

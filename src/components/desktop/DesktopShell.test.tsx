@@ -29,8 +29,8 @@ const groups: DesktopGroup[] = [{
 const picked: string[] = [];
 const focusedNow = () => document.getElementById('probe')!.dataset.focused || null;
 
-function Harness({ skin, tab, nonce = 0 }: { skin: DesktopSkin; tab: string; nonce?: number }) {
-  const { wm, dispatch } = useWindowManager({ enabled: true, skin, activeTab: tab, navNonce: nonce });
+function Harness({ skin, tab, nonce = 0, enabled = true }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean }) {
+  const { wm, dispatch } = useWindowManager({ enabled, skin, activeTab: tab, navNonce: nonce });
   const actions: DesktopActions = {
     open: t => dispatch({ type: 'open', tabId: t }), focus: t => dispatch({ type: 'focus', tabId: t }),
     minimize: t => dispatch({ type: 'minimize', tabId: t }), maximize: t => dispatch({ type: 'maximize', tabId: t }),
@@ -68,12 +68,14 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); host.remove(); document.body.innerHTML = ''; });
 
 const render = (ui: ReactNode) => act(() => root.render(ui));
+// Desktop mulai kosong; navigasi eksplisit pertama (navNonce naik) membuka jendela tab aktif.
+const mount = (skin: DesktopSkin, tab: string) => { render(<Harness skin={skin} tab={tab} />); render(<Harness skin={skin} tab={tab} nonce={1} />); };
 const q = (sel: string) => document.querySelector<HTMLElement>(sel);
 const click = (el: Element | null) => act(() => { (el as HTMLElement).click(); });
 
 describe('DesktopShell (skin Windows)', () => {
   it('activeTab berjendela membuka jendelanya; tombol TopbarPortal masuk ke titlebar jendela, bukan #topbar-slot', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     expect(q('[data-testid="dash"]')).not.toBeNull();
     const btn = q('#refresh-btn');
     expect(btn).not.toBeNull();
@@ -83,7 +85,7 @@ describe('DesktopShell (skin Windows)', () => {
   });
 
   it('singleton + taskbar: klik ikon meja dua kali tidak menggandakan; klik tombol taskbar memfokus/mengecilkan', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     const ico = q('button[aria-label="Buka Pesanan"]');
     click(ico); click(ico);
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
@@ -97,13 +99,13 @@ describe('DesktopShell (skin Windows)', () => {
   });
 
   it('tombol tutup menghapus jendela; menutup jendela terakhir tidak membukanya lagi', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     click(q('.dsk-win .dsk-wb.x'));
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
   });
 
   it('menu Mulai memuat semua menu, menandai "Klasik" untuk yang belum berjendela; Esc menutup', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     click(q('button[aria-label="Menu Mulai"]'));
     expect(q('.dsk-menu')).not.toBeNull();
     const supplier = Array.from(document.querySelectorAll('.dsk-mi')).find(b => b.textContent?.includes('Supplier'))!;
@@ -120,7 +122,7 @@ describe('DesktopShell (skin Windows)', () => {
   });
 
   it('footer menu Mulai: "Ganti tampilan" menampilkan pilihan tiga layout', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     click(q('button[aria-label="Menu Mulai"]'));
     expect(q('[role="radiogroup"]')).toBeNull();
     click(Array.from(document.querySelectorAll('.dsk-mfoot button')).find(b => b.textContent === 'Ganti tampilan')!);
@@ -128,7 +130,7 @@ describe('DesktopShell (skin Windows)', () => {
   });
 
   it('jendela dapat difokus keyboard dan semua tombol ikon punya aria-label', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     expect(q('.dsk-win')!.tabIndex).toBe(0);
     for (const b of document.querySelectorAll('.dsk-wb, .dsk-tl button, .dsk-start, .dsk-avatar')) {
       expect(b.getAttribute('aria-label') || b.textContent).toBeTruthy();
@@ -138,7 +140,7 @@ describe('DesktopShell (skin Windows)', () => {
 
 describe('DesktopShell (skin Mac)', () => {
   it('menu bar menampilkan judul jendela terdepan; dock memuat hanya menu berjendela + Launchpad', () => {
-    render(<Harness skin="mac" tab="dashboard" />);
+    mount("mac", "dashboard");
     expect(q('.dsk-mbar')!.textContent).toContain('Dashboard');
     const dockLabels = Array.from(document.querySelectorAll('.dsk-dock button')).map(b => b.getAttribute('aria-label'));
     expect(dockLabels).toEqual(['Launchpad', 'Dashboard', 'Pesanan', 'Mitra']);
@@ -147,7 +149,7 @@ describe('DesktopShell (skin Mac)', () => {
   });
 
   it('Launchpad dari dock; klik item dock jendela terdepan mengecilkannya', () => {
-    render(<Harness skin="mac" tab="dashboard" />);
+    mount("mac", "dashboard");
     click(q('.dsk-dock button[aria-label="Launchpad"]'));
     expect(q('.dsk-menu[data-variant="launchpad"]')).not.toBeNull();
     act(() => { q('.dsk-scrim')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); });
@@ -159,17 +161,17 @@ describe('DesktopShell (skin Mac)', () => {
 
 describe('sinkronisasi activeTab -> jendela', () => {
   it('permintaan ke tab yang sama (navNonce naik) membuka lagi jendela yang sudah ditutup; tanpa nonce tidak', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     click(q('.dsk-win .dsk-wb.x'));
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
-    render(<Harness skin="windows" tab="dashboard" />);      // render ulang biasa: tetap tertutup
+    render(<Harness skin="windows" tab="dashboard" nonce={1} />);      // render ulang biasa (nonce sama): tetap tertutup
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
-    render(<Harness skin="windows" tab="dashboard" nonce={1} />);
+    render(<Harness skin="windows" tab="dashboard" nonce={2} />);
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
   });
 
   it('permintaan dari luar (activeTab berubah) membuka/memfokus jendela tab itu', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     expect(focusedNow()).toBe('dashboard');
     render(<Harness skin="windows" tab="orders" />);
     expect(focusedNow()).toBe('orders');
@@ -181,14 +183,14 @@ describe('sinkronisasi activeTab -> jendela', () => {
 
 describe('Mitra berjendela (tahap 3)', () => {
   it('notifikasi consignment_* (activeTab = consignment) membuka jendela Mitra dengan tombol topbar di titlebarnya', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     render(<Harness skin="windows" tab="consignment" nonce={1} />);
     expect(focusedNow()).toBe('consignment');
     expect(q('[data-testid="cons"]')).not.toBeNull();
     expect(q('#cons-btn')!.closest('.dsk-tbslot')).not.toBeNull();
   });
   it('notifikasi kedua saat jendela Mitra sudah ditutup membuka lagi (navNonce); saat sudah terbuka tidak menggandakan', () => {
-    render(<Harness skin="windows" tab="consignment" />);
+    mount("windows", "consignment");
     click(q('.dsk-win[aria-label="Mitra"] .dsk-wb.x'));
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
     render(<Harness skin="windows" tab="consignment" nonce={1} />);
@@ -196,7 +198,7 @@ describe('Mitra berjendela (tahap 3)', () => {
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
   });
   it('ikon meja hanya pintasan: Teruskan Stok WA ada di menu Mulai tapi bukan ikon meja; di dock hanya saat jendelanya terbuka', () => {
-    render(<Harness skin="windows" tab="dashboard" />);
+    mount("windows", "dashboard");
     const icons = Array.from(document.querySelectorAll('.dsk-ico')).map(b => b.getAttribute('aria-label'));
     expect(icons).toContain('Buka Mitra');
     expect(icons).not.toContain('Buka Teruskan Stok WA');
@@ -204,10 +206,40 @@ describe('Mitra berjendela (tahap 3)', () => {
     expect(Array.from(document.querySelectorAll('.dsk-mi')).some(b => b.textContent?.includes('Teruskan Stok WA'))).toBe(true);
   });
   it('dock Mac memuat menu berjendela non-pintasan hanya selagi jendelanya terbuka', () => {
-    render(<Harness skin="mac" tab="wa-forward" />);
+    mount("mac", "wa-forward");
     const labels = Array.from(document.querySelectorAll('.dsk-dock button')).map(b => b.getAttribute('aria-label'));
     expect(labels).toContain('Teruskan Stok WA');
     click(q('.dsk-win[aria-label="Teruskan Stok WA"] .dsk-tl .r'));
     expect(Array.from(document.querySelectorAll('.dsk-dock button')).map(b => b.getAttribute('aria-label'))).not.toContain('Teruskan Stok WA');
+  });
+});
+
+describe('desktop mulai kosong', () => {
+  it('mount pertama dengan activeTab berjendela TIDAK membuka jendela; ikon meja tetap ada; klik ikon membuka', () => {
+    render(<Harness skin="windows" tab="dashboard" />);
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+    expect(q('.dsk-task')).not.toBeNull();
+    expect(document.querySelectorAll('.dsk-ico').length).toBeGreaterThan(0);
+    click(q('button[aria-label="Buka Dashboard"]'));
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+  });
+  it('Mac: kosong saat pertama, dock/menu bar ada', () => {
+    render(<Harness skin="mac" tab="dashboard" />);
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+    expect(q('.dsk-dock')).not.toBeNull();
+    expect(q('.dsk-mbar')!.textContent).toContain('Desktop');
+  });
+  it('aktivasi setelah Klasik (enabled false -> true, mis. resize/ganti tampilan) juga kosong; navigasi sesudahnya membuka', () => {
+    render(<Harness skin="windows" tab="dashboard" enabled={false} />);
+    render(<Harness skin="windows" tab="dashboard" enabled />);
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+    render(<Harness skin="windows" tab="dashboard" nonce={1} />);
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+  });
+  it('jendela yang sudah ada tetap saat enabled mati lalu hidup lagi; tidak ada jendela baru otomatis', () => {
+    mount('windows', 'orders');
+    render(<Harness skin="windows" tab="orders" nonce={1} enabled={false} />);
+    render(<Harness skin="windows" tab="orders" nonce={1} enabled />);
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
   });
 });

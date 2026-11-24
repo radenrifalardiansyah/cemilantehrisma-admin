@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_LAYOUT, DESKTOP_SHORTCUT_TABS, isShortcutTab, WINDOW_TABS, isDesktopShown, isUiLayout, isWindowTab, layoutStorageKey, parseLayout,
+  DEFAULT_LAYOUT, DESKTOP_SHORTCUT_TABS, isShortcutTab, LAST_LAYOUT_KEY, readLastLayout, resolveBootSkin, writeLastLayout, WINDOW_TABS, isDesktopShown, isUiLayout, isWindowTab, layoutStorageKey, parseLayout,
   readCachedLayout, resolveLayout, writeCachedLayout,
 } from './ui-layout';
 
@@ -95,5 +95,30 @@ describe('pemetaan WINDOW_TABS tahap 4 (Laporan Keuangan)', () => {
     for (const t of ['product-report', 'capital', 'stall-report']) expect(isWindowTab(t)).toBe(false);
     expect(isShortcutTab('finance-report')).toBe(false);
     expect(isDesktopShown('mac', true, 'finance-report')).toBe(true);
+  });
+});
+
+describe('cache layout terakhir (tanpa username) dan skin splash', () => {
+  it('writeCachedLayout juga mengisi "last"; read/write last tahan storage rusak', () => {
+    const s = fakeStorage();
+    expect(readLastLayout(s)).toBeNull();
+    writeCachedLayout('a', 'mac', s);
+    expect(readLastLayout(s)).toBe('mac');
+    writeLastLayout('classic', s);
+    expect(readLastLayout(s)).toBe('classic');
+    s.m.set(LAST_LAYOUT_KEY, 'ngawur');
+    expect(readLastLayout(s)).toBeNull();
+    const bad = { getItem: () => { throw new Error('x'); }, setItem: () => { throw new Error('x'); } };
+    expect(readLastLayout(bad)).toBeNull();
+    expect(() => writeLastLayout('mac', bad)).not.toThrow();
+    expect(readLastLayout(null)).toBeNull();
+  });
+  it('resolveBootSkin: splash Desktop hanya bila ada sesi, layar lebar, dan layout terakhir windows/mac', () => {
+    expect(resolveBootSkin({ last: 'windows', hasSession: true, isWide: true })).toBe('windows');
+    expect(resolveBootSkin({ last: 'mac', hasSession: true, isWide: true })).toBe('mac');
+    expect(resolveBootSkin({ last: 'classic', hasSession: true, isWide: true })).toBeNull();
+    expect(resolveBootSkin({ last: null, hasSession: true, isWide: true })).toBeNull();
+    expect(resolveBootSkin({ last: 'mac', hasSession: false, isWide: true })).toBeNull();
+    expect(resolveBootSkin({ last: 'mac', hasSession: true, isWide: false })).toBeNull();
   });
 });

@@ -82,7 +82,7 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { bottom: 216px; }
 
 /* ── taskbar (Windows). Tanpa backdrop-filter: bel notifikasi (dengan modal fixed) ada di dalamnya. ── */
 .dsk-task { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: rgba(20,9,3,.96); border-top: 1px solid rgba(255,255,255,.1); display: flex; align-items: center; gap: 6px; padding: 0 8px; z-index: 5000; }
-.dsk-start { height: 36px; padding: 0 14px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 800; display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.dsk-start { height: 36px; width: 40px; padding: 0; justify-content: center; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 800; display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
 .dsk-tbtns { flex: 1; display: flex; gap: 5px; min-width: 0; overflow: hidden; }
 .dsk-tbtn { height: 36px; max-width: 180px; min-width: 0; padding: 0 12px 0 8px; display: flex; align-items: center; gap: 7px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07); color: #F3E6D8; border-radius: 9px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; }
 .dsk-tbtn[data-on="true"] { background: rgba(240,138,60,.28); border-color: rgba(240,138,60,.6); }

@@ -15,7 +15,7 @@ export default function Taskbar({ windows, startOpen, onToggleStart, onWindowCli
   return (
     <div className="dsk-task" role="toolbar" aria-label="Taskbar">
       <button type="button" className="dsk-start" aria-label="Menu Mulai" aria-haspopup="dialog" aria-expanded={startOpen} onClick={onToggleStart}>
-        <LayoutGrid size={16} /> Mulai
+        <LayoutGrid size={18} />
       </button>
       <div className="dsk-tbtns">
         {windows.map(w => (

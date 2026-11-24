@@ -65,6 +65,28 @@ export function readCachedLayout(username: string, storage: StorageLike | null =
 
 export function writeCachedLayout(username: string, layout: UiLayout, storage: StorageLike | null = defaultStorage()): void {
   try { storage?.setItem(layoutStorageKey(username), layout); } catch { /* storage penuh/diblokir: abaikan */ }
+  writeLastLayout(layout, storage);
+}
+
+// Layout terakhir yang dipakai di perangkat ini, TANPA bergantung username: username baru diketahui setelah /api/me selesai,
+// sedangkan layar "memuat" sudah tampil sebelum itu. Hanya dipakai menebak tampilan splash; server tetap sumber kebenaran.
+export const LAST_LAYOUT_KEY = 'ui-layout:last';
+
+export function readLastLayout(storage: StorageLike | null = defaultStorage()): UiLayout | null {
+  try {
+    const raw = storage?.getItem(LAST_LAYOUT_KEY);
+    return isUiLayout(raw) ? raw : null;
+  } catch { return null; }
+}
+
+export function writeLastLayout(layout: UiLayout, storage: StorageLike | null = defaultStorage()): void {
+  try { storage?.setItem(LAST_LAYOUT_KEY, layout); } catch { /* abaikan */ }
+}
+
+// Skin untuk splash bertema Desktop saat memuat; null = tampilan memuat biasa (Klasik, layar sempit, atau belum login).
+export function resolveBootSkin(o: { last: UiLayout | null; hasSession: boolean; isWide: boolean }): 'windows' | 'mac' | null {
+  if (!o.hasSession || !o.isWide) return null;
+  return o.last === 'windows' || o.last === 'mac' ? o.last : null;
 }
 
 // Server menang bila ada nilai valid; bila server tidak mengembalikan (kolom belum ada / DB sesaat

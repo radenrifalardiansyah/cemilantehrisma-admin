@@ -18,6 +18,8 @@ import { usePwaInstall } from '@/lib/usePwaInstall';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import { useUiLayout } from '@/lib/use-ui-layout';
 import { useMediaQuery } from '@/lib/use-media-query';
+import { useBootSkin } from '@/lib/use-boot-skin';
+import DesktopBoot from '@/components/desktop/DesktopBoot';
 import { DESKTOP_MEDIA_QUERY, isDesktopShown } from '@/lib/ui-layout';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
@@ -356,6 +358,9 @@ export default function AdminPage() {
   // Tata letak dashboard (Klasik/Windows/Mac) per pengguna; di bawah lg selalu Klasik.
   const { layout, busy: layoutBusy, change: changeLayout, hydrate: hydrateLayout } = useUiLayout(creds);
   const isWide = useMediaQuery(DESKTOP_MEDIA_QUERY);
+  // Pengguna Desktop: layar memuat bertema Desktop (tebakan dari cache perangkat; server tetap sumber kebenaran setelah /api/me).
+  const bootSkin = useBootSkin();
+  useEffect(() => { if (bootSkin) import('@/components/desktop/DesktopShell').catch(() => {}); }, [bootSkin]);
 
   // ── Tab ──────────────────────────────────────────────────
   const [activeTab, setActiveTabRaw] = useState<TabId>('dashboard');
@@ -930,6 +935,7 @@ export default function AdminPage() {
   };
 
   // ─── Screens: Loading & Login ────────────────────────────
+  if (checking && bootSkin) return <DesktopBoot skin={bootSkin} />;
   if (checking) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--ground)' }}>
       <PageLoader label="Memuat dashboard" compact />

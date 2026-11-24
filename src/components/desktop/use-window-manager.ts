@@ -28,8 +28,19 @@ export function useWindowManager(opts: { enabled: boolean; skin: DesktopSkin; ac
     return () => window.removeEventListener('resize', apply);
   }, [enabled, skin]);
 
+  // Aktivasi pertama mode desktop (reload, layout baru di-hydrate, pindah Klasik -> Desktop karena resize/ganti tampilan)
+  // TIDAK membuka jendela apa pun: desktop mulai kosong meski activeTab awal 'dashboard'. Hanya permintaan SESUDAH itu
+  // (klik menu/ikon, notifikasi lewat navNonce, activeTab berubah) yang membuka jendela.
+  // Tahan efek ganda (StrictMode): yang disimpan adalah activeTab/navNonce saat aktivasi, bukan "efek sudah jalan sekali".
+  // Jendela dibuka hanya bila nilai itu berbeda (atau sudah pernah ada permintaan sesudah aktivasi: armed).
+  const activation = useRef<{ tab: string; nonce: number; armed: boolean } | null>(null);
   useEffect(() => {
-    if (!enabled || !isWindowTab(activeTab)) return;
+    if (!enabled) { activation.current = null; return; }
+    if (!activation.current) activation.current = { tab: activeTab, nonce: navNonce, armed: false };
+    const a = activation.current;
+    if (!a.armed && a.tab === activeTab && a.nonce === navNonce) return;
+    a.armed = true;
+    if (!isWindowTab(activeTab)) return;
     if (focusedTabId(wmRef.current) === activeTab) return;
     dispatch({ type: 'open', tabId: activeTab });
   }, [enabled, activeTab, navNonce]);

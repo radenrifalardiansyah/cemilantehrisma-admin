@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
-import { isUiLayout, readCachedLayout, resolveLayout, writeCachedLayout, type UiLayout } from '@/lib/ui-layout';
+import { isUiLayout, readCachedLayout, resolveLayout, writeCachedLayout, writeLastLayout, type UiLayout } from '@/lib/ui-layout';
 
 const SAVE_TIMEOUT_MS = 15_000;
 
@@ -23,6 +23,7 @@ export function useUiLayout(creds: string) {
     username.current = name;
     confirmed.current = next;
     if (isUiLayout(server)) writeCachedLayout(name, server);
+    else writeLastLayout(next);
     setLayout(next);
   }, []);
 
