@@ -27,9 +27,10 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // modul/menu mengubah navigasi itu sendiri (fetchNav) dan izin role mempengaruhi menu yang sedang terbuka.
 // Tahap 9: 'history' (Riwayat; HistoryTab hanya butuh creds, tanpa polling atau tautan keluar).
 // Tahap 10: 'notifications' (NotificationsTab memakai NotificationsProvider yang sama dengan bel: tanpa listener Firestore sendiri).
+// Tahap 11: 'categories' (Kategori). Reseller/Pelanggan/Pelanggan Storefront/Ulasan tetap non-jendela.
 // Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
 export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
-  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications'] as const;
+  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications', 'categories'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,
