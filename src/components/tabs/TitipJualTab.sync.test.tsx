@@ -15,7 +15,9 @@ vi.mock('./titip-jual/StallsSection', () => ({ default: () => null }));
 vi.mock('./titip-jual/StockSection', () => ({ default: () => null }));
 vi.mock('./titip-jual/ReceiptsSection', () => ({ default: () => null }));
 vi.mock('./titip-jual/SettlementsSection', () => ({ default: () => null }));
-vi.mock('./titip-jual/AdjustmentsSection', () => ({ default: () => null }));
+vi.mock('./titip-jual/AdjustmentsSection', () => ({
+  default: (p: { reload: () => Promise<void> }) => <button id="write-opname" onClick={() => { void p.reload(); }}>tulis opname</button>,
+}));
 vi.mock('./titip-jual/WalletOverview', () => ({ default: () => null }));
 
 import TitipJualTab from './TitipJualTab';
@@ -79,5 +81,38 @@ describe('TitipJualTab: sinkron data (domain consign dan kategori)', () => {
     expect(calls['/api/categories']).toBe(2);
     expect(calls['/api/stalls']).toBe(1);
     expect(document.getElementById('cats')!.textContent).toBe('k1,k2');
+  });
+});
+
+describe('dua jendela TitipJualTab (main dan opname) ter-mount bersamaan', () => {
+  beforeEach(() => { revSeen.length = 0; });
+  const both = (
+    <DataSyncProvider enabled>
+      <Reader />
+      <div id="main"><TitipJualTab creds="x" mode="main" can={() => true} /></div>
+      <div id="opname"><TitipJualTab creds="x" mode="opname" can={() => true} /></div>
+    </DataSyncProvider>
+  );
+
+  it('tidak tertukar: tiap instance menampilkan seksi sesuai modenya', async () => {
+    await render(both); await settle();
+    expect(document.querySelector('#main #write')).not.toBeNull();
+    expect(document.querySelector('#main #write-opname')).toBeNull();
+    expect(document.querySelector('#opname #write-opname')).not.toBeNull();
+    expect(document.querySelector('#opname #write')).toBeNull();
+  });
+
+  it('opname menulis -> instance main menyegar sekali (dan opname memuat ulang dirinya sekali); sebaliknya juga; tidak ada loop', async () => {
+    await render(both); await settle();
+    expect(calls['/api/stalls']).toBe(2);                       // 1 per instance saat mount
+    await act(async () => { document.getElementById('write-opname')!.click(); });
+    await settle();
+    expect(calls['/api/stalls']).toBe(4);                       // opname reload sendiri (+1) + main menyegar lewat bump (+1)
+    await act(async () => { document.getElementById('write')!.click(); });
+    await settle();
+    expect(calls['/api/stalls']).toBe(6);
+    await settle();
+    expect(calls['/api/stalls']).toBe(6);                       // stabil: tidak berulang
+    expect(revSeen).toEqual([0, 1, 2]);                         // pembaca lain (Laporan/Analitik Lapak) naik satu kali per penulisan
   });
 });

@@ -61,9 +61,13 @@ export default function TitipJualTab({ creds, can, mode, journalStallId = '', on
 
   const load = useCallback(async () => { setData(await fetchAll(creds)); }, [creds]);
   // Mode jendela: semua mutasi Titip Jual (terima/retur/penyesuaian/transfer stok, produk/penitip/lapak, rekap, dompet lapak) memanggil
-  // `reload` SESUDAH berhasil; di titik pusat itu data tab dimuat ulang lalu domain 'consign' di-bump (pembaca: Laporan Lapak, Analitik Lapak).
+  // `reload` SESUDAH berhasil; di titik pusat itu data tab dimuat ulang lalu domain 'consign' di-bump (pembaca: instance Titip Jual lain, Laporan Lapak, Analitik Lapak).
   const bumpData = useBumpData();
-  const reloadAfterWrite = useCallback(async () => { await load(); bumpData('consign', 'titip-jual-tab'); }, [load, bumpData]);
+  // Id sumber per mode (jendela Titip Jual 'main' dan Opname 'opname' bisa ter-mount bersamaan): bump satu instance tidak dilewati
+  // instance lain, dan tidak memuat ulang dirinya sendiri.
+  const syncId = `titip-jual-tab:${mode}`;
+  const reloadAfterWrite = useCallback(async () => { await load(); bumpData('consign', syncId); }, [load, bumpData, syncId]);
+  useOnDataRevision('consign', () => { void load(); }, syncId);
   // Kategori diubah di jendela Kategori -> hanya kategori yang dimuat ulang (tanpa spinner penuh, sub-tab/filter tidak tersentuh).
   useOnDataRevision('categories', () => {
     fetch(`${API}/api/categories`, { headers: { 'x-admin-auth': creds } })
