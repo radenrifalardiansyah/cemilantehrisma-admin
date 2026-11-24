@@ -257,18 +257,16 @@ describe('pengadaan berjendela (tahap 5)', () => {
   });
 });
 
-describe('tray chat (skin Windows)', () => {
-  it('taskbar menyediakan slot tray chat tepat sebelum (di kiri) bel notifikasi; skin Mac tidak punya slot', () => {
-    mount('windows', 'dashboard');
-    const slot = q('.dsk-tray .dsk-chat-slot');
-    expect(slot).not.toBeNull();
-    expect(slot!.nextElementSibling!.querySelector('[aria-label="Notifikasi"]') ?? slot!.nextElementSibling!.getAttribute('aria-label')).toBeTruthy();
-    document.body.innerHTML = '';
-  });
-  it('Mac tanpa slot tray chat', () => {
-    mount('mac', 'dashboard');
-    expect(q('.dsk-chat-slot')).toBeNull();
-  });
+describe('tray chat (skin Windows dan Mac)', () => {
+  for (const skin of ['windows', 'mac'] as const) {
+    it(`${skin}: slot tray chat ada tepat sebelum (di kiri) bel notifikasi`, () => {
+      mount(skin, 'dashboard');
+      const slot = q('.dsk-tray .dsk-chat-slot');
+      expect(slot).not.toBeNull();
+      expect(slot!.nextElementSibling!.querySelector('[aria-label="Notifikasi"]') ?? slot!.nextElementSibling!.getAttribute('aria-label')).toBeTruthy();
+      expect(q(skin === 'mac' ? '.dsk-mbar .dsk-chat-slot' : '.dsk-task .dsk-chat-slot')).not.toBeNull();
+    });
+  }
 });
 
 // Meniru page.tsx: setActiveTab pembungkus menaikkan navNonce; AppShell memberi bel onViewAll = setActiveTab('notifications').

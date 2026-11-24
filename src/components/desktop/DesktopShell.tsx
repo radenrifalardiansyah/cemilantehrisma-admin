@@ -111,7 +111,7 @@ export default function DesktopShell(p: Props) {
           tray={<><span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('up')}{account('up')}</>} />
       ) : (
         <>
-          <MenuBar title={focused ? itemFor(focused).label : 'Desktop'} tray={<>{p.renderBell('down')}{account('down')}</>} />
+          <MenuBar title={focused ? itemFor(focused).label : 'Desktop'} tray={<><span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('down')}{account('down')}</>} />
           <Dock items={windowedItems.filter(i => isShortcutTab(i.tab) || openTabs.has(i.tab))} openTabs={openTabs} launchpadOpen={menuOpen} onLaunchpad={() => setMenuOpen(o => !o)}
             onItem={i => (focused === i.tab ? actions.minimize(i.tab) : actions.open(i.tab))} />
         </>

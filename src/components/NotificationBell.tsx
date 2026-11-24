@@ -158,7 +158,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll, p
         title="Notifikasi"
         className="relative flex items-center justify-center h-9 w-9 rounded-lg transition-colors"
         style={tone === 'dark'
-          ? { background: 'rgba(255,255,255,0.08)', color: '#EDD9C4', border: '1px solid rgba(255,255,255,0.12)' }
+          ? { background: 'transparent', color: '#EDD9C4', border: '1px solid transparent' }
           : { background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
       >
         <Bell size={16} />

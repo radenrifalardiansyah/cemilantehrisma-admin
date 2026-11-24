@@ -56,25 +56,24 @@ describe('sinkron geometri dock Mac: reducer, CSS, skeleton boot', () => {
     expect(Number(cut![1]) - bottom).toBeGreaterThanOrEqual(AREA_INSETS.mac.top); // sisa atas >= menu bar
   });
 
-  it('FAB chat Mac (44px, pojok kanan bawah) berada di bawah tepi atas dock: tidak menimpa kapsul pada tinggi yang sama', () => {
-    const m = /body:has\(\.dsk-root\[data-skin="mac"\]\) \.chat-fab \{ bottom: (\d+)px; right: (\d+)px; \}/.exec(css);
+  it('skin Mac: FAB chat disembunyikan (chat di menu bar); panel membuka ke bawah tepat di bawah menu bar dan muat di layar pendek', () => {
+    expect(css).toMatch(/data-skin="mac"\]\) \.chat-fab \{ display: none; \}/);
+    const m = /data-skin="mac"\]\) \.chat-panel \{ top: (\d+)px; bottom: auto; right: (\d+)px; height: min\((\d+)px, calc\(100dvh - (\d+)px - (\d+)px - (\d+)px\)\); \}/.exec(css);
     expect(m).not.toBeNull();
-    const fabTop = Number(m![1]) + 44;
-    const dock = rule('.dsk-dock');
-    const dockTop = px(dock, 'bottom') + px(rule('.dsk-dk'), 'height') + 2 * Number(/padding:\s*(\d+)px/.exec(dock)![1]) + 2;
-    expect(fabTop).toBeLessThanOrEqual(dockTop);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(AREA_INSETS.mac.top);       // tidak menutupi menu bar
+    expect(Number(m![4])).toBe(Number(m![1]));                                // tinggi dikurangi offset atas yang sama
+    expect(Number(m![5])).toBe(AREA_INSETS.mac.bottom);                       // dan tidak turun ke dock
+    // tidak ada sisa aturan FAB Mac lama (bottom/right)
+    expect(css).not.toMatch(/data-skin="mac"\]\) \.chat-fab \{ bottom/);
   });
 
-  it('dock Mac tidak menabrak FAB di 1024px walau semua menu berjendela terbuka sekaligus (ikon menyusut, max-width menyisakan ruang FAB)', () => {
+  it('dock Mac tetap di dalam layar 1024px walau semua menu berjendela terbuka sekaligus (ikon menyusut)', () => {
     const dock = rule('.dsk-dock');
     const dk = rule('.dsk-dk');
     const gap = px(dock, 'gap');
     const pad = Number(/padding:\s*(\d+)px/.exec(dock)![1]);
     const reserve = Number(/max-width:\s*calc\(100% - (\d+)px\)/.exec(dock)![1]);
-    const fab = /\.chat-fab \{ bottom: \d+px; right: (\d+)px; \}/.exec(css.slice(css.indexOf('data-skin="mac"]) .chat-fab')));
-    const fabLeft = 1024 - Number(fab![1]) - 44;
-    // tepi kanan dock (terpusat, selebar max-width) tidak melewati tepi kiri FAB
-    expect((1024 + (1024 - reserve)) / 2).toBeLessThanOrEqual(fabLeft);
+    expect(1024 - reserve).toBeGreaterThan(0);
     // ikon boleh menyusut (flex-shrink 1) sampai min-width, dan lebar minimum semua ikon muat dalam max-width
     expect(dk).toMatch(/flex-shrink:\s*1/);
     const minIcon = px(dk, 'min-width');
@@ -114,5 +113,29 @@ describe('sinkron geometri dock Mac: reducer, CSS, skeleton boot', () => {
     expect(Number(m![1])).toBeGreaterThanOrEqual(AREA_INSETS.windows.bottom);
     expect(px(rule('.dsk-chat-btn'), 'width')).toBe(36);
     expect(px(rule('.dsk-chat-btn'), 'height')).toBe(36);
+  });
+});
+
+describe('tombol tray/menu bar flat', () => {
+  it('tombol chat tanpa border dan latar saat normal; hover memberi highlight; bel dark-tone tanpa kotak', () => {
+    const btn = rule('.dsk-chat-btn');
+    expect(btn).toMatch(/background:\s*transparent/);
+    expect(btn).toMatch(/border:\s*0/);
+    expect(css).toMatch(/\.dsk-chat-btn:hover[^{]*\{ background: rgba\(255,255,255,\.12\); \}/);
+    expect(css).toMatch(/\.dsk-tray button\[title="Notifikasi"\]:hover \{ background: rgba\(255,255,255,\.12\) !important; \}/);
+    // fokus keyboard tetap terlihat di desktop
+    expect(css).toMatch(/\.dsk-root :focus-visible \{ outline:/);
+    const bell = readFileSync(join(process.cwd(), 'src/components/NotificationBell.tsx'), 'utf8');
+    expect(bell).toMatch(/tone === 'dark'\s*\n?\s*\? \{ background: 'transparent'/);
+  });
+});
+
+describe('tombol aksi titlebar jendela flat (Refresh)', () => {
+  it('.btn-ghost di slot titlebar tanpa border/latar, hover halus, dan tidak menyentuh tombol jendela', () => {
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost \{ background: transparent; border: 0; box-shadow: none; \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--border\); \}/);
+    // semua selector flat berada di bawah .dsk-tbslot (Klasik #topbar-slot dan isi jendela tidak ikut)
+    for (const line of css.split('\n')) if (/\.btn-ghost/.test(line) && /\{/.test(line)) expect(line.trimStart().startsWith('.dsk-tbslot')).toBe(true);
+    expect(css).not.toMatch(/\.dsk-wb[^{]*\{[^}]*transparent !important/);
   });
 });

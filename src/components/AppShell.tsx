@@ -232,9 +232,9 @@ export default function AppShell({
   const posHostRef = useRef<HTMLDivElement>(null);
   // Slot topbar jendela Kasir; undefined = tidak ada jendela Kasir (TopbarPortal memakai #topbar-slot seperti Klasik).
   const [posTopbarSlot, setPosTopbarSlot] = useState<HTMLElement | null | undefined>(undefined);
-  // Slot tray taskbar Windows untuk tombol chat; null/undefined sampai taskbar terpasang.
+  // Slot tray taskbar Windows / menu bar Mac untuk tombol chat; null/undefined sampai taskbar terpasang.
   const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null);
-  const chatTray = desktopShown && layout === 'windows' ? chatSlot : undefined;
+  const chatTray = desktopShown ? chatSlot : undefined;
   const onPosSlot = useCallback((el: HTMLElement | null) => setPosTopbarSlot(el ?? undefined), []);
   const posActive = desktopShown ? wm.windows.some(w => w.tabId === 'pos' && !w.minimized) : activeTab === 'pos';
   const openKey = wm.windows.map(w => w.tabId).join('|');

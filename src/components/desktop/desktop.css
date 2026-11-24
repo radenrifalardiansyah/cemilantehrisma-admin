@@ -27,9 +27,9 @@
 /* Windows: tombol chat pindah ke tray taskbar (ChatWidget mode tray); FAB mengambang disembunyikan, panel tepat di atas taskbar kanan bawah */
 body:has(.dsk-root[data-skin="windows"]) .chat-fab { display: none; }
 body:has(.dsk-root[data-skin="windows"]) .chat-panel { bottom: 54px; right: 8px; }
-/* Mac: FAB di pojok kanan paling bawah (dock di tengah tidak tertabrak); panel membuka ke atas dari FAB (selisih 110px seperti Klasik) */
-body:has(.dsk-root[data-skin="mac"]) .chat-fab { bottom: 14px; right: 16px; }
-body:has(.dsk-root[data-skin="mac"]) .chat-panel { bottom: 124px; right: 16px; }
+/* Mac: tombol chat pindah ke menu bar (kiri bel); FAB disembunyikan, panel membuka ke BAWAH dari menu bar dan tetap muat di layar pendek */
+body:has(.dsk-root[data-skin="mac"]) .chat-fab { display: none; }
+body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; right: 8px; height: min(420px, calc(100dvh - 34px - 66px - 8px)); }
 
 /* ── ikon bergradasi (squircle) ── */
 .dsk-tile { --c: #D4691E; display: grid; place-items: center; color: #fff; flex-shrink: 0; border-radius: 27%;
@@ -59,6 +59,10 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { bottom: 124px; right: 16px; }
 .dsk-tb .dsk-tile { width: 20px; height: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 1px 3px rgba(0,0,0,.25); }
 .dsk-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsk-tbslot { display: flex; align-items: center; gap: 6px; cursor: default; }
+/* tombol aksi TopbarPortal di titlebar (Refresh dll.) FLAT: hanya ikon/teks, tanpa border/latar; highlight halus saat hover; fokus lewat .dsk-root :focus-visible.
+   Hanya .btn-ghost di slot titlebar jendela; tombol sama di Klasik (#topbar-slot) dan di isi jendela tidak tersentuh. Tombol –/▢/✕ (.dsk-wb) dan bulatan Mac tidak ikut. */
+.dsk-tbslot .btn-ghost { background: transparent; border: 0; box-shadow: none; }
+.dsk-tbslot .btn-ghost:hover:not(:disabled) { background: var(--border); }
 .dsk-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .dsk-body > * { flex-shrink: 0; }
 .dsk-tl { display: none; gap: 8px; align-items: center; }
@@ -103,8 +107,8 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { bottom: 124px; right: 16px; }
 .dsk-mbar .dsk-tray button[title] { height: 22px; width: 22px; }
 
 /* ── dock (Mac) ── */
-/* dock ramping (bila terlalu banyak ikon, ikon menyusut agar dock tidak menabrak FAB chat di kanan): ikon 42px, kapsul ~54px tinggi, jarak 6px dari tepi bawah (inset bawah skin = 66) */
-.dsk-dock { position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 6px; display: flex; align-items: flex-end; gap: 7px; padding: 5px 9px; border-radius: 17px; background: rgba(255,255,255,.28); border: 1px solid rgba(255,255,255,.4); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); z-index: 5000; max-width: calc(100% - 152px); }
+/* dock ramping (bila terlalu banyak ikon, ikon menyusut agar dock tetap di dalam layar): ikon 42px, kapsul ~54px tinggi, jarak 6px dari tepi bawah (inset bawah skin = 66) */
+.dsk-dock { position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 6px; display: flex; align-items: flex-end; gap: 7px; padding: 5px 9px; border-radius: 17px; background: rgba(255,255,255,.28); border: 1px solid rgba(255,255,255,.4); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); z-index: 5000; max-width: calc(100% - 16px); }
 .dsk-dk { position: relative; width: 42px; height: 42px; border: 0; padding: 0; background: transparent; transform-origin: 50% 100%; transition: transform .12s ease-out; flex-shrink: 1; min-width: 18px; }
 .dsk-dk .dsk-tile { width: 100%; height: auto; aspect-ratio: 1; position: absolute; left: 0; bottom: 0; }
 .dsk-dk .dot { position: absolute; left: 50%; bottom: -4px; width: 3px; height: 3px; border-radius: 50%; background: #fff; transform: translateX(-50%); display: none; }
@@ -171,5 +175,7 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { bottom: 124px; right: 16px; }
 .dsk-root .fixed.inset-0 { top: var(--dsk-top); bottom: var(--dsk-bot); }
 .dsk-root .modal-sheet { max-height: calc(100vh - var(--dsk-top) - var(--dsk-bot) - 48px); max-height: calc(100dvh - var(--dsk-top) - var(--dsk-bot) - 48px); }
 .dsk-chat-slot { display: flex; align-items: center; }
-.dsk-chat-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,.08); color: #EDD9C4; border: 1px solid rgba(255,255,255,.12); }
-.dsk-chat-btn:hover, .dsk-chat-btn[aria-expanded="true"] { background: rgba(255,255,255,.18); }
+.dsk-chat-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: transparent; color: #EDD9C4; border: 0; padding: 0; }
+.dsk-chat-btn:hover, .dsk-chat-btn[aria-expanded="true"] { background: rgba(255,255,255,.12); }
+/* tombol tray/menu bar FLAT: hanya ikon (tanpa kotak/border); highlight halus saat hover; fokus keyboard tetap lewat :focus-visible */
+.dsk-tray button[title="Notifikasi"]:hover { background: rgba(255,255,255,.12) !important; }
