@@ -26,6 +26,9 @@ import { useWindowManager } from '@/components/desktop/use-window-manager';
 import { focusedTabId, topTabId } from '@/components/desktop/window-reducer';
 import { moduleColor, PINNED_COLOR, type DesktopGroup } from '@/components/desktop/types';
 import type { DesktopActions } from '@/components/desktop/DesktopShell';
+import AppearanceDialog from '@/components/desktop/AppearanceDialog';
+import { appearanceStyle } from '@/lib/appearance-style';
+import type { Appearance } from '@/lib/appearance';
 import { getClientMessaging } from '@/lib/firebase-client';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
 
@@ -172,6 +175,11 @@ interface AppShellProps {
   navNonce?: number;
   /** Kasir: satu instance yang selalu ter-mount (keranjang awet). `active` = Kasir sedang terlihat (Klasik: tab aktif; Desktop: jendela Kasir terbuka dan tidak dikecilkan). */
   renderPos?: (active: boolean) => React.ReactNode;
+  /** Pengaturan tampilan Desktop (hook useAppearance di page.tsx). Hanya dipakai saat mode Desktop tampil. */
+  appearance?: {
+    saved: Appearance; draft: Appearance; busy: boolean;
+    preview: (patch: Partial<Appearance>) => void; cancel: () => void; reset: () => void; save: () => Promise<boolean>;
+  };
 }
 
 export default function AppShell({
@@ -179,7 +187,7 @@ export default function AppShell({
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
-  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos,
+  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos, appearance,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
@@ -232,9 +240,16 @@ export default function AppShell({
   const posHostRef = useRef<HTMLDivElement>(null);
   // Slot topbar jendela Kasir; undefined = tidak ada jendela Kasir (TopbarPortal memakai #topbar-slot seperti Klasik).
   const [posTopbarSlot, setPosTopbarSlot] = useState<HTMLElement | null | undefined>(undefined);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   // Slot tray taskbar Windows / menu bar Mac untuk tombol chat; null/undefined sampai taskbar terpasang.
   const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null);
   const chatTray = desktopShown ? chatSlot : undefined;
+  // Dialog Personalisasi hanya ada di mode Desktop: bila desktop tidak tampil lagi (resize < 1024px / ganti layout) tutup dan batalkan pratinjau.
+  if (appearanceOpen && !desktopShown) setAppearanceOpen(false);
+  const cancelAppearance = appearance?.cancel;
+  useEffect(() => { if (!desktopShown) cancelAppearance?.(); }, [desktopShown, cancelAppearance]);
+  const modalAccent = desktopShown && appearance ? appearanceStyle(appearance.draft) : null;
+  const withAccent = (node: React.ReactNode) => (modalAccent ? <div style={{ display: 'contents', ...modalAccent } as React.CSSProperties}>{node}</div> : node);
   const onPosSlot = useCallback((el: HTMLElement | null) => setPosTopbarSlot(el ?? undefined), []);
   const posActive = desktopShown ? wm.windows.some(w => w.tabId === 'pos' && !w.minimized) : activeTab === 'pos';
   const openKey = wm.windows.map(w => w.tabId).join('|');
@@ -1031,9 +1046,10 @@ export default function AppShell({
       )}
 
       {desktopShown && (
-        <Suspense fallback={<DesktopBoot skin={layout === 'mac' ? 'mac' : 'windows'} />}>
+        <Suspense fallback={<DesktopBoot skin={layout === 'mac' ? 'mac' : 'windows'} appearance={appearance?.draft} />}>
         <DesktopShell
           skin={layout === 'mac' ? 'mac' : 'windows'} layout={layout} layoutBusy={layoutBusy}
+          appearance={appearance?.draft} onOpenAppearance={appearance ? () => setAppearanceOpen(true) : undefined}
           wm={wm} groups={desktopGroups} content={windowContent}
           username={username} avatar={avatar} roleLabel={superAdmin ? 'Super Admin' : (role || 'Administrator')} storeUrl={MAIN_APP}
           renderBell={side => (
@@ -1050,8 +1066,19 @@ export default function AppShell({
         <BackToDesktop onClick={() => { const top = topTabId(wm); if (top) setActiveTab(top as TabId); else setDeskHomeAt(activeTab); }} />
       )}
 
-      {aboutOpen && <AboutModal creds={creds} onClose={() => setAboutOpen(false)} />}
-      {profileOpen && (
+      {appearanceOpen && desktopShown && appearance && (
+        // Dialog global di luar .dsk-root (tidak terpotong); pembungkus display:contents hanya meneruskan variabel aksen pratinjau.
+        <div style={{ display: 'contents', ...appearanceStyle(appearance.draft) } as React.CSSProperties}>
+          <AppearanceDialog
+            value={appearance.draft} saved={appearance.saved} busy={appearance.busy}
+            onChange={appearance.preview} onReset={appearance.reset}
+            onCancel={() => { appearance.cancel(); setAppearanceOpen(false); }}
+            onSave={() => { void appearance.save().then(ok => { if (ok) setAppearanceOpen(false); }); }}
+          />
+        </div>
+      )}
+      {aboutOpen && withAccent(<AboutModal creds={creds} onClose={() => setAboutOpen(false)} />)}
+      {profileOpen && withAccent(
         <EditProfileModal
           creds={creds}
           username={username}

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
-const h = vi.hoisted(() => ({ uiLayoutFails: false, uiLayout: null as string | null, profileFails: false }));
+const h = vi.hoisted(() => ({ uiLayoutFails: false, uiLayout: null as string | null, profileFails: false, appearanceFails: false, appearance: null as unknown }));
 
 vi.mock('@/lib/admin-auth', () => ({
   getAuthUser: vi.fn(() => ({ username: 'rifal', role: 'super-admin' })),
@@ -17,12 +17,17 @@ vi.mock('@/lib/rbac', () => ({
 vi.mock('@/lib/permissions', () => ({ fullAccessPermissions: () => ({}) }));
 vi.mock('@/lib/supabase-admin', () => ({ deriveLoginEmail: vi.fn(), getSupabaseAdmin: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
-vi.mock('@/lib/db', () => ({
+vi.mock('@/lib/db', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/lib/db')>()),
   getSql: () => async (strings: TemplateStringsArray) => {
     const text = strings.join('?');
     if (text.includes('select ui_layout')) {
       if (h.uiLayoutFails) throw new Error('column "ui_layout" does not exist');
       return [{ ui_layout: h.uiLayout }];
+    }
+    if (text.includes('select ui_appearance')) {
+      if (h.appearanceFails) throw new Error('column "ui_appearance" does not exist');
+      return [{ ui_appearance: h.appearance }];
     }
     if (h.profileFails) throw new Error('db down');
     return [{ email: 'a@b.c', avatar: null, full_name: 'Rifal', signature: null }];
@@ -53,5 +58,37 @@ describe('GET /api/me: user.uiLayout', () => {
     expect(user.uiLayout).toBeNull();
     expect(user.email).toBe('a@b.c');
     expect(user.fullName).toBe('Rifal');
+  });
+});
+
+describe('GET /api/me: user.uiAppearance', () => {
+  beforeEach(() => { h.appearanceFails = false; h.appearance = null; h.uiLayoutFails = false; h.uiLayout = null; vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  const valid = { accent: 'blue', wallpaper: 'waves', density: 'compact', textSize: 'large' };
+
+  it('mengembalikan nilai tersimpan', async () => { h.appearance = valid; expect((await call()).user.uiAppearance).toEqual(valid); });
+  it('belum memilih: null', async () => { expect((await call()).user.uiAppearance).toBeNull(); });
+  it('nilai rusak/field asing di DB: null', async () => {
+    h.appearance = { ...valid, extra: 1 }; expect((await call()).user.uiAppearance).toBeNull();
+    h.appearance = { accent: 'neon' }; expect((await call()).user.uiAppearance).toBeNull();
+  });
+  // db.ts (parseJsonb): lewat pooler Supabase kolom jsonb balik sebagai STRING JSON mentah. PUT menulis lewat
+  // ${JSON.stringify(x)}::jsonb (postgres.js men-serialisasi ulang untuk OID jsonb), jadi yang terbaca adalah string.
+  it('nilai jsonb yang terbaca sebagai string JSON mentah (quirk pooler) tetap di-parse, bukan dianggap belum memilih', async () => {
+    h.appearance = JSON.stringify(valid);
+    expect((await call()).user.uiAppearance).toEqual(valid);
+  });
+  it('jsonb terenkode ganda (string di dalam string) tetap di-parse sampai menjadi objek', async () => {
+    h.appearance = JSON.stringify(JSON.stringify(valid));
+    expect((await call()).user.uiAppearance).toEqual(valid);
+  });
+  it('string rusak bukan JSON menghasilkan null tanpa membuat /api/me gagal', async () => {
+    h.appearance = 'bukan-json';
+    expect((await call()).user.uiAppearance).toBeNull();
+  });
+  it('kolom belum ada: profil lain tetap termuat, uiAppearance null', async () => {
+    h.appearanceFails = true;
+    const { user } = await call();
+    expect(user.uiAppearance).toBeNull();
+    expect(user.email).toBe('a@b.c');
   });
 });

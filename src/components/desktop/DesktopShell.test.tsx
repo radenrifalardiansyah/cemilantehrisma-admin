@@ -7,6 +7,7 @@ import TopbarPortal from '@/components/TopbarPortal';
 import DesktopShell, { type DesktopActions } from './DesktopShell';
 import { useWindowManager } from './use-window-manager';
 import type { DesktopGroup } from './types';
+import type { Appearance } from '@/lib/appearance';
 import { focusedTabId, type DesktopSkin } from './window-reducer';
 
 vi.mock('next/image', () => ({ default: () => null }));
@@ -29,7 +30,7 @@ const groups: DesktopGroup[] = [{
 const picked: string[] = [];
 const focusedNow = () => document.getElementById('probe')!.dataset.focused || null;
 
-function Harness({ skin, tab, nonce = 0, enabled = true, bell }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean; bell?: ReactNode }) {
+function Harness({ skin, tab, nonce = 0, enabled = true, bell, appearance, onOpenAppearance }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean; bell?: ReactNode; appearance?: Appearance; onOpenAppearance?: () => void }) {
   const { wm, dispatch } = useWindowManager({ enabled, skin, activeTab: tab, navNonce: nonce });
   const actions: DesktopActions = {
     open: t => dispatch({ type: 'open', tabId: t }), focus: t => dispatch({ type: 'focus', tabId: t }),
@@ -48,7 +49,7 @@ function Harness({ skin, tab, nonce = 0, enabled = true, bell }: { skin: Desktop
     <>
       <div id="topbar-slot" />
       <div id="probe" data-focused={focusedTabId(wm) ?? ''} />
-      <DesktopShell skin={skin} layout={skin} wm={wm} groups={groups} content={content} username="rifal" avatar={null} roleLabel="Administrator"
+      <DesktopShell appearance={appearance} onOpenAppearance={onOpenAppearance} skin={skin} layout={skin} wm={wm} groups={groups} content={content} username="rifal" avatar={null} roleLabel="Administrator"
         storeUrl="https://x" renderBell={() => bell ?? <button aria-label="Notifikasi">bel</button>} actions={actions}
         onPickMenu={i => { picked.push(i.tab); if (i.windowed) actions.open(i.tab); }} onChangeLayout={() => {}}
         onEditProfile={() => {}} onAbout={() => {}} onLogout={() => {}} />
@@ -329,5 +330,43 @@ describe('panel semua menu: ukuran tetap, footer ikon', () => {
     click(q('button[aria-label="Menu Mulai"]'));
     click(q('.dsk-mfoot button[aria-label="Tutup semua"]'));
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+  });
+});
+
+describe('pengaturan tampilan terpasang di .dsk-root saja', () => {
+  const ap: Appearance = { accent: 'blue', wallpaper: 'waves', density: 'relaxed', textSize: 'large' };
+  it('data-density/data-text dan variabel aksen/latar hanya di .dsk-root; elemen di luar root bersih', () => {
+    render(<Harness skin="windows" tab="dashboard" appearance={ap} />);
+    const rootEl = q('.dsk-root')!;
+    expect(rootEl.getAttribute('data-density')).toBe('relaxed');
+    expect(rootEl.getAttribute('data-text')).toBe('large');
+    expect(rootEl.style.getPropertyValue('--accent')).toBe('#2D69A4');
+    expect(rootEl.style.getPropertyValue('--dsk-wallpaper')).not.toBe('');
+    expect(Array.from(document.querySelectorAll('[data-density],[data-text]'))).toEqual([rootEl]);
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('');
+    expect(document.body.style.getPropertyValue('--accent')).toBe('');
+  });
+  it('default: atribut standar dan tanpa override aksen/latar', () => {
+    render(<Harness skin="mac" tab="dashboard" />);
+    const rootEl = q('.dsk-root')!;
+    expect(rootEl.getAttribute('data-density')).toBe('standard');
+    expect(rootEl.getAttribute('data-text')).toBe('standard');
+    expect(rootEl.style.getPropertyValue('--accent')).toBe('');
+    expect(rootEl.style.getPropertyValue('--dsk-wallpaper')).toBe('');
+  });
+  it('ikon Palet di footer panel menu dan item "Personalisasi" di menu akun muncul hanya bila ada pengelola; klik memanggilnya', () => {
+    const open = vi.fn();
+    mount('windows', 'dashboard');
+    click(q('button[aria-label="Menu Mulai"]'));
+    expect(q('.dsk-mfoot button[aria-label="Personalisasi"]')).toBeNull();
+    act(() => root.unmount()); root = createRoot(host);
+    render(<Harness skin="windows" tab="dashboard" onOpenAppearance={open} />);
+    click(q('button[aria-label="Menu Mulai"]'));
+    click(q('.dsk-mfoot button[aria-label="Personalisasi"]'));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(q('.dsk-menu')).toBeNull();
+    click(q('button[aria-label="Menu akun"]'));
+    click(Array.from(document.querySelectorAll('.dsk-pop button')).find(b => b.textContent?.includes('Personalisasi'))!);
+    expect(open).toHaveBeenCalledTimes(2);
   });
 });

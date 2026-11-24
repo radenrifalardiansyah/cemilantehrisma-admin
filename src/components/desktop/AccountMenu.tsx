@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Home, Info, LogOut, UserCog } from 'lucide-react';
+import { Home, Info, LogOut, Palette, UserCog } from 'lucide-react';
 import { useEscapeLayer } from '@/components/Modal';
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
   onEditProfile: () => void;
   onAbout: () => void;
   onLogout: () => void;
+  onAppearance?: () => void;
 }
 
 // Tombol avatar + menu akun kecil: Edit Profil, Tentang, Lihat Toko, Keluar (aksi yang di Klasik ada di footer sidebar / header).
@@ -31,7 +32,7 @@ export default function AccountMenu(props: Props) {
   );
 }
 
-function AccountPopover({ username, roleLabel, storeUrl, side, onEditProfile, onAbout, onLogout, onClose }: Props & { onClose: () => void }) {
+function AccountPopover({ username, roleLabel, storeUrl, side, onEditProfile, onAbout, onLogout, onAppearance, onClose }: Props & { onClose: () => void }) {
   useEscapeLayer(onClose);
   const run = (fn: () => void) => () => { onClose(); fn(); };
   return (
@@ -41,6 +42,7 @@ function AccountPopover({ username, roleLabel, storeUrl, side, onEditProfile, on
         <div className="who"><b>{username}</b><small>{roleLabel}</small></div>
         <hr />
         <button type="button" role="menuitem" onClick={run(onEditProfile)}><UserCog size={15} /> Edit Profil</button>
+        {onAppearance && <button type="button" role="menuitem" onClick={run(onAppearance)}><Palette size={15} /> Personalisasi</button>}
         <button type="button" role="menuitem" onClick={run(onAbout)}><Info size={15} /> Tentang Aplikasi</button>
         <a role="menuitem" href={storeUrl} target="_blank" rel="noopener noreferrer" onClick={onClose}><Home size={15} /> Lihat Toko</a>
         <hr />

@@ -3,6 +3,8 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { AppWindow } from 'lucide-react';
 import { isShortcutTab, type UiLayout } from '@/lib/ui-layout';
+import { DEFAULT_APPEARANCE, type Appearance } from '@/lib/appearance';
+import { appearanceStyle } from '@/lib/appearance-style';
 import AccountMenu from './AccountMenu';
 import AppMenuPanel from './AppMenuPanel';
 import DesktopIcons from './DesktopIcons';
@@ -30,6 +32,9 @@ interface Props {
   skin: DesktopSkin;
   layout: UiLayout;
   layoutBusy?: boolean;
+  /** Pengaturan tampilan yang sedang dipratinjau/dipakai (warna dasar, latar, kerapatan, ukuran teks). */
+  appearance?: Appearance;
+  onOpenAppearance?: () => void;
   wm: WmState;
   groups: DesktopGroup[];
   /** Isi tiap jendela (sudah di-memo oleh pemanggil supaya geser/fokus jendela tidak merender ulang isi tab). */
@@ -57,6 +62,7 @@ interface Props {
 export default function DesktopShell(p: Props) {
   const { skin, wm, groups, actions } = p;
   const [menuOpen, setMenuOpen] = useState(false);
+  const ap = p.appearance ?? DEFAULT_APPEARANCE;
   const { onChatSlot } = p;
   const chatSlotRef = useCallback((el: HTMLElement | null) => onChatSlot?.(el), [onChatSlot]);
 
@@ -83,11 +89,11 @@ export default function DesktopShell(p: Props) {
 
   const account = (side: 'up' | 'down') => (
     <AccountMenu username={p.username} avatar={p.avatar} roleLabel={p.roleLabel} storeUrl={p.storeUrl} side={side}
-      onEditProfile={p.onEditProfile} onAbout={p.onAbout} onLogout={p.onLogout} />
+      onEditProfile={p.onEditProfile} onAbout={p.onAbout} onLogout={p.onLogout} onAppearance={p.onOpenAppearance} />
   );
 
   return (
-    <div className="dsk-root" data-skin={skin}>
+    <div className="dsk-root" data-skin={skin} data-density={ap.density} data-text={ap.textSize} style={appearanceStyle(ap) as React.CSSProperties}>
       {skin === 'windows' && <DesktopIcons items={shortcutItems} onOpen={i => actions.open(i.tab)} />}
 
       {wm.windows.map(w => (
@@ -102,7 +108,7 @@ export default function DesktopShell(p: Props) {
       {menuOpen && (
         <AppMenuPanel variant={skin === 'windows' ? 'start' : 'launchpad'} groups={groups} layout={p.layout} layoutBusy={p.layoutBusy}
           hasWindows={wm.windows.length > 0} onPick={pick} onClose={() => setMenuOpen(false)}
-          onArrange={actions.arrange} onCloseAll={actions.closeAll} onChangeLayout={p.onChangeLayout} />
+          onArrange={actions.arrange} onCloseAll={actions.closeAll} onChangeLayout={p.onChangeLayout} onAppearance={p.onOpenAppearance} />
       )}
 
       {skin === 'windows' ? (

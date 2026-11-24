@@ -18,7 +18,8 @@ import { usePwaInstall } from '@/lib/usePwaInstall';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
 import { useUiLayout } from '@/lib/use-ui-layout';
 import { useMediaQuery } from '@/lib/use-media-query';
-import { useBootSkin } from '@/lib/use-boot-skin';
+import { useBootSkin, useBootAppearance } from '@/lib/use-boot-skin';
+import { useAppearance } from '@/lib/use-appearance';
 import DesktopBoot from '@/components/desktop/DesktopBoot';
 import { DESKTOP_MEDIA_QUERY, isDesktopShown } from '@/lib/ui-layout';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -362,6 +363,10 @@ export default function AdminPage() {
   const isWide = useMediaQuery(DESKTOP_MEDIA_QUERY);
   // Pengguna Desktop: layar memuat bertema Desktop (tebakan dari cache perangkat; server tetap sumber kebenaran setelah /api/me).
   const bootSkin = useBootSkin();
+  const bootAppearance = useBootAppearance();
+  // Pengaturan tampilan Desktop (warna dasar, latar, kerapatan, ukuran teks); hanya dipakai saat mode jendela tampil.
+  const appearance = useAppearance(creds);
+  const { hydrate: hydrateAppearance } = appearance;
   useEffect(() => { if (bootSkin) import('@/components/desktop/DesktopShell').catch(() => {}); }, [bootSkin]);
 
   // ── Tab ──────────────────────────────────────────────────
@@ -741,14 +746,15 @@ export default function AdminPage() {
     if (res.status === 401) return false;
     if (!res.ok) throw new Error(`/api/me ${res.status}`);
     const { user, permissions, superAdmin } = await res.json() as {
-      user: { username: string; role: string; email: string | null; avatar: string | null; uiLayout?: string | null };
+      user: { username: string; role: string; email: string | null; avatar: string | null; uiLayout?: string | null; uiAppearance?: unknown };
       permissions: Record<string, Partial<Record<Action, boolean>>>;
       superAdmin: boolean;
     };
     hydrateLayout(user.username, user.uiLayout);
+    hydrateAppearance(user.username, user.uiAppearance);
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
     return true;
-  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, hydrateLayout]);
+  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, hydrateLayout, hydrateAppearance]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -948,7 +954,7 @@ export default function AdminPage() {
   };
 
   // ─── Screens: Loading & Login ────────────────────────────
-  if (checking && bootSkin) return <DesktopBoot skin={bootSkin} />;
+  if (checking && bootSkin) return <DesktopBoot skin={bootSkin} appearance={bootAppearance} />;
   if (checking) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--ground)' }}>
       <PageLoader label="Memuat dashboard" compact />
@@ -1859,6 +1865,7 @@ export default function AdminPage() {
       onLayoutChange={changeLayout}
       renderWindowTab={renderTab}
       navNonce={navNonce}
+      appearance={appearance}
       renderPos={active => (
         <PosTab
           creds={creds}

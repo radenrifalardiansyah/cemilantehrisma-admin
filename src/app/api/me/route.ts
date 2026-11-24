@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { getAuthUser, unauthorized, signAdminToken } from '@/lib/admin-auth';
-import { getSql } from '@/lib/db';
+import { getSql, parseJsonb } from '@/lib/db';
 import { getRolePermissionsMap, staleSessionReason, sessionExpired, SESSION_TAG } from '@/lib/rbac';
 import { fullAccessPermissions } from '@/lib/permissions';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 import { isValidSignatureUrl } from '@/lib/profile-signature';
 import { isUiLayout, type UiLayout } from '@/lib/ui-layout';
+import { parseStrictAppearance, type Appearance } from '@/lib/appearance';
 import type { Action } from '@/types/rbac';
 
 interface ProfileRow { email: string | null; avatar: string | null; full_name: string | null; signature: string | null }
@@ -23,6 +24,22 @@ async function loadUiLayout(username: string): Promise<UiLayout | null> {
   }
 }
 
+// Sama seperti loadUiLayout: query terpisah (kolom ui_appearance baru ada setelah migrasi); rusak/tidak ada -> null.
+async function loadUiAppearance(username: string): Promise<Appearance | null> {
+  try {
+    const [row] = await getSql()<{ ui_appearance: unknown }[]>`select ui_appearance from profiles where username = ${username}`;
+    // Lewat pooler Supabase kolom jsonb bisa terbaca sebagai string JSON mentah (lihat parseJsonb di db.ts).
+    // PUT menulis JSON.stringify(x)::jsonb, yang bisa tersimpan sebagai jsonb bertipe string (terenkode ganda), dan pooler
+    // bisa mengembalikan teks mentah: urai hingga dua lapis sampai menjadi objek.
+    let value: unknown = parseJsonb(row?.ui_appearance ?? null);
+    if (typeof value === 'string') value = parseJsonb(value);
+    return parseStrictAppearance(value);
+  } catch (err) {
+    console.warn('Tidak bisa membaca profiles.ui_appearance (migrasi belum dijalankan?) — dianggap default', err);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
   if (!authUser) return unauthorized();
@@ -34,6 +51,7 @@ export async function GET(req: NextRequest) {
 
   const superAdmin = authUser.role === 'super-admin';
   const uiLayoutPromise = loadUiLayout(authUser.username);
+  const uiAppearancePromise = loadUiAppearance(authUser.username);
 
   // This route fires on every session restore/refresh for every logged-in user. Degrade
   // gracefully instead of failing the whole session bootstrap: fail-closed to empty permissions
@@ -57,7 +75,7 @@ export async function GET(req: NextRequest) {
     ? fullAccessPermissions()
     : permsMap ?? {};
 
-  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '', uiLayout: await uiLayoutPromise };
+  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '', uiLayout: await uiLayoutPromise, uiAppearance: await uiAppearancePromise };
 
   return Response.json({ ok: true, user, superAdmin, permissions });
 }

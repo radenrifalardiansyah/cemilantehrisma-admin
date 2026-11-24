@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Layers, Monitor, X } from 'lucide-react';
+import { Layers, Monitor, Palette, X } from 'lucide-react';
 import { useEscapeLayer } from '@/components/Modal';
 import type { UiLayout } from '@/lib/ui-layout';
 import AppTile from './AppTile';
@@ -21,9 +21,10 @@ interface Props {
   onArrange: () => void;
   onCloseAll: () => void;
   onChangeLayout: (next: UiLayout) => void;
+  onAppearance?: () => void;
 }
 
-export default function AppMenuPanel({ variant, groups, layout, hasWindows, layoutBusy, onPick, onClose, onArrange, onCloseAll, onChangeLayout }: Props) {
+export default function AppMenuPanel({ variant, groups, layout, hasWindows, layoutBusy, onPick, onClose, onArrange, onCloseAll, onChangeLayout, onAppearance }: Props) {
   const [q, setQ] = useState('');
   const [showLayouts, setShowLayouts] = useState(false);
   useEscapeLayer(onClose);
@@ -62,6 +63,7 @@ export default function AppMenuPanel({ variant, groups, layout, hasWindows, layo
           {showLayouts && <LayoutPicker compact value={layout} disabled={layoutBusy} onChange={onChangeLayout} />}
           <div className="row">
             <button type="button" aria-label="Ganti tampilan" title="Ganti tampilan" aria-expanded={showLayouts} onClick={() => setShowLayouts(s => !s)}><Monitor size={16} /></button>
+            {onAppearance && <button type="button" aria-label="Personalisasi" title="Personalisasi" onClick={() => { onClose(); onAppearance(); }}><Palette size={16} /></button>}
             <button type="button" aria-label="Susun ulang jendela" title="Susun ulang jendela" disabled={!hasWindows} onClick={() => { onArrange(); onClose(); }}><Layers size={16} /></button>
             <button type="button" aria-label="Tutup semua" title="Tutup semua" disabled={!hasWindows} onClick={() => { onCloseAll(); onClose(); }}><X size={16} /></button>
           </div>

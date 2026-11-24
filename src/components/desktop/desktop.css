@@ -6,19 +6,19 @@
  * itu membuat position:fixed (modal) berpatokan ke leluhur itu, bukan ke layar.
  */
 .dsk-root {
-  --dsk-top: 0px; --dsk-bot: 48px;
+  --dsk-top: 0px; --dsk-bot: 48px; --dsk-density: 1;
   position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 40; overflow: hidden; isolation: isolate;
   color: var(--text-primary); font-size: 13px; line-height: 1.45;
 }
 .dsk-root[data-skin="mac"] { --dsk-top: 28px; --dsk-bot: 66px; }
-.dsk-root[data-skin="windows"] { background:
+.dsk-root[data-skin="windows"] { background: var(--dsk-wallpaper,
     radial-gradient(900px 500px at 78% 8%, rgba(240,138,60,.38), transparent 60%),
     radial-gradient(700px 480px at 6% 96%, rgba(212,105,30,.28), transparent 62%),
-    linear-gradient(160deg, #3A1F10 0%, #24120A 55%, #1A0D06 100%); }
-.dsk-root[data-skin="mac"] { background:
+    linear-gradient(160deg, #3A1F10 0%, #24120A 55%, #1A0D06 100%)); }
+.dsk-root[data-skin="mac"] { background: var(--dsk-wallpaper,
     radial-gradient(800px 520px at 20% 12%, rgba(255,196,140,.75), transparent 62%),
     radial-gradient(900px 560px at 88% 78%, rgba(122,52,22,.85), transparent 64%),
-    linear-gradient(170deg, #F2A86A 0%, #D4691E 42%, #5B2A12 100%); }
+    linear-gradient(170deg, #F2A86A 0%, #D4691E 42%, #5B2A12 100%)); }
 .dsk-root :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dsk-root button { font: inherit; cursor: pointer; }
 
@@ -58,11 +58,19 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-tb[data-dragging="true"] { cursor: grabbing; }
 .dsk-tb .dsk-tile { width: 20px; height: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 1px 3px rgba(0,0,0,.25); }
 .dsk-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dsk-tbslot { display: flex; align-items: center; gap: 6px; cursor: default; }
+.dsk-tbslot { display: flex; align-items: center; gap: 0px; cursor: default; }
 /* tombol aksi TopbarPortal di titlebar (Refresh dll.) FLAT: hanya ikon/teks, tanpa border/latar; highlight halus saat hover; fokus lewat .dsk-root :focus-visible.
    Hanya .btn-ghost di slot titlebar jendela; tombol sama di Klasik (#topbar-slot) dan di isi jendela tidak tersentuh. Tombol –/▢/✕ (.dsk-wb) dan bulatan Mac tidak ikut. */
 .dsk-tbslot .btn-ghost { background: transparent; border: 0; box-shadow: none; }
-.dsk-tbslot .btn-ghost:hover:not(:disabled) { background: var(--border); }
+.dsk-tbslot .btn-ghost:hover:not(:disabled) { background: var(--border); color: var(--text-primary); }
+/* Seragam dengan tombol kontrol jendela (.dsk-wb): kotak 30x26, radius 7, ikon 14px stroke 2, warna --text-muted, hover sama.
+   Tombol ikon-saja (Refresh dll.) mengikuti persis; tombol bertulisan dipertahankan berbentuk teks tetapi setinggi 26px. */
+.dsk-tbslot .btn-ghost { height: 26px; min-width: 0; padding: 0 8px; border-radius: 7px; color: var(--text-muted); font-size: 12px; gap: 5px; }
+.dsk-tbslot .btn-ghost.w-9, .dsk-tbslot .btn-ghost:has(> svg:only-child) { width: 30px; padding: 0; justify-content: center; }
+.dsk-tbslot .btn-ghost svg { stroke-width: 2; }
+.dsk-tbslot .btn-ghost.w-9 svg, .dsk-tbslot .btn-ghost:has(> svg:only-child) svg { width: 14px; height: 14px; }
+/* tanpa celah ekstra antara slot dan tombol kontrol sisi kanan (Windows); slot kosong tidak memengaruhi apa pun */
+.dsk-root[data-skin="windows"] .dsk-tbslot { margin-right: -8px; }
 .dsk-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .dsk-body > * { flex-shrink: 0; }
 .dsk-tl { display: none; gap: 8px; align-items: center; }
@@ -183,3 +191,17 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-chat-btn:hover, .dsk-chat-btn[aria-expanded="true"] { background: rgba(255,255,255,.12); }
 /* tombol tray/menu bar FLAT: hanya ikon (tanpa kotak/border); highlight halus saat hover; fokus keyboard tetap lewat :focus-visible */
 .dsk-tray button[title="Notifikasi"]:hover { background: rgba(255,255,255,.12) !important; }
+
+/* ── Pengaturan tampilan Desktop (warna dasar, latar, kerapatan, ukuran teks). SEMUA di bawah .dsk-root: tidak bocor ke Klasik. ──
+   Warna dasar dan latar dipasang sebagai variabel inline pada .dsk-root (--accent*, --dsk-wallpaper) oleh appearance-style.ts. */
+.dsk-root[data-density="compact"] { --dsk-density: .82; }
+.dsk-root[data-density="relaxed"] { --dsk-density: 1.22; }
+.dsk-root .dsk-icons { grid-template-rows: repeat(auto-fill, max(90px, calc(90px * var(--dsk-density)))); gap: calc(4px * var(--dsk-density)) 2px; }
+.dsk-root .dsk-ico { height: max(88px, calc(88px * var(--dsk-density))); }   /* 'rapat' tidak memendekkan sel: label dua baris tidak menimpa ikon di bawahnya */
+.dsk-root .dsk-mitems { gap: calc(6px * var(--dsk-density)); }
+.dsk-root .dsk-mi { padding: calc(8px * var(--dsk-density)) 9px; }
+.dsk-root .dsk-mgrp { margin-bottom: calc((var(--dsk-density) - 1) * 12px); }
+.dsk-root .dsk-body { padding: max(0px, calc((var(--dsk-density) - 1) * 24px)); }
+/* Ukuran teks: skala rem seluruh UI selama desktop tampil (isi jendela, dialog, menu). Tinggi titlebar/taskbar/dock berbasis px, tidak ikut. */
+html:has(.dsk-root[data-text="small"]) { font-size: 93.75%; }
+html:has(.dsk-root[data-text="large"]) { font-size: 109.375%; }

@@ -133,7 +133,7 @@ describe('tombol tray/menu bar flat', () => {
 describe('tombol aksi titlebar jendela flat (Refresh)', () => {
   it('.btn-ghost di slot titlebar tanpa border/latar, hover halus, dan tidak menyentuh tombol jendela', () => {
     expect(css).toMatch(/\.dsk-tbslot \.btn-ghost \{ background: transparent; border: 0; box-shadow: none; \}/);
-    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--border\); \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--border\);/);
     // semua selector flat berada di bawah .dsk-tbslot (Klasik #topbar-slot dan isi jendela tidak ikut)
     for (const line of css.split('\n')) if (/\.btn-ghost/.test(line) && /\{/.test(line)) expect(line.trimStart().startsWith('.dsk-tbslot')).toBe(true);
     expect(css).not.toMatch(/\.dsk-wb[^{]*\{[^}]*transparent !important/);
@@ -156,5 +156,80 @@ describe('panel semua menu dan jarak tray', () => {
     expect(px(rule('.dsk-tray'), 'gap')).toBeLessThanOrEqual(2);
     expect(px(rule('.dsk-mbar .dsk-tray'), 'gap')).toBeLessThanOrEqual(2);
     expect(rule('.dsk-chat-slot')).toMatch(/margin:\s*0/);
+  });
+});
+
+describe('pengaturan tampilan Desktop: tidak bocor ke Klasik', () => {
+  it('semua selector data-density / data-text / --dsk-wallpaper berada di bawah .dsk-root (atau html:has(.dsk-root...)); tidak ada selector global', () => {
+    const lines = css.split('\n').filter(l => /data-density|data-text|data-accent|--dsk-wallpaper|--dsk-density/.test(l) && /\{/.test(l));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(/^\s*(\.dsk-root|html:has\(\.dsk-root)/.test(l), l).toBe(true);
+  });
+  it('latar default tetap gradasi bawaan (fallback var) agar "gradient" identik dengan tampilan sekarang', () => {
+    expect(css).toMatch(/\.dsk-root\[data-skin="windows"\] \{ background: var\(--dsk-wallpaper,\s*radial-gradient\(900px 500px/);
+    expect(css).toMatch(/\.dsk-root\[data-skin="mac"\] \{ background: var\(--dsk-wallpaper,\s*radial-gradient\(800px 520px/);
+  });
+  it('ukuran dock/taskbar/inset tidak diubah oleh kerapatan atau ukuran teks (tetap px, tidak memakai --dsk-density)', () => {
+    for (const sel of ['.dsk-dock', '.dsk-dk', '.dsk-task', '.dsk-mbar']) expect(rule(sel)).not.toMatch(/--dsk-density/);
+  });
+  const block = css.slice(css.indexOf('/* ── Pengaturan tampilan Desktop'));
+  const selectors = Array.from(block.matchAll(/^([^\s/*}][^{\n]*?)\s*\{/gm)).map(m => m[1]);
+
+  it('SEMUA aturan di blok pengaturan tampilan terikat .dsk-root (tanpa pengecualian kata kunci), dan html:has hanya mengatur font-size', () => {
+    expect(selectors.length).toBeGreaterThan(5);
+    for (const sel of selectors) expect(/^(\.dsk-root[\s[]|html:has\(\.dsk-root\[data-text="(small|large)"\]\)$)/.test(sel), sel).toBe(true);
+    for (const m of block.matchAll(/^html:has\([^)]*\)\) ?\{([^}]*)\}|^html:has\([^{]*\{([^}]*)\}/gm)) {
+      const decls = (m[1] ?? m[2]).split(';').map(d => d.trim()).filter(Boolean);
+      for (const d of decls) expect(d, 'html:has hanya boleh mengubah font-size').toMatch(/^font-size:\s*[\d.]+(px|%)$/);
+    }
+  });
+  it('nilai standar tidak punya aturan sendiri (data-text="standard" dan data-density="standard" tidak ditulis di CSS)', () => {
+    expect(css).not.toMatch(/data-text="standard"/);
+    expect(css).not.toMatch(/data-density="standard"/);
+  });
+  it('kerapatan standar (--dsk-density: 1) menghasilkan angka yang sama dengan aturan asli ikon desktop dan item menu', () => {
+    const factor = (decl: string, prop: string) => Number(new RegExp(`${prop}:[^;]*?(\\d+(?:\\.\\d+)?)px \\* var\\(--dsk-density\\)`).exec(decl)?.[1]);
+    const ovr = (sel: string) => { const i = block.indexOf(sel + ' {'); expect(i, sel).toBeGreaterThan(-1); return block.slice(i, block.indexOf('}', i)); };
+    expect(factor(ovr('.dsk-root .dsk-icons'), 'grid-template-rows')).toBe(Number(/grid-template-rows: repeat\(auto-fill, (\d+)px\)/.exec(rule('.dsk-icons'))![1]));
+    expect(factor(ovr('.dsk-root .dsk-icons'), 'gap')).toBe(Number(/gap: (\d+)px/.exec(rule('.dsk-icons'))![1]));
+    expect(factor(ovr('.dsk-root .dsk-ico'), 'height')).toBe(px(rule('.dsk-ico'), 'height'));
+    expect(factor(ovr('.dsk-root .dsk-mitems'), 'gap')).toBe(px(rule('.dsk-mitems'), 'gap'));
+    expect(factor(ovr('.dsk-root .dsk-mi'), 'padding')).toBe(Number(/padding: (\d+)px/.exec(rule('.dsk-mi'))![1]));
+    // padding badan jendela asli 0 (tidak ada deklarasi), dan rumusnya bernilai 0 pada densitas 1
+    expect(rule('.dsk-body')).not.toMatch(/padding/);
+    expect(ovr('.dsk-root .dsk-body')).toMatch(/max\(0px, calc\(\(var\(--dsk-density\) - 1\) \* 24px\)\)/);
+    expect(rule('.dsk-root')).toMatch(/--dsk-density: 1;/);
+  });
+});
+
+describe('tombol aksi titlebar seragam dengan tombol kontrol jendela', () => {
+  it('ikon-saja berukuran sama dengan .dsk-wb (30x26, radius 7), warna dan hover sama, ikon 14px stroke 2', () => {
+    const wb = rule('.dsk-wb');
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost\.w-9, \.dsk-tbslot \.btn-ghost:has\(> svg:only-child\) \{ width: 30px;/);
+    expect(px(wb, 'width')).toBe(30);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost \{ height: 26px;[^}]*border-radius: 7px; color: var\(--text-muted\)/);
+    expect(px(wb, 'height')).toBe(26);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--border\); color: var\(--text-primary\); \}/);
+    expect(css).toMatch(/\.dsk-wb:hover \{ background: var\(--border\); color: var\(--text-primary\); \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost svg \{ stroke-width: 2; \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:has\(> svg:only-child\) svg \{ width: 14px; height: 14px; \}/);
+  });
+  it('tanpa celah antara slot dan kontrol: gap slot 0 dan margin negatif sebesar gap titlebar di Windows', () => {
+    expect(px(rule('.dsk-tbslot'), 'gap')).toBe(0);
+    expect(css).toMatch(/\.dsk-root\[data-skin="windows"\] \.dsk-tbslot \{ margin-right: -8px; \}/);
+    expect(px(rule('.dsk-tb'), 'gap')).toBe(8);
+  });
+});
+
+describe('kerapatan dan ukuran teks (perbaikan review)', () => {
+  it("'rapat' tidak memendekkan sel ikon meja di bawah isi (min 88px, baris min 90px); 'standard' tetap 88/90", () => {
+    expect(css).toMatch(/\.dsk-root \.dsk-ico \{ height: max\(88px, calc\(88px \* var\(--dsk-density\)\)\);/);
+    expect(css).toMatch(/grid-template-rows: repeat\(auto-fill, max\(90px, calc\(90px \* var\(--dsk-density\)\)\)\)/);
+    const compact = Number(/data-density="compact"\] \{ --dsk-density: ([\d.]+)/.exec(css)![1]);
+    expect(Math.max(88, 88 * compact)).toBe(88);   // rapat >= tinggi isi (ikon 46 + label dua baris + padding)
+  });
+  it('ukuran teks memakai persentase terhadap ukuran dasar browser (bukan px mutlak)', () => {
+    expect(css).toMatch(/html:has\(\.dsk-root\[data-text="small"\]\) \{ font-size: 93\.75%; \}/);
+    expect(css).toMatch(/html:has\(\.dsk-root\[data-text="large"\]\) \{ font-size: 109\.375%; \}/);
   });
 });

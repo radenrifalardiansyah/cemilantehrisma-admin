@@ -1,4 +1,6 @@
 import type { CSSProperties } from 'react';
+import type { Appearance } from '@/lib/appearance';
+import { appearanceStyle } from '@/lib/appearance-style';
 
 const WALLPAPER: Record<'windows' | 'mac', string> = {
   windows: 'radial-gradient(900px 500px at 78% 8%, rgba(240,138,60,.38), transparent 60%), radial-gradient(700px 480px at 6% 96%, rgba(212,105,30,.28), transparent 62%), linear-gradient(160deg, #3A1F10 0%, #24120A 55%, #1A0D06 100%)',
@@ -8,11 +10,11 @@ const WALLPAPER: Record<'windows' | 'mac', string> = {
 // Kerangka memuat bertema Desktop: wallpaper skin + taskbar/menu bar + dock kosong + spinner kecil. Gaya inline karena
 // desktop.css baru dimuat bersama DesktopShell, sedangkan komponen ini tampil SEBELUM itu. Dipakai saat sesi dipulihkan
 // dan sebagai fallback pemuatan DesktopShell, supaya tidak ada kilatan tampilan Klasik.
-export default function DesktopBoot({ skin }: { skin: 'windows' | 'mac' }) {
+export default function DesktopBoot({ skin, appearance }: { skin: 'windows' | 'mac'; appearance?: Appearance | null }) {
   const bar: CSSProperties = { position: 'absolute', left: 0, right: 0, background: skin === 'windows' ? 'rgba(20,9,3,.96)' : 'rgba(26,12,5,.82)' };
   return (
     <div role="status" aria-live="polite" aria-label="Memuat dashboard"
-      style={{ position: 'fixed', inset: 0, zIndex: 40, background: WALLPAPER[skin], display: 'grid', placeItems: 'center' }}>
+      style={{ ...(appearance ? appearanceStyle(appearance) : {}), position: 'fixed', inset: 0, zIndex: 40, background: `var(--dsk-wallpaper, ${WALLPAPER[skin]})`, display: 'grid', placeItems: 'center' } as CSSProperties}>
       {skin === 'windows'
         ? <div style={{ ...bar, bottom: 0, height: 48, borderTop: '1px solid rgba(255,255,255,.1)' }} />
         : (<>
