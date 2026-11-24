@@ -129,7 +129,7 @@ describe('pemetaan WINDOW_TABS tahap 5 (Supplier / pengadaan)', () => {
       expect(isWindowTab(t)).toBe(true);
       expect(isShortcutTab(t)).toBe(false);
     }
-    for (const t of ['roles', 'admin-fee']) expect(isWindowTab(t)).toBe(false);
+    for (const t of ['roles']) expect(isWindowTab(t)).toBe(false);
     expect(isDesktopShown('windows', true, 'materials')).toBe(true);
   });
 });
@@ -140,7 +140,7 @@ describe('pemetaan WINDOW_TABS tahap 6 (Gudang, Produksi, Laporan)', () => {
       expect(isWindowTab(t), t).toBe(true);
       expect(isShortcutTab(t), t).toBe(false);
     }
-    for (const t of ['consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'roles', 'modules', 'menus', 'role-permissions', 'admin-fee', 'tagihan-admin-fee']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'roles', 'modules', 'menus', 'role-permissions']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -148,7 +148,7 @@ describe('pemetaan WINDOW_TABS tahap 7 (Pengaturan)', () => {
   it('settings berjendela dan bukan pintasan; Kategori/Reseller/Pelanggan/Ulasan dan administrasi tetap non-jendela', () => {
     expect(isWindowTab('settings')).toBe(true);
     expect(isShortcutTab('settings')).toBe(false);
-    for (const t of ['storefront-customers', 'reviews', 'roles', 'modules', 'menus', 'role-permissions', 'admin-fee']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'modules', 'menus', 'role-permissions']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -156,7 +156,7 @@ describe('pemetaan WINDOW_TABS tahap 8 (Pengguna)', () => {
   it('users berjendela dan bukan pintasan; roles/role-permissions/modules/menus (struktur akses dan navigasi) tetap non-jendela', () => {
     expect(isWindowTab('users')).toBe(true);
     expect(isShortcutTab('users')).toBe(false);
-    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'admin-fee', 'tagihan-admin-fee', 'consign']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -164,7 +164,7 @@ describe('pemetaan WINDOW_TABS tahap 9 (Riwayat)', () => {
   it('history berjendela dan bukan pintasan; Notifikasi, Admin Fee, Role/Izin/Modul/Menu, Titip Jual tetap non-jendela', () => {
     expect(isWindowTab('history')).toBe(true);
     expect(isShortcutTab('history')).toBe(false);
-    for (const t of ['admin-fee', 'tagihan-admin-fee', 'roles', 'role-permissions', 'modules', 'menus', 'consign', 'storefront-customers', 'reviews']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -172,7 +172,7 @@ describe('pemetaan WINDOW_TABS tahap 10 (Notifikasi)', () => {
   it('notifications berjendela dan bukan pintasan; Admin Fee, Role/Izin/Modul/Menu, Titip Jual tetap non-jendela', () => {
     expect(isWindowTab('notifications')).toBe(true);
     expect(isShortcutTab('notifications')).toBe(false);
-    for (const t of ['admin-fee', 'tagihan-admin-fee', 'roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -180,7 +180,7 @@ describe('pemetaan WINDOW_TABS tahap 11 (Kategori)', () => {
   it('categories berjendela dan bukan pintasan; Reseller/Pelanggan/Ulasan, Admin Fee, Role/Izin/Modul/Menu, Titip Jual tetap non-jendela', () => {
     expect(isWindowTab('categories')).toBe(true);
     expect(isShortcutTab('categories')).toBe(false);
-    for (const t of ['storefront-customers', 'reviews', 'admin-fee', 'roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -188,7 +188,7 @@ describe('pemetaan WINDOW_TABS tahap 13 (Reseller)', () => {
   it('resellers berjendela dan bukan pintasan; Pelanggan, Pelanggan Storefront, Ulasan, Admin Fee, Role/Izin/Modul/Menu, Titip Jual tetap non-jendela', () => {
     expect(isWindowTab('resellers')).toBe(true);
     expect(isShortcutTab('resellers')).toBe(false);
-    for (const t of ['storefront-customers', 'reviews', 'admin-fee', 'roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -196,6 +196,16 @@ describe('pemetaan WINDOW_TABS tahap 14 (Pelanggan)', () => {
   it('customers berjendela dan bukan pintasan; Pelanggan Storefront, Ulasan, Admin Fee, Role/Izin/Modul/Menu, Titip Jual tetap non-jendela', () => {
     expect(isWindowTab('customers')).toBe(true);
     expect(isShortcutTab('customers')).toBe(false);
-    for (const t of ['storefront-customers', 'reviews', 'admin-fee', 'roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign']) expect(isWindowTab(t), t).toBe(false);
+  });
+});
+
+describe('pemetaan WINDOW_TABS tahap 16 (Storefront, Ulasan, Biaya Admin)', () => {
+  it('berjendela dan bukan pintasan; Role/Izin/Modul/Menu dan Titip Jual/Lapak tetap non-jendela', () => {
+    for (const t of ['storefront-customers', 'reviews', 'admin-fee', 'tagihan-admin-fee']) {
+      expect(isWindowTab(t), t).toBe(true);
+      expect(isShortcutTab(t), t).toBe(false);
+    }
+    for (const t of ['roles', 'role-permissions', 'modules', 'menus', 'consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report']) expect(isWindowTab(t), t).toBe(false);
   });
 });

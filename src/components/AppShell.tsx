@@ -297,7 +297,7 @@ export default function AppShell({
       })),
     })),
     ...(PINNED_TAB ? [{ id: '__pinned', label: SUPER_ADMIN_TAB ? 'Super Admin' : 'Tagihan', items: [{
-      tab: PINNED_TAB.id, label: PINNED_TAB.label, Icon: PINNED_TAB.Icon, color: PINNED_COLOR, windowed: false, badge: 0,
+      tab: PINNED_TAB.id, label: PINNED_TAB.label, Icon: PINNED_TAB.Icon, color: PINNED_COLOR, windowed: isWindowTab(PINNED_TAB.id), badge: 0,
     }] }] : []),
   ].filter(g => g.items.length > 0) : [];
 
