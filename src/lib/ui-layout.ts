@@ -19,8 +19,11 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // Tahap 5: alur pengadaan yang berdiri sendiri sebagai menu: 'suppliers', 'materials' (Bahan Baku; Hutang dll. sub-tab di dalamnya),
 // 'purchase-orders' dan 'goods-receipts' (PurchaseFlowTab, dua jendela terpisah). Laporan ('po-report', 'gr-report', 'opname-report', 'stock-report'),
 // Gudang ('stock') dan Produksi belum berjendela.
+// Tahap 6: Gudang ('stock'), Produksi ('production') dan laporan murni yang berdiri sendiri: 'product-report', 'capital', 'po-report',
+// 'gr-report', 'opname-report', 'stock-report', 'stall-report'. 'stall-sales-report' (keluarga Lapak/Kasir Lapak) tetap non-jendela.
 // Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
-export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts'] as const;
+export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
+  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,

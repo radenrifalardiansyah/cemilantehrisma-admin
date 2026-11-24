@@ -36,9 +36,9 @@ describe('isDesktopShown', () => {
   });
   it('hanya menu berjendela yang tampil sebagai desktop', () => {
     expect(isDesktopShown('mac', true, 'orders')).toBe(true);
-    expect(isDesktopShown('windows', true, 'stock')).toBe(false);
+    expect(isDesktopShown('windows', true, 'users')).toBe(false);
     expect(isWindowTab('pos')).toBe(true);
-    expect(isWindowTab('stock')).toBe(false);
+    expect(isWindowTab('users')).toBe(false);
   });
 });
 
@@ -75,7 +75,7 @@ describe('resolveLayout', () => {
 describe('pemetaan WINDOW_TABS tahap 3 (Mitra)', () => {
   it('keluarga Mitra yang berdiri sendiri berjendela; Titip Jual/Lapak belum', () => {
     for (const t of ['consignment', 'wa-forward', 'mitra-report', 'pos']) expect(isWindowTab(t)).toBe(true);
-    for (const t of ['consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-report', 'notifications']) expect(isWindowTab(t)).toBe(false);
+    for (const t of ['consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'notifications']) expect(isWindowTab(t)).toBe(false);
   });
   it('tautan notifikasi consignment_* ("consignment") membuka mode Desktop; tautan Titip Jual ("consign") memakai Klasik sementara', () => {
     expect(isDesktopShown('windows', true, 'consignment')).toBe(true);
@@ -92,7 +92,7 @@ describe('pemetaan WINDOW_TABS tahap 3 (Mitra)', () => {
 describe('pemetaan WINDOW_TABS tahap 4 (Laporan Keuangan)', () => {
   it('finance-report berjendela, laporan lain belum, dan bukan pintasan meja/dock', () => {
     expect(isWindowTab('finance-report')).toBe(true);
-    for (const t of ['product-report', 'capital', 'stall-report']) expect(isWindowTab(t)).toBe(false);
+    for (const t of ['users', 'settings']) expect(isWindowTab(t)).toBe(false);
     expect(isShortcutTab('finance-report')).toBe(false);
     expect(isDesktopShown('mac', true, 'finance-report')).toBe(true);
   });
@@ -124,12 +124,22 @@ describe('cache layout terakhir (tanpa username) dan skin splash', () => {
 });
 
 describe('pemetaan WINDOW_TABS tahap 5 (Supplier / pengadaan)', () => {
-  it('suppliers, materials, PO, GR berjendela; laporan pengadaan, gudang, produksi belum; tidak jadi pintasan', () => {
+  it('suppliers, materials, PO, GR berjendela; Pengaturan/Pengguna belum; tidak jadi pintasan', () => {
     for (const t of ['suppliers', 'materials', 'purchase-orders', 'goods-receipts']) {
       expect(isWindowTab(t)).toBe(true);
       expect(isShortcutTab(t)).toBe(false);
     }
-    for (const t of ['po-report', 'gr-report', 'opname-report', 'stock-report', 'stock', 'production']) expect(isWindowTab(t)).toBe(false);
+    for (const t of ['users', 'roles', 'history', 'admin-fee']) expect(isWindowTab(t)).toBe(false);
     expect(isDesktopShown('windows', true, 'materials')).toBe(true);
+  });
+});
+
+describe('pemetaan WINDOW_TABS tahap 6 (Gudang, Produksi, Laporan)', () => {
+  it('gudang, produksi, dan laporan murni berjendela dan bukan pintasan; Lapak/Pengaturan/Administrasi tetap non-jendela', () => {
+    for (const t of ['stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report']) {
+      expect(isWindowTab(t), t).toBe(true);
+      expect(isShortcutTab(t), t).toBe(false);
+    }
+    for (const t of ['consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'settings', 'users', 'roles', 'modules', 'menus', 'role-permissions', 'history', 'admin-fee', 'tagihan-admin-fee', 'notifications']) expect(isWindowTab(t), t).toBe(false);
   });
 });

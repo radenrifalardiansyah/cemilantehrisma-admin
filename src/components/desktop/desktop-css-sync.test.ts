@@ -65,17 +65,22 @@ describe('sinkron geometri dock Mac: reducer, CSS, skeleton boot', () => {
     expect(fabTop).toBeLessThanOrEqual(dockTop);
   });
 
-  it('dock Mac tidak menabrak FAB di 1024px walau semua menu berjendela terbuka sekaligus', () => {
+  it('dock Mac tidak menabrak FAB di 1024px walau semua menu berjendela terbuka sekaligus (ikon menyusut, max-width menyisakan ruang FAB)', () => {
     const dock = rule('.dsk-dock');
-    const icon = px(rule('.dsk-dk'), 'height');
+    const dk = rule('.dsk-dk');
     const gap = px(dock, 'gap');
     const pad = Number(/padding:\s*(\d+)px/.exec(dock)![1]);
-    // launchpad + pemisah + semua tab berjendela (pintasan dan yang dibuka)
-    const n = 1 + WINDOW_TABS.length;
-    const width = n * icon + (n + 1) * gap + 5 /* pemisah 1px + margin 2px*2 */ + 2 * pad + 2;
+    const reserve = Number(/max-width:\s*calc\(100% - (\d+)px\)/.exec(dock)![1]);
     const fab = /\.chat-fab \{ bottom: \d+px; right: (\d+)px; \}/.exec(css.slice(css.indexOf('data-skin="mac"]) .chat-fab')));
     const fabLeft = 1024 - Number(fab![1]) - 44;
-    expect((1024 + width) / 2).toBeLessThanOrEqual(fabLeft);
+    // tepi kanan dock (terpusat, selebar max-width) tidak melewati tepi kiri FAB
+    expect((1024 + (1024 - reserve)) / 2).toBeLessThanOrEqual(fabLeft);
+    // ikon boleh menyusut (flex-shrink 1) sampai min-width, dan lebar minimum semua ikon muat dalam max-width
+    expect(dk).toMatch(/flex-shrink:\s*1/);
+    const minIcon = px(dk, 'min-width');
+    const n = 1 + WINDOW_TABS.length;
+    const minWidth = n * minIcon + (n + 1) * gap + 5 + 2 * pad + 2;
+    expect(minWidth).toBeLessThanOrEqual(1024 - reserve);
   });
 
   it('jendela terbesar (ukuran awal tiap tab) di layar 1024x768 Mac tetap di atas dock dan di bawah menu bar', () => {

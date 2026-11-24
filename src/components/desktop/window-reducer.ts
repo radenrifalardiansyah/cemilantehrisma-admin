@@ -63,10 +63,21 @@ export const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   materials: { w: 980, h: 620 },
   'purchase-orders': { w: 980, h: 620 },
   'goods-receipts': { w: 980, h: 620 },
+  stock: { w: 980, h: 620 },
+  production: { w: 980, h: 620 },
+  'product-report': { w: 980, h: 620 },
+  capital: { w: 900, h: 580 },
+  'po-report': { w: 980, h: 620 },
+  'gr-report': { w: 980, h: 620 },
+  'opname-report': { w: 980, h: 620 },
+  'stock-report': { w: 980, h: 620 },
+  'stall-report': { w: 980, h: 620 },
 };
 // Ukuran minimum per tab. Kasir memakai breakpoint viewport (grid katalog + panel 400px), jadi jendela yang terlalu
 // sempit membuat katalog hilang.
-export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 }, consignment: { w: 720, h: 420 }, 'mitra-report': { w: 640, h: 380 }, 'finance-report': { w: 720, h: 420 }, suppliers: { w: 640, h: 380 }, materials: { w: 720, h: 420 }, 'purchase-orders': { w: 720, h: 420 }, 'goods-receipts': { w: 720, h: 420 } };
+export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 }, consignment: { w: 720, h: 420 }, 'mitra-report': { w: 640, h: 380 }, 'finance-report': { w: 720, h: 420 }, suppliers: { w: 640, h: 380 }, materials: { w: 720, h: 420 }, 'purchase-orders': { w: 720, h: 420 }, 'goods-receipts': { w: 720, h: 420 },
+  stock: { w: 720, h: 420 }, production: { w: 720, h: 420 }, 'product-report': { w: 720, h: 420 }, capital: { w: 640, h: 380 },
+  'po-report': { w: 720, h: 420 }, 'gr-report': { w: 720, h: 420 }, 'opname-report': { w: 720, h: 420 }, 'stock-report': { w: 720, h: 420 }, 'stall-report': { w: 720, h: 420 } };
 export const minSizeFor = (tabId: string) => MIN_SIZES[tabId] ?? { w: MIN_W, h: MIN_H };
 const FALLBACK_SIZE = { w: 860, h: 540 };
 
