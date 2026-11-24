@@ -21,9 +21,11 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // Gudang ('stock') dan Produksi belum berjendela.
 // Tahap 6: Gudang ('stock'), Produksi ('production') dan laporan murni yang berdiri sendiri: 'product-report', 'capital', 'po-report',
 // 'gr-report', 'opname-report', 'stock-report', 'stall-report'. 'stall-sales-report' (keluarga Lapak/Kasir Lapak) tetap non-jendela.
+// Tahap 7: 'settings' (Pengaturan; info toko, bank, voucher, dst. adalah sub-tab DI DALAM SettingsTab). Kategori/Reseller/Pelanggan/Ulasan
+// bukan bagian Pengaturan dan tetap non-jendela.
 // Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
 export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
-  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report'] as const;
+  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,
