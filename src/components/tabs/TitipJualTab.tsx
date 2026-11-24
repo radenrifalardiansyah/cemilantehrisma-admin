@@ -53,8 +53,8 @@ async function fetchAll(creds: string): Promise<TitipJualData> {
   return { stalls: s.stalls, consignors: c.consignors, products: p.products, stallItems: p.stallItems, warehouses: w.warehouses, banks: b.banks, staff: u.users, categories: cat.categories };
 }
 
-export default function TitipJualTab({ creds, can, mode, journalStallId = '', onOpenJournal }: {
-  creds: string; can: (a: Action) => boolean; mode: TitipJualMode; journalStallId?: string; onOpenJournal?: (stallId: string) => void;
+export default function TitipJualTab({ creds, can, mode, journalStallId = '', journalSeq = 0, onOpenJournal }: {
+  creds: string; can: (a: Action) => boolean; mode: TitipJualMode; journalStallId?: string; journalSeq?: number; onOpenJournal?: (stallId: string) => void;
 }) {
   const [sub, setSub] = useState<SubTab>('products');
   const [data, setData] = useState<TitipJualData | null>(null);
@@ -110,7 +110,7 @@ export default function TitipJualTab({ creds, can, mode, journalStallId = '', on
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         <div className="p-4 lg:p-6 animate-fade-up">
           {mode === 'opname' && <AdjustmentsSection {...props} />}
-          {mode === 'journal' && <WalletOverview key={journalStallId} {...props} />}
+          {mode === 'journal' && <WalletOverview key={`${journalStallId}:${journalSeq}`} {...props} />}
           {mode === 'main' && sub === 'products' && <ProductsSection {...props} />}
           {mode === 'main' && sub === 'consignors' && <ConsignorsSection {...props} />}
           {mode === 'main' && sub === 'stalls' && <StallsSection {...props} />}

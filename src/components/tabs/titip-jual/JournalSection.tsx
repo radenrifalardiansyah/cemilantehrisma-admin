@@ -12,6 +12,7 @@ import { WALLET_CATEGORIES, WALLET_CATEGORY_LABEL, WALLET_KIND_LABEL } from '@/l
 import PeriodBar from './PeriodBar';
 import DataList, { type ExportCol } from './DataList';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, type SectionProps } from './shared';
+import { useOnDataRevision } from '@/lib/data-sync';
 
 interface Entry {
   id: string; stallId: string; stallName: string; kind: string; amount: number; note: string; category: string;
@@ -46,6 +47,12 @@ export default function JournalSection({ creds, data, reload, can, journalStallI
     fetchJournal(creds, from, to, stallFilter).then(d => { if (alive) setJournal(d); });
     return () => { alive = false; };
   }, [creds, from, to, stallFilter]);
+  // Mode jendela: data lapak berubah di jendela lain (mis. bayar rekap, setoran) -> baris dan ringkasan jurnal ikut menyegar. Senyap: bila
+  // server gagal sesaat tampilan lama dipertahankan (bukan spinner), dan state form setor/tarik tidak tersentuh. Bump dari mode journal
+  // sendiri dilewati (penulis sudah memuat ulang lewat onDone).
+  useOnDataRevision('consign', () => {
+    void fetchJournal(creds, from, to, stallFilter).then(d => { if (d) setJournal(d); }).catch(() => {});
+  }, 'titip-jual-tab:journal');
 
   if (journal === null) return <PageLoader />;
 

@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, useEffect, type ReactNode } from 'react';
+import { act, useEffect, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { DataSyncProvider, useBumpData, useDataRevision } from '@/lib/data-sync';
 
 // Seksi anak diganti tiruan: tombol "tulis" memanggil props.reload (titik pusat pasca-penulisan), "kategori" menampilkan data.categories.
 vi.mock('./titip-jual/ProductsSection', () => ({
-  default: (p: { reload: () => Promise<void>; data: { categories: { id: string }[] } }) => (
-    <div><button id="write" onClick={() => { void p.reload(); }}>tulis</button><span id="cats">{p.data.categories.map(c => c.id).join(',')}</span></div>
+  default: (p: { reload: () => Promise<void>; openJournal?: (id: string) => void; data: { categories: { id: string }[] } }) => (
+    <div>
+      <button id="write" onClick={() => { void p.reload(); }}>tulis</button>
+      <button id="open-journal" onClick={() => p.openJournal?.('s2')}>buka jurnal</button>
+      <span id="cats">{p.data.categories.map(c => c.id).join(',')}</span>
+    </div>
   ),
 }));
 vi.mock('./titip-jual/ConsignorsSection', () => ({ default: () => null }));
@@ -18,7 +22,22 @@ vi.mock('./titip-jual/SettlementsSection', () => ({ default: () => null }));
 vi.mock('./titip-jual/AdjustmentsSection', () => ({
   default: (p: { reload: () => Promise<void> }) => <button id="write-opname" onClick={() => { void p.reload(); }}>tulis opname</button>,
 }));
-vi.mock('./titip-jual/WalletOverview', () => ({ default: () => null }));
+// Meniru WalletOverview: lapak terpilih diinisialisasi dari journalStallId saat mount (dan diganti lokal oleh pengguna).
+vi.mock('./titip-jual/WalletOverview', async () => {
+  const { useState } = await import('react');
+  return {
+    default: function WalletOverviewMock(p: { journalStallId?: string; reload: () => Promise<void> }) {
+      const [sel, setSel] = useState(p.journalStallId ?? '');
+      return (
+        <div>
+          <span id="journal-sel">{sel || '(ringkasan)'}</span>
+          <button id="journal-clear" onClick={() => setSel('')}>semua</button>
+          <button id="write-journal" onClick={() => { void p.reload(); }}>setor</button>
+        </div>
+      );
+    },
+  };
+});
 
 import TitipJualTab from './TitipJualTab';
 
@@ -114,5 +133,71 @@ describe('dua jendela TitipJualTab (main dan opname) ter-mount bersamaan', () =>
     await settle();
     expect(calls['/api/stalls']).toBe(6);                       // stabil: tidak berulang
     expect(revSeen).toEqual([0, 1, 2]);                         // pembaca lain (Laporan/Analitik Lapak) naik satu kali per penulisan
+  });
+});
+
+describe('tiga jendela TitipJualTab (main, opname, journal) dan tombol "Buka jurnal"', () => {
+  beforeEach(() => { revSeen.length = 0; });
+  const three = (
+    <DataSyncProvider enabled>
+      <Reader />
+      <div id="main"><TitipJualTab creds="x" mode="main" can={() => true} /></div>
+      <div id="opname"><TitipJualTab creds="x" mode="opname" can={() => true} /></div>
+      <div id="journal"><TitipJualTab creds="x" mode="journal" can={() => true} /></div>
+    </DataSyncProvider>
+  );
+
+  it('setoran/penarikan dompet lapak (journal) menyegarkan main dan opname sekali; sebaliknya; tanpa badai/loop', async () => {
+    await render(three); await settle();
+    expect(calls['/api/stalls']).toBe(3);
+    await act(async () => { document.getElementById('write-journal')!.click(); });
+    await settle();
+    expect(calls['/api/stalls']).toBe(6);                       // journal reload sendiri + main + opname menyegar
+    await act(async () => { document.getElementById('write')!.click(); });   // pembayaran rekap di main -> jurnal ikut menyegar
+    await settle();
+    expect(calls['/api/stalls']).toBe(9);
+    await settle();
+    expect(calls['/api/stalls']).toBe(9);
+    expect(revSeen).toEqual([0, 1, 2]);
+  });
+
+  it('modenya tidak tertukar: journal hanya menampilkan dompet lapak', async () => {
+    await render(three); await settle();
+    expect(document.querySelector('#journal #journal-sel')).not.toBeNull();
+    expect(document.querySelector('#journal #write')).toBeNull();
+    expect(document.querySelector('#main #journal-sel')).toBeNull();
+    expect(document.querySelector('#opname #journal-sel')).toBeNull();
+  });
+
+  // Meniru page.tsx: onOpenJournal -> setJournalStallId + naikkan journalSeq (+ setActiveTab membuka jendela lewat navNonce).
+  function Page({ withJournal }: { withJournal: boolean }) {
+    const [stall, setStall] = useState('');
+    const [seq, setSeq] = useState(0);
+    return (
+      <DataSyncProvider enabled>
+        <div id="main"><TitipJualTab creds="x" mode="main" can={() => true} onOpenJournal={id => { setStall(id); setSeq(n => n + 1); }} /></div>
+        {withJournal && <div id="journal"><TitipJualTab creds="x" mode="journal" can={() => true} journalStallId={stall} journalSeq={seq} /></div>}
+      </DataSyncProvider>
+    );
+  }
+
+  it('Buka jurnal: jendela yang sudah terbuka menampilkan lapak terpilih; membuka lagi lapak yang sama setelah kembali ke ringkasan tetap memilihnya', async () => {
+    await render(<Page withJournal />); await settle();
+    expect(document.getElementById('journal-sel')!.textContent).toBe('(ringkasan)');
+    await act(async () => { document.getElementById('open-journal')!.click(); });
+    await settle();
+    expect(document.getElementById('journal-sel')!.textContent).toBe('s2');
+    await act(async () => { document.getElementById('journal-clear')!.click(); });
+    expect(document.getElementById('journal-sel')!.textContent).toBe('(ringkasan)');
+    await act(async () => { document.getElementById('open-journal')!.click(); });
+    await settle();
+    expect(document.getElementById('journal-sel')!.textContent).toBe('s2');
+  });
+
+  it('Buka jurnal sebelum jendela ada (mount belakangan): lapak terpilih terkonsumsi saat mount', async () => {
+    await render(<Page withJournal={false} />); await settle();
+    await act(async () => { document.getElementById('open-journal')!.click(); });
+    await render(<Page withJournal />); await settle();
+    expect(document.getElementById('journal-sel')!.textContent).toBe('s2');
   });
 });

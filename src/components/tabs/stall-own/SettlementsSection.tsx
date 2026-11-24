@@ -9,6 +9,7 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/Confirm';
 import { periodRange, type PeriodKey } from '@/lib/period';
+import { useBumpData } from '@/lib/data-sync';
 import DataList, { DetailPanel, type ExportCol } from '../titip-jual/DataList';
 import PeriodBar from '../titip-jual/PeriodBar';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, StatCard, rupiah, qtyText } from '../titip-jual/shared';
@@ -27,6 +28,7 @@ async function fetchSettlements(creds: string): Promise<Result> {
 export default function SettlementsSection({ creds, stalls, can }: OwnSectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
+  const bumpData = useBumpData();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
   const [result, setResult] = useState<Result | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
@@ -161,7 +163,12 @@ export default function SettlementsSection({ creds, stalls, can }: OwnSectionPro
       )}
       {paying && (
         <PayModal creds={creds} settlement={paying} onClose={() => setPaying(null)}
-          onPaid={async () => { const d = paying.docNumber; setPaying(null); await load(); toast.success(`${d} dibayar dan tercatat sebagai Pemasukan toko.`); }} />
+          onPaid={async () => { const d = paying.docNumber; setPaying(null);
+            // Bayar menggerakkan saldo dompet lapak (dibaca Titip Jual/Dompet Lapak/Analitik Lapak) dan membuat Pemasukan toko (Dompet): beri tahu jendela lain.
+            // Sebelum load() supaya tetap terkirim bila muat ulang gagal. Klasik no-op.
+            bumpData('consign', 'stall-own-tab'); bumpData('wallets', 'stall-own-tab');
+            toast.success(`${d} dibayar dan tercatat sebagai Pemasukan toko.`);
+            await load(); }} />
       )}
     </div>
   );
@@ -263,9 +270,10 @@ function PayModal({ creds, settlement, onClose, onPaid }: { creds: string; settl
     const r = await fetch(`${API}/api/stall-own/settlements/${settlement.id}/pay`, {
       method: 'POST', headers: { 'x-admin-auth': creds, 'Content-Type': 'application/json' }, body: JSON.stringify({ walletId }),
     });
-    if (r.ok) await onPaid();
-    else setError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membayar setoran.');
-    setSaving(false);
+    try {
+      if (r.ok) await onPaid();
+      else setError(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membayar setoran.');
+    } finally { setSaving(false); }
   };
 
   return (

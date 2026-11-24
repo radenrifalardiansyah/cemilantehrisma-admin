@@ -9,6 +9,7 @@ import { ExcelIcon, PdfIcon } from '@/components/FileTypeIcons';
 import { useToast } from '@/components/Toast';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { periodRange, type PeriodKey } from '@/lib/period';
+import { useDataRevision } from '@/lib/data-sync';
 import PeriodBar from './titip-jual/PeriodBar';
 import { exportExcel, exportPdf, type ExportCol } from './titip-jual/exporters';
 import { HEADER_BTN_H, Badge, rupiah, StatCard } from './titip-jual/shared';
@@ -45,12 +46,15 @@ export default function CashierSalesReportTab({ creds }: { creds: string }) {
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState('');
   const { from, to } = periodRange(period, customFrom, customTo);
+  // Mode jendela: Titip Jual mengubah data lapak -> muat ulang laporan satu kali per perubahan, tanpa spinner (0 di Klasik).
+  const consignRev = useDataRevision('consign');
 
   useEffect(() => {
     let alive = true;
-    fetchReport(creds, from, to, stallId).then(d => { if (alive) setReport(d); });
+    // Respons gagal (null) tidak menimpa laporan yang sudah tampil; muat awal yang gagal tetap null seperti semula.
+    fetchReport(creds, from, to, stallId).then(d => { if (alive) setReport(prev => d ?? prev); }).catch(() => {});
     return () => { alive = false; };
-  }, [creds, from, to, stallId]);
+  }, [creds, from, to, stallId, consignRev]);
 
   if (report === null) return <PageLoader />;
   const name = (u: string) => report.names[u] || u;

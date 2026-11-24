@@ -32,7 +32,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
-import { useBumpData } from '@/lib/data-sync';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 const INCOME_CATEGORIES = ['Penjualan Lain', 'Komisi', 'Refund/Retur Diterima', 'Bunga Bank', 'Klaim Asuransi', 'Lainnya'];
 
@@ -193,9 +193,9 @@ export default function IncomeTab({ creds }: { creds: string }) {
   // urutan request dikirim. Tanpa penjaga ini, respons periode LAMA yang kebetulan datang
   // belakangan bisa menimpa data periode BARU yang sudah lebih dulu tampil.
   const loadIdRef = useRef(0);
-  const load = async () => {
+  const load = async (silent = false) => {
     const myLoadId = ++loadIdRef.current;
-    setLoading(true);
+    if (!silent) setLoading(true);
     // from/to non-kosong juga otomatis bypass limit 50 default di /api/orders & /api/consignment/recap.
     const qs = `from=${from}&to=${to}`;
     const [iRes, oRes, rRes] = await Promise.all([
@@ -204,6 +204,8 @@ export default function IncomeTab({ creds }: { creds: string }) {
       fetch(`${API}/api/consignment/recap?${qs}`, { headers }),
     ]);
     if (myLoadId !== loadIdRef.current) return; // request lain (lebih baru) sudah menggantikan ini
+    // Muat ulang senyap (dipicu tab lain): bila ada endpoint gagal, pertahankan daftar yang sudah tampil.
+    if (silent && !(iRes.ok && oRes.ok && rRes.ok)) return;
     const manual: Income[] = iRes.ok ? (await iRes.json() as { income: Income[] }).income : [];
     const orders: OrderForIncome[] = oRes.ok ? (await oRes.json() as { orders: OrderForIncome[] }).orders : [];
     const recaps: RecapForIncome[] = rRes.ok ? (await rRes.json() as { recaps: RecapForIncome[] }).recaps : [];
@@ -243,6 +245,9 @@ export default function IncomeTab({ creds }: { creds: string }) {
   // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
   // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
   useEffect(() => { setSelected(new Set()); load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mode jendela: pembayaran/penerimaan di tab lain (mis. setoran lapak menulis pemasukan) mem-bump 'wallets' -> daftar pemasukan periode aktif
+  // dimuat ulang senyap (tanpa spinner penuh, filter/form tidak tersentuh). Bump milik IncomeTab sendiri dilewati.
+  useOnDataRevision('wallets', () => { load(true).catch(() => {}); }, 'income-tab');
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (i: Income) => {

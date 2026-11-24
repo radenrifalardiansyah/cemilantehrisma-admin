@@ -24,6 +24,9 @@ interface Props {
   children: ReactNode;
 }
 
+// Lebar jendela di bawah ini: tombol berikon di slot titlebar hanya menampilkan ikon (lihat desktop.css).
+export const NARROW_PX = 900;
+
 type Drag = { kind: 'move' | 'e' | 's' | 'se'; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number };
 
 // Bingkai jendela: titlebar (geser lewat pointer events, dobel-klik = maksimalkan), tombol per skin
@@ -74,7 +77,7 @@ export default function WindowFrame({ win, area, item, focused, zIndex, onFocus,
 
   return (
     <div ref={rootRef} className="dsk-win" role="group" aria-label={item.label} tabIndex={0} hidden={win.minimized}
-      data-focus={focused} data-max={win.maximized} style={style}
+      data-focus={focused} data-max={win.maximized} data-narrow={r.w < NARROW_PX} style={style}
       onPointerDownCapture={onFocus} onFocusCapture={onFocus}>
       <div className="dsk-tb" data-drag="move" data-dragging={dragging} {...dragProps}
         onDoubleClick={e => { if (!(e.target as HTMLElement).closest('[data-nodrag]')) onMaximize(); }}>

@@ -135,7 +135,7 @@ describe('tombol aksi titlebar jendela flat (Refresh)', () => {
     expect(css).toMatch(/\.dsk-tbslot \.btn-ghost \{ background: transparent; border: 0; box-shadow: none; \}/);
     expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--border\);/);
     // semua selector flat berada di bawah .dsk-tbslot (Klasik #topbar-slot dan isi jendela tidak ikut)
-    for (const line of css.split('\n')) if (/\.btn-ghost/.test(line) && /\{/.test(line)) expect(line.trimStart().startsWith('.dsk-tbslot')).toBe(true);
+    for (const line of css.split('\n')) if (/\.btn-ghost/.test(line) && /\{/.test(line)) expect(/^\s*(\.dsk-tbslot|\.dsk-win\[data-narrow="true"\] \.dsk-tbslot)/.test(line), line).toBe(true);
     expect(css).not.toMatch(/\.dsk-wb[^{]*\{[^}]*transparent !important/);
   });
 });
@@ -205,13 +205,13 @@ describe('pengaturan tampilan Desktop: tidak bocor ke Klasik', () => {
 describe('tombol aksi titlebar seragam dengan tombol kontrol jendela', () => {
   it('ikon-saja berukuran sama dengan .dsk-wb (30x26, radius 7), warna dan hover sama, ikon 14px stroke 2', () => {
     const wb = rule('.dsk-wb');
-    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost\.w-9, \.dsk-tbslot \.btn-ghost:has\(> svg:only-child\) \{ width: 30px;/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:has\(> svg:only-child\) \{ width: 30px;/);
     expect(px(wb, 'width')).toBe(30);
     expect(css).toMatch(/\.dsk-tbslot \.btn-ghost \{ height: 26px;[^}]*border-radius: 7px; color: var\(--text-muted\)/);
     expect(px(wb, 'height')).toBe(26);
     expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--border\); color: var\(--text-primary\); \}/);
     expect(css).toMatch(/\.dsk-wb:hover \{ background: var\(--border\); color: var\(--text-primary\); \}/);
-    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost svg \{ stroke-width: 2; \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost svg \{ stroke-width: 2;/);
     expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:has\(> svg:only-child\) svg \{ width: 14px; height: 14px; \}/);
   });
   it('tanpa celah antara slot dan kontrol: gap slot 0 dan margin negatif sebesar gap titlebar di Windows', () => {
@@ -231,5 +231,31 @@ describe('kerapatan dan ukuran teks (perbaikan review)', () => {
   it('ukuran teks memakai persentase terhadap ukuran dasar browser (bukan px mutlak)', () => {
     expect(css).toMatch(/html:has\(\.dsk-root\[data-text="small"\]\) \{ font-size: 93\.75%; \}/);
     expect(css).toMatch(/html:has\(\.dsk-root\[data-text="large"\]\) \{ font-size: 109\.375%; \}/);
+  });
+});
+
+describe('slot titlebar: satu baris, tidak menimpa kontrol jendela', () => {
+  it('slot nowrap, boleh menyusut (min-width 0, overflow hidden), tanpa tinggi tetap yang memotong; judul mengalah lebih dulu', () => {
+    const slot = rule('.dsk-tbslot');
+    expect(slot).toMatch(/flex-wrap:\s*nowrap/);
+    expect(slot).toMatch(/white-space:\s*nowrap/);
+    expect(slot).toMatch(/min-width:\s*0/);
+    expect(slot).toMatch(/overflow:\s*hidden/);
+    expect(slot).toMatch(/flex:\s*0 1 auto/);
+    expect(slot).not.toMatch(/[^-]height:/);
+    expect(rule('.dsk-title')).toMatch(/min-width:\s*0/);
+    expect(rule('.dsk-title')).toMatch(/flex:\s*1/);
+  });
+  it('kontrol jendela tidak menyusut; tombol bertulisan auto-width satu baris (tidak terkunci 30px oleh w-9) dengan ellipsis', () => {
+    expect(css).toMatch(/\.dsk-wbs, \.dsk-tl \{ flex-shrink: 0; \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost:not\(:has\(> svg:only-child\)\) \{ width: auto; min-width: 30px; flex-shrink: 1; white-space: nowrap; overflow: hidden; \}/);
+    expect(css).toMatch(/\.dsk-tbslot \.btn-ghost > span:not\(\.absolute\) \{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;/);
+    // aturan ikon-saja tidak lagi memakai .w-9 (yang juga dipakai tombol bertulisan)
+    expect(css).not.toMatch(/\.dsk-tbslot \.btn-ghost\.w-9/);
+  });
+  it('jendela sempit: tombol berikon jadi ikon saja, badge tetap tampil; semua selector di bawah .dsk-win/.dsk-tbslot', () => {
+    expect(css).toMatch(/\.dsk-win\[data-narrow="true"\] \.dsk-tbslot \.btn-ghost > span:not\(\.absolute\) \{ display: none; \}/);
+    expect(css).toMatch(/\.dsk-win\[data-narrow="true"\] \.dsk-tbslot \.btn-ghost > span\.absolute \{ display: flex; \}/);
+    for (const line of css.split('\n')) if (/data-narrow/.test(line) && /\{/.test(line) && !line.trimStart().startsWith('/*')) expect(line.trimStart().startsWith('.dsk-win[data-narrow')).toBe(true);
   });
 });

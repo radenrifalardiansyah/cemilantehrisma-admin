@@ -36,7 +36,7 @@ describe('isDesktopShown', () => {
   });
   it('hanya menu berjendela yang tampil sebagai desktop', () => {
     expect(isDesktopShown('mac', true, 'orders')).toBe(true);
-    expect(isDesktopShown('windows', true, 'consign-journal')).toBe(false);
+    expect(isDesktopShown('windows', true, 'stall-pos')).toBe(false);
     expect(isWindowTab('pos')).toBe(true);
     expect(isWindowTab('modules')).toBe(false);
   });
@@ -75,11 +75,11 @@ describe('resolveLayout', () => {
 describe('pemetaan WINDOW_TABS tahap 3 (Mitra)', () => {
   it('keluarga Mitra yang berdiri sendiri berjendela; Titip Jual/Lapak belum', () => {
     for (const t of ['consignment', 'wa-forward', 'mitra-report', 'pos']) expect(isWindowTab(t)).toBe(true);
-    for (const t of ['consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report']) expect(isWindowTab(t)).toBe(false);
+    for (const t of ['stall-pos']) expect(isWindowTab(t)).toBe(false);
   });
   it('tautan notifikasi consignment_* ("consignment") membuka mode Desktop; tautan Titip Jual ("consign") memakai Klasik sementara', () => {
     expect(isDesktopShown('windows', true, 'consignment')).toBe(true);
-    expect(isDesktopShown('mac', true, 'consign-journal')).toBe(false);
+    expect(isDesktopShown('mac', true, 'stall-pos')).toBe(false);
   });
   it('pintasan meja/dock adalah himpunan bagian WINDOW_TABS dan tidak memuat semua menu', () => {
     for (const t of DESKTOP_SHORTCUT_TABS) expect(isWindowTab(t)).toBe(true);
@@ -140,7 +140,7 @@ describe('pemetaan WINDOW_TABS tahap 6 (Gudang, Produksi, Laporan)', () => {
       expect(isWindowTab(t), t).toBe(true);
       expect(isShortcutTab(t), t).toBe(false);
     }
-    for (const t of ['consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'modules', 'menus', 'role-permissions']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['stall-pos', 'modules', 'menus', 'role-permissions']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -206,7 +206,7 @@ describe('pemetaan WINDOW_TABS tahap 16 (Storefront, Ulasan, Biaya Admin)', () =
       expect(isWindowTab(t), t).toBe(true);
       expect(isShortcutTab(t), t).toBe(false);
     }
-    for (const t of ['role-permissions', 'modules', 'menus', 'consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['role-permissions', 'modules', 'menus', 'stall-pos']) expect(isWindowTab(t), t).toBe(false);
   });
 });
 
@@ -222,11 +222,12 @@ describe('pemetaan WINDOW_TABS tahap 18 (Titip Jual)', () => {
   it('consign berjendela dan bukan pintasan; sisa keluarga Lapak dan Role/Modul/Menu tetap non-jendela', () => {
     expect(isWindowTab('consign')).toBe(true);
     expect(isShortcutTab('consign')).toBe(false);
-    for (const t of ['consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'role-permissions', 'modules', 'menus']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['stall-pos', 'role-permissions', 'modules', 'menus']) expect(isWindowTab(t), t).toBe(false);
   });
-  it("tautan notifikasi stok titipan menipis ('consign') membuka jendela; tombol 'Buka jurnal' (consign-journal) memakai kerangka Klasik sementara", () => {
+  it("tautan notifikasi stok titipan menipis ('consign') membuka jendela; tombol 'Buka jurnal' (consign-journal, tahap 20) kini membuka jendela Dompet Lapak; ke tab non-jendela (stall-pos) memakai kerangka Klasik sementara", () => {
     expect(isDesktopShown('windows', true, 'consign')).toBe(true);
-    expect(isDesktopShown('mac', true, 'consign-journal')).toBe(false);
+    expect(isDesktopShown('mac', true, 'consign-journal')).toBe(true);
+    expect(isDesktopShown('mac', true, 'stall-pos')).toBe(false);
   });
 });
 
@@ -234,6 +235,27 @@ describe('pemetaan WINDOW_TABS tahap 19 (Opname Titipan)', () => {
   it('consign-opname berjendela dan bukan pintasan; Dompet Lapak, Produk Toko, Kasir Lapak, Role/Modul/Menu tetap non-jendela', () => {
     expect(isWindowTab('consign-opname')).toBe(true);
     expect(isShortcutTab('consign-opname')).toBe(false);
-    for (const t of ['consign-journal', 'stall-own', 'stall-pos', 'stall-sales-report', 'role-permissions', 'modules', 'menus']) expect(isWindowTab(t), t).toBe(false);
+    for (const t of ['stall-pos', 'role-permissions', 'modules', 'menus']) expect(isWindowTab(t), t).toBe(false);
+  });
+});
+
+describe('pemetaan WINDOW_TABS tahap 20 (Dompet Lapak)', () => {
+  it('consign-journal berjendela dan bukan pintasan; Kasir Lapak, Izin Role, Modul, Menu tetap non-jendela', () => {
+    expect(isWindowTab('consign-journal')).toBe(true);
+    expect(isShortcutTab('consign-journal')).toBe(false);
+    for (const t of ['stall-pos', 'role-permissions', 'modules', 'menus']) expect(isWindowTab(t), t).toBe(false);
+  });
+});
+
+describe('pemetaan WINDOW_TABS tahap 21 (Produk Toko di Lapak, Laporan Kasir Lapak)', () => {
+  it('stall-own dan stall-sales-report berjendela dan bukan pintasan; Kasir Lapak, Izin Role, Modul, Menu tetap non-jendela', () => {
+    for (const t of ['stall-own', 'stall-sales-report']) {
+      expect(isWindowTab(t), t).toBe(true);
+      expect(isShortcutTab(t), t).toBe(false);
+      expect(isDesktopShown('windows', true, t), t).toBe(true);
+      expect(isDesktopShown('mac', false, t), t).toBe(false);
+      expect(isDesktopShown('classic', true, t), t).toBe(false);
+    }
+    for (const t of ['stall-pos', 'role-permissions', 'modules', 'menus']) expect(isWindowTab(t), t).toBe(false);
   });
 });

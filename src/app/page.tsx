@@ -379,6 +379,8 @@ export default function AdminPage() {
     if (layout !== 'classic') setNavNonce(n => n + 1);
   }, [layout]);
   const [journalStallId, setJournalStallId] = useState('');
+  // Naik tiap "Buka jurnal" supaya jendela Dompet Lapak yang sudah terbuka (termasuk yang sedang di ringkasan) memuat ulang pilihan lapaknya.
+  const [journalSeq, setJournalSeq] = useState(0);
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(null);
@@ -1806,9 +1808,9 @@ export default function AdminPage() {
       )}
       {tab === 'mitra-report' && <MitraDailyReportTab creds={creds} />}
       {tab === 'wa-forward' && <WaForwardTab creds={creds} can={(a: Action) => can('wa-forward', a)} />}
-      {tab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
+      {tab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setJournalSeq(n => n + 1); setActiveTab('consign-journal'); }} />}
       {tab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}
-      {tab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} />}
+      {tab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} journalSeq={journalSeq} />}
       {tab === 'stall-own'  && <StallOwnTab   creds={creds} can={(a: Action) => can('stall-own', a)} />}
       {tab === 'stall-pos'  && <KasirLapakTab creds={creds} can={(a: Action) => can('stall-pos', a)} />}
       {tab === 'stall-sales-report' && <CashierSalesReportTab creds={creds} />}

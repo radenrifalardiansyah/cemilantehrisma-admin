@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Truck, Tag, HandCoins } from 'lucide-react';
 import PageLoader from '@/components/PageLoader';
 import type { Action } from '@/types/rbac';
+import { useOnDataRevision } from '@/lib/data-sync';
 import { API, type Stall, type Warehouse } from './titip-jual/shared';
 import ShipmentsSection from './stall-own/ShipmentsSection';
 import PricesSection from './stall-own/PricesSection';
@@ -16,13 +17,14 @@ const SUB_TABS: { id: SubTab; label: string; Icon: React.ElementType }[] = [
   { id: 'settlements', label: 'Setoran Lapak', Icon: HandCoins },
 ];
 
-async function fetchBase(creds: string): Promise<{ stalls: Stall[]; warehouses: Warehouse[] }> {
+async function fetchBase(creds: string): Promise<{ stalls: Stall[]; warehouses: Warehouse[]; ok: boolean }> {
   const h = { 'x-admin-auth': creds };
+  let ok = true;
   const [s, w] = await Promise.all([
-    fetch(`${API}/api/stalls`, { headers: h }).then(r => r.ok ? r.json() as Promise<{ stalls: Stall[] }> : { stalls: [] }),
-    fetch(`${API}/api/warehouses`, { headers: h }).then(r => r.ok ? r.json() as Promise<{ warehouses: Warehouse[] }> : { warehouses: [] }),
+    fetch(`${API}/api/stalls`, { headers: h }).then(r => r.ok ? r.json() as Promise<{ stalls: Stall[] }> : (ok = false, { stalls: [] })),
+    fetch(`${API}/api/warehouses`, { headers: h }).then(r => r.ok ? r.json() as Promise<{ warehouses: Warehouse[] }> : (ok = false, { warehouses: [] })),
   ]);
-  return { stalls: s.stalls, warehouses: w.warehouses };
+  return { stalls: s.stalls, warehouses: w.warehouses, ok };
 }
 
 // Produk Toko di Lapak: toko "menitipkan" produknya ke lapak (Kirim ke Lapak), lapak menjualnya di Kasir Lapak
@@ -31,11 +33,21 @@ export default function StallOwnTab({ creds, can }: { creds: string; can: (a: Ac
   const [sub, setSub] = useState<SubTab>('shipments');
   const [base, setBase] = useState<{ stalls: Stall[]; warehouses: Warehouse[] } | null>(null);
 
+  const reloadSeq = useRef(0);
+
   useEffect(() => {
     let alive = true;
     fetchBase(creds).then(d => { if (alive) setBase(d); });
     return () => { alive = false; };
   }, [creds]);
+
+  // Mode jendela: Titip Jual mengubah lapak/gudang -> muat ulang daftar lapak diam-diam (tanpa spinner, state sub-tab/form tetap). Klasik: revisi tetap 0.
+  // Bump dari tab ini sendiri ('stall-own-tab') dilewati.
+  // Reload gagal (respons non-OK / jaringan) mempertahankan daftar lama; hanya respons terbaru yang dipakai.
+  useOnDataRevision('consign', () => {
+    const seq = ++reloadSeq.current;
+    fetchBase(creds).then(d => { if (seq === reloadSeq.current && d.ok) setBase(d); }).catch(() => {});
+  }, 'stall-own-tab');
 
   if (!base) return <PageLoader />;
   const props = { creds, stalls: base.stalls, warehouses: base.warehouses, can: (a: 'view' | 'create' | 'edit' | 'delete') => can(a) };
