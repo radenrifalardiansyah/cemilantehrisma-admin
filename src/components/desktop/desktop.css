@@ -96,14 +96,16 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-tbtn[data-min="true"] { opacity: .6; }
 .dsk-tbtn .dsk-tile { width: 20px; height: 20px; }
 .dsk-tbtn span { overflow: hidden; text-overflow: ellipsis; }
-.dsk-tray { display: flex; align-items: center; gap: 10px; color: #EDD9C4; font-size: 12px; font-weight: 600; padding: 0 6px; white-space: nowrap; flex-shrink: 0; }
+.dsk-tray { display: flex; align-items: center; gap: 2px; color: #EDD9C4; font-size: 12px; font-weight: 600; padding: 0 6px; white-space: nowrap; flex-shrink: 0; }
 
 /* ── menu bar (Mac). Tanpa backdrop-filter, alasan sama dengan taskbar. ── */
 .dsk-mbar { position: absolute; left: 0; right: 0; top: 0; height: 28px; z-index: 5000; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: rgba(26,12,5,.82); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .dsk-mbar b { font-weight: 800; }
 .dsk-mbar .sp { flex: 1; }
 .dsk-mbar img { border-radius: 5px; }
-.dsk-mbar .dsk-tray { color: #fff; gap: 8px; padding: 0; }
+.dsk-mbar .dsk-tray { color: #fff; gap: 2px; padding: 0; }
+/* chat dan bel satu kelompok rapat (gap 2px); akun dan jam diberi jarak sendiri */
+.dsk-tray .dsk-account, .dsk-tray > span[aria-label="Jam"] { margin-left: 8px; }
 .dsk-mbar .dsk-tray button[title] { height: 22px; width: 22px; }
 
 /* ── dock (Mac) ── */
@@ -122,11 +124,12 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-scrim { position: fixed; inset: 0; z-index: 5500; background: transparent; }
 .dsk-root[data-skin="mac"] .dsk-scrim[data-kind="launchpad"] { background: rgba(26,12,5,.35); }
 .dsk-menu { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.5); z-index: 6000; display: flex; flex-direction: column; overflow: hidden; }
-.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(420px, calc(100% - 16px)); max-height: calc(100% - 66px); }
-.dsk-menu[data-variant="launchpad"] { left: 0; right: 0; margin-inline: auto; bottom: 72px; width: min(560px, calc(100% - 24px)); max-height: calc(100% - 116px); }
+/* Tinggi panel TETAP (bukan max-height): hasil pencarian menyusun ulang isi di dalam ukuran yang sama, tidak mengecilkan panel. */
+.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(420px, calc(100% - 16px)); height: min(540px, calc(100% - 66px)); }
+.dsk-menu[data-variant="launchpad"] { left: 0; right: 0; margin-inline: auto; bottom: 72px; width: min(560px, calc(100% - 24px)); height: min(540px, calc(100% - 116px)); }
 .dsk-menu input[type="search"] { margin: 12px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-primary); padding: 0 12px; font: inherit; outline: none; }
 .dsk-menu input[type="search"]:focus { border-color: var(--accent); }
-.dsk-mscroll { overflow: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.dsk-mscroll { overflow: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1 1 0; align-content: flex-start; }
 .dsk-mgrp h4 { margin: 0 0 6px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
 .dsk-mitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
 .dsk-mi { position: relative; display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 9px; border: 0; border-radius: 9px; background: var(--surface-2); color: var(--text-primary); font-size: 12px; font-weight: 600; min-width: 0; }
@@ -136,11 +139,12 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-mi .tag { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 99px; background: var(--border-2); color: var(--text-muted); flex-shrink: 0; }
 .dsk-mi .dsk-badge { top: -4px; right: -4px; }
 .dsk-mfoot { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface-2); }
-.dsk-mfoot .row { display: flex; gap: 6px; }
-.dsk-mfoot button { flex: 1; border-radius: 9px; padding: 8px; font-weight: 700; font-size: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); }
-.dsk-mfoot button:hover { background: var(--accent-bg); }
+.dsk-mfoot .row { display: flex; gap: 2px; justify-content: flex-end; }
+/* tombol footer ICON SAJA (aria-label + title memuat teks aslinya), flat; hover halus; fokus lewat .dsk-root :focus-visible */
+.dsk-mfoot .row button { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border-radius: 8px; background: transparent; border: 0; color: var(--text-secondary); }
+.dsk-mfoot .row button:hover:not(:disabled), .dsk-mfoot .row button[aria-expanded="true"] { background: var(--accent-bg); color: var(--text-primary); }
 .dsk-mfoot button:disabled { opacity: .5; cursor: default; }
-.dsk-empty { margin: 0; padding: 16px 0 20px; text-align: center; color: var(--text-muted); font-size: 12px; }
+.dsk-empty { margin: 0; padding: 24px 0; text-align: center; color: var(--text-muted); font-size: 12px; }
 
 .dsk-account { position: relative; }
 .dsk-avatar { width: 28px; height: 28px; border-radius: 8px; overflow: hidden; border: 0; padding: 0; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #A84F10); color: #fff; font-size: 12px; font-weight: 800; }
@@ -174,7 +178,7 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-root .modal-overlay,
 .dsk-root .fixed.inset-0 { top: var(--dsk-top); bottom: var(--dsk-bot); }
 .dsk-root .modal-sheet { max-height: calc(100vh - var(--dsk-top) - var(--dsk-bot) - 48px); max-height: calc(100dvh - var(--dsk-top) - var(--dsk-bot) - 48px); }
-.dsk-chat-slot { display: flex; align-items: center; }
+.dsk-chat-slot { display: flex; align-items: center; margin: 0; padding: 0; }
 .dsk-chat-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: transparent; color: #EDD9C4; border: 0; padding: 0; }
 .dsk-chat-btn:hover, .dsk-chat-btn[aria-expanded="true"] { background: rgba(255,255,255,.12); }
 /* tombol tray/menu bar FLAT: hanya ikon (tanpa kotak/border); highlight halus saat hover; fokus keyboard tetap lewat :focus-visible */

@@ -126,7 +126,7 @@ describe('DesktopShell (skin Windows)', () => {
     mount("windows", "dashboard");
     click(q('button[aria-label="Menu Mulai"]'));
     expect(q('[role="radiogroup"]')).toBeNull();
-    click(Array.from(document.querySelectorAll('.dsk-mfoot button')).find(b => b.textContent === 'Ganti tampilan')!);
+    click(q('.dsk-mfoot button[aria-label="Ganti tampilan"]'));
     expect(document.querySelectorAll('[role="radio"]')).toHaveLength(3);
   });
 
@@ -291,4 +291,43 @@ describe('"Lihat semua" dari bel membuka jendela Notifikasi (tahap 10)', () => {
       expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
     });
   }
+});
+
+describe('panel semua menu: ukuran tetap, footer ikon', () => {
+  const type = (el: HTMLInputElement, value: string) => act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  for (const [skin, btn, variant] of [['windows', 'Menu Mulai', 'start'], ['mac', 'Launchpad', 'launchpad']] as const) {
+    it(`${skin}: mengetik di kolom cari tidak mengubah wadah panel (inline style/kelas sama); tanpa hasil tampil "Tidak ada menu" di panel yang sama; Enter dan Esc tetap`, () => {
+      mount(skin, 'dashboard');
+      click(q(skin === 'windows' ? `button[aria-label="${btn}"]` : `.dsk-dock button[aria-label="${btn}"]`));
+      const menu = q(`.dsk-menu[data-variant="${variant}"]`)!;
+      const before = [menu.className, menu.getAttribute('style')];
+      const input = q('.dsk-menu input[type="search"]') as HTMLInputElement;
+      type(input, 'Pesan');
+      expect(document.querySelectorAll('.dsk-mi').length).toBe(1);
+      expect([menu.className, menu.getAttribute('style')]).toEqual(before);
+      type(input, 'zzzz');
+      expect(q('.dsk-menu .dsk-mscroll .dsk-empty')!.textContent).toBe('Tidak ada menu');
+      expect(q(`.dsk-menu[data-variant="${variant}"]`)).toBe(menu);
+      type(input, 'Pesan');
+      act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+      expect(q('.dsk-menu')).toBeNull();
+      expect(focusedNow()).toBe('orders');
+    });
+  }
+  it('footer: tiga tombol ikon saja (tanpa teks), aria-label dan title memuat teks aslinya', () => {
+    mount('windows', 'dashboard');
+    click(q('button[aria-label="Menu Mulai"]'));
+    const btns = Array.from(document.querySelectorAll('.dsk-mfoot .row button'));
+    expect(btns.map(b => b.getAttribute('aria-label'))).toEqual(['Ganti tampilan', 'Susun ulang jendela', 'Tutup semua']);
+    for (const b of btns) { expect(b.textContent).toBe(''); expect(b.getAttribute('title')).toBe(b.getAttribute('aria-label')); expect(b.querySelector('svg')).not.toBeNull(); }
+  });
+  it('Susun ulang dan Tutup semua tetap berfungsi dari ikon', () => {
+    mount('windows', 'dashboard');
+    click(q('button[aria-label="Menu Mulai"]'));
+    click(q('.dsk-mfoot button[aria-label="Tutup semua"]'));
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+  });
 });

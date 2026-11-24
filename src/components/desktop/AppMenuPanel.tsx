@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { Layers, Monitor, X } from 'lucide-react';
 import { useEscapeLayer } from '@/components/Modal';
 import type { UiLayout } from '@/lib/ui-layout';
 import AppTile from './AppTile';
@@ -40,7 +41,7 @@ export default function AppMenuPanel({ variant, groups, layout, hasWindows, layo
         <input type="search" autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Cari menu…" aria-label="Cari menu" autoComplete="off"
           onKeyDown={e => { if (e.key === 'Enter' && firstMatch) onPick(firstMatch); }} />
         <div className="dsk-mscroll">
-          {visible.length === 0 && <p className="dsk-empty">Menu tidak ditemukan</p>}
+          {visible.length === 0 && <p className="dsk-empty">Tidak ada menu</p>}
           {visible.map(g => (
             <section key={g.id} className="dsk-mgrp" aria-label={g.label}>
               <h4>{g.label}</h4>
@@ -60,9 +61,9 @@ export default function AppMenuPanel({ variant, groups, layout, hasWindows, layo
         <div className="dsk-mfoot">
           {showLayouts && <LayoutPicker compact value={layout} disabled={layoutBusy} onChange={onChangeLayout} />}
           <div className="row">
-            <button type="button" aria-expanded={showLayouts} onClick={() => setShowLayouts(s => !s)}>Ganti tampilan</button>
-            <button type="button" disabled={!hasWindows} onClick={() => { onArrange(); onClose(); }}>Susun ulang jendela</button>
-            <button type="button" disabled={!hasWindows} onClick={() => { onCloseAll(); onClose(); }}>Tutup semua</button>
+            <button type="button" aria-label="Ganti tampilan" title="Ganti tampilan" aria-expanded={showLayouts} onClick={() => setShowLayouts(s => !s)}><Monitor size={16} /></button>
+            <button type="button" aria-label="Susun ulang jendela" title="Susun ulang jendela" disabled={!hasWindows} onClick={() => { onArrange(); onClose(); }}><Layers size={16} /></button>
+            <button type="button" aria-label="Tutup semua" title="Tutup semua" disabled={!hasWindows} onClick={() => { onCloseAll(); onClose(); }}><X size={16} /></button>
           </div>
         </div>
       </div>

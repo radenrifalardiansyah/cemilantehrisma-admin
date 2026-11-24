@@ -51,7 +51,7 @@ describe('sinkron geometri dock Mac: reducer, CSS, skeleton boot', () => {
     const bottom = px(lp, 'bottom');
     expect(bottom).toBeGreaterThanOrEqual(AREA_INSETS.mac.bottom - 6 - 0); // di atas tepi atas kapsul (~60)
     expect(bottom).toBeGreaterThan(px(dock, 'bottom') + px(rule('.dsk-dk'), 'height'));
-    const cut = /max-height:\s*calc\(100% - (\d+)px\)/.exec(lp);
+    const cut = /[\s;{]height:\s*min\(\d+px,\s*calc\(100% - (\d+)px\)\)/.exec(lp);
     expect(cut).not.toBeNull();
     expect(Number(cut![1]) - bottom).toBeGreaterThanOrEqual(AREA_INSETS.mac.top); // sisa atas >= menu bar
   });
@@ -137,5 +137,24 @@ describe('tombol aksi titlebar jendela flat (Refresh)', () => {
     // semua selector flat berada di bawah .dsk-tbslot (Klasik #topbar-slot dan isi jendela tidak ikut)
     for (const line of css.split('\n')) if (/\.btn-ghost/.test(line) && /\{/.test(line)) expect(line.trimStart().startsWith('.dsk-tbslot')).toBe(true);
     expect(css).not.toMatch(/\.dsk-wb[^{]*\{[^}]*transparent !important/);
+  });
+});
+
+describe('panel semua menu dan jarak tray', () => {
+  it('tinggi panel tetap (height, bukan max-height) untuk Mulai dan Launchpad', () => {
+    for (const v of ['start', 'launchpad']) {
+      const r = rule(`.dsk-menu[data-variant="${v}"]`);
+      expect(r).toMatch(/[\s;{]height:\s*min\(/);
+      expect(r).not.toMatch(/max-height/);
+    }
+  });
+  it('tombol footer ikon 28-30px tanpa border; chat dan bel rapat (gap tray <= 2px, slot chat tanpa margin)', () => {
+    const b = rule('.dsk-mfoot .row button');
+    expect(px(b, 'width')).toBeLessThanOrEqual(30);
+    expect(px(b, 'width')).toBeGreaterThanOrEqual(28);
+    expect(b).toMatch(/border:\s*0/);
+    expect(px(rule('.dsk-tray'), 'gap')).toBeLessThanOrEqual(2);
+    expect(px(rule('.dsk-mbar .dsk-tray'), 'gap')).toBeLessThanOrEqual(2);
+    expect(rule('.dsk-chat-slot')).toMatch(/margin:\s*0/);
   });
 });
