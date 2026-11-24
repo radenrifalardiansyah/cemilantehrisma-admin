@@ -27,6 +27,7 @@ import EmptyAddCard from '@/components/EmptyAddCard';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 const TEMPLATE_COLS = [
   { header: 'Kode',                       key: 'code',    width: 12 },
@@ -150,6 +151,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
   const [exportingPdf, setExportingPdf] = useState(false);
 
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
 
   const load = async () => {
     setLoading(true);
@@ -279,6 +281,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
         await load();
+        if (d.created > 0) bumpData('customers', 'customers-tab');
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} No. HP duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
@@ -481,7 +484,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/customers`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(rest) })
       : await fetch(`${API}/api/customers/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(rest) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('customers', 'customers-tab');
       closeEdit();
       toast.success(isNew ? 'Pelanggan berhasil ditambahkan.' : 'Pelanggan berhasil diperbarui.');
     } else {
@@ -497,7 +500,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
     setDeletingId(id);
     const r = await fetch(`${API}/api/customers/${id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('customers', 'customers-tab');
       setSelected(s => { const n = new Set(s); n.delete(id); return n; });
       toast.success(`Pelanggan "${name}" berhasil dihapus.`);
     } else {
@@ -521,6 +524,7 @@ export default function CustomersTab({ creds }: { creds: string }) {
       // Refetch, bukan filter optimis lokal — sebagian id terpilih bisa dilewati server
       // (skippedInUse, mis. masih terhubung ke akun reseller).
       await load();
+      if (d.deleted > 0) bumpData('customers', 'customers-tab');
       setSelected(new Set());
       const extra = d.skippedInUse > 0 ? ` (${d.skippedInUse} masih terhubung ke akun reseller, dilewati)` : '';
       toast.success(`${d.deleted} pelanggan berhasil dihapus.${extra}`);

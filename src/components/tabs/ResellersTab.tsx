@@ -27,6 +27,7 @@ const API       = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useOnDataRevision } from '@/lib/data-sync';
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -192,6 +193,9 @@ export default function ResellersTab({ creds }: { creds: string }) {
     const r = await fetch(`${API}/api/customers`, { headers });
     if (r.ok) { const { customers: c } = await r.json() as { customers: CustomerOption[] }; setCustomers(c); }
   };
+
+  // Mode jendela: pelanggan diubah di jendela Pelanggan -> daftar pilihan pelanggan di form reseller dimuat ulang.
+  useOnDataRevision('customers', () => { void loadCustomers(); });
 
   const loadBanks = async () => {
     const r = await fetch(`${API}/api/master-banks`, { headers });
