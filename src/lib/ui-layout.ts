@@ -13,8 +13,16 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 
 // Tahap 1: hanya menu ini yang bisa dibuka sebagai jendela. Menu lain tetap tampil di menu Mulai /
 // Launchpad (ditandai "Klasik") dan dibuka sementara dengan kerangka Klasik.
-export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos'] as const;
+// Tahap 3: keluarga Mitra yang berdiri sendiri sebagai menu — 'consignment' (Mitra; Lokasi/Kirim Stok/Rekap/Transfer Mitra
+// adalah sub-tab DI DALAM tabnya), 'wa-forward' (Teruskan Stok WA, sub-menu Mitra), 'mitra-report' (Laporan Harian Mitra).
+// Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
+export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
+
+// Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,
+// dan tampil di dock selama jendelanya terbuka.
+export const DESKTOP_SHORTCUT_TABS: readonly WindowTabId[] = ['dashboard', 'pos', 'orders', 'products', 'wallets', 'income', 'expenses', 'consignment'];
+export const isShortcutTab = (tab: string) => (DESKTOP_SHORTCUT_TABS as readonly string[]).includes(tab);
 
 export function isWindowTab(tab: string): tab is WindowTabId {
   return (WINDOW_TABS as readonly string[]).includes(tab);

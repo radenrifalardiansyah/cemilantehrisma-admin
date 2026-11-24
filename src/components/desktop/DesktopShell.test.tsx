@@ -19,6 +19,11 @@ const groups: DesktopGroup[] = [{
     { tab: 'orders', label: 'Pesanan', Icon: Receipt, color: '#D4691E', windowed: true, badge: 3 },
     { tab: 'suppliers', label: 'Supplier', Icon: Truck, color: '#D4691E', windowed: false, badge: 0 },
   ],
+}, {
+  id: 'm2', label: 'Mitra', items: [
+    { tab: 'consignment', label: 'Mitra', Icon: Truck, color: '#0284C7', windowed: true, badge: 0 },
+    { tab: 'wa-forward', label: 'Teruskan Stok WA', Icon: Truck, color: '#0284C7', windowed: true, badge: 0 },
+  ],
 }];
 
 const picked: string[] = [];
@@ -35,6 +40,8 @@ function Harness({ skin, tab, nonce = 0 }: { skin: DesktopSkin; tab: string; non
   const content: Record<string, ReactNode> = {
     dashboard: <div data-testid="dash">Isi dashboard<TopbarPortal><button id="refresh-btn">Refresh</button></TopbarPortal></div>,
     orders: <div data-testid="ord">Isi pesanan</div>,
+    consignment: <div data-testid="cons">Isi Mitra<TopbarPortal><button id="cons-btn">Aksi</button></TopbarPortal></div>,
+    'wa-forward': <div>wa</div>,
   };
   return (
     <>
@@ -134,7 +141,7 @@ describe('DesktopShell (skin Mac)', () => {
     render(<Harness skin="mac" tab="dashboard" />);
     expect(q('.dsk-mbar')!.textContent).toContain('Dashboard');
     const dockLabels = Array.from(document.querySelectorAll('.dsk-dock button')).map(b => b.getAttribute('aria-label'));
-    expect(dockLabels).toEqual(['Launchpad', 'Dashboard', 'Pesanan']);
+    expect(dockLabels).toEqual(['Launchpad', 'Dashboard', 'Pesanan', 'Mitra']);
     expect(q('.dsk-icons')).toBeNull();
     expect(q('.dsk-task')).toBeNull();
   });
@@ -169,5 +176,38 @@ describe('sinkronisasi activeTab -> jendela', () => {
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
     render(<Harness skin="windows" tab="suppliers" />);   // tab tak berjendela: tidak membuka apa pun
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
+  });
+});
+
+describe('Mitra berjendela (tahap 3)', () => {
+  it('notifikasi consignment_* (activeTab = consignment) membuka jendela Mitra dengan tombol topbar di titlebarnya', () => {
+    render(<Harness skin="windows" tab="dashboard" />);
+    render(<Harness skin="windows" tab="consignment" nonce={1} />);
+    expect(focusedNow()).toBe('consignment');
+    expect(q('[data-testid="cons"]')).not.toBeNull();
+    expect(q('#cons-btn')!.closest('.dsk-tbslot')).not.toBeNull();
+  });
+  it('notifikasi kedua saat jendela Mitra sudah ditutup membuka lagi (navNonce); saat sudah terbuka tidak menggandakan', () => {
+    render(<Harness skin="windows" tab="consignment" />);
+    click(q('.dsk-win[aria-label="Mitra"] .dsk-wb.x'));
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+    render(<Harness skin="windows" tab="consignment" nonce={1} />);
+    render(<Harness skin="windows" tab="consignment" nonce={2} />);
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+  });
+  it('ikon meja hanya pintasan: Teruskan Stok WA ada di menu Mulai tapi bukan ikon meja; di dock hanya saat jendelanya terbuka', () => {
+    render(<Harness skin="windows" tab="dashboard" />);
+    const icons = Array.from(document.querySelectorAll('.dsk-ico')).map(b => b.getAttribute('aria-label'));
+    expect(icons).toContain('Buka Mitra');
+    expect(icons).not.toContain('Buka Teruskan Stok WA');
+    click(q('button[aria-label="Menu Mulai"]'));
+    expect(Array.from(document.querySelectorAll('.dsk-mi')).some(b => b.textContent?.includes('Teruskan Stok WA'))).toBe(true);
+  });
+  it('dock Mac memuat menu berjendela non-pintasan hanya selagi jendelanya terbuka', () => {
+    render(<Harness skin="mac" tab="wa-forward" />);
+    const labels = Array.from(document.querySelectorAll('.dsk-dock button')).map(b => b.getAttribute('aria-label'));
+    expect(labels).toContain('Teruskan Stok WA');
+    click(q('.dsk-win[aria-label="Teruskan Stok WA"] .dsk-tl .r'));
+    expect(Array.from(document.querySelectorAll('.dsk-dock button')).map(b => b.getAttribute('aria-label'))).not.toContain('Teruskan Stok WA');
   });
 });

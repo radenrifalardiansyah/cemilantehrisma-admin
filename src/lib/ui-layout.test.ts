@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_LAYOUT, WINDOW_TABS, isDesktopShown, isUiLayout, isWindowTab, layoutStorageKey, parseLayout,
+  DEFAULT_LAYOUT, DESKTOP_SHORTCUT_TABS, isShortcutTab, WINDOW_TABS, isDesktopShown, isUiLayout, isWindowTab, layoutStorageKey, parseLayout,
   readCachedLayout, resolveLayout, writeCachedLayout,
 } from './ui-layout';
 
@@ -69,5 +69,22 @@ describe('resolveLayout', () => {
     expect(resolveLayout(null, 'mac')).toBe('mac');
     expect(resolveLayout('ngawur', 'mac')).toBe('mac');
     expect(resolveLayout(null, null)).toBe('classic');
+  });
+});
+
+describe('pemetaan WINDOW_TABS tahap 3 (Mitra)', () => {
+  it('keluarga Mitra yang berdiri sendiri berjendela; Titip Jual/Lapak belum', () => {
+    for (const t of ['consignment', 'wa-forward', 'mitra-report', 'pos']) expect(isWindowTab(t)).toBe(true);
+    for (const t of ['consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-pos', 'stall-report', 'notifications']) expect(isWindowTab(t)).toBe(false);
+  });
+  it('tautan notifikasi consignment_* ("consignment") membuka mode Desktop; tautan Titip Jual ("consign") memakai Klasik sementara', () => {
+    expect(isDesktopShown('windows', true, 'consignment')).toBe(true);
+    expect(isDesktopShown('mac', true, 'consign')).toBe(false);
+  });
+  it('pintasan meja/dock adalah himpunan bagian WINDOW_TABS dan tidak memuat semua menu', () => {
+    for (const t of DESKTOP_SHORTCUT_TABS) expect(isWindowTab(t)).toBe(true);
+    expect(isShortcutTab('consignment')).toBe(true);
+    expect(isShortcutTab('wa-forward')).toBe(false);
+    expect(isShortcutTab('mitra-report')).toBe(false);
   });
 });

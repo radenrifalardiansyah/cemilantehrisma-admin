@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { AppWindow } from 'lucide-react';
-import type { UiLayout } from '@/lib/ui-layout';
+import { isShortcutTab, type UiLayout } from '@/lib/ui-layout';
 import AccountMenu from './AccountMenu';
 import AppMenuPanel from './AppMenuPanel';
 import DesktopIcons from './DesktopIcons';
@@ -59,6 +59,7 @@ export default function DesktopShell(p: Props) {
   const items = useMemo(() => groups.flatMap(g => g.items), [groups]);
   const itemByTab = useMemo(() => new Map(items.map(i => [i.tab, i])), [items]);
   const windowedItems = useMemo(() => items.filter(i => i.windowed), [items]);
+  const shortcutItems = useMemo(() => windowedItems.filter(i => isShortcutTab(i.tab)), [windowedItems]);
   const itemFor = (tab: string): DesktopItem =>
     itemByTab.get(tab) ?? { tab, label: tab, Icon: AppWindow, color: MODULE_PALETTE[0], windowed: true, badge: 0 };
 
@@ -83,7 +84,7 @@ export default function DesktopShell(p: Props) {
 
   return (
     <div className="dsk-root" data-skin={skin}>
-      {skin === 'windows' && <DesktopIcons items={windowedItems} onOpen={i => actions.open(i.tab)} />}
+      {skin === 'windows' && <DesktopIcons items={shortcutItems} onOpen={i => actions.open(i.tab)} />}
 
       {wm.windows.map(w => (
         <WindowFrame key={w.tabId} win={w} area={wm.area} item={itemFor(w.tabId)} focused={focused === w.tabId} zIndex={rank.get(w.tabId) ?? 1}
@@ -107,7 +108,7 @@ export default function DesktopShell(p: Props) {
       ) : (
         <>
           <MenuBar title={focused ? itemFor(focused).label : 'Desktop'} tray={<>{p.renderBell('down')}{account('down')}</>} />
-          <Dock items={windowedItems} openTabs={openTabs} launchpadOpen={menuOpen} onLaunchpad={() => setMenuOpen(o => !o)}
+          <Dock items={windowedItems.filter(i => isShortcutTab(i.tab) || openTabs.has(i.tab))} openTabs={openTabs} launchpadOpen={menuOpen} onLaunchpad={() => setMenuOpen(o => !o)}
             onItem={i => (focused === i.tab ? actions.minimize(i.tab) : actions.open(i.tab))} />
         </>
       )}

@@ -55,10 +55,13 @@ export const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   income: { w: 820, h: 540 },
   expenses: { w: 820, h: 540 },
   pos: { w: 1080, h: 640 },
+  consignment: { w: 1000, h: 620 },
+  'wa-forward': { w: 760, h: 520 },
+  'mitra-report': { w: 900, h: 580 },
 };
 // Ukuran minimum per tab. Kasir memakai breakpoint viewport (grid katalog + panel 400px), jadi jendela yang terlalu
 // sempit membuat katalog hilang.
-export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 } };
+export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 }, consignment: { w: 720, h: 420 }, 'mitra-report': { w: 640, h: 380 } };
 export const minSizeFor = (tabId: string) => MIN_SIZES[tabId] ?? { w: MIN_W, h: MIN_H };
 const FALLBACK_SIZE = { w: 860, h: 540 };
 
