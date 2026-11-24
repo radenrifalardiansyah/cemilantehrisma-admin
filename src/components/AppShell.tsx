@@ -232,6 +232,9 @@ export default function AppShell({
   const posHostRef = useRef<HTMLDivElement>(null);
   // Slot topbar jendela Kasir; undefined = tidak ada jendela Kasir (TopbarPortal memakai #topbar-slot seperti Klasik).
   const [posTopbarSlot, setPosTopbarSlot] = useState<HTMLElement | null | undefined>(undefined);
+  // Slot tray taskbar Windows untuk tombol chat; null/undefined sampai taskbar terpasang.
+  const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null);
+  const chatTray = desktopShown && layout === 'windows' ? chatSlot : undefined;
   const onPosSlot = useCallback((el: HTMLElement | null) => setPosTopbarSlot(el ?? undefined), []);
   const posActive = desktopShown ? wm.windows.some(w => w.tabId === 'pos' && !w.minimized) : activeTab === 'pos';
   const openKey = wm.windows.map(w => w.tabId).join('|');
@@ -1037,7 +1040,7 @@ export default function AppShell({
             <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} placement={side} tone="dark"
               onViewAll={() => setActiveTab('notifications')} />
           )}
-          actions={desktopActions} onPosSlot={onPosSlot} onPickMenu={pickDesktopItem}
+          actions={desktopActions} onPosSlot={onPosSlot} onChatSlot={setChatSlot} onPickMenu={pickDesktopItem}
           onChangeLayout={next => onLayoutChange?.(next)}
           onEditProfile={() => setProfileOpen(true)} onAbout={() => setAboutOpen(true)} onLogout={handleLogout}
         />
@@ -1070,6 +1073,7 @@ export default function AppShell({
         canKick={superAdmin || role === 'admin'}
         onForceLogout={onForceLogout}
         onPendingLoginRequest={setPendingLoginRequest}
+        tray={chatTray}
       />
       <LoginRequestWatcher
         request={pendingLoginRequest}

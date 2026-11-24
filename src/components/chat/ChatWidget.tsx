@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { MessageCircle, X } from 'lucide-react';
 import ChatPanel, { ActiveRoom } from './ChatPanel';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
@@ -15,6 +16,9 @@ interface Props {
   canKick: boolean;
   onForceLogout: (reason: string) => void;
   onPendingLoginRequest: (request: PendingLoginRequest | null) => void;
+  // Mode tray (skin Windows): undefined = FAB mengambang seperti biasa (Klasik); elemen = tombol kecil di-portal ke tray taskbar;
+  // null = mode tray tapi slot belum terpasang (tombol belum ditampilkan, FAB tidak muncul).
+  tray?: HTMLElement | null;
 }
 
 // Was 25s — writes a `presence/status` doc on every beat for every logged-in session
@@ -39,7 +43,7 @@ function resolveDeepLinkRoom(roomId: string, accounts: Account[], username: stri
   return { kind: 'direct', contact: { username: account.username, role: account.role, avatar: account.avatar, online: false, lastLoginAt: account.lastLoginAt } };
 }
 
-export default function ChatWidget({ username, creds, avatar, canKick, onForceLogout, onPendingLoginRequest }: Props) {
+export default function ChatWidget({ username, creds, avatar, canKick, onForceLogout, onPendingLoginRequest, tray }: Props) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMounted, setPanelMounted] = useState(false);
   const [unreadRoomIds, setUnreadRoomIds] = useState<string[]>([]);
@@ -115,10 +119,22 @@ export default function ChatWidget({ username, creds, avatar, canKick, onForceLo
 
   const unreadCount = unreadRoomIds.length;
 
+  const toggle = () => (panelOpen ? closePanel() : openPanel());
+  const trayButton = tray ? createPortal(
+    <button type="button" onClick={toggle} aria-label="Akun & Chat" aria-expanded={panelOpen} title="Akun & Chat" className="dsk-chat-btn">
+      <MessageCircle size={16} />
+      {unreadCount > 0 && (
+        <span className="absolute w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center" style={{ top: -4, right: -4 }}>
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+    </button>, tray) : null;
+
   return (
     <>
+      {tray !== undefined ? trayButton : (
       <button
-        onClick={() => (panelOpen ? closePanel() : openPanel())}
+        onClick={toggle}
         aria-label="Akun & Chat"
         className="chat-fab"
         style={{
@@ -146,6 +162,7 @@ export default function ChatWidget({ username, creds, avatar, canKick, onForceLo
           </span>
         )}
       </button>
+      )}
 
       {panelMounted && (
         <ChatPanel

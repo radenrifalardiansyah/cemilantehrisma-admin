@@ -16,8 +16,11 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // Tahap 3: keluarga Mitra yang berdiri sendiri sebagai menu — 'consignment' (Mitra; Lokasi/Kirim Stok/Rekap/Transfer Mitra
 // adalah sub-tab DI DALAM tabnya), 'wa-forward' (Teruskan Stok WA, sub-menu Mitra), 'mitra-report' (Laporan Harian Mitra).
 // Tahap 4: 'finance-report' (Laporan Keuangan). Laporan lain yang terkait ('product-report', 'capital', 'stall-report') belum berjendela.
+// Tahap 5: alur pengadaan yang berdiri sendiri sebagai menu: 'suppliers', 'materials' (Bahan Baku; Hutang dll. sub-tab di dalamnya),
+// 'purchase-orders' dan 'goods-receipts' (PurchaseFlowTab, dua jendela terpisah). Laporan ('po-report', 'gr-report', 'opname-report', 'stock-report'),
+// Gudang ('stock') dan Produksi belum berjendela.
 // Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
-export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report'] as const;
+export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,

@@ -1777,7 +1777,7 @@ export default function AdminPage() {
       {(tab === 'purchase-orders' || tab === 'goods-receipts') && (
         <PurchaseFlowTab creds={creds} view={tab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')} canApprovePo={can('purchase-orders', 'approve')}
           onGoto={(v, grId) => { setOpenGrId(grId ?? null); setActiveTab(v === 'po' ? 'purchase-orders' : 'goods-receipts'); }}
-          openGrId={openGrId} onOpenGrHandled={() => setOpenGrId(null)} />
+          openGrId={tab === 'goods-receipts' ? openGrId : null} onOpenGrHandled={() => setOpenGrId(null)} />
       )}
       {tab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
       {tab === 'consignment' && (

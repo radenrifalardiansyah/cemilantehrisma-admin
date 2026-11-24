@@ -176,7 +176,7 @@ describe('sinkronisasi activeTab -> jendela', () => {
     render(<Harness skin="windows" tab="orders" />);
     expect(focusedNow()).toBe('orders');
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
-    render(<Harness skin="windows" tab="suppliers" />);   // tab tak berjendela: tidak membuka apa pun
+    render(<Harness skin="windows" tab="stock" />);   // tab tak berjendela: tidak membuka apa pun
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
   });
 });
@@ -241,5 +241,31 @@ describe('desktop mulai kosong', () => {
     render(<Harness skin="windows" tab="orders" nonce={1} enabled={false} />);
     render(<Harness skin="windows" tab="orders" nonce={1} enabled />);
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+  });
+});
+
+describe('pengadaan berjendela (tahap 5)', () => {
+  it('Hutang/stok_low (link materials) dan "Lihat GR" (goods-receipts) membuka jendelanya lewat activeTab; PO dan GR dua jendela terpisah', () => {
+    render(<Harness skin="windows" tab="dashboard" />);
+    render(<Harness skin="windows" tab="goods-receipts" nonce={1} />);
+    render(<Harness skin="windows" tab="purchase-orders" nonce={2} />);
+    render(<Harness skin="windows" tab="materials" nonce={3} />);
+    expect(Array.from(document.querySelectorAll('.dsk-win')).map(w => w.getAttribute('aria-label')).sort())
+      .toEqual(['goods-receipts', 'materials', 'purchase-orders']);
+    expect(focusedNow()).toBe('materials');
+  });
+});
+
+describe('tray chat (skin Windows)', () => {
+  it('taskbar menyediakan slot tray chat tepat sebelum (di kiri) bel notifikasi; skin Mac tidak punya slot', () => {
+    mount('windows', 'dashboard');
+    const slot = q('.dsk-tray .dsk-chat-slot');
+    expect(slot).not.toBeNull();
+    expect(slot!.nextElementSibling!.querySelector('[aria-label="Notifikasi"]') ?? slot!.nextElementSibling!.getAttribute('aria-label')).toBeTruthy();
+    document.body.innerHTML = '';
+  });
+  it('Mac tanpa slot tray chat', () => {
+    mount('mac', 'dashboard');
+    expect(q('.dsk-chat-slot')).toBeNull();
   });
 });

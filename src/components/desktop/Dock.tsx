@@ -18,7 +18,7 @@ export default function Dock({ items, openTabs, launchpadOpen, onLaunchpad, onIt
     for (const b of buttons()) {
       const r = b.getBoundingClientRect();
       const dist = Math.abs(e.clientX - (r.left + r.width / 2));
-      b.style.transform = `scale(${(1 + 0.55 * Math.max(0, 1 - dist / 95)).toFixed(3)})`;
+      b.style.transform = `scale(${(1 + 0.45 * Math.max(0, 1 - dist / 80)).toFixed(3)})`;
     }
   };
   const reset = () => { for (const b of buttons()) b.style.transform = ''; };

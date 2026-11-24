@@ -8,7 +8,7 @@ export interface WinArea {
   w: number;       // lebar kanvas (viewport)
   h: number;       // tinggi kanvas (viewport)
   top: number;     // inset atas yang tidak boleh ditutup jendela (menu bar Mac = 28)
-  bottom: number;  // inset bawah (taskbar Windows = 48, dock Mac = 92)
+  bottom: number;  // inset bawah (taskbar Windows = 48, dock Mac = 66)
 }
 
 export interface WinState {
@@ -39,7 +39,7 @@ export type WmAction =
 
 export const AREA_INSETS: Record<DesktopSkin, { top: number; bottom: number }> = {
   windows: { top: 0, bottom: 48 },
-  mac: { top: 28, bottom: 92 },
+  mac: { top: 28, bottom: 66 },
 };
 
 export const MIN_W = 320;
@@ -59,10 +59,14 @@ export const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   'wa-forward': { w: 760, h: 520 },
   'mitra-report': { w: 900, h: 580 },
   'finance-report': { w: 980, h: 620 },
+  suppliers: { w: 860, h: 560 },
+  materials: { w: 980, h: 620 },
+  'purchase-orders': { w: 980, h: 620 },
+  'goods-receipts': { w: 980, h: 620 },
 };
 // Ukuran minimum per tab. Kasir memakai breakpoint viewport (grid katalog + panel 400px), jadi jendela yang terlalu
 // sempit membuat katalog hilang.
-export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 }, consignment: { w: 720, h: 420 }, 'mitra-report': { w: 640, h: 380 }, 'finance-report': { w: 720, h: 420 } };
+export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 }, consignment: { w: 720, h: 420 }, 'mitra-report': { w: 640, h: 380 }, 'finance-report': { w: 720, h: 420 }, suppliers: { w: 640, h: 380 }, materials: { w: 720, h: 420 }, 'purchase-orders': { w: 720, h: 420 }, 'goods-receipts': { w: 720, h: 420 } };
 export const minSizeFor = (tabId: string) => MIN_SIZES[tabId] ?? { w: MIN_W, h: MIN_H };
 const FALLBACK_SIZE = { w: 860, h: 540 };
 

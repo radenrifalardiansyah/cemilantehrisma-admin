@@ -17,7 +17,7 @@ export default function DesktopBoot({ skin }: { skin: 'windows' | 'mac' }) {
         ? <div style={{ ...bar, bottom: 0, height: 48, borderTop: '1px solid rgba(255,255,255,.1)' }} />
         : (<>
             <div style={{ ...bar, top: 0, height: 28 }} />
-            <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0, margin: '0 auto', width: 300, height: 70, borderRadius: 22, background: 'rgba(255,255,255,.28)', border: '1px solid rgba(255,255,255,.4)' }} />
+            <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, margin: '0 auto', width: 260, height: 54, borderRadius: 17, background: 'rgba(255,255,255,.28)', border: '1px solid rgba(255,255,255,.4)' }} />
           </>)}
       <div className="page-loader-ring" aria-hidden="true" />
     </div>

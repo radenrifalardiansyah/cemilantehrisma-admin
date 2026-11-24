@@ -31,11 +31,11 @@ describe('open', () => {
       expect(w.x + w.w).toBeLessThanOrEqual(area.w);
     }
   });
-  it('area Mac: jendela tidak menyentuh menu bar (top 28) maupun dock (bottom 92)', () => {
+  it('area Mac: jendela tidak menyentuh menu bar (top 28) maupun dock (bottom 66)', () => {
     const mac = makeArea(1280, 720, 'mac');
     const s = run([{ type: 'open', tabId: 'a' }], initialWmState(mac));
     expect(win(s, 'a').y).toBeGreaterThanOrEqual(28);
-    expect(win(s, 'a').y + win(s, 'a').h).toBeLessThanOrEqual(720 - 92);
+    expect(win(s, 'a').y + win(s, 'a').h).toBeLessThanOrEqual(720 - 66);
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { AppWindow } from 'lucide-react';
 import { isShortcutTab, type UiLayout } from '@/lib/ui-layout';
 import AccountMenu from './AccountMenu';
@@ -43,6 +43,8 @@ interface Props {
   actions: DesktopActions;
   /** Slot topbar jendela Kasir (untuk TopbarPortal milik PosTab). Harus stabil (setter state). */
   onPosSlot?: (el: HTMLElement | null) => void;
+  /** Slot tray untuk tombol chat (skin Windows). Harus stabil (setter state). */
+  onChatSlot?: (el: HTMLElement | null) => void;
   onPickMenu: (item: DesktopItem) => void;
   onChangeLayout: (next: UiLayout) => void;
   onEditProfile: () => void;
@@ -55,6 +57,8 @@ interface Props {
 export default function DesktopShell(p: Props) {
   const { skin, wm, groups, actions } = p;
   const [menuOpen, setMenuOpen] = useState(false);
+  const { onChatSlot } = p;
+  const chatSlotRef = useCallback((el: HTMLElement | null) => onChatSlot?.(el), [onChatSlot]);
 
   const items = useMemo(() => groups.flatMap(g => g.items), [groups]);
   const itemByTab = useMemo(() => new Map(items.map(i => [i.tab, i])), [items]);
@@ -104,7 +108,7 @@ export default function DesktopShell(p: Props) {
       {skin === 'windows' ? (
         <Taskbar startOpen={menuOpen} onToggleStart={() => setMenuOpen(o => !o)} onWindowClick={toggleFromBar}
           windows={wm.windows.map(w => ({ item: itemFor(w.tabId), minimized: w.minimized, focused: focused === w.tabId }))}
-          tray={<>{p.renderBell('up')}{account('up')}</>} />
+          tray={<><span ref={chatSlotRef} className="dsk-chat-slot" />{p.renderBell('up')}{account('up')}</>} />
       ) : (
         <>
           <MenuBar title={focused ? itemFor(focused).label : 'Desktop'} tray={<>{p.renderBell('down')}{account('down')}</>} />

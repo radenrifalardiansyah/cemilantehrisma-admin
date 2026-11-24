@@ -36,9 +36,9 @@ describe('isDesktopShown', () => {
   });
   it('hanya menu berjendela yang tampil sebagai desktop', () => {
     expect(isDesktopShown('mac', true, 'orders')).toBe(true);
-    expect(isDesktopShown('windows', true, 'suppliers')).toBe(false);
+    expect(isDesktopShown('windows', true, 'stock')).toBe(false);
     expect(isWindowTab('pos')).toBe(true);
-    expect(isWindowTab('suppliers')).toBe(false);
+    expect(isWindowTab('stock')).toBe(false);
   });
 });
 
@@ -120,5 +120,16 @@ describe('cache layout terakhir (tanpa username) dan skin splash', () => {
     expect(resolveBootSkin({ last: null, hasSession: true, isWide: true })).toBeNull();
     expect(resolveBootSkin({ last: 'mac', hasSession: false, isWide: true })).toBeNull();
     expect(resolveBootSkin({ last: 'mac', hasSession: true, isWide: false })).toBeNull();
+  });
+});
+
+describe('pemetaan WINDOW_TABS tahap 5 (Supplier / pengadaan)', () => {
+  it('suppliers, materials, PO, GR berjendela; laporan pengadaan, gudang, produksi belum; tidak jadi pintasan', () => {
+    for (const t of ['suppliers', 'materials', 'purchase-orders', 'goods-receipts']) {
+      expect(isWindowTab(t)).toBe(true);
+      expect(isShortcutTab(t)).toBe(false);
+    }
+    for (const t of ['po-report', 'gr-report', 'opname-report', 'stock-report', 'stock', 'production']) expect(isWindowTab(t)).toBe(false);
+    expect(isDesktopShown('windows', true, 'materials')).toBe(true);
   });
 });
