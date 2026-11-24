@@ -88,3 +88,12 @@ describe('pemetaan WINDOW_TABS tahap 3 (Mitra)', () => {
     expect(isShortcutTab('mitra-report')).toBe(false);
   });
 });
+
+describe('pemetaan WINDOW_TABS tahap 4 (Laporan Keuangan)', () => {
+  it('finance-report berjendela, laporan lain belum, dan bukan pintasan meja/dock', () => {
+    expect(isWindowTab('finance-report')).toBe(true);
+    for (const t of ['product-report', 'capital', 'stall-report']) expect(isWindowTab(t)).toBe(false);
+    expect(isShortcutTab('finance-report')).toBe(false);
+    expect(isDesktopShown('mac', true, 'finance-report')).toBe(true);
+  });
+});
