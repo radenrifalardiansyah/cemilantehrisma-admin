@@ -58,6 +58,10 @@ interface NotificationBellProps {
   username: string;
   onOpen: (n: NotificationDoc) => void;
   onViewAll: () => void;
+  // Hanya dipakai mode Desktop: dropdown membuka ke atas bila bel ada di taskbar bawah, dan tombol
+  // bernada gelap di atas taskbar/menu bar. Default = tampilan Klasik yang lama.
+  placement?: 'down' | 'up';
+  tone?: 'light' | 'dark';
 }
 
 // Tandai semua notifikasi dibaca di server; status di UI berubah lewat listener realtime. Kalau gagal,
@@ -78,7 +82,7 @@ export const READ_FILTERS: { id: ReadFilter; label: string }[] = [
 
 type PushStatus = 'idle' | 'enabling' | 'granted' | 'denied';
 
-export default function NotificationBell({ creds, username, onOpen, onViewAll }: NotificationBellProps) {
+export default function NotificationBell({ creds, username, onOpen, onViewAll, placement = 'down', tone = 'light' }: NotificationBellProps) {
   const { notifications } = useNotifications();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -153,7 +157,9 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
         onClick={() => setOpen(o => !o)}
         title="Notifikasi"
         className="relative flex items-center justify-center h-9 w-9 rounded-lg transition-colors"
-        style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+        style={tone === 'dark'
+          ? { background: 'rgba(255,255,255,0.08)', color: '#EDD9C4', border: '1px solid rgba(255,255,255,0.12)' }
+          : { background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
       >
         <Bell size={16} />
         {unread.length > 0 && (
@@ -168,7 +174,7 @@ export default function NotificationBell({ creds, username, onOpen, onViewAll }:
 
       {open && (
         <div
-          className="absolute right-0 mt-2 rounded-xl shadow-lg overflow-hidden z-50"
+          className={`absolute right-0 ${placement === 'up' ? 'bottom-full mb-2' : 'mt-2'} rounded-xl shadow-lg overflow-hidden z-50`}
           style={{ width: 340, maxWidth: '90vw', background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
           <div className="flex items-center justify-between px-3.5 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>

@@ -16,6 +16,9 @@ import ForceLogoutOverlay from '@/components/ForceLogoutOverlay';
 import type { NotificationDoc } from '@/components/NotificationBell';
 import { usePwaInstall } from '@/lib/usePwaInstall';
 import { useVisiblePolling } from '@/lib/useVisiblePolling';
+import { useUiLayout } from '@/lib/use-ui-layout';
+import { useMediaQuery } from '@/lib/use-media-query';
+import { DESKTOP_MEDIA_QUERY, isDesktopShown } from '@/lib/ui-layout';
 import TopbarPortal from '@/components/TopbarPortal';
 import Tooltip from '@/components/Tooltip';
 const ProductsTab = dynamic(() => import('@/components/tabs/ProductsTab'), { loading: () => <PageLoader /> });
@@ -350,9 +353,19 @@ export default function AdminPage() {
   const [modules, setModules] = useState<ModuleDoc[]>([]);
   const [menus, setMenus] = useState<MenuDoc[]>([]);
   const { canInstall, installed, isIOS, promptInstall } = usePwaInstall();
+  // Tata letak dashboard (Klasik/Windows/Mac) per pengguna; di bawah lg selalu Klasik.
+  const { layout, busy: layoutBusy, change: changeLayout, hydrate: hydrateLayout } = useUiLayout(creds);
+  const isWide = useMediaQuery(DESKTOP_MEDIA_QUERY);
 
   // ── Tab ──────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTabRaw] = useState<TabId>('dashboard');
+  // Setiap permintaan pindah tab (termasuk ke tab yang sama) menaikkan navNonce HANYA saat layout Desktop dipakai, supaya
+  // AppShell membuka ulang jendela yang sudah ditutup/dikecilkan walau activeTab-nya tidak berubah. Klasik: persis setter biasa.
+  const [navNonce, setNavNonce] = useState(0);
+  const setActiveTab = useCallback((tab: TabId) => {
+    setActiveTabRaw(tab);
+    if (layout !== 'classic') setNavNonce(n => n + 1);
+  }, [layout]);
   const [journalStallId, setJournalStallId] = useState('');
   const [highlightInvoice, setHighlightInvoice] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
@@ -710,13 +723,14 @@ export default function AdminPage() {
     if (res.status === 401) return false;
     if (!res.ok) throw new Error(`/api/me ${res.status}`);
     const { user, permissions, superAdmin } = await res.json() as {
-      user: { username: string; role: string; email: string | null; avatar: string | null };
+      user: { username: string; role: string; email: string | null; avatar: string | null; uiLayout?: string | null };
       permissions: Record<string, Partial<Record<Action, boolean>>>;
       superAdmin: boolean;
     };
+    hydrateLayout(user.username, user.uiLayout);
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
     return true;
-  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount]);
+  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, hydrateLayout]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -1724,6 +1738,80 @@ export default function AdminPage() {
   // shouldn't see a live "Tambah Role" button that only 403s on click) —
   // the API is still the real enforcement point, this is just UI polish.
   const can = (featureKey: string, action: Action) => superAdmin || permissions[featureKey]?.[action] === true;
+  // Mode jendela aktif (layout Windows/Mac, layar >= lg, menu aktif berjendela): isi tab dirender di jendela oleh AppShell,
+  // jadi tidak ikut dirender lagi sebagai children Klasik.
+  const desktopShown = isDesktopShown(layout, isWide, activeTab);
+  // Isi satu tab (JSX yang dulu langsung di dalam <AppShell>). Dipakai jalur Klasik (activeTab) dan jendela mode Desktop
+  // (tabId jendela). PosTab sengaja TIDAK di sini: ia selalu ter-mount di luar rantai ini (lihat <AppShell> di bawah).
+  const renderTab = (tab: TabId) => (
+    <>
+      {tab === 'dashboard'  && (loading && !dashData ? <PageLoader /> : dashboardBody)}
+      {tab === 'products'   && <ProductsTab   creds={creds} />}
+      {tab === 'categories' && <CategoriesTab creds={creds} />}
+      {tab === 'orders'     && (
+        <OrdersTab creds={creds} highlightInvoice={highlightInvoice} highlightOrderId={highlightOrderId}
+          onHighlightHandled={() => { setHighlightInvoice(null); setHighlightOrderId(null); }}
+          onNewOrdersCountChange={setNewOrdersCount} />
+      )}
+      {tab === 'resellers'  && <ResellersTab creds={creds} />}
+      {tab === 'customers'  && <CustomersTab creds={creds} />}
+      {tab === 'storefront-customers' && <StorefrontCustomersTab creds={creds} />}
+      {tab === 'reviews'    && <ReviewsTab creds={creds} />}
+      {tab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
+      {tab === 'stock-report' && <StockReportTab creds={creds} products={posProducts} categories={posCategories} />}
+      {tab === 'po-report' && <ProcurementReportTab creds={creds} kind="po" />}
+      {tab === 'gr-report' && <ProcurementReportTab creds={creds} kind="gr" />}
+      {tab === 'opname-report' && <ProcurementReportTab creds={creds} kind="opname" />}
+      {tab === 'suppliers'  && <SuppliersTab  creds={creds} />}
+      {tab === 'materials'  && (
+        <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
+          onHighlightHandled={() => setHighlightMaterialId(null)}
+          canEdit={can('materials', 'edit')} openSubTab={materialsOpenSubTab} onSubTabOpened={() => setMaterialsOpenSubTab(null)} />
+      )}
+      {(tab === 'purchase-orders' || tab === 'goods-receipts') && (
+        <PurchaseFlowTab creds={creds} view={tab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')} canApprovePo={can('purchase-orders', 'approve')}
+          onGoto={(v, grId) => { setOpenGrId(grId ?? null); setActiveTab(v === 'po' ? 'purchase-orders' : 'goods-receipts'); }}
+          openGrId={openGrId} onOpenGrHandled={() => setOpenGrId(null)} />
+      )}
+      {tab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
+      {tab === 'consignment' && (
+        <ConsignmentTab creds={creds} products={posProducts} can={(a: Action) => can('consignment', a)}
+          highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId} highlightTransferId={highlightTransferId}
+          onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); setHighlightTransferId(null); }} />
+      )}
+      {tab === 'mitra-report' && <MitraDailyReportTab creds={creds} />}
+      {tab === 'wa-forward' && <WaForwardTab creds={creds} can={(a: Action) => can('wa-forward', a)} />}
+      {tab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
+      {tab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}
+      {tab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} />}
+      {tab === 'stall-own'  && <StallOwnTab   creds={creds} can={(a: Action) => can('stall-own', a)} />}
+      {tab === 'stall-pos'  && <KasirLapakTab creds={creds} can={(a: Action) => can('stall-pos', a)} />}
+      {tab === 'stall-sales-report' && <CashierSalesReportTab creds={creds} />}
+      {tab === 'stall-report' && <StallSalesReportTab creds={creds} />}
+      {tab === 'income'     && <IncomeTab     creds={creds} />}
+      {tab === 'expenses'   && <ExpensesTab   creds={creds} />}
+      {tab === 'capital'    && <CapitalTab    creds={creds} />}
+      {tab === 'wallets'    && <WalletsTab    creds={creds} />}
+      {tab === 'finance-report' && (
+        <FinanceReportTab creds={creds}
+          onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />
+      )}
+      {tab === 'product-report' && <ProductReportTab creds={creds} can={(a: Action) => can('product-report', a)} canWallet={(a: Action) => can('wallets', a)} isSuperAdmin={superAdmin} />}
+      {tab === 'settings'   && <SettingsTab  creds={creds} />}
+      {tab === 'users'      && <UsersTab     creds={creds} currentUsername={adminUsername} can={(a: Action) => can('users', a)} />}
+      {tab === 'roles'      && <RolesTab     creds={creds} can={(a: Action) => can('roles', a)} />}
+      {tab === 'modules'    && <ModulesTab   creds={creds} can={(a: Action) => can('modules', a)} onChanged={() => fetchNav(creds)} />}
+      {tab === 'menus'      && <MenusTab     creds={creds} can={(a: Action) => can('menus', a)} onChanged={() => fetchNav(creds)} />}
+      {tab === 'role-permissions' && <RolePermissionsTab creds={creds} can={(a: Action) => can('role-permissions', a)} />}
+      {tab === 'history'    && <HistoryTab   creds={creds} />}
+      {tab === 'admin-fee' && superAdmin && <AdminFeeTab creds={creds} />}
+      {tab === 'tagihan-admin-fee' && authUser?.role === 'admin' && <AdminFeeBillingTab creds={creds} />}
+      {tab === 'notifications' && (
+        <NotificationsTab creds={creds} username={adminUsername} onOpenNotification={handleOpenNotification} />
+      )}
+    </>
+  );
+
   return (
     <>
     <AppShell
@@ -1744,8 +1832,14 @@ export default function AdminPage() {
       menus={menus}
       badges={{ orders: newOrdersCount }}
       onOpenNotification={handleOpenNotification}
+      layout={layout}
+      wide={isWide}
+      layoutBusy={layoutBusy}
+      onLayoutChange={changeLayout}
+      renderWindowTab={renderTab}
+      navNonce={navNonce}
     >
-      {activeTab === 'dashboard'  && (loading && !dashData ? <PageLoader /> : dashboardBody)}
+      {!desktopShown && renderTab(activeTab)}
       <PosTab
         creds={creds}
         posProducts={posProducts}
@@ -1761,69 +1855,6 @@ export default function AdminPage() {
         onRefresh={() => fetchDash()}
         onRefreshStock={refreshPosStock}
       />
-      {activeTab === 'products'   && <ProductsTab   creds={creds} />}
-      {activeTab === 'categories' && <CategoriesTab creds={creds} />}
-      {activeTab === 'orders'     && (
-        <OrdersTab creds={creds} highlightInvoice={highlightInvoice} highlightOrderId={highlightOrderId}
-          onHighlightHandled={() => { setHighlightInvoice(null); setHighlightOrderId(null); }}
-          onNewOrdersCountChange={setNewOrdersCount} />
-      )}
-      {activeTab === 'resellers'  && <ResellersTab creds={creds} />}
-      {activeTab === 'customers'  && <CustomersTab creds={creds} />}
-      {activeTab === 'storefront-customers' && <StorefrontCustomersTab creds={creds} />}
-      {activeTab === 'reviews'    && <ReviewsTab creds={creds} />}
-      {activeTab === 'stock'      && <StockTab     creds={creds} products={posProducts} categories={posCategories} />}
-      {activeTab === 'stock-report' && <StockReportTab creds={creds} products={posProducts} categories={posCategories} />}
-      {activeTab === 'po-report' && <ProcurementReportTab creds={creds} kind="po" />}
-      {activeTab === 'gr-report' && <ProcurementReportTab creds={creds} kind="gr" />}
-      {activeTab === 'opname-report' && <ProcurementReportTab creds={creds} kind="opname" />}
-      {activeTab === 'suppliers'  && <SuppliersTab  creds={creds} />}
-      {activeTab === 'materials'  && (
-        <MaterialsTab creds={creds} highlightMaterialId={highlightMaterialId}
-          onHighlightHandled={() => setHighlightMaterialId(null)}
-          canEdit={can('materials', 'edit')} openSubTab={materialsOpenSubTab} onSubTabOpened={() => setMaterialsOpenSubTab(null)} />
-      )}
-      {(activeTab === 'purchase-orders' || activeTab === 'goods-receipts') && (
-        <PurchaseFlowTab creds={creds} view={activeTab === 'purchase-orders' ? 'po' : 'gr'} canApprove={can('goods-receipts', 'approve')} canApprovePo={can('purchase-orders', 'approve')}
-          onGoto={(v, grId) => { setOpenGrId(grId ?? null); setActiveTab(v === 'po' ? 'purchase-orders' : 'goods-receipts'); }}
-          openGrId={openGrId} onOpenGrHandled={() => setOpenGrId(null)} />
-      )}
-      {activeTab === 'production' && <ProductionTab creds={creds} products={posProducts} />}
-      {activeTab === 'consignment' && (
-        <ConsignmentTab creds={creds} products={posProducts} can={(a: Action) => can('consignment', a)}
-          highlightShipmentId={highlightShipmentId} highlightRecapId={highlightRecapId} highlightTransferId={highlightTransferId}
-          onHighlightHandled={() => { setHighlightShipmentId(null); setHighlightRecapId(null); setHighlightTransferId(null); }} />
-      )}
-      {activeTab === 'mitra-report' && <MitraDailyReportTab creds={creds} />}
-      {activeTab === 'wa-forward' && <WaForwardTab creds={creds} can={(a: Action) => can('wa-forward', a)} />}
-      {activeTab === 'consign'    && <TitipJualTab  creds={creds} mode="main" can={(a: Action) => can('consign', a)} onOpenJournal={id => { setJournalStallId(id); setActiveTab('consign-journal'); }} />}
-      {activeTab === 'consign-opname' && <TitipJualTab creds={creds} mode="opname" can={(a: Action) => can('consign-opname', a)} />}
-      {activeTab === 'consign-journal' && <TitipJualTab creds={creds} mode="journal" can={(a: Action) => can('consign-journal', a)} journalStallId={journalStallId} />}
-      {activeTab === 'stall-own'  && <StallOwnTab   creds={creds} can={(a: Action) => can('stall-own', a)} />}
-      {activeTab === 'stall-pos'  && <KasirLapakTab creds={creds} can={(a: Action) => can('stall-pos', a)} />}
-      {activeTab === 'stall-sales-report' && <CashierSalesReportTab creds={creds} />}
-      {activeTab === 'stall-report' && <StallSalesReportTab creds={creds} />}
-      {activeTab === 'income'     && <IncomeTab     creds={creds} />}
-      {activeTab === 'expenses'   && <ExpensesTab   creds={creds} />}
-      {activeTab === 'capital'    && <CapitalTab    creds={creds} />}
-      {activeTab === 'wallets'    && <WalletsTab    creds={creds} />}
-      {activeTab === 'finance-report' && (
-        <FinanceReportTab creds={creds}
-          onOpenOrder={invoiceNo => { setHighlightInvoice(invoiceNo); setActiveTab('orders'); }} />
-      )}
-      {activeTab === 'product-report' && <ProductReportTab creds={creds} can={(a: Action) => can('product-report', a)} canWallet={(a: Action) => can('wallets', a)} isSuperAdmin={superAdmin} />}
-      {activeTab === 'settings'   && <SettingsTab  creds={creds} />}
-      {activeTab === 'users'      && <UsersTab     creds={creds} currentUsername={adminUsername} can={(a: Action) => can('users', a)} />}
-      {activeTab === 'roles'      && <RolesTab     creds={creds} can={(a: Action) => can('roles', a)} />}
-      {activeTab === 'modules'    && <ModulesTab   creds={creds} can={(a: Action) => can('modules', a)} onChanged={() => fetchNav(creds)} />}
-      {activeTab === 'menus'      && <MenusTab     creds={creds} can={(a: Action) => can('menus', a)} onChanged={() => fetchNav(creds)} />}
-      {activeTab === 'role-permissions' && <RolePermissionsTab creds={creds} can={(a: Action) => can('role-permissions', a)} />}
-      {activeTab === 'history'    && <HistoryTab   creds={creds} />}
-      {activeTab === 'admin-fee' && superAdmin && <AdminFeeTab creds={creds} />}
-      {activeTab === 'tagihan-admin-fee' && authUser?.role === 'admin' && <AdminFeeBillingTab creds={creds} />}
-      {activeTab === 'notifications' && (
-        <NotificationsTab creds={creds} username={adminUsername} onOpenNotification={handleOpenNotification} />
-      )}
     </AppShell>
     {forceLogoutReason && (
       <ForceLogoutOverlay

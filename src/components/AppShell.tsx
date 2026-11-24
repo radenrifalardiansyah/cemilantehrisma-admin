@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
 import { getToken } from 'firebase/messaging';
@@ -17,8 +18,17 @@ import LoginRequestWatcher from '@/components/LoginRequestWatcher';
 import NotificationBell, { type NotificationDoc } from '@/components/NotificationBell';
 import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
+import { isDesktopCapable, isDesktopShown, isWindowTab, type UiLayout } from '@/lib/ui-layout';
+import BackToDesktop from '@/components/desktop/BackToDesktop';
+import { useWindowManager } from '@/components/desktop/use-window-manager';
+import { focusedTabId, topTabId } from '@/components/desktop/window-reducer';
+import { moduleColor, PINNED_COLOR, type DesktopGroup } from '@/components/desktop/types';
+import type { DesktopActions } from '@/components/desktop/DesktopShell';
 import { getClientMessaging } from '@/lib/firebase-client';
 import type { ModuleDoc, MenuDoc } from '@/types/rbac';
+
+// Mode Desktop dimuat hanya bila dipakai (pengguna Klasik tidak mengunduh kodenya).
+const DesktopShell = dynamic(() => import('@/components/desktop/DesktopShell'), { ssr: false });
 
 // Notification.permission sudah 'granted' berarti device ini pernah getToken() lewat
 // NotificationBell — panggil lagi di sini akan mengembalikan token yang SAMA (deterministik per
@@ -147,6 +157,16 @@ interface AppShellProps {
   menus: MenuDoc[];
   badges?: Partial<Record<TabId, number>>;
   onOpenNotification: (n: NotificationDoc) => void;
+  // ── Layout Desktop (opsional; tanpa props ini AppShell berperilaku persis seperti Klasik) ──
+  layout?: UiLayout;
+  /** Layar >= lg. Di bawah itu SELALU Klasik. */
+  wide?: boolean;
+  layoutBusy?: boolean;
+  onLayoutChange?: (next: UiLayout) => void;
+  /** Isi tab untuk jendela (JSX sama persis dengan jalur Klasik). */
+  renderWindowTab?: (tab: TabId) => React.ReactNode;
+  /** Naik tiap permintaan pindah tab saat layout Desktop dipakai (lihat page.tsx). */
+  navNonce?: number;
 }
 
 export default function AppShell({
@@ -154,6 +174,7 @@ export default function AppShell({
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
+  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
@@ -195,6 +216,23 @@ export default function AppShell({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const confirm = useConfirm();
 
+  // Mode Desktop: aktif bila layout bukan Klasik, layar lebar, dan ada penyedia isi jendela. Selama menu aktif
+  // belum berjendela, kerangka Klasik dipakai sementara (preferensi tersimpan tidak berubah).
+  const desktopEnabled = !!renderWindowTab && isDesktopCapable(layout, wide);
+  // Desktop kosong: "Kembali ke mode Desktop" tanpa jendela terbuka tidak membuka jendela baru. Ditandai dengan tab
+  // aktif saat itu, sehingga otomatis hilang begitu activeTab berganti.
+  const [deskHomeAt, setDeskHomeAt] = useState<string | null>(null);
+  const desktopShown = !!renderWindowTab && (isDesktopShown(layout, wide, activeTab) || (isDesktopCapable(layout, wide) && deskHomeAt === activeTab));
+  const { wm, dispatch: wmDispatch } = useWindowManager({ enabled: desktopEnabled, skin: layout === 'mac' ? 'mac' : 'windows', activeTab, navNonce });
+  const openKey = wm.windows.map(w => w.tabId).join('|');
+  // Isi jendela di-memo: berubah hanya saat page merender ulang (renderWindowTab baru) atau himpunan jendela berubah,
+  // bukan tiap geser/fokus jendela.
+  const windowContent = useMemo(() => {
+    const content: Record<string, React.ReactNode> = {};
+    if (desktopShown && renderWindowTab) for (const id of openKey ? openKey.split('|') : []) content[id] = renderWindowTab(id as TabId);
+    return content;
+  }, [desktopShown, renderWindowTab, openKey]);
+
   const NAV_GROUPS  = buildNavGroups(modules, menus);
   const ALL_TABS     = NAV_GROUPS.flatMap(g => flattenClickable(g.tabs));
   const preferred     = PREFERRED_PRIMARY_IDS.map(id => ALL_TABS.find(t => t.id === id)).filter((t): t is ClickableTab => !!t);
@@ -220,6 +258,39 @@ export default function AppShell({
     })),
     ...(PINNED_TAB && matchesMore(PINNED_TAB) ? [{ id: '__pinned', label: 'Lainnya', tabs: [PINNED_TAB] }] : []),
   ].filter(g => g.tabs.length > 0);
+
+  // Data menu untuk mode Desktop: SEMUA menu yang boleh dilihat, per modul (urutan modul -> warna ubin tetap).
+  // Ikon dari data menu (resolveIcon), bukan peta statis. Hanya dihitung bila mode Desktop aktif.
+  const desktopGroups: DesktopGroup[] = desktopShown ? [
+    ...NAV_GROUPS.map((g, i) => ({
+      id: g.id, label: g.label,
+      items: flattenClickable(g.tabs).map(t => ({
+        tab: t.id, label: t.label, Icon: t.Icon, color: moduleColor(i), windowed: isWindowTab(t.id), badge: t.id === 'pos' ? 0 : (badges[t.id] ?? 0),
+      })),
+    })),
+    ...(PINNED_TAB ? [{ id: '__pinned', label: SUPER_ADMIN_TAB ? 'Super Admin' : 'Tagihan', items: [{
+      tab: PINNED_TAB.id, label: PINNED_TAB.label, Icon: PINNED_TAB.Icon, color: PINNED_COLOR, windowed: false, badge: 0,
+    }] }] : []),
+  ].filter(g => g.items.length > 0) : [];
+
+  // Aksi jendela. activeTab tetap satu-satunya sumber kebenaran tab: fokus/buka jendela -> setActiveTab(tab);
+  // menutup/mengecilkan jendela terdepan memindahkan activeTab ke jendela teratas berikutnya (bila tidak ada, tidak diubah).
+  const syncTab = (tab: string | null) => { if (tab && tab !== activeTab) setActiveTab(tab as TabId); };
+  const desktopActions: DesktopActions = {
+    open: tab => { wmDispatch({ type: 'open', tabId: tab }); syncTab(tab); },
+    focus: tab => { if (focusedTabId(wm) !== tab) wmDispatch({ type: 'focus', tabId: tab }); syncTab(tab); },
+    minimize: tab => { wmDispatch({ type: 'minimize', tabId: tab }); if (focusedTabId(wm) === tab) syncTab(topTabId(wm, tab)); },
+    maximize: tab => { wmDispatch({ type: 'maximize', tabId: tab }); syncTab(tab); },
+    close: tab => { wmDispatch({ type: 'close', tabId: tab }); if (focusedTabId(wm) === tab || activeTab === tab) syncTab(topTabId(wm, tab)); },
+    move: (tab, x, y) => wmDispatch({ type: 'move', tabId: tab, x, y }),
+    resize: (tab, r) => wmDispatch({ type: 'resize', tabId: tab, ...r }),
+    arrange: () => wmDispatch({ type: 'arrange' }),
+    closeAll: () => wmDispatch({ type: 'closeAll' }),
+  };
+  const pickDesktopItem = (item: { tab: string; windowed: boolean }) => {
+    if (item.windowed) desktopActions.open(item.tab);
+    else { setDeskHomeAt(null); setActiveTab(item.tab as TabId); }
+  };
 
   // Desktop sidebar search — filters the nested NAV_GROUPS tree by label, keeping a
   // parent tab whenever it or any of its children match so results stay navigable.
@@ -301,6 +372,7 @@ export default function AppShell({
 
       {/* ═══ Desktop Sidebar ═══════════════════════════════════ */}
       <aside
+        inert={desktopShown || undefined}
         className="hidden lg:flex flex-col flex-shrink-0 h-full sidebar-texture"
         style={{
           width: sw,
@@ -668,6 +740,7 @@ export default function AppShell({
 
       {/* ═══ Main Area ═════════════════════════════════════════ */}
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden"
+        inert={desktopShown || undefined}
         style={{ '--sidebar-w': `${sw}px` } as React.CSSProperties}>
 
         {/* Topbar */}
@@ -702,7 +775,7 @@ export default function AppShell({
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <div id="topbar-slot" className="flex items-center gap-1 sm:gap-2" />
-            <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />
+            {!desktopShown && <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} onViewAll={() => go('notifications')} />}
             <a
               href={MAIN_APP} target="_blank" rel="noopener noreferrer"
               title="Lihat Toko"
@@ -938,6 +1011,24 @@ export default function AppShell({
         </>
       )}
 
+      {desktopShown && (
+        <DesktopShell
+          skin={layout === 'mac' ? 'mac' : 'windows'} layout={layout} layoutBusy={layoutBusy}
+          wm={wm} groups={desktopGroups} content={windowContent}
+          username={username} avatar={avatar} roleLabel={superAdmin ? 'Super Admin' : (role || 'Administrator')} storeUrl={MAIN_APP}
+          renderBell={side => (
+            <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} placement={side} tone="dark"
+              onViewAll={() => setActiveTab('notifications')} />
+          )}
+          actions={desktopActions} onPickMenu={pickDesktopItem}
+          onChangeLayout={next => onLayoutChange?.(next)}
+          onEditProfile={() => setProfileOpen(true)} onAbout={() => setAboutOpen(true)} onLogout={handleLogout}
+        />
+      )}
+      {desktopEnabled && !desktopShown && (
+        <BackToDesktop onClick={() => { const top = topTabId(wm); if (top) setActiveTab(top as TabId); else setDeskHomeAt(activeTab); }} />
+      )}
+
       {aboutOpen && <AboutModal creds={creds} onClose={() => setAboutOpen(false)} />}
       {profileOpen && (
         <EditProfileModal
@@ -948,6 +1039,9 @@ export default function AppShell({
           avatar={avatar}
           onClose={() => setProfileOpen(false)}
           onSaved={patch => onProfileUpdated?.(patch)}
+          layout={onLayoutChange ? layout : undefined}
+          onLayoutChange={onLayoutChange}
+          layoutBusy={layoutBusy}
         />
       )}
 

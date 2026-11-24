@@ -6,9 +6,22 @@ import { getRolePermissionsMap, staleSessionReason, sessionExpired, SESSION_TAG 
 import { fullAccessPermissions } from '@/lib/permissions';
 import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 import { isValidSignatureUrl } from '@/lib/profile-signature';
+import { isUiLayout, type UiLayout } from '@/lib/ui-layout';
 import type { Action } from '@/types/rbac';
 
 interface ProfileRow { email: string | null; avatar: string | null; full_name: string | null; signature: string | null }
+
+// Query TERPISAH dari profil utama: kolom ui_layout baru ada setelah scripts/add-profile-ui-layout.mjs
+// dijalankan. Selama belum ada (atau DB sesaat bermasalah) hasilnya null dan profil lain tetap termuat.
+async function loadUiLayout(username: string): Promise<UiLayout | null> {
+  try {
+    const [row] = await getSql()<{ ui_layout: string | null }[]>`select ui_layout from profiles where username = ${username}`;
+    return isUiLayout(row?.ui_layout) ? row.ui_layout : null;
+  } catch (err) {
+    console.warn('Tidak bisa membaca profiles.ui_layout (migrasi belum dijalankan?) — dianggap belum memilih', err);
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
@@ -20,6 +33,7 @@ export async function GET(req: NextRequest) {
   if (staleReason !== false) return sessionExpired(staleReason);
 
   const superAdmin = authUser.role === 'super-admin';
+  const uiLayoutPromise = loadUiLayout(authUser.username);
 
   // This route fires on every session restore/refresh for every logged-in user. Degrade
   // gracefully instead of failing the whole session bootstrap: fail-closed to empty permissions
@@ -43,7 +57,7 @@ export async function GET(req: NextRequest) {
     ? fullAccessPermissions()
     : permsMap ?? {};
 
-  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '' };
+  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '', uiLayout: await uiLayoutPromise };
 
   return Response.json({ ok: true, user, superAdmin, permissions });
 }

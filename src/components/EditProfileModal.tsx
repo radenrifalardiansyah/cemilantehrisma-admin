@@ -8,6 +8,8 @@ import TwoFactorSection from '@/components/TwoFactorSection';
 import ImageUploadBox from '@/components/ImageUploadBox';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import LayoutPicker from '@/components/desktop/LayoutPicker';
+import type { UiLayout } from '@/lib/ui-layout';
 
 // Firestore Timestamp serialized over JSON (Response.json()) lands as {seconds, nanoseconds}.
 type SerializedTimestamp = { seconds: number; nanoseconds: number };
@@ -46,6 +48,11 @@ interface Props {
   avatar: string | null;
   onClose: () => void;
   onSaved: (patch: { email: string | null; avatar: string | null }) => void;
+  // Pilihan tampilan dashboard (Klasik/Windows/Mac). Disimpan langsung oleh pemanggil saat dipilih (bukan lewat tombol Simpan)
+  // dan hanya ditampilkan di layar >= lg; tanpa props ini bagian "Tampilan" tidak dirender.
+  layout?: UiLayout;
+  onLayoutChange?: (next: UiLayout) => void;
+  layoutBusy?: boolean;
 }
 
 // PNG (transparansi dipertahankan supaya latar tanda tangan tidak putih saat ditumpuk di PDF), sisi terpanjang 800px.
@@ -77,7 +84,7 @@ const compressImage = async (file: File): Promise<File> => {
   );
 };
 
-export default function EditProfileModal({ creds, username, role, email, avatar, onClose, onSaved }: Props) {
+export default function EditProfileModal({ creds, username, role, email, avatar, onClose, onSaved, layout, onLayoutChange, layoutBusy }: Props) {
   const toast   = useToast();
   const headers = { 'x-admin-auth': creds };
 
@@ -271,6 +278,14 @@ export default function EditProfileModal({ creds, username, role, email, avatar,
             <input value={emailVal} onChange={e => setEmailVal(e.target.value)}
               className="input" placeholder="cth: budi@email.com" />
           </Field>
+
+          {layout && onLayoutChange && (
+            <div className="hidden lg:block" style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
+              <p className="field-label" style={{ marginBottom: 10 }}>Tampilan</p>
+              <LayoutPicker value={layout} onChange={onLayoutChange} disabled={layoutBusy} />
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Berlaku langsung dan tersimpan di akun Anda. Di layar kecil (HP) selalu memakai tampilan Klasik.</p>
+            </div>
+          )}
 
           <div style={{ borderTop: '1px solid var(--border-2)', paddingTop: 14 }}>
             <p className="field-label" style={{ marginBottom: 10 }}>Ubah Password (opsional)</p>

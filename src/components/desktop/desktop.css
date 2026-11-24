@@ -1,0 +1,160 @@
+/*
+ * Mode Desktop (layout 'windows' / 'mac'). Semua kelas berawalan dsk- dan hanya dimuat saat DesktopShell dipakai.
+ * Warna jendela/isi memakai token aplikasi (--surface, --border, --accent, dst.) supaya ikut tema bila token diganti;
+ * warna taskbar/dock/wallpaper sengaja tetap gelap seperti sidebar Klasik.
+ * CATATAN: jangan beri transform/filter/backdrop-filter/contain pada leluhur isi jendela atau bel notifikasi —
+ * itu membuat position:fixed (modal) berpatokan ke leluhur itu, bukan ke layar.
+ */
+.dsk-root {
+  --dsk-top: 0px; --dsk-bot: 48px;
+  position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 40; overflow: hidden; isolation: isolate;
+  color: var(--text-primary); font-size: 13px; line-height: 1.45;
+}
+.dsk-root[data-skin="mac"] { --dsk-top: 28px; --dsk-bot: 92px; }
+.dsk-root[data-skin="windows"] { background:
+    radial-gradient(900px 500px at 78% 8%, rgba(240,138,60,.38), transparent 60%),
+    radial-gradient(700px 480px at 6% 96%, rgba(212,105,30,.28), transparent 62%),
+    linear-gradient(160deg, #3A1F10 0%, #24120A 55%, #1A0D06 100%); }
+.dsk-root[data-skin="mac"] { background:
+    radial-gradient(800px 520px at 20% 12%, rgba(255,196,140,.75), transparent 62%),
+    radial-gradient(900px 560px at 88% 78%, rgba(122,52,22,.85), transparent 64%),
+    linear-gradient(170deg, #F2A86A 0%, #D4691E 42%, #5B2A12 100%); }
+.dsk-root :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dsk-root button { font: inherit; cursor: pointer; }
+
+/* modal bulk-action tab tidak boleh tertutup taskbar/dock; kotak obrolan digeser naik */
+.dsk-root .bulk-action-bar { bottom: calc(var(--dsk-bot) + 16px) !important; }
+body:has(.dsk-root[data-skin="windows"]) .chat-fab { bottom: 62px; }
+body:has(.dsk-root[data-skin="windows"]) .chat-panel { bottom: 172px; }
+body:has(.dsk-root[data-skin="mac"]) .chat-fab { bottom: 106px; }
+body:has(.dsk-root[data-skin="mac"]) .chat-panel { bottom: 216px; }
+
+/* ── ikon bergradasi (squircle) ── */
+.dsk-tile { --c: #D4691E; display: grid; place-items: center; color: #fff; flex-shrink: 0; border-radius: 27%;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--c) 62%, #fff) 0%, var(--c) 58%, color-mix(in srgb, var(--c) 82%, #000) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -1px 0 rgba(0,0,0,.18), 0 5px 12px rgba(0,0,0,.28); }
+.dsk-tile svg { width: 52%; height: 52%; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+
+/* ── ikon di meja (Windows) ── */
+.dsk-icons { position: absolute; left: 10px; top: 10px; bottom: 54px; width: 96px; display: grid; grid-template-rows: repeat(auto-fill, 90px); gap: 4px 2px; align-content: start; }
+.dsk-ico { position: relative; width: 92px; height: 88px; background: transparent; border: 1px solid transparent; border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px 4px; color: #fff; font-size: 11px; font-weight: 600; text-align: center; line-height: 1.2; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.dsk-ico:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.18); }
+.dsk-ico .dsk-tile { width: 46px; height: 46px; }
+.dsk-badge { position: absolute; top: -4px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: #E23B30; color: #fff; font-size: 9px; font-weight: 800; display: grid; place-items: center; text-shadow: none; }
+
+/* ── jendela ── */
+.dsk-win { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 44px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
+.dsk-win[data-max="true"] { border-radius: 0; }
+.dsk-win[data-focus="true"] { box-shadow: 0 22px 54px rgba(0,0,0,.55); }
+.dsk-root[data-skin="windows"] .dsk-win[data-focus="true"] { box-shadow: 0 22px 54px rgba(0,0,0,.55), 0 0 0 1.5px var(--accent); }
+.dsk-root[data-skin="mac"] .dsk-win { border-color: rgba(0,0,0,.18); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.dsk-root[data-skin="mac"] .dsk-win[data-focus="true"] { box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+.dsk-win:focus { outline: none; }
+.dsk-win:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dsk-tb { display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; height: 38px; flex-shrink: 0; background: var(--surface-2); border-bottom: 1px solid var(--border); cursor: grab; user-select: none; touch-action: none; }
+.dsk-tb[data-dragging="true"] { cursor: grabbing; }
+.dsk-tb .dsk-tile { width: 20px; height: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 1px 3px rgba(0,0,0,.25); }
+.dsk-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-tbslot { display: flex; align-items: center; gap: 6px; cursor: default; }
+.dsk-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.dsk-body > * { flex-shrink: 0; }
+.dsk-tl { display: none; gap: 8px; align-items: center; }
+.dsk-tl button { width: 12px; height: 12px; border-radius: 50%; border: 0; padding: 0; }
+.dsk-tl .r { background: #FF5F57; } .dsk-tl .y { background: #FEBC2E; } .dsk-tl .g { background: #28C840; }
+.dsk-tl:hover button { box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+.dsk-wbs { display: flex; }
+.dsk-wb { width: 30px; height: 26px; border: 0; background: transparent; border-radius: 7px; display: grid; place-items: center; color: var(--text-muted); }
+.dsk-wb:hover { background: var(--border); color: var(--text-primary); }
+.dsk-wb.x:hover { background: var(--danger); color: #fff; }
+.dsk-root[data-skin="mac"] .dsk-tb { height: 36px; padding: 0 12px; gap: 14px; }
+.dsk-root[data-skin="mac"] .dsk-title { text-align: center; }
+.dsk-root[data-skin="mac"] .dsk-tb .dsk-tile { display: none; }
+.dsk-root[data-skin="mac"] .dsk-tl { display: flex; }
+.dsk-root[data-skin="mac"] .dsk-wbs { display: none; }
+.dsk-root[data-skin="mac"] .dsk-win[data-focus="false"] .dsk-title { opacity: .55; }
+.dsk-root[data-skin="mac"] .dsk-win[data-focus="false"] .dsk-tl button { background: #B9ABA0; }
+/* pegangan ubah ukuran */
+.dsk-rs { position: absolute; z-index: 3; touch-action: none; }
+.dsk-rs.e { top: 38px; right: -3px; bottom: 10px; width: 8px; cursor: ew-resize; }
+.dsk-rs.s { left: 10px; right: 10px; bottom: -3px; height: 8px; cursor: ns-resize; }
+.dsk-rs.se { right: -3px; bottom: -3px; width: 16px; height: 16px; cursor: nwse-resize; }
+.dsk-win[data-max="true"] .dsk-rs { display: none; }
+
+/* ── taskbar (Windows). Tanpa backdrop-filter: bel notifikasi (dengan modal fixed) ada di dalamnya. ── */
+.dsk-task { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: rgba(20,9,3,.96); border-top: 1px solid rgba(255,255,255,.1); display: flex; align-items: center; gap: 6px; padding: 0 8px; z-index: 5000; }
+.dsk-start { height: 36px; padding: 0 14px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 800; display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.dsk-tbtns { flex: 1; display: flex; gap: 5px; min-width: 0; overflow: hidden; }
+.dsk-tbtn { height: 36px; max-width: 180px; min-width: 0; padding: 0 12px 0 8px; display: flex; align-items: center; gap: 7px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07); color: #F3E6D8; border-radius: 9px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.dsk-tbtn[data-on="true"] { background: rgba(240,138,60,.28); border-color: rgba(240,138,60,.6); }
+.dsk-tbtn[data-min="true"] { opacity: .6; }
+.dsk-tbtn .dsk-tile { width: 20px; height: 20px; }
+.dsk-tbtn span { overflow: hidden; text-overflow: ellipsis; }
+.dsk-tray { display: flex; align-items: center; gap: 10px; color: #EDD9C4; font-size: 12px; font-weight: 600; padding: 0 6px; white-space: nowrap; flex-shrink: 0; }
+
+/* ── menu bar (Mac). Tanpa backdrop-filter, alasan sama dengan taskbar. ── */
+.dsk-mbar { position: absolute; left: 0; right: 0; top: 0; height: 28px; z-index: 5000; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: rgba(26,12,5,.82); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.dsk-mbar b { font-weight: 800; }
+.dsk-mbar .sp { flex: 1; }
+.dsk-mbar img { border-radius: 5px; }
+.dsk-mbar .dsk-tray { color: #fff; gap: 8px; padding: 0; }
+.dsk-mbar .dsk-tray button[title] { height: 22px; width: 22px; }
+
+/* ── dock (Mac) ── */
+.dsk-dock { position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 8px; display: flex; align-items: flex-end; gap: 9px; padding: 8px 12px; border-radius: 22px; background: rgba(255,255,255,.28); border: 1px solid rgba(255,255,255,.4); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); z-index: 5000; max-width: calc(100% - 16px); }
+.dsk-dk { position: relative; width: 54px; height: 54px; border: 0; padding: 0; background: transparent; transform-origin: 50% 100%; transition: transform .12s ease-out; flex-shrink: 0; }
+.dsk-dk .dsk-tile { width: 100%; height: 100%; }
+.dsk-dk .dot { position: absolute; left: 50%; bottom: -5px; width: 4px; height: 4px; border-radius: 50%; background: #fff; transform: translateX(-50%); display: none; }
+.dsk-dk[data-open="true"] .dot { display: block; }
+.dsk-dk .tip { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); background: rgba(26,12,5,.9); color: #fff; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; opacity: 0; }
+.dsk-dk:hover .tip, .dsk-dk:focus-visible .tip { opacity: 1; }
+.dsk-sep { width: 1px; align-self: stretch; margin: 4px 2px; background: rgba(255,255,255,.4); flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { .dsk-dk { transition: none; } }
+
+/* ── menu Mulai / Launchpad + menu akun ── */
+.dsk-scrim { position: fixed; inset: 0; z-index: 5500; background: transparent; }
+.dsk-root[data-skin="mac"] .dsk-scrim[data-kind="launchpad"] { background: rgba(26,12,5,.35); }
+.dsk-menu { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.5); z-index: 6000; display: flex; flex-direction: column; overflow: hidden; }
+.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(420px, calc(100% - 16px)); max-height: calc(100% - 66px); }
+.dsk-menu[data-variant="launchpad"] { left: 0; right: 0; margin-inline: auto; bottom: 92px; width: min(560px, calc(100% - 24px)); max-height: calc(100% - 136px); }
+.dsk-menu input[type="search"] { margin: 12px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-primary); padding: 0 12px; font: inherit; outline: none; }
+.dsk-menu input[type="search"]:focus { border-color: var(--accent); }
+.dsk-mscroll { overflow: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.dsk-mgrp h4 { margin: 0 0 6px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+.dsk-mitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
+.dsk-mi { position: relative; display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 9px; border: 0; border-radius: 9px; background: var(--surface-2); color: var(--text-primary); font-size: 12px; font-weight: 600; min-width: 0; }
+.dsk-mi:hover { background: var(--accent-bg); }
+.dsk-mi .dsk-tile { width: 22px; height: 22px; }
+.dsk-mi .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.dsk-mi .tag { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 99px; background: var(--border-2); color: var(--text-muted); flex-shrink: 0; }
+.dsk-mi .dsk-badge { top: -4px; right: -4px; }
+.dsk-mfoot { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface-2); }
+.dsk-mfoot .row { display: flex; gap: 6px; }
+.dsk-mfoot button { flex: 1; border-radius: 9px; padding: 8px; font-weight: 700; font-size: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); }
+.dsk-mfoot button:hover { background: var(--accent-bg); }
+.dsk-mfoot button:disabled { opacity: .5; cursor: default; }
+.dsk-empty { margin: 0; padding: 16px 0 20px; text-align: center; color: var(--text-muted); font-size: 12px; }
+
+.dsk-account { position: relative; }
+.dsk-avatar { width: 28px; height: 28px; border-radius: 8px; overflow: hidden; border: 0; padding: 0; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), #A84F10); color: #fff; font-size: 12px; font-weight: 800; }
+.dsk-mbar .dsk-avatar { width: 20px; height: 20px; border-radius: 6px; font-size: 10px; }
+.dsk-pop { position: absolute; right: 0; min-width: 210px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.45); z-index: 6000; padding: 6px; color: var(--text-primary); }
+.dsk-pop[data-side="up"] { bottom: calc(100% + 10px); }
+.dsk-pop[data-side="down"] { top: calc(100% + 8px); }
+.dsk-pop .who { padding: 8px 10px 6px; }
+.dsk-pop .who b { display: block; font-size: 12.5px; }
+.dsk-pop .who small { color: var(--text-muted); font-size: 11px; }
+.dsk-pop a, .dsk-pop button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.dsk-pop a:hover, .dsk-pop button:hover { background: var(--surface-2); }
+.dsk-pop .danger { color: var(--danger); }
+.dsk-pop hr { border: 0; border-top: 1px solid var(--border-2); margin: 4px 0; }
+
+/* ── pemilih tampilan ── */
+.dsk-lp { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dsk-lp button { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text-primary); text-align: left; }
+.dsk-lp button[aria-checked="true"] { border-color: var(--accent); background: var(--accent-bg); }
+.dsk-lp button:disabled { opacity: .6; cursor: default; }
+.dsk-lp b { font-size: 12px; }
+.dsk-lp small { font-size: 10.5px; color: var(--text-muted); line-height: 1.3; }
+.dsk-lp[data-compact="true"] button { flex-direction: row; align-items: center; justify-content: center; padding: 7px 8px; border-radius: 9px; font-size: 12px; font-weight: 700; }
+.dsk-pv { height: 44px; border-radius: 8px; position: relative; overflow: hidden; border: 1px solid var(--border); background: var(--ground); }
+.dsk-win[hidden] { display: none; }
