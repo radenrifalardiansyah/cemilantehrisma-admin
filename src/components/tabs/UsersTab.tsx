@@ -26,6 +26,7 @@ import ImageUploadBox from '@/components/ImageUploadBox';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useOnDataRevision } from '@/lib/data-sync';
 
 interface AppUser {
   username: string; email: string | null; role: string; createdAt?: { seconds: number }; twoFactor?: boolean;
@@ -115,6 +116,10 @@ export default function UsersTab({ creds, currentUsername, can }: UsersTabProps)
     setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mode jendela: role ditambah/diubah/dihapus di jendela Role -> daftar role untuk dropdown pengguna dimuat ulang (tanpa spinner penuh).
+  useOnDataRevision('roles', () => {
+    fetch('/api/roles', { headers }).then(async r => { if (r.ok) setRoles((await r.json() as { roles: Role[] }).roles); }).catch(() => {});
+  });
 
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? id;
   const isSelf = (username: string) => username.toLowerCase() === currentUsername.toLowerCase();

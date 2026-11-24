@@ -88,4 +88,14 @@ describe('data-sync', () => {
     click('w'); flush();
     expect(loads.categories).toBe(1);
   });
+
+  it("domain 'roles' (Role -> dropdown role di Pengguna): satu bump memuat ulang pembaca sekali; Klasik no-op", () => {
+    render(<DataSyncProvider enabled><Writer domain="roles" source="roles-tab" /><Reader domain="roles" name="categories" /></DataSyncProvider>);
+    click('w'); flush();
+    expect(loads.categories).toBe(1);
+    act(() => root.unmount()); root = createRoot(host);
+    render(<DataSyncProvider enabled={false}><Writer domain="roles" source="roles-tab" /><Reader domain="roles" name="categories" /></DataSyncProvider>);
+    click('w'); flush();
+    expect(loads.categories).toBe(1);
+  });
 });

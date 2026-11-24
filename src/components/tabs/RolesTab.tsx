@@ -24,6 +24,7 @@ import PageLoader from '@/components/PageLoader';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 interface EditState { id: string; name: string; description: string }
 const EMPTY: EditState = { id: '', name: '', description: '' };
@@ -66,6 +67,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
 
   const [roles,   setRoles]   = useState<Role[]>([]);
@@ -113,7 +115,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
         });
 
     if (r.ok) {
-      await load();
+      await load(); bumpData('roles', 'roles-tab');
       closeEdit();
       toast.success(isNew ? 'Role berhasil ditambahkan.' : 'Role berhasil diperbarui.');
     } else {
@@ -128,7 +130,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
     setDeletingId(role.id);
     const r = await fetch(`/api/roles/${role.id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('roles', 'roles-tab');
       setSelected(s => { const n = new Set(s); n.delete(role.id); return n; });
       toast.success(`Role "${role.name}" berhasil dihapus.`);
     } else {
@@ -149,6 +151,7 @@ export default function RolesTab({ creds, can }: RolesTabProps) {
     if (r.ok) {
       const d = await r.json() as { deleted: number; skippedSystem: number; skippedInUse: number };
       await load();
+      if (d.deleted > 0) bumpData('roles', 'roles-tab');
       setSelected(new Set());
       const extra = [
         d.skippedSystem > 0 ? `${d.skippedSystem} role sistem dilewati` : '',

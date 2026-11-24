@@ -31,10 +31,11 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 // Tahap 13: 'resellers' (Reseller). Pelanggan, Pelanggan Storefront, dan Ulasan tetap non-jendela.
 // Tahap 14: 'customers' (Pelanggan). Pelanggan Storefront dan Ulasan tetap non-jendela.
 // Tahap 16: 'storefront-customers', 'reviews', serta Biaya Admin ('admin-fee' untuk super-admin dan 'tagihan-admin-fee' untuk role admin:
-// menu pinned, bukan MenuDoc, dua sisi dari satu fitur). Role/Izin/Modul/Menu dan Titip Jual/Lapak tetap non-jendela.
+// menu pinned, bukan MenuDoc, dua sisi dari satu fitur). Tahap 17: 'roles' (Role). 'role-permissions', 'modules', 'menus' dan
+// Titip Jual/Lapak tetap non-jendela.
 // Keluarga Titip Jual/Lapak ('consign', 'stall-*') sengaja belum berjendela.
 export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
-  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications', 'categories', 'resellers', 'customers', 'storefront-customers', 'reviews', 'admin-fee', 'tagihan-admin-fee'] as const;
+  'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications', 'categories', 'resellers', 'customers', 'storefront-customers', 'reviews', 'admin-fee', 'tagihan-admin-fee', 'roles'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 // Pintasan di meja Windows dan dock Mac (jangan penuhi layar). Menu berjendela lain tetap ada di Mulai/Launchpad,

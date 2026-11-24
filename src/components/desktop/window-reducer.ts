@@ -81,6 +81,7 @@ export const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   customers: { w: 900, h: 580 },
   'storefront-customers': { w: 900, h: 580 },
   reviews: { w: 900, h: 580 },
+  roles: { w: 900, h: 580 },
   'admin-fee': { w: 980, h: 620 },
   'tagihan-admin-fee': { w: 900, h: 580 },
 };
@@ -89,7 +90,7 @@ export const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
 export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 }, consignment: { w: 720, h: 420 }, 'mitra-report': { w: 640, h: 380 }, 'finance-report': { w: 720, h: 420 }, suppliers: { w: 640, h: 380 }, materials: { w: 720, h: 420 }, 'purchase-orders': { w: 720, h: 420 }, 'goods-receipts': { w: 720, h: 420 },
   stock: { w: 720, h: 420 }, production: { w: 720, h: 420 }, 'product-report': { w: 720, h: 420 }, capital: { w: 640, h: 380 },
   'po-report': { w: 720, h: 420 }, 'gr-report': { w: 720, h: 420 }, 'opname-report': { w: 720, h: 420 }, 'stock-report': { w: 720, h: 420 }, 'stall-report': { w: 720, h: 420 }, settings: { w: 640, h: 400 }, users: { w: 640, h: 400 }, history: { w: 720, h: 420 }, notifications: { w: 640, h: 400 }, categories: { w: 640, h: 400 }, resellers: { w: 640, h: 400 }, customers: { w: 640, h: 400 },
-  'storefront-customers': { w: 640, h: 400 }, reviews: { w: 640, h: 400 }, 'admin-fee': { w: 720, h: 420 }, 'tagihan-admin-fee': { w: 640, h: 400 } };
+  'storefront-customers': { w: 640, h: 400 }, reviews: { w: 640, h: 400 }, roles: { w: 640, h: 400 }, 'admin-fee': { w: 720, h: 420 }, 'tagihan-admin-fee': { w: 640, h: 400 } };
 export const minSizeFor = (tabId: string) => MIN_SIZES[tabId] ?? { w: MIN_W, h: MIN_H };
 const FALLBACK_SIZE = { w: 860, h: 540 };
 
