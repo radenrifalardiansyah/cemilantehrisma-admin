@@ -65,6 +65,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 // Status stok dihitung dari total qty gudang (menu Stok), kecuali "Buka PO" diaktifkan manual.
 const stockStatus = (p: Pick<FireProduct, 'stockQty' | 'openPO'>) =>
   p.openPO ? STOCK_MAP.open_po : (p.stockQty ?? 0) > 0 ? STOCK_MAP.ready : STOCK_MAP.habis;
@@ -189,6 +190,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
   const [categories,    setCategories]    = useState<FireCategory[]>([]);
 
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
 
   // ── Load products ─────────────────────────────────────────────────
   const load = async () => {
@@ -205,6 +207,9 @@ export default function ProductsTab({ creds }: { creds: string }) {
   };
 
   useEffect(() => { load(); loadCats(); }, []);
+  // Mode jendela: muat ulang bila tab lain mengubah kategori atau stok produk.
+  useOnDataRevision('categories', () => { void loadCats(); });
+  useOnDataRevision('products', () => { void load(); }, 'products-tab');
 
   // ── Seed ──────────────────────────────────────────────────────────
   const seed = async () => {
@@ -214,7 +219,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
     if (r.ok) {
       const d = await r.json() as { seeded: number };
       toast.success(`${d.seeded} produk baru ditambahkan.`);
-      await load();
+      await load(); bumpData('products', 'products-tab');
     } else {
       toast.error('Gagal migrasi data produk.');
     }
@@ -345,7 +350,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
       });
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number; stockDroppedNoWarehouse?: number };
-        await load();
+        await load(); bumpData('products', 'products-tab');
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} Kode duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
@@ -356,7 +361,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
         }
       } else {
         const d = await r.json().catch(() => ({ error: undefined, created: 0 })) as { error?: string; created?: number };
-        if (d.created) await load(); // sebagian sempat tersimpan sebelum gagal — refresh biar tidak dobel-impor
+        if (d.created) { await load(); bumpData('products', 'products-tab'); } // sebagian sempat tersimpan sebelum gagal — refresh biar tidak dobel-impor
         toast.error(d.error ?? 'Gagal mengimpor data produk.');
       }
     } catch {
@@ -431,7 +436,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/products`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       : await fetch(`${API}/api/products/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('products', 'products-tab');
       closeEdit();
       toast.success(isNew ? 'Produk berhasil ditambahkan.' : 'Produk berhasil diperbarui.');
     } else {
@@ -459,7 +464,7 @@ export default function ProductsTab({ creds }: { creds: string }) {
       const r = await fetch(`${API}/api/products/${id}/recalculate-hpp`, { method: 'POST', headers });
       if (r.ok) {
         const d = await r.json() as { updatedOrders: number; updatedRecaps: number };
-        await load();
+        await load(); bumpData('products', 'products-tab');
         toast.success(`HPP "${name}" ditimpa di ${d.updatedOrders} order & ${d.updatedRecaps} rekap konsinyasi.`);
       } else {
         const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };

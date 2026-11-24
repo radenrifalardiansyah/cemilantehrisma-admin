@@ -8,6 +8,7 @@ import Tooltip from '@/components/Tooltip';
 import PageLoader from '@/components/PageLoader';
 import { useStoreHeader } from '@/lib/pdf/useStoreHeader';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
+import { useOnDataRevision } from '@/lib/data-sync';
 
 // Menu Purchase Order (PO) dan Goods Receipt (GR) — dua menu terpisah, satu komponen (`view`).
 // Memuat bahan baku, supplier, dompet & header toko sekali untuk PurchaseFlowPanel; daftar PO/GR
@@ -37,6 +38,9 @@ export default function PurchaseFlowTab({ creds, view, canApprove, canApprovePo,
     setLoading(false);
   }, [creds]);
   useEffect(() => { load(); }, [load]);
+  // Mode jendela: sumber sinkron bersama panel (bump milik panel sendiri tidak memuat ulang dua kali).
+  const syncId = view === 'po' ? 'purchase-flow-po' : 'purchase-flow-gr';
+  useOnDataRevision('procurement', () => { void load(); }, syncId);
 
   if (loading && materials.length === 0 && suppliers.length === 0) return <PageLoader />;
 
@@ -64,6 +68,7 @@ export default function PurchaseFlowTab({ creds, view, canApprove, canApprovePo,
           canApprove={canApprove}
           canApprovePo={canApprovePo}
           onStockChanged={() => { load(); refetchBalances(); }}
+          syncId={syncId}
         />
       </div>
     </div>

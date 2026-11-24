@@ -26,6 +26,7 @@ const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 const TEMPLATE_COLS = [
   { header: 'Nama*',     key: 'name',    width: 24 },
@@ -91,6 +92,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
 
   const [suppliers,   setSuppliers]   = useState<Supplier[]>([]);
@@ -120,6 +122,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
     setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useOnDataRevision('procurement', () => { void load(); }, 'suppliers-tab');
 
   // ── Excel template + import ────────────────────────────────────────
   const downloadTemplate = async () => {
@@ -231,7 +234,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
       });
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
-        await load();
+        await load(); bumpData('procurement', 'suppliers-tab');
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} telepon duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
@@ -413,7 +416,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/suppliers`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(rest) })
       : await fetch(`${API}/api/suppliers/${id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(rest) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('procurement', 'suppliers-tab');
       closeEdit();
       toast.success(isNew ? 'Supplier berhasil ditambahkan.' : 'Supplier berhasil diperbarui.');
     } else {
@@ -429,7 +432,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
     setDeletingId(id);
     const r = await fetch(`${API}/api/suppliers/${id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('procurement', 'suppliers-tab');
       setSelected(s => { const n = new Set(s); n.delete(id); return n; });
       toast.success(`Supplier "${name}" berhasil dihapus.`);
     } else {
@@ -452,7 +455,7 @@ export default function SuppliersTab({ creds }: { creds: string }) {
       const d = await r.json() as { deleted: number; skippedInUse: number };
       // Refetch, bukan filter optimis lokal — sebagian id terpilih bisa dilewati server
       // (skippedInUse, mis. masih punya riwayat pembelian bahan baku).
-      await load();
+      await load(); bumpData('procurement', 'suppliers-tab');
       setSelected(new Set());
       const extra = d.skippedInUse > 0 ? ` (${d.skippedInUse} masih punya riwayat pembelian, dilewati)` : '';
       toast.success(`${d.deleted} supplier berhasil dihapus.${extra}`);

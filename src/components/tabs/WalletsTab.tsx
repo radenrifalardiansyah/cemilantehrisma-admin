@@ -38,6 +38,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 // wallets/balances/transfers are all Postgres-backed and cheap to re-fetch — safe to poll.
 const WALLETS_POLL_MS = 30_000;
 
@@ -104,6 +105,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
 
   const [wallets, setWallets] = useState<WalletDoc[]>([]);
@@ -196,6 +198,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useOnDataRevision('wallets', () => { void load(true); }, 'wallets-tab');
 
   // /api/wallets & /api/wallet-transfers are Postgres-backed — safe to poll for balances/
   // transfers made from another device/session while this tab stays open.
@@ -225,7 +228,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/wallets`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/wallets/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       closeEdit();
       toast.success(isNew ? 'Dompet berhasil ditambahkan.' : 'Dompet berhasil diperbarui.');
     } else {
@@ -243,7 +246,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       body: JSON.stringify({ isActive: !w.isActive }),
     });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       toast.success(w.isActive ? `Dompet "${w.name}" dinonaktifkan.` : `Dompet "${w.name}" diaktifkan kembali.`);
     } else {
       toast.error('Gagal mengubah status dompet.');
@@ -256,7 +259,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     setDeletingId(w.id);
     const r = await fetch(`${API}/api/wallets/${w.id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       setSelected(s => { const n = new Set(s); n.delete(w.id); return n; });
       toast.success(`Dompet "${w.name}" berhasil dihapus.`);
     } else {
@@ -276,7 +279,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     });
     if (r.ok) {
       const d = await r.json() as { deleted: number; skipped: number };
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       setSelected(new Set());
       toast.success(`${d.deleted} dompet berhasil dihapus.${d.skipped > 0 ? ` ${d.skipped} dilewati karena masih punya riwayat transaksi.` : ''}`);
     } else {
@@ -490,7 +493,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/wallet-transfers`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/wallet-transfers/${transferEditing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       closeTransferEdit();
       toast.success(transferIsNew ? 'Transfer berhasil dicatat.' : 'Transfer berhasil diperbarui.');
     } else {
@@ -513,7 +516,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     setTransferDeletingId(t.id);
     const r = await fetch(`${API}/api/wallet-transfers/${t.id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       setTransferSelected(s => { const n = new Set(s); n.delete(t.id); return n; });
       toast.success('Transfer berhasil dihapus.');
     } else {
@@ -533,7 +536,7 @@ export default function WalletsTab({ creds }: { creds: string }) {
     });
     if (r.ok) {
       const d = await r.json() as { deleted: number };
-      await load();
+      await load(); bumpData('wallets', 'wallets-tab');
       setTransferSelected(new Set());
       toast.success(`${d.deleted} transfer berhasil dihapus.`);
     } else {

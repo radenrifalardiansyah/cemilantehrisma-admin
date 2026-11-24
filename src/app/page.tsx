@@ -82,6 +82,8 @@ import PageLoader from '@/components/PageLoader';
 import { useToast } from '@/components/Toast';
 import { DateInput } from '@/components/DateTimeInput';
 import { formatRp } from '@/lib/format';
+import DataSyncBridge from '@/components/DataSyncBridge';
+import { DataSyncProvider } from '@/lib/data-sync';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 interface DashOrder { customerName: string; total: number; date: string; }
@@ -570,6 +572,17 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/products', { headers: { 'x-admin-auth': creds } });
       if (res.ok) setPosProducts((await res.json() as { products: PosProduct[] }).products);
+    } catch {}
+  }, [creds]);
+
+  // Muat ulang kategori Kasir/Gudang/Laporan saja (dipicu revisi data 'categories' di mode jendela).
+  const refreshPosCategories = useCallback(async () => {
+    try {
+      const res = await fetch('/api/categories', { headers: { 'x-admin-auth': creds } });
+      if (res.ok) {
+        const { categories } = await res.json() as { categories: { id: string; name: string; emoji: string }[] };
+        setPosCategories(categories.map(c => ({ id: c.id, label: c.name, emoji: c.emoji })));
+      }
     } catch {}
   }, [creds]);
 
@@ -1820,6 +1833,8 @@ export default function AdminPage() {
 
   return (
     <>
+    <DataSyncProvider enabled={desktopShown}>
+    <DataSyncBridge onCategories={refreshPosCategories} onProducts={refreshPosStock} />
     <AppShell
       activeTab={activeTab}
       setActiveTab={setActiveTab}
@@ -1864,6 +1879,7 @@ export default function AdminPage() {
     >
       {!desktopShown && renderTab(activeTab)}
     </AppShell>
+    </DataSyncProvider>
     {forceLogoutReason && (
       <ForceLogoutOverlay
         reason={forceLogoutReason}

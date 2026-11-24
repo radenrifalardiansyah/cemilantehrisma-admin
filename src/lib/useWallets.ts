@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatRp } from './format';
+import { useDataRevision } from './data-sync';
 
 export interface WalletDoc {
   id: string; name: string; type: 'cash' | 'bank' | 'ewallet' | 'other';
@@ -14,6 +15,8 @@ export interface WalletDoc {
 // bukan diulang di tiap tab.
 export function useWallets(creds: string) {
   const [wallets, setWallets] = useState<WalletDoc[]>([]);
+  // Mode jendela: daftar dompet dimuat ulang saat tab lain mengubahnya (0 di Klasik = perilaku lama).
+  const rev = useDataRevision('wallets');
   useEffect(() => {
     let cancelled = false;
     fetch('/api/wallets', { headers: { 'x-admin-auth': creds } })
@@ -21,7 +24,7 @@ export function useWallets(creds: string) {
       .then(d => { if (!cancelled) setWallets(d.wallets); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [creds]);
+  }, [creds, rev]);
   return wallets;
 }
 
@@ -48,6 +51,8 @@ export function activeWalletOptions(wallets: WalletDoc[], balances?: Record<stri
 export function useWalletBalances(creds: string, wallets: WalletDoc[]) {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  // Tanpa dependensi revisi di sini: saat revisi 'wallets' naik, useWallets memuat ulang daftar (array baru) dan itu
+  // sudah memicu satu muat ulang saldo — menambah `rev` membuat dua fetch saldo per bump.
   useEffect(() => {
     if (wallets.length === 0) return;
     let cancelled = false;

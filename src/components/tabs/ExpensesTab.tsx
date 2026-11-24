@@ -31,6 +31,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 const EXPENSE_CATEGORIES = ['Sewa', 'Gaji', 'Listrik & Air', 'Transportasi', 'Perlengkapan', 'Bahan Baku', 'Produksi', 'Susut/Rusak', 'Lainnya'];
 
@@ -122,6 +123,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
   const wallets = useWallets(creds);
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
@@ -213,7 +215,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/expenses`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/expenses/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'expenses-tab');
       refetchBalances();
       closeEdit();
       toast.success(isNew ? 'Pengeluaran berhasil dicatat.' : 'Pengeluaran berhasil diperbarui.');
@@ -232,7 +234,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     setDeletingId(e.id);
     const r = await fetch(`${API}/api/expenses/${e.id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'expenses-tab');
       refetchBalances();
       setSelected(s => { const n = new Set(s); n.delete(e.id); return n; });
       toast.success('Pengeluaran berhasil dihapus.');
@@ -257,7 +259,7 @@ export default function ExpensesTab({ creds }: { creds: string }) {
     });
     if (r.ok) {
       const d = await r.json() as { deleted: number; skipped: number };
-      await load();
+      await load(); bumpData('wallets', 'expenses-tab');
       refetchBalances();
       setSelected(new Set());
       toast.success(`${d.deleted} pengeluaran berhasil dihapus.${d.skipped > 0 ? ` ${d.skipped} dilewati karena otomatis dari sumber lain.` : ''}`);

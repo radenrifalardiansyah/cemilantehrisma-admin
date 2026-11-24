@@ -42,6 +42,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 // /api/orders is Postgres-backed and cached 15s server-side, so polling for new orders here
 // is safe. 30s (vs Kasir's 20s) — this list is the full order history, not just a product
@@ -225,6 +226,7 @@ export default function OrdersTab({ creds, highlightInvoice, highlightOrderId, o
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
 
   const [bankOptions, setBankOptions] = useState<{ name: string; bankCode?: string; logoUrl?: string }[]>([]);
   useEffect(() => {
@@ -448,7 +450,7 @@ _${storeName}_`.trim();
     loadPayments(o.id);
   };
   const refreshPayOrder = async (orderId: string) => {
-    await load();
+    await load(); bumpData('products', 'orders-tab'); bumpData('wallets', 'orders-tab');
     await loadPayments(orderId);
     refetchBalances();
   };
@@ -521,7 +523,7 @@ _${storeName}_`.trim();
     });
     const d = await r.json().catch(() => ({})) as { error?: string; refund?: number; settlement?: string };
     if (r.ok) {
-      await load();
+      await load(); bumpData('products', 'orders-tab'); bumpData('wallets', 'orders-tab');
       refetchBalances();
       toast.success(d.settlement === 'potong_piutang'
         ? `Retur dicatat — piutang berkurang ${formatRp(d.refund ?? 0)}.`
@@ -756,7 +758,7 @@ _${storeName}_`.trim();
       body: JSON.stringify({ paymentStatus: 'lunas', walletId: bulkMarkLunasWalletId }),
     }).then(r => r.ok).catch(() => false)));
     const okCount = results.filter(Boolean).length;
-    await load();
+    await load(); if (okCount > 0) { bumpData('products', 'orders-tab'); bumpData('wallets', 'orders-tab'); }
     refetchBalances();
     setSelected(new Set());
     setShowBulkMarkLunas(false);
@@ -846,7 +848,7 @@ _${storeName}_`.trim();
     const ids = [...selected];
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
     const deleted = results.filter(Boolean).length;
-    await load();
+    await load(); if (deleted > 0) { bumpData('products', 'orders-tab'); bumpData('wallets', 'orders-tab'); }
     refetchBalances();
     setSelected(new Set());
     if (deleted === ids.length) toast.success(`${deleted} pesanan berhasil dihapus & stok dikembalikan ke gudang.`);
@@ -968,7 +970,7 @@ _${storeName}_`.trim();
       }),
     });
     if (r.ok) {
-      await load();
+      await load(); bumpData('products', 'orders-tab'); bumpData('wallets', 'orders-tab');
       refetchBalances();
       toast.success('Pesanan berhasil diperbarui.');
       setEditingOrder(null);
@@ -1299,7 +1301,7 @@ _${storeName}_`.trim();
       });
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
-        await load();
+        await load(); bumpData('products', 'orders-tab'); bumpData('wallets', 'orders-tab');
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} No. Invoice duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',

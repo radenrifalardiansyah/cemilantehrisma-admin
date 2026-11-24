@@ -35,6 +35,7 @@ import FilterSelect from '@/components/FilterSelect';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Modal from '@/components/Modal';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 export interface FlowMaterial { id: string; name: string; unit: string; stockQty: number; avgCost: number }
 export interface FlowSupplier { id: string; name: string; phone?: string; address?: string; pic?: string }
@@ -131,14 +132,19 @@ interface Props {
   canApprovePo: boolean;
   /** Dipanggil setelah aksi yang mengubah stok/keuangan (approve/batal GR) supaya induk memuat ulang. */
   onStockChanged: () => void;
+  /** Id sumber sinyal sinkron (dari PurchaseFlowTab) agar bump milik sendiri tidak memuat ulang dua kali. */
+  syncId?: string;
 }
 
 export default function PurchaseFlowPanel({
-  creds, view, onGoto, openGrId, onOpenGrHandled, materials, suppliers, walletOptions, walletBalances, storeHeader, canApprove, canApprovePo, onStockChanged,
+  creds, view, onGoto, openGrId, onOpenGrHandled, materials, suppliers, walletOptions, walletBalances, storeHeader, canApprove, canApprovePo, onStockChanged, syncId,
 }: Props) {
   const toast = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
+  const sid = syncId ?? 'purchase-flow-panel';
+  const bumpProc = () => bumpData('procurement', sid);
   const jsonHeaders = { ...headers, 'Content-Type': 'application/json' };
 
   const [pos, setPos] = useState<Po[]>([]);
@@ -166,6 +172,8 @@ export default function PurchaseFlowPanel({
     (view === 'po' ? loadPos() : loadGrs()).finally(() => { if (!cancelled) setLoaded(l => ({ ...l, [view]: true })); });
     return () => { cancelled = true; };
   }, [view, loadPos, loadGrs]);
+  // Mode jendela: PO/GR diubah di jendela lain (mis. approve GR mengubah qty diterima PO) -> muat ulang daftar yang tampil.
+  useOnDataRevision('procurement', () => { void (view === 'po' ? loadPos() : loadGrs()); }, sid);
 
   // ── PDF (dirender di browser — tanpa beban server) ─────────────────────────
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -234,7 +242,7 @@ Dokumen PO (PDF):
 ${pdfUrl}`.trim();
       const waUrl = `https://wa.me/${normalizePhone(p.supplierPhone)}?text=${encodeURIComponent(message)}`;
       if (win) win.location.href = waUrl; else window.location.href = waUrl;
-      await loadPos();
+      await loadPos(); bumpProc();
     } finally { setBusyId(null); }
   };
 
@@ -283,7 +291,7 @@ ${pdfUrl}`.trim();
       if (!res.ok) { toast.error(d.error ?? 'Gagal menyimpan PO.'); return; }
       toast.success(editingPo ? 'PO diperbarui.' : `PO ${d.poNumber} dibuat.`);
       setShowPoForm(false);
-      await loadPos();
+      await loadPos(); bumpProc();
     } finally { setSavingPo(false); }
   };
 
@@ -292,7 +300,7 @@ ${pdfUrl}`.trim();
     setBusyId(`del-${p.id}`);
     const r = await fetch(`/api/purchase-orders/${p.id}`, { method: 'DELETE', headers });
     const d = await r.json().catch(() => ({})) as { error?: string };
-    if (r.ok) { toast.success('PO dihapus.'); await loadPos(); } else toast.error(d.error ?? 'Gagal menghapus PO.');
+    if (r.ok) { toast.success('PO dihapus.'); await loadPos(); bumpProc(); } else toast.error(d.error ?? 'Gagal menghapus PO.');
     setBusyId(null);
   };
 
@@ -356,12 +364,12 @@ ${pdfUrl}`.trim();
           method: 'POST', headers: jsonHeaders, body: JSON.stringify({ walletId: gWallet, paymentStatus: gPayment, dueDate: gPayment === 'belum_lunas' && gDue ? gDue : null }),
         });
         const ad = await ar.json().catch(() => ({})) as { error?: string };
-        if (!ar.ok) { toast.error(ad.error ?? 'Gagal meng-approve GR.'); await loadGrs(); return; }
+        if (!ar.ok) { toast.error(ad.error ?? 'Gagal meng-approve GR.'); await loadGrs(); bumpProc(); return; }
         toast.success('GR di-approve — pembelian masuk ke tab Pembelian & stok bertambah.');
-        onStockChanged();
+        onStockChanged(); bumpData('wallets', sid);
       } else toast.success('GR tersimpan.');
       setEditingGr(null);
-      await loadGrs();
+      await loadGrs(); bumpProc();
     } finally { setSavingGr(false); }
   };
 
@@ -370,7 +378,7 @@ ${pdfUrl}`.trim();
     setBusyId(`del-${g.id}`);
     const r = await fetch(`/api/goods-receipts/${g.id}`, { method: 'DELETE', headers });
     const d = await r.json().catch(() => ({})) as { error?: string };
-    if (r.ok) { toast.success('GR dihapus.'); await loadGrs(); } else toast.error(d.error ?? 'Gagal menghapus GR.');
+    if (r.ok) { toast.success('GR dihapus.'); await loadGrs(); bumpProc(); } else toast.error(d.error ?? 'Gagal menghapus GR.');
     setBusyId(null);
   };
 
@@ -387,7 +395,7 @@ ${pdfUrl}`.trim();
       const d = await r.json().catch(() => ({})) as { error?: string };
       if (!r.ok) { toast.error(d.error ?? 'Gagal meng-approve PO.'); return; }
       toast.success(`${p.poNumber} di-approve.`);
-      await loadPos();
+      await loadPos(); bumpProc();
     } finally { setBusyId(null); }
   };
   const askCancelPo = (p: Po) => {
@@ -417,8 +425,8 @@ ${pdfUrl}`.trim();
         toast.success(`GR dibatalkan, TAPI stok tidak diubah karena sudah dipakai/dibeli lagi: ${(d.skippedMaterials ?? []).join(', ')}. Betulkan lewat "Koreksi" di menu Stok.`);
       } else toast.success(`${cancelTarget.label} dibatalkan.`);
       setCancelTarget(null);
-      await Promise.all([loadPos(), loadGrs()]);
-      if (cancelTarget.kind === 'gr') onStockChanged();
+      await Promise.all([loadPos(), loadGrs()]); bumpProc();
+      if (cancelTarget.kind === 'gr') { onStockChanged(); bumpData('wallets', sid); }
     } finally { setCancelling(false); }
   };
 
@@ -445,8 +453,8 @@ ${pdfUrl}`.trim();
       if (!r.ok) { toast.error(d.error ?? 'Gagal rollback.'); return; }
       toast.success(`${rbTarget.label} dikembalikan ke Draft.`);
       setRbTarget(null);
-      await Promise.all([loadPos(), loadGrs()]);
-      if (rbTarget.kind === 'gr') onStockChanged();
+      await Promise.all([loadPos(), loadGrs()]); bumpProc();
+      if (rbTarget.kind === 'gr') { onStockChanged(); bumpData('wallets', sid); }
     } finally { setRollingBack(false); }
   };
 
@@ -569,7 +577,7 @@ ${pdfUrl}`.trim();
       if ((d.deleted ?? 0) > 0) toast.success(`${d.deleted} ${label} dihapus.${skipped.length > 0 ? ` ${skipped.length} dilewati: ${skipped.slice(0, 3).map(x => `${x.label} (${x.reason})`).join(', ')}${skipped.length > 3 ? ', …' : ''}.` : ''}`);
       else toast.error(`Tidak ada ${label} yang bisa dihapus: ${skipped.slice(0, 3).map(x => `${x.label} (${x.reason})`).join(', ')}${skipped.length > 3 ? ', …' : ''}.`);
       setSelected(new Set());
-      await (view === 'po' ? loadPos() : loadGrs());
+      await (view === 'po' ? loadPos() : loadGrs()); bumpProc();
     } finally { setBusyId(null); }
   };
 
@@ -591,7 +599,7 @@ ${pdfUrl}`.trim();
       if ((d.approved ?? 0) > 0) toast.success(`${d.approved} PO di-approve.${skipped.length > 0 ? ` ${skipped.length} dilewati: ${skipText}.` : ''}`);
       else toast.error(`Tidak ada PO yang bisa di-approve: ${skipText}.`);
       setSelPo(new Set());
-      await loadPos();
+      await loadPos(); bumpProc();
     } finally { setBusyId(null); }
   };
 
@@ -611,7 +619,7 @@ ${pdfUrl}`.trim();
       if (!r.ok) { toast.error(d.error ?? 'Gagal mengimpor PO.'); return; }
       const skipped = (d.skippedInvalid ?? 0) + parsed.skipped;
       toast.success(`${d.created} PO draft berhasil diimpor.${skipped > 0 ? ` (${skipped} baris/PO tidak valid dilewati)` : ''}`);
-      await loadPos();
+      await loadPos(); bumpProc();
     } catch { toast.error('Gagal membaca file Excel. Pastikan format sesuai template.'); }
     finally { setImporting(false); }
   };

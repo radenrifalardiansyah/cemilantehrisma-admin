@@ -39,6 +39,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -224,6 +225,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
 
   const [subTab, setSubTab] = useState<SubTab>('stok');
@@ -279,6 +281,8 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   };
 
   useEffect(() => { loadMaterials(); loadSuppliers(); loadPurchases(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mode jendela: GR/PO/supplier berubah di jendela lain -> stok, supplier, pembelian dimuat ulang.
+  useOnDataRevision('procurement', () => { void loadMaterials(); void loadSuppliers(); void loadPurchases(); }, 'materials-tab');
 
   const openCreateM = () => { setEditingM(null); setMForm(EMPTY_MATERIAL); setShowMForm(true); };
   const openEditM = (m: RawMaterial) => { setEditingM(m); setMForm({ name: m.name, unit: m.unit, minStock: m.minStock ? String(m.minStock) : '' }); setShowMForm(true); };
@@ -290,7 +294,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
     const r = editingM
       ? await fetch(`${API}/api/materials/${editingM.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/materials`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (r.ok) { await loadMaterials(); setShowMForm(false); toast.success(editingM ? 'Bahan baku berhasil diperbarui.' : 'Bahan baku berhasil ditambahkan.'); }
+    if (r.ok) { await loadMaterials(); bumpData('procurement', 'materials-tab'); setShowMForm(false); toast.success(editingM ? 'Bahan baku berhasil diperbarui.' : 'Bahan baku berhasil ditambahkan.'); }
     else toast.error('Gagal menyimpan bahan baku.');
     setSavingM(false);
   };
@@ -344,7 +348,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan koreksi.'); return; }
       toast.success(`Stok & harga "${adjustingMaterial.name}" berhasil dikoreksi.`);
       closeAdjust();
-      await loadMaterials();
+      await loadMaterials(); bumpData('procurement', 'materials-tab');
     } finally { setSubmittingAdjust(false); }
   };
 
@@ -363,7 +367,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       const d = await r.json() as { deleted: number; skippedInUse: number };
       // Refetch, bukan filter optimis lokal — sebagian item terpilih bisa saja dilewati server
       // (skippedInUse), jadi tidak semua id yang dicentang benar-benar terhapus.
-      await loadMaterials();
+      await loadMaterials(); bumpData('procurement', 'materials-tab');
       setSelectedMaterials(new Set());
       const extra = d.skippedInUse > 0 ? ` (${d.skippedInUse} masih dipakai di pembelian/produksi, dilewati)` : '';
       toast.success(`${d.deleted} bahan baku berhasil dihapus.${extra}`);
@@ -480,7 +484,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       });
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
-        await loadMaterials();
+        await loadMaterials(); bumpData('procurement', 'materials-tab');
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} nama duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',
@@ -488,7 +492,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
         toast.success(`${d.created} bahan baku berhasil diimpor.${extra ? ` (${extra})` : ''}`);
       } else {
         const d = await r.json().catch(() => ({ error: undefined, created: 0 })) as { error?: string; created?: number };
-        if (d.created) await loadMaterials(); // sebagian sempat tersimpan sebelum gagal — refresh biar tidak dobel-impor
+        if (d.created) { await loadMaterials(); bumpData('procurement', 'materials-tab'); } // sebagian sempat tersimpan sebelum gagal — refresh biar tidak dobel-impor
         toast.error(d.error ?? 'Gagal mengimpor data bahan baku.');
       }
     } catch {
@@ -767,8 +771,8 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan pembelian.'); return; }
       toast.success(editingPurchase ? 'Perubahan pembelian tersimpan.' : 'Pembelian bahan baku tersimpan.');
       closePurchaseForm();
-      await Promise.all([loadMaterials(), loadPurchases()]);
-      refetchBalances();
+      await Promise.all([loadMaterials(), loadPurchases()]); bumpData('procurement', 'materials-tab');
+      refetchBalances(); bumpData('wallets', 'materials-tab');
       setPayablesKey(k => k + 1);
     } finally { setSubmittingPurchase(false); }
   };
@@ -776,7 +780,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const markPurchaseLunas = async (id: string) => {
     setMarkingPurchaseId(id);
     const r = await fetch(`${API}/api/material-purchases/${id}/mark-lunas`, { method: 'POST', headers });
-    if (r.ok) { toast.success('Pembelian ditandai lunas — sisa hutang sudah tercatat di Pengeluaran.'); await loadPurchases(); refetchBalances(); setPayablesKey(k => k + 1); }
+    if (r.ok) { toast.success('Pembelian ditandai lunas — sisa hutang sudah tercatat di Pengeluaran.'); await loadPurchases(); refetchBalances(); bumpData('procurement', 'materials-tab'); bumpData('wallets', 'materials-tab'); setPayablesKey(k => k + 1); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menandai lunas.');
     setMarkingPurchaseId(null);
   };
@@ -784,7 +788,7 @@ export default function MaterialsTab({ creds, highlightMaterialId, onHighlightHa
   const openPay = (p: Purchase) => setPayTarget({
     id: p.id, supplierName: p.supplierName, total: p.total, remaining: p.remaining ?? p.total, dueDate: p.dueDate ?? null, walletId: p.walletId ?? null,
   });
-  const afterPay = async () => { await loadPurchases(); refetchBalances(); setPayablesKey(k => k + 1); };
+  const afterPay = async () => { await loadPurchases(); refetchBalances(); bumpData('procurement', 'materials-tab'); bumpData('wallets', 'materials-tab'); setPayablesKey(k => k + 1); };
 
   // Baris info hutang (sisa + jatuh tempo) di riwayat pembelian; hanya untuk pembelian belum lunas yang tidak dibatalkan.
   const debtInfo = (p: Purchase, center = false) => {
@@ -875,7 +879,7 @@ ${pdfUrl}`.trim();
     setDeletingPurchaseId(p.id);
     const r = await fetch(`${API}/api/material-purchases/${p.id}`, { method: 'DELETE', headers });
     const data = await r.json().catch(() => ({})) as { error?: string };
-    if (r.ok) { toast.success('Pembelian berhasil dihapus, stok bahan baku dikembalikan.'); await Promise.all([loadMaterials(), loadPurchases()]); refetchBalances(); }
+    if (r.ok) { toast.success('Pembelian berhasil dihapus, stok bahan baku dikembalikan.'); await Promise.all([loadMaterials(), loadPurchases()]); bumpData('procurement', 'materials-tab'); refetchBalances(); bumpData('wallets', 'materials-tab'); }
     else toast.error(`${data.error ?? 'Gagal menghapus pembelian.'} Coba tombol "Batalkan" sebagai gantinya.`);
     setDeletingPurchaseId(null);
   };
@@ -895,8 +899,8 @@ ${pdfUrl}`.trim();
       toast.success(data.reversed
         ? 'Pembelian dibatalkan — stok & harga rata-rata bahan baku sudah dikembalikan.'
         : `Pembelian dibatalkan, TAPI stok tidak diubah karena sudah dipakai/dibeli lagi: ${(data.skippedMaterials ?? []).join(', ')}. Betulkan manual lewat "Koreksi" di menu Stok.`);
-      await Promise.all([loadMaterials(), loadPurchases()]);
-      refetchBalances();
+      await Promise.all([loadMaterials(), loadPurchases()]); bumpData('procurement', 'materials-tab');
+      refetchBalances(); bumpData('wallets', 'materials-tab');
     }
     else toast.error(data.error ?? 'Gagal membatalkan pembelian.');
     setVoidingPurchaseId(null);
@@ -934,6 +938,7 @@ ${pdfUrl}`.trim();
     setSelectedPurchases(new Set());
     await Promise.all([loadMaterials(), loadPurchases()]);
     refetchBalances();
+    if (okCount > 0) { bumpData('procurement', 'materials-tab'); bumpData('wallets', 'materials-tab'); }
     if (okCount > 0) toast.success(`${okCount} pembelian berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena sudah dipakai/dibeli lagi.` : ''}`);
     else toast.error('Semua pembelian yang dipilih tidak bisa dihapus (sudah dipakai/dibeli lagi setelahnya).');
     setBulkDeletingPurchases(false);
@@ -1066,7 +1071,7 @@ ${pdfUrl}`.trim();
       });
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number };
-        await Promise.all([loadMaterials(), loadPurchases()]);
+        await Promise.all([loadMaterials(), loadPurchases()]); bumpData('procurement', 'materials-tab');
         const totalSkipped = d.skippedInvalid + skippedInvalidClient;
         toast.success(`${d.created} pembelian berhasil diimpor.${totalSkipped > 0 ? ` (${totalSkipped} baris tidak valid dilewati)` : ''}`);
       } else {
@@ -1575,7 +1580,7 @@ ${pdfUrl}`.trim();
         {/* ════ HUTANG SUPPLIER ════════════════════════════════ */}
         {subTab === 'hutang' && (
           <SupplierPayablesPanel creds={creds} canEdit={canEdit} reloadKey={payablesKey}
-            onChanged={async () => { await loadPurchases(); refetchBalances(); }} onOpenPurchases={() => setSubTab('pembelian')} />
+            onChanged={async () => { await loadPurchases(); refetchBalances(); bumpData('procurement', 'materials-tab'); bumpData('wallets', 'materials-tab'); }} onOpenPurchases={() => setSubTab('pembelian')} />
         )}
 
         {/* ════ PEMBELIAN ══════════════════════════════════════ */}

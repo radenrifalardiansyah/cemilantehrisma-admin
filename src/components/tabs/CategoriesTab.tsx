@@ -28,6 +28,7 @@ const API       = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 interface FireCategory {
   id: string; name: string; emoji: string; description?: string; order?: number; bannerUrl?: string;
@@ -110,6 +111,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
 
   const loadCats = async () => {
     setCatsLoading(true);
@@ -148,7 +150,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
       });
       if (!r.ok) failed++;
     }
-    await loadCats();
+    await loadCats(); bumpData('categories', 'categories-tab');
     setSeedingCats(false);
     if (failed === 0) toast.success('Kategori default berhasil ditambahkan.');
     else toast.error(`${failed} dari ${defaults.length} kategori gagal ditambahkan.`);
@@ -236,7 +238,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
         return;
       }
     }
-    await loadCats(); closeEditCat(); setSavingCat(false);
+    await loadCats(); bumpData('categories', 'categories-tab'); closeEditCat(); setSavingCat(false);
     toast.success(isNewCat ? 'Kategori berhasil ditambahkan.' : 'Kategori berhasil diperbarui.');
   };
 
@@ -248,7 +250,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
       const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
       toast.error(d.error ?? 'Gagal menghapus kategori.');
     } else {
-      await loadCats();
+      await loadCats(); bumpData('categories', 'categories-tab');
       toast.success(`Kategori "${name}" berhasil dihapus.`);
     }
     setDeletingCatId(null);
@@ -264,7 +266,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
     const ids = [...selected];
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/categories/${id}`, { method: 'DELETE', headers })));
     const okIds = ids.filter((_, i) => results[i].ok);
-    await loadCats();
+    await loadCats(); if (okIds.length > 0) bumpData('categories', 'categories-tab');
     setSelected(new Set());
     if (okIds.length === ids.length) toast.success(`${okIds.length} kategori berhasil dihapus.`);
     else if (okIds.length === 0) toast.error('Tidak ada kategori yang bisa dihapus — masih dipakai produk.');
@@ -541,7 +543,7 @@ export default function CategoriesTab({ creds }: { creds: string }) {
       });
       if (r.ok) {
         const d = await r.json() as { created: number; skippedInvalid: number; skippedDuplicate: number };
-        await loadCats();
+        await loadCats(); bumpData('categories', 'categories-tab');
         const extra = [
           d.skippedDuplicate > 0 ? `${d.skippedDuplicate} ID/Slug duplikat dilewati` : '',
           d.skippedInvalid   > 0 ? `${d.skippedInvalid} baris tidak lengkap dilewati` : '',

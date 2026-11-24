@@ -32,6 +32,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 const INCOME_CATEGORIES = ['Penjualan Lain', 'Komisi', 'Refund/Retur Diterima', 'Bunga Bank', 'Klaim Asuransi', 'Lainnya'];
 
@@ -147,6 +148,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
   const wallets = useWallets(creds);
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
@@ -278,7 +280,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
       ? await fetch(`${API}/api/income`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch(`${API}/api/income/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'income-tab');
       refetchBalances();
       closeEdit();
       toast.success(isNew ? 'Pemasukan berhasil dicatat.' : 'Pemasukan berhasil diperbarui.');
@@ -295,7 +297,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
     setDeletingId(i.id);
     const r = await fetch(`${API}/api/income/${i.id}`, { method: 'DELETE', headers });
     if (r.ok) {
-      await load();
+      await load(); bumpData('wallets', 'income-tab');
       refetchBalances();
       setSelected(s => { const n = new Set(s); n.delete(i.id); return n; });
       toast.success('Pemasukan berhasil dihapus.');
@@ -316,7 +318,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
     });
     if (r.ok) {
       const d = await r.json() as { deleted: number };
-      await load();
+      await load(); bumpData('wallets', 'income-tab');
       refetchBalances();
       setSelected(new Set());
       toast.success(`${d.deleted} pemasukan berhasil dihapus.`);

@@ -37,6 +37,7 @@ import {
 import DateTimeInput, { DateInput } from '@/components/DateTimeInput';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 // /api/products is Postgres-backed and cached 15s server-side, so polling here just keeps
 // the register's stock/harga fresh while Kasir stays open — no Firestore quota to worry about.
@@ -427,6 +428,7 @@ export default function PosTab({
   const posWarehouseId   = storeInfo.posWarehouseId || '';
   const posWarehouseName = storeInfo.posWarehouseName || '';
 
+  const bumpData = useBumpData();
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -906,6 +908,9 @@ export default function PosTab({
       const orderData = await orderRes.json().catch(() => ({})) as { consign?: { invoiceNo: string } };
       if (onlyConsign && orderData.consign) invNo = orderData.consign.invoiceNo;
       refetchBalances();
+      // Mode jendela: transaksi tersimpan -> stok berubah (jendela Produk dll.) dan dompet bila ada pembayaran tercatat.
+      bumpData('products', 'pos');
+      if (!isFreeTx || consignLines.length > 0) bumpData('wallets', 'pos');
       setLastReceipt({
         invoiceNo: invNo, dateStr, items: receiptItems, subtotal: cartSubtotal + consignTotal, discount: discountInfo, total: payableTotal,
         paymentMethod,
