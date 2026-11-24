@@ -41,6 +41,8 @@ interface Props {
   /** Bel notifikasi milik AppShell (satu-satunya instance); `side`/`tone` menyesuaikan letaknya. */
   renderBell: (side: 'up' | 'down') => ReactNode;
   actions: DesktopActions;
+  /** Slot topbar jendela Kasir (untuk TopbarPortal milik PosTab). Harus stabil (setter state). */
+  onPosSlot?: (el: HTMLElement | null) => void;
   onPickMenu: (item: DesktopItem) => void;
   onChangeLayout: (next: UiLayout) => void;
   onEditProfile: () => void;
@@ -87,7 +89,7 @@ export default function DesktopShell(p: Props) {
         <WindowFrame key={w.tabId} win={w} area={wm.area} item={itemFor(w.tabId)} focused={focused === w.tabId} zIndex={rank.get(w.tabId) ?? 1}
           onFocus={() => actions.focus(w.tabId)} onMinimize={() => actions.minimize(w.tabId)}
           onMaximize={() => actions.maximize(w.tabId)} onClose={() => actions.close(w.tabId)}
-          onMove={(x, y) => actions.move(w.tabId, x, y)} onResize={r => actions.resize(w.tabId, r)}>
+          onMove={(x, y) => actions.move(w.tabId, x, y)} onResize={r => actions.resize(w.tabId, r)} onSlot={w.tabId === 'pos' ? p.onPosSlot : undefined}>
           {p.content[w.tabId]}
         </WindowFrame>
       ))}

@@ -19,6 +19,8 @@ interface Props {
   onClose: () => void;
   onMove: (x: number, y: number) => void;
   onResize: (rect: { x: number; y: number; w: number; h: number }) => void;
+  /** Dilapor saat slot topbar terpasang/dilepas (dipakai Kasir, yang isinya dirender di luar pohon jendela). */
+  onSlot?: (el: HTMLElement | null) => void;
   children: ReactNode;
 }
 
@@ -26,7 +28,7 @@ type Drag = { kind: 'move' | 'e' | 's' | 'se'; sx: number; sy: number; ox: numbe
 
 // Bingkai jendela: titlebar (geser lewat pointer events, dobel-klik = maksimalkan), tombol per skin
 // (Windows: – ▢ ✕ di kanan; Mac: tiga bulatan di kiri), pegangan ubah ukuran, dan slot topbar untuk TopbarPortal tab.
-export default function WindowFrame({ win, area, item, focused, zIndex, onFocus, onMinimize, onMaximize, onClose, onMove, onResize, children }: Props) {
+export default function WindowFrame({ win, area, item, focused, zIndex, onFocus, onMinimize, onMaximize, onClose, onMove, onResize, onSlot, children }: Props) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -35,6 +37,9 @@ export default function WindowFrame({ win, area, item, focused, zIndex, onFocus,
 
   // Jendela yang baru dibuka dan memang jendela terdepan langsung menerima fokus keyboard. (Bila semua jendela
   // dipasang ulang sekaligus, mis. kembali dari kerangka Klasik, hanya yang terdepan yang memfokus diri.)
+  const onSlotRef = useRef(onSlot);
+  useEffect(() => { onSlotRef.current = onSlot; });
+  const slotRef = useCallback((el: HTMLElement | null) => { setSlot(el); onSlotRef.current?.(el); }, []);
   const startFocused = useRef(focused);
   useEffect(() => { if (startFocused.current) rootRef.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
@@ -80,7 +85,7 @@ export default function WindowFrame({ win, area, item, focused, zIndex, onFocus,
         </span>
         <AppTile Icon={item.Icon} color={item.color} />
         <b className="dsk-title">{item.label}</b>
-        <span className="dsk-tbslot" data-nodrag ref={setSlot} />
+        <span className="dsk-tbslot" data-nodrag ref={slotRef} />
         <span className="dsk-wbs" data-nodrag>
           <button type="button" className="dsk-wb" aria-label="Kecilkan" onClick={onMinimize}><Minus size={14} /></button>
           <button type="button" className="dsk-wb" aria-label={win.maximized ? 'Pulihkan' : 'Besarkan'} onClick={onMaximize}><Square size={11} /></button>

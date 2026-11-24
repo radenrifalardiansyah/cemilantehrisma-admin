@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import type { LucideIcon } from 'lucide-react';
@@ -20,6 +20,8 @@ import { NotificationsProvider } from '@/components/NotificationsProvider';
 import { resolveIcon } from '@/lib/icon-registry';
 import { isDesktopCapable, isDesktopShown, isWindowTab, type UiLayout } from '@/lib/ui-layout';
 import BackToDesktop from '@/components/desktop/BackToDesktop';
+import PosHostMount, { posTopbarContext } from '@/components/desktop/PosHostMount';
+import { TopbarSlotContext } from '@/components/TopbarPortal';
 import { useWindowManager } from '@/components/desktop/use-window-manager';
 import { focusedTabId, topTabId } from '@/components/desktop/window-reducer';
 import { moduleColor, PINNED_COLOR, type DesktopGroup } from '@/components/desktop/types';
@@ -167,6 +169,8 @@ interface AppShellProps {
   renderWindowTab?: (tab: TabId) => React.ReactNode;
   /** Naik tiap permintaan pindah tab saat layout Desktop dipakai (lihat page.tsx). */
   navNonce?: number;
+  /** Kasir: satu instance yang selalu ter-mount (keranjang awet). `active` = Kasir sedang terlihat (Klasik: tab aktif; Desktop: jendela Kasir terbuka dan tidak dikecilkan). */
+  renderPos?: (active: boolean) => React.ReactNode;
 }
 
 export default function AppShell({
@@ -174,7 +178,7 @@ export default function AppShell({
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
-  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0,
+  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
@@ -224,12 +228,17 @@ export default function AppShell({
   const [deskHomeAt, setDeskHomeAt] = useState<string | null>(null);
   const desktopShown = !!renderWindowTab && (isDesktopShown(layout, wide, activeTab) || (isDesktopCapable(layout, wide) && deskHomeAt === activeTab));
   const { wm, dispatch: wmDispatch } = useWindowManager({ enabled: desktopEnabled, skin: layout === 'mac' ? 'mac' : 'windows', activeTab, navNonce });
+  const posHostRef = useRef<HTMLDivElement>(null);
+  // Slot topbar jendela Kasir; undefined = tidak ada jendela Kasir (TopbarPortal memakai #topbar-slot seperti Klasik).
+  const [posTopbarSlot, setPosTopbarSlot] = useState<HTMLElement | null | undefined>(undefined);
+  const onPosSlot = useCallback((el: HTMLElement | null) => setPosTopbarSlot(el ?? undefined), []);
+  const posActive = desktopShown ? wm.windows.some(w => w.tabId === 'pos' && !w.minimized) : activeTab === 'pos';
   const openKey = wm.windows.map(w => w.tabId).join('|');
   // Isi jendela di-memo: berubah hanya saat page merender ulang (renderWindowTab baru) atau himpunan jendela berubah,
   // bukan tiap geser/fokus jendela.
   const windowContent = useMemo(() => {
     const content: Record<string, React.ReactNode> = {};
-    if (desktopShown && renderWindowTab) for (const id of openKey ? openKey.split('|') : []) content[id] = renderWindowTab(id as TabId);
+    if (desktopShown && renderWindowTab) for (const id of openKey ? openKey.split('|') : []) content[id] = id === 'pos' ? <PosHostMount hostRef={posHostRef} /> : renderWindowTab(id as TabId);
     return content;
   }, [desktopShown, renderWindowTab, openKey]);
 
@@ -265,7 +274,7 @@ export default function AppShell({
     ...NAV_GROUPS.map((g, i) => ({
       id: g.id, label: g.label,
       items: flattenClickable(g.tabs).map(t => ({
-        tab: t.id, label: t.label, Icon: t.Icon, color: moduleColor(i), windowed: isWindowTab(t.id), badge: t.id === 'pos' ? 0 : (badges[t.id] ?? 0),
+        tab: t.id, label: t.label, Icon: t.Icon, color: moduleColor(i), windowed: isWindowTab(t.id), badge: t.id === 'pos' ? (hasCart ? cartCount : 0) : (badges[t.id] ?? 0),
       })),
     })),
     ...(PINNED_TAB ? [{ id: '__pinned', label: SUPER_ADMIN_TAB ? 'Super Admin' : 'Tagihan', items: [{
@@ -792,6 +801,12 @@ export default function AppShell({
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto thin-scrollbar mobile-content-pad">
           {children}
+          {renderPos && (
+            // Host stabil Kasir: display:contents di Klasik (tidak ada kotak, DOM efektif sama); dipindah ke jendela oleh PosHostMount.
+            <div ref={posHostRef} style={{ display: 'contents' }}>
+              <TopbarSlotContext.Provider value={posTopbarContext(desktopShown && wm.windows.some(w => w.tabId === 'pos'), posTopbarSlot)}>{renderPos(posActive)}</TopbarSlotContext.Provider>
+            </div>
+          )}
         </main>
       </div>
 
@@ -1020,7 +1035,7 @@ export default function AppShell({
             <NotificationBell creds={creds} username={username} onOpen={onOpenNotification} placement={side} tone="dark"
               onViewAll={() => setActiveTab('notifications')} />
           )}
-          actions={desktopActions} onPickMenu={pickDesktopItem}
+          actions={desktopActions} onPosSlot={onPosSlot} onPickMenu={pickDesktopItem}
           onChangeLayout={next => onLayoutChange?.(next)}
           onEditProfile={() => setProfileOpen(true)} onAbout={() => setAboutOpen(true)} onLogout={handleLogout}
         />

@@ -13,7 +13,7 @@ export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 
 // Tahap 1: hanya menu ini yang bisa dibuka sebagai jendela. Menu lain tetap tampil di menu Mulai /
 // Launchpad (ditandai "Klasik") dan dibuka sementara dengan kerangka Klasik.
-export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses'] as const;
+export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
 
 export function isWindowTab(tab: string): tab is WindowTabId {

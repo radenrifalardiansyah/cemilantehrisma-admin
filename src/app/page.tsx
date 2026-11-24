@@ -1742,7 +1742,7 @@ export default function AdminPage() {
   // jadi tidak ikut dirender lagi sebagai children Klasik.
   const desktopShown = isDesktopShown(layout, isWide, activeTab);
   // Isi satu tab (JSX yang dulu langsung di dalam <AppShell>). Dipakai jalur Klasik (activeTab) dan jendela mode Desktop
-  // (tabId jendela). PosTab sengaja TIDAK di sini: ia selalu ter-mount di luar rantai ini (lihat <AppShell> di bawah).
+  // (tabId jendela). PosTab sengaja TIDAK di sini: ia selalu ter-mount di luar rantai ini (dirender AppShell lewat renderPos).
   const renderTab = (tab: TabId) => (
     <>
       {tab === 'dashboard'  && (loading && !dashData ? <PageLoader /> : dashboardBody)}
@@ -1838,23 +1838,25 @@ export default function AdminPage() {
       onLayoutChange={changeLayout}
       renderWindowTab={renderTab}
       navNonce={navNonce}
+      renderPos={active => (
+        <PosTab
+          creds={creds}
+          posProducts={posProducts}
+          posCategories={posCategories}
+          resellerList={resellerList}
+          customerList={customerList}
+          bankOptions={bankOptions}
+          isActive={active}
+          productsLoading={loading && posProducts.length === 0}
+          username={adminUsername}
+          onCartChange={setPosCartCount}
+          onGoToOrders={() => setActiveTab('orders')}
+          onRefresh={() => fetchDash()}
+          onRefreshStock={refreshPosStock}
+        />
+      )}
     >
       {!desktopShown && renderTab(activeTab)}
-      <PosTab
-        creds={creds}
-        posProducts={posProducts}
-        posCategories={posCategories}
-        resellerList={resellerList}
-        customerList={customerList}
-        bankOptions={bankOptions}
-        isActive={activeTab === 'pos'}
-        productsLoading={loading && posProducts.length === 0}
-        username={adminUsername}
-        onCartChange={setPosCartCount}
-        onGoToOrders={() => setActiveTab('orders')}
-        onRefresh={() => fetchDash()}
-        onRefreshStock={refreshPosStock}
-      />
     </AppShell>
     {forceLogoutReason && (
       <ForceLogoutOverlay

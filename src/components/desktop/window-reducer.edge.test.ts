@@ -29,3 +29,31 @@ describe('window-reducer: kasus tepi', () => {
     expect(w.y + w.h).toBeLessThanOrEqual(720 - 48);
   });
 });
+
+describe('window-reducer: jendela Kasir (pos, ukuran awal 1080x640)', () => {
+  const widths = [1024, 1100, 1159, 1280, 1366, 1920];
+  for (const skin of ['windows', 'mac'] as const) {
+    for (const w of widths) {
+      it(`${skin} ${w}px: jendela pos yang baru dibuka (urutan pertama) berada seluruhnya di dalam area layar (panel pesanan 400px di kanan tidak terpotong)`, () => {
+        const a = makeArea(w, 800, skin);
+        const s = run([{ type: 'open', tabId: 'pos' }], initialWmState(a));
+        const p = win(s, 'pos');
+        expect(p.x + p.w).toBeLessThanOrEqual(w);
+        expect(p.y + p.h).toBeLessThanOrEqual(800 - a.bottom);
+      });
+    }
+  }
+
+  it('pos dibuka sebagai jendela ke-4 pada layar 1280px: seluruhnya di dalam area', () => {
+    const s = run(['dashboard', 'orders', 'products', 'pos'].map(tabId => ({ type: 'open', tabId }) as WmAction));
+    const p = win(s, 'pos');
+    expect(p.x + p.w).toBeLessThanOrEqual(1280);
+    expect(p.y + p.h).toBeLessThanOrEqual(720 - 48);
+  });
+
+  it('ukuran awal pos 1080x640 dipakai bila area cukup (1920x1080)', () => {
+    const s = run([{ type: 'open', tabId: 'pos' }], initialWmState(makeArea(1920, 1080, 'windows')));
+    expect(win(s, 'pos')).toMatchObject({ w: 1080, h: 640 });
+  });
+});
+

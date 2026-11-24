@@ -54,7 +54,12 @@ export const DEFAULT_SIZES: Record<string, { w: number; h: number }> = {
   wallets: { w: 760, h: 520 },
   income: { w: 820, h: 540 },
   expenses: { w: 820, h: 540 },
+  pos: { w: 1080, h: 640 },
 };
+// Ukuran minimum per tab. Kasir memakai breakpoint viewport (grid katalog + panel 400px), jadi jendela yang terlalu
+// sempit membuat katalog hilang.
+export const MIN_SIZES: Record<string, { w: number; h: number }> = { pos: { w: 820, h: 480 } };
+export const minSizeFor = (tabId: string) => MIN_SIZES[tabId] ?? { w: MIN_W, h: MIN_H };
 const FALLBACK_SIZE = { w: 860, h: 540 };
 
 export function makeArea(w: number, h: number, skin: DesktopSkin): WinArea {
@@ -70,9 +75,9 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), M
 function usableHeight(a: WinArea) { return Math.max(0, a.h - a.top - a.bottom); }
 
 // Ukuran dibatasi ke area; x/y dijaga supaya judul tetap bisa diraih.
-export function clampRect(r: { x: number; y: number; w: number; h: number }, a: WinArea) {
-  const w = clamp(Math.round(r.w), Math.min(MIN_W, a.w), a.w);
-  const h = clamp(Math.round(r.h), Math.min(MIN_H, usableHeight(a)), usableHeight(a));
+export function clampRect(r: { x: number; y: number; w: number; h: number }, a: WinArea, min: { w: number; h: number } = { w: MIN_W, h: MIN_H }) {
+  const w = clamp(Math.round(r.w), Math.min(min.w, a.w), a.w);
+  const h = clamp(Math.round(r.h), Math.min(min.h, usableHeight(a)), usableHeight(a));
   const x = clamp(Math.round(r.x), -(w - KEEP_VISIBLE_X), a.w - KEEP_VISIBLE_X);
   const y = clamp(Math.round(r.y), a.top, a.h - a.bottom - TITLEBAR_H);
   return { x, y, w, h };
@@ -80,8 +85,8 @@ export function clampRect(r: { x: number; y: number; w: number; h: number }, a: 
 
 // Dipakai saat area berubah (resize layar / ganti skin): selain dijepit, jendela ditarik masuk supaya
 // seluruhnya terlihat bila muat (berbeda dari drag yang boleh menjulur keluar sebagian).
-export function fitRect(r: { x: number; y: number; w: number; h: number }, a: WinArea) {
-  const c = clampRect(r, a);
+export function fitRect(r: { x: number; y: number; w: number; h: number }, a: WinArea, min?: { w: number; h: number }) {
+  const c = clampRect(r, a, min);
   return {
     ...c,
     x: clamp(c.x, 0, a.w - c.w),
@@ -95,7 +100,7 @@ export function cascadeRect(tabId: string, index: number, a: WinArea, size?: { w
   const w = Math.min(base.w, a.w - 80);
   const h = Math.min(base.h, usableHeight(a) - 24);
   const step = index % 6;
-  return clampRect({ x: 96 + step * 34, y: a.top + 16 + step * 30, w, h }, a);
+  return fitRect({ x: 96 + step * 34, y: a.top + 16 + step * 30, w, h }, a, minSizeFor(tabId));
 }
 
 const byTab = (s: WmState, tabId: string) => s.windows.find(w => w.tabId === tabId);
@@ -149,16 +154,16 @@ export function wmReducer(s: WmState, a: WmAction): WmState {
     case 'move': {
       const w = byTab(s, a.tabId);
       if (!w || w.maximized) return s;
-      const r = clampRect({ x: a.x, y: a.y, w: w.w, h: w.h }, s.area);
+      const r = clampRect({ x: a.x, y: a.y, w: w.w, h: w.h }, s.area, minSizeFor(a.tabId));
       if (r.x === w.x && r.y === w.y) return s;
       return update(s, a.tabId, { x: r.x, y: r.y });
     }
     case 'resize': {
       const w = byTab(s, a.tabId);
       if (!w || w.maximized) return s;
-      const r = clampRect({ x: a.x, y: a.y, w: a.w, h: a.h }, s.area);
+      const r = clampRect({ x: a.x, y: a.y, w: a.w, h: a.h }, s.area, minSizeFor(a.tabId));
       // Tepi bawah tidak boleh masuk ke bawah taskbar/dock (pegangan jadi tak terjangkau).
-      return update(s, a.tabId, { ...r, h: Math.max(Math.min(MIN_H, usableHeight(s.area)), Math.min(r.h, s.area.h - s.area.bottom - r.y)) });
+      return update(s, a.tabId, { ...r, h: Math.max(Math.min(minSizeFor(a.tabId).h, usableHeight(s.area)), Math.min(r.h, s.area.h - s.area.bottom - r.y)) });
     }
     case 'arrange': {
       // Susun ulang semua jendela berjenjang sesuai urutan buka; z mengikuti urutan itu, yang terakhir di atas.
@@ -176,7 +181,7 @@ export function wmReducer(s: WmState, a: WmAction): WmState {
       if (n.w === s.area.w && n.h === s.area.h && n.top === s.area.top && n.bottom === s.area.bottom) return s;
       return {
         ...s, area: n,
-        windows: s.windows.map(w => ({ ...w, ...fitRect(w, n) })),
+        windows: s.windows.map(w => ({ ...w, ...fitRect(w, n, minSizeFor(w.tabId)) })),
       };
     }
   }

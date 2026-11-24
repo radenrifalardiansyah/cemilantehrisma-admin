@@ -37,7 +37,8 @@ describe('isDesktopShown', () => {
   it('hanya menu berjendela yang tampil sebagai desktop', () => {
     expect(isDesktopShown('mac', true, 'orders')).toBe(true);
     expect(isDesktopShown('windows', true, 'suppliers')).toBe(false);
-    expect(isWindowTab('pos')).toBe(false);
+    expect(isWindowTab('pos')).toBe(true);
+    expect(isWindowTab('suppliers')).toBe(false);
   });
 });
 
