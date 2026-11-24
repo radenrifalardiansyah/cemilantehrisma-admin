@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import type { UiLayout } from '@/lib/ui-layout';
+import './desktop.css'; // dipakai juga di Edit Profil (mode Klasik), saat DesktopShell belum dimuat
 
 const OPTIONS: { id: UiLayout; label: string; desc: string }[] = [
   { id: 'classic', label: 'Klasik', desc: 'Sidebar dan halaman penuh' },
