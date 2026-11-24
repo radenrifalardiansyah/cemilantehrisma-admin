@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, type ReactNode } from 'react';
+import { act, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { LayoutDashboard, Receipt, Truck } from 'lucide-react';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -29,7 +29,7 @@ const groups: DesktopGroup[] = [{
 const picked: string[] = [];
 const focusedNow = () => document.getElementById('probe')!.dataset.focused || null;
 
-function Harness({ skin, tab, nonce = 0, enabled = true }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean }) {
+function Harness({ skin, tab, nonce = 0, enabled = true, bell }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean; bell?: ReactNode }) {
   const { wm, dispatch } = useWindowManager({ enabled, skin, activeTab: tab, navNonce: nonce });
   const actions: DesktopActions = {
     open: t => dispatch({ type: 'open', tabId: t }), focus: t => dispatch({ type: 'focus', tabId: t }),
@@ -42,13 +42,14 @@ function Harness({ skin, tab, nonce = 0, enabled = true }: { skin: DesktopSkin; 
     orders: <div data-testid="ord">Isi pesanan</div>,
     consignment: <div data-testid="cons">Isi Mitra<TopbarPortal><button id="cons-btn">Aksi</button></TopbarPortal></div>,
     'wa-forward': <div>wa</div>,
+    notifications: <div data-testid="notif">Isi notifikasi</div>,
   };
   return (
     <>
       <div id="topbar-slot" />
       <div id="probe" data-focused={focusedTabId(wm) ?? ''} />
       <DesktopShell skin={skin} layout={skin} wm={wm} groups={groups} content={content} username="rifal" avatar={null} roleLabel="Administrator"
-        storeUrl="https://x" renderBell={() => <button aria-label="Notifikasi">bel</button>} actions={actions}
+        storeUrl="https://x" renderBell={() => bell ?? <button aria-label="Notifikasi">bel</button>} actions={actions}
         onPickMenu={i => { picked.push(i.tab); if (i.windowed) actions.open(i.tab); }} onChangeLayout={() => {}}
         onEditProfile={() => {}} onAbout={() => {}} onLogout={() => {}} />
     </>
@@ -176,7 +177,7 @@ describe('sinkronisasi activeTab -> jendela', () => {
     render(<Harness skin="windows" tab="orders" />);
     expect(focusedNow()).toBe('orders');
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
-    render(<Harness skin="windows" tab="notifications" />);   // tab tak berjendela: tidak membuka apa pun
+    render(<Harness skin="windows" tab="consign" />);   // tab tak berjendela: tidak membuka apa pun
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
   });
 });
@@ -268,4 +269,28 @@ describe('tray chat (skin Windows)', () => {
     mount('mac', 'dashboard');
     expect(q('.dsk-chat-slot')).toBeNull();
   });
+});
+
+// Meniru page.tsx: setActiveTab pembungkus menaikkan navNonce; AppShell memberi bel onViewAll = setActiveTab('notifications').
+function WithBell({ skin }: { skin: DesktopSkin }) {
+  const [tab, setTab] = useState('dashboard');
+  const [nonce, setNonce] = useState(0);
+  const go = (t: string) => { setTab(t); setNonce(n => n + 1); };
+  return <Harness skin={skin} tab={tab} nonce={nonce} bell={<button aria-label="Lihat semua" onClick={() => go('notifications')}>bel</button>} />;
+}
+
+describe('"Lihat semua" dari bel membuka jendela Notifikasi (tahap 10)', () => {
+  for (const skin of ['windows', 'mac'] as const) {
+    it(`${skin}: membuka jendela, dan membuka lagi setelah ditutup walau activeTab sama`, () => {
+      render(<WithBell skin={skin} />);
+      expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+      click(q('button[aria-label="Lihat semua"]'));
+      expect(focusedNow()).toBe('notifications');
+      expect(q('[data-testid="notif"]')).not.toBeNull();
+      click(q(skin === 'windows' ? '.dsk-win .dsk-wb.x' : '.dsk-win .dsk-tl .r'));
+      expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+      click(q('button[aria-label="Lihat semua"]'));
+      expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+    });
+  }
 });
