@@ -100,9 +100,17 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-root[data-skin="mac"] .dsk-win[data-focus="false"] .dsk-tl button { background: #B9ABA0; }
 /* pegangan ubah ukuran */
 .dsk-rs { position: absolute; z-index: 3; touch-action: none; }
-.dsk-rs.e { top: 38px; right: -3px; bottom: 10px; width: 8px; cursor: ew-resize; }
-.dsk-rs.s { left: 10px; right: 10px; bottom: -3px; height: 8px; cursor: ns-resize; }
-.dsk-rs.se { right: -3px; bottom: -3px; width: 16px; height: 16px; cursor: nwse-resize; }
+/* 8 pegangan ubah ukuran: sisi 8px (5px di dalam jendela), sudut 12px. Sisi atas/kiri/kanan berhenti 12px dari sudut dan hanya masuk 5px ke titlebar, jadi tombol titlebar tidak tertimpa. */
+.dsk-rs.e { top: 12px; right: -3px; bottom: 12px; width: 8px; cursor: ew-resize; }
+.dsk-rs.w { top: 12px; left: -3px; bottom: 12px; width: 8px; cursor: ew-resize; }
+.dsk-rs.s { left: 12px; right: 12px; bottom: -3px; height: 8px; cursor: ns-resize; }
+.dsk-rs.n { left: 12px; right: 12px; top: -3px; height: 8px; cursor: ns-resize; }
+.dsk-rs.se { right: -3px; bottom: -3px; width: 12px; height: 12px; cursor: nwse-resize; }
+.dsk-rs.nw { left: -3px; top: -3px; width: 12px; height: 12px; cursor: nwse-resize; }
+.dsk-rs.ne { right: -3px; top: -3px; width: 12px; height: 12px; cursor: nesw-resize; }
+.dsk-rs.sw { left: -3px; bottom: -3px; width: 12px; height: 12px; cursor: nesw-resize; }
+/* pratinjau tempel ke tepi: di atas semua jendela (z-index jendela kecil), di bawah taskbar/dock/menu bar (5000) */
+.dsk-snap { position: absolute; z-index: 4000; pointer-events: none; border-radius: 10px; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); box-sizing: border-box; }
 .dsk-win[data-max="true"] .dsk-rs { display: none; }
 
 /* ── taskbar (Windows). Tanpa backdrop-filter: bel notifikasi (dengan modal fixed) ada di dalamnya. ── */
@@ -125,6 +133,23 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 /* chat dan bel satu kelompok rapat (gap 2px); akun dan jam diberi jarak sendiri */
 .dsk-tray .dsk-account, .dsk-tray > span[aria-label="Jam"] { margin-left: 8px; }
 .dsk-mbar .dsk-tray button[title] { height: 22px; width: 22px; }
+/* menu di menu bar (Mac): pemicu flat di bar gelap; dropdown terang (token tema/aksen), absolut tepat di bawah bar, di atas jendela. Tanpa backdrop-filter/transform. */
+.dsk-mmenus { display: flex; align-items: center; align-self: stretch; gap: 2px; }
+.dsk-mwrap { position: relative; display: flex; align-items: center; align-self: stretch; }
+.dsk-mapp { display: flex; align-items: center; padding: 0 8px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.dsk-mapp b { overflow: hidden; text-overflow: ellipsis; }
+.dsk-mtrig { height: 22px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: #fff; font-size: 12px; font-weight: 600; }
+.dsk-mtrig:hover, .dsk-mtrig[aria-expanded="true"] { background: rgba(255,255,255,.2); }
+.dsk-mwrap:first-child .dsk-mtrig { padding: 0 6px; }
+.dsk-mdrop { position: absolute; top: 100%; left: 0; min-width: 220px; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100dvh - var(--dsk-top) - var(--dsk-bot) - 8px); overflow-y: auto; padding: 5px; background: var(--surface); color: var(--text-primary); border: 1px solid var(--border); border-radius: 0 0 10px 10px; box-shadow: 0 16px 40px rgba(0,0,0,.45); white-space: nowrap; font-weight: 600; z-index: 6000; }
+.dsk-mdrop button { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 4px 10px 4px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-primary); font-size: 12.5px; font-weight: 600; text-align: left; }
+.dsk-mdrop button:hover:not(:disabled), .dsk-mdrop button:focus-visible { background: var(--accent); color: #fff; outline: none; }
+.dsk-mdrop button:disabled { color: var(--text-muted); opacity: .6; cursor: default; }
+.dsk-mdrop button.danger:not(:hover):not(:focus-visible) { color: var(--danger); }
+.dsk-mdrop .ck { width: 16px; flex-shrink: 0; display: grid; place-items: center; }
+.dsk-mdrop .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dsk-mdrop .hd { padding: 6px 10px 2px 22px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+.dsk-mdrop hr { border: 0; border-top: 1px solid var(--border-2); margin: 4px 2px; }
 
 /* ── dock (Mac) ── */
 /* dock ramping. Ikon tidak menyusut: bila jendela terlalu banyak, isi dock (.dsk-dock-scroll) digulir mendatar (roda mouse vertikal diterjemahkan Dock.tsx; trackpad
@@ -149,25 +174,56 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-root[data-skin="mac"] .dsk-scrim[data-kind="launchpad"] { background: rgba(26,12,5,.35); }
 .dsk-menu { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.5); z-index: 6000; display: flex; flex-direction: column; overflow: hidden; }
 /* Tinggi panel TETAP (bukan max-height): hasil pencarian menyusun ulang isi di dalam ukuran yang sama, tidak mengecilkan panel. */
-.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(420px, calc(100% - 16px)); height: min(540px, calc(100% - 66px)); }
+.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(480px, calc(100% - 16px)); height: min(540px, calc(100% - 66px)); }
 .dsk-menu[data-variant="launchpad"] { left: 0; right: 0; margin-inline: auto; bottom: 72px; width: min(560px, calc(100% - 24px)); height: min(540px, calc(100% - 116px)); }
 .dsk-menu input[type="search"] { margin: 12px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-primary); padding: 0 12px; font: inherit; outline: none; }
 .dsk-menu input[type="search"]:focus { border-color: var(--accent); }
 .dsk-mscroll { overflow: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1 1 0; align-content: flex-start; }
 .dsk-mgrp h4 { margin: 0 0 6px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
-.dsk-mitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; }
+.dsk-mitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .dsk-mi { position: relative; display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 9px; border: 0; border-radius: 9px; background: var(--surface-2); color: var(--text-primary); font-size: 12px; font-weight: 600; min-width: 0; }
 .dsk-mi:hover { background: var(--accent-bg); }
 .dsk-mi .dsk-tile { width: 22px; height: 22px; }
 .dsk-mi .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .dsk-mi .tag { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 99px; background: var(--border-2); color: var(--text-muted); flex-shrink: 0; }
 .dsk-mi .dsk-badge { top: -4px; right: -4px; }
-.dsk-mfoot { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface-2); }
-.dsk-mfoot .row { display: flex; gap: 2px; justify-content: flex-end; }
+.dsk-mrow { position: relative; min-width: 0; }
+.dsk-mrow > .dsk-mi { width: 100%; }
+.dsk-mrow > .dsk-mi[data-star="true"] { padding-left: 32px; }
+/* bintang sematkan: tombol saudara di kiri ikon, area klik 28px, tidak mengubah tinggi baris; terisi aksen saat disematkan */
+.dsk-star { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); }
+.dsk-star:hover { background: var(--border); color: var(--text-primary); }
+.dsk-star[data-on="true"] { color: var(--accent); }
+.dsk-mfoot { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface-2); }
+.dsk-mfoot .row { display: flex; gap: 2px; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; }
+.dsk-mfoot .main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* baris pengguna (menu Mulai): avatar + nama/peran di kiri footer; menu akun (.dsk-pop[data-side="panel"]) membuka ke atas, di dalam panel */
+.dsk-muser { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 4px 8px 4px 4px; border: 0; border-radius: 9px; background: transparent; color: var(--text-primary); text-align: left; }
+.dsk-muser:hover, .dsk-muser[aria-expanded="true"] { background: var(--accent-bg); }
+.dsk-muser .dsk-avatar { width: 30px; height: 30px; flex-shrink: 0; }
+.dsk-muser .who { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.dsk-muser .who b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-muser .who small { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-pop[data-side="panel"] { left: 8px; right: auto; bottom: calc(100% + 4px); }
 /* tombol footer ICON SAJA (aria-label + title memuat teks aslinya), flat; hover halus; fokus lewat .dsk-root :focus-visible */
 .dsk-mfoot .row button { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border-radius: 8px; background: transparent; border: 0; color: var(--text-secondary); }
 .dsk-mfoot .row button:hover:not(:disabled), .dsk-mfoot .row button[aria-expanded="true"] { background: var(--accent-bg); color: var(--text-primary); }
 .dsk-mfoot button:disabled { opacity: .5; cursor: default; }
+/* ── bagian Disematkan menu Mulai (ala Windows 11): grid 6 kolom, baris setinggi tetap; di dalam SATU area gulir (.dsk-mscroll) bersama "Semua menu" ── */
+.dsk-pinned h4, .dsk-mall { margin: 0 0 6px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+.dsk-pgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: 76px; gap: 2px; }
+.dsk-pt { position: relative; min-width: 0; }
+.dsk-pb { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 2px 4px; border: 0; border-radius: 9px; background: transparent; color: var(--text-primary); font-size: 10.5px; font-weight: 600; text-align: center; line-height: 1.2; }
+.dsk-pb:hover { background: var(--accent-bg); }
+.dsk-pb .dsk-tile { width: 34px; height: 34px; }
+.dsk-pb .lbl { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; overflow-wrap: anywhere; }
+.dsk-pb .dsk-badge { top: 4px; left: calc(50% + 8px); right: auto; }
+.dsk-pstar { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--accent); opacity: 0; transition: opacity .15s; }
+.dsk-pt:hover .dsk-pstar, .dsk-pt:focus-within .dsk-pstar { opacity: 1; }
+.dsk-pstar:hover { background: var(--border); }
+@media (hover: none) { .dsk-pstar { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dsk-pstar { transition: none; } }
+.dsk-phint { margin: 0; padding: 14px 8px; border: 1px dashed var(--border); border-radius: 9px; text-align: center; color: var(--text-muted); font-size: 12px; }
 .dsk-empty { margin: 0; padding: 24px 0; text-align: center; color: var(--text-muted); font-size: 12px; }
 
 .dsk-account { position: relative; }
@@ -214,6 +270,20 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 /* Kasir Lapak di jendela: kolom katalog mengikuti lebar jendela (bukan breakpoint viewport) supaya tidak terjepit di jendela sempit. */
 .dsk-win .kasir-lapak-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 
+/* ── menu klik kanan (ContextMenu): di atas jendela/taskbar/dock/panel, di bawah modal global; ikut token tema dan aksen ── */
+.dsk-ctx { position: fixed; z-index: 7000; min-width: 200px; max-width: 280px; padding: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.45); color: var(--text-primary); }
+.dsk-ctx-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font-size: 12.5px; font-weight: 600; text-align: left; }
+.dsk-ctx-item:hover:not(:disabled), .dsk-ctx-item:focus-visible { background: var(--accent-bg); outline: none; }
+.dsk-ctx-item:disabled { opacity: .45; cursor: default; }
+.dsk-ctx-item[data-danger="true"] { color: var(--danger); }
+.dsk-ctx-ico { display: grid; place-items: center; width: 16px; flex-shrink: 0; color: var(--text-secondary); }
+.dsk-ctx-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-ctx-sep { border: 0; border-top: 1px solid var(--border-2); margin: 4px 2px; }
+
+.dsk-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dsk-keys li { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--text-primary); }
+.dsk-keys kbd { flex: 0 0 132px; font: 700 11.5px/1 var(--font-jakarta, system-ui); padding: 5px 8px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 7px; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
+
 /* ── Pengaturan tampilan Desktop (warna dasar, latar, kerapatan, ukuran teks). SEMUA di bawah .dsk-root: tidak bocor ke Klasik. ──
    Warna dasar dan latar dipasang sebagai variabel inline pada .dsk-root (--accent*, --dsk-wallpaper) oleh appearance-style.ts. */
 .dsk-root[data-density="compact"] { --dsk-density: .82; }
@@ -227,3 +297,4 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 /* Ukuran teks: skala rem seluruh UI selama desktop tampil (isi jendela, dialog, menu). Tinggi titlebar/taskbar/dock berbasis px, tidak ikut. */
 html:has(.dsk-root[data-text="small"]) { font-size: 93.75%; }
 html:has(.dsk-root[data-text="large"]) { font-size: 109.375%; }
+

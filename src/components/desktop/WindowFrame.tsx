@@ -5,7 +5,8 @@ import { Minus, Square, X } from 'lucide-react';
 import { TopbarSlotContext } from '@/components/TopbarPortal';
 import AppTile from './AppTile';
 import type { DesktopItem } from './types';
-import { renderRect, type WinArea, type WinState } from './window-reducer';
+import SnapPreview from './SnapPreview';
+import { minSizeFor, renderRect, resizeRect, snapRect, snapSideAt, type ResizeEdge, type SnapSide, type WinArea, type WinState, type WmAction } from './window-reducer';
 import { WindowVisibleContext } from './window-visible';
 
 interface Props {
@@ -20,6 +21,8 @@ interface Props {
   onClose: () => void;
   onMove: (x: number, y: number) => void;
   onResize: (rect: { x: number; y: number; w: number; h: number }) => void;
+  /** Dispatch window manager: dipakai tempel ke tepi, lepas dari maksimal/tempel saat titlebar ditarik, dan penanda geser/ubah ukuran selesai. Tanpa ini fitur itu nonaktif. */
+  dispatch?: (a: WmAction) => void;
   /** Dilapor saat slot topbar terpasang/dilepas (dipakai Kasir, yang isinya dirender di luar pohon jendela). */
   onSlot?: (el: HTMLElement | null) => void;
   children: ReactNode;
@@ -28,13 +31,21 @@ interface Props {
 // Lebar jendela di bawah ini: tombol berikon di slot titlebar hanya menampilkan ikon (lihat desktop.css).
 export const NARROW_PX = 900;
 
-type Drag = { kind: 'move' | 'e' | 's' | 'se'; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number };
+type Drag = {
+  kind: 'move' | ResizeEdge; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number;
+  lx: number; ly: number;        // posisi pointer terakhir (untuk menerapkan posisi akhir sinkron saat dilepas)
+  pending?: boolean;             // titlebar jendela maksimal/tertempel: belum bergeser cukup jauh untuk dilepas
+  restored?: boolean;            // sudah dilepas dari maksimal/tempel (rect berubah walau pointer kembali ke titik awal)
+};
+const EDGES: readonly ResizeEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+const RESTORE_THRESHOLD = 4;
 
 // Bingkai jendela: titlebar (geser lewat pointer events, dobel-klik = maksimalkan), tombol per skin
 // (Windows: – ▢ ✕ di kanan; Mac: tiga bulatan di kiri), pegangan ubah ukuran, dan slot topbar untuk TopbarPortal tab.
-export default function WindowFrame({ win, area, item, focused, zIndex, onFocus, onMinimize, onMaximize, onClose, onMove, onResize, onSlot, children }: Props) {
+export default function WindowFrame({ win, area, item, focused, zIndex, onFocus, onMinimize, onMaximize, onClose, onMove, onResize, dispatch, onSlot, children }: Props) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [snapSide, setSnapSide] = useState<SnapSide | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const raf = useRef(0);
@@ -54,29 +65,67 @@ export default function WindowFrame({ win, area, item, focused, zIndex, onFocus,
   // fungsi yang menyentuh ref saat render.
   const onDown = (e: ReactPointerEvent<HTMLElement>) => {
     const kind = e.currentTarget.dataset.drag as Drag['kind'];
-    if (e.button !== 0 || win.maximized) return;
-    if (kind === 'move' && (e.target as HTMLElement).closest('[data-nodrag]')) return;
-    drag.current = { kind, sx: e.clientX, sy: e.clientY, ox: win.x, oy: win.y, ow: win.w, oh: win.h };
-    e.currentTarget.setPointerCapture(e.pointerId);
-    if (kind === 'move') setDragging(true);
+    if (e.button !== 0) return;
+    if (kind === 'move') {
+      if ((e.target as HTMLElement).closest('[data-nodrag]')) return;
+      // Jendela maksimal/tertempel hanya bisa ditarik lepas bila ada dispatch (dipulihkan ke ukuran semula begitu mulai bergeser).
+      if ((win.maximized || win.snapped) && !dispatch) return;
+    } else if (win.maximized) return;
+    drag.current = { kind, sx: e.clientX, sy: e.clientY, ox: win.x, oy: win.y, ow: win.w, oh: win.h, lx: e.clientX, ly: e.clientY, pending: kind === 'move' && (win.maximized || !!win.snapped) };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    if (kind === 'move' && !drag.current.pending) setDragging(true);
   };
+  // Rect hasil geser untuk posisi pointer tertentu; dipakai rAF dan penerapan akhir saat dilepas.
+  const apply = useCallback((d: Drag, cx: number, cy: number) => {
+    const dx = cx - d.sx, dy = cy - d.sy;
+    if (d.kind === 'move') onMove(d.ox + dx, d.oy + dy);
+    else onResize(resizeRect(d.kind, { x: d.ox, y: d.oy, w: d.ow, h: d.oh }, dx, dy, area, minSizeFor(win.tabId)));
+  }, [onMove, onResize, area, win.tabId]);
   const track = useCallback((e: { clientX: number; clientY: number }) => {
     const d = drag.current;
     if (!d) return;
-    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    d.lx = e.clientX; d.ly = e.clientY;
+    if (d.pending) {
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < RESTORE_THRESHOLD) return;
+      // Lepas dari maksimal/tempel: ukuran semula, titlebar mengikuti pointer (posisi relatif horizontal dijaga seperti Windows).
+      const rr = renderRect(win, area);
+      const base = win.restore ?? { w: win.w, h: win.h };
+      const ratio = rr.w > 0 ? Math.min(1, Math.max(0, (e.clientX - rr.x) / rr.w)) : 0.5;
+      const nx = Math.round(e.clientX - ratio * base.w);
+      const ny = Math.max(area.top, Math.round(e.clientY - Math.min(19, Math.max(0, e.clientY - rr.y))));
+      dispatch?.({ type: 'restoreAt', tabId: win.tabId, x: nx, y: ny });
+      Object.assign(d, { pending: false, restored: true, sx: e.clientX, sy: e.clientY, ox: nx, oy: ny, ow: base.w, oh: base.h });
+      setDragging(true);
+    }
     cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => {
-      if (d.kind === 'move') onMove(d.ox + dx, d.oy + dy);
-      else onResize({ x: d.ox, y: d.oy, w: d.kind === 'e' || d.kind === 'se' ? d.ow + dx : d.ow, h: d.kind === 's' || d.kind === 'se' ? d.oh + dy : d.oh });
-    });
-  }, [onMove, onResize]);
-  const end = () => { drag.current = null; setDragging(false); };
+    raf.current = requestAnimationFrame(() => apply(d, d.lx, d.ly));
+    if (d.kind === 'move' && dispatch) setSnapSide(snapSideAt(e.clientX, e.clientY, area));
+  }, [apply, dispatch, win, area]);
+  const finish = (commit: boolean) => {
+    const d = drag.current;
+    drag.current = null;
+    cancelAnimationFrame(raf.current);
+    const side = snapSide;
+    setDragging(false); setSnapSide(null);
+    if (!d || d.pending) return;
+    // Klik tanpa bergerak tidak mengubah rect: tidak ada settle (hindari render ulang + tulis penyimpanan).
+    const changed = d.restored || d.lx !== d.sx || d.ly !== d.sy;
+    if (!changed) return;
+    if (!commit) { dispatch?.({ type: 'settle', tabId: win.tabId }); return; }
+    // Tempel: rect pemulihan = rect SEBELUM drag dimulai (bukan posisi jendela yang sudah ikut bergeser ke tepi).
+    if (d.kind === 'move' && side && dispatch) { dispatch({ type: 'snap', tabId: win.tabId, side, from: { x: d.ox, y: d.oy, w: d.ow, h: d.oh } }); return; }
+    apply(d, d.lx, d.ly);      // posisi akhir diterapkan sinkron: rAF yang tertunda dibatalkan di atas
+    dispatch?.({ type: 'settle', tabId: win.tabId });
+  };
+  const end = () => finish(true);
+  const cancel = () => finish(false);
 
-  const dragProps = { onPointerDown: onDown, onPointerMove: track, onPointerUp: end, onPointerCancel: end };
+  const dragProps = { onPointerDown: onDown, onPointerMove: track, onPointerUp: end, onPointerCancel: cancel, onLostPointerCapture: cancel };
 
   const style: CSSProperties = { left: r.x, top: r.y, width: r.w, height: r.h, zIndex };
 
   return (
+    <>
     <div ref={rootRef} className="dsk-win" role="group" aria-label={item.label} tabIndex={0} hidden={win.minimized}
       data-focus={focused} data-max={win.maximized} data-narrow={r.w < NARROW_PX} style={style}
       onPointerDownCapture={onFocus} onFocusCapture={onFocus}>
@@ -101,9 +150,9 @@ export default function WindowFrame({ win, area, item, focused, zIndex, onFocus,
           <TopbarSlotContext.Provider value={slot}>{children}</TopbarSlotContext.Provider>
         </WindowVisibleContext.Provider>
       </div>
-      <span className="dsk-rs e" data-drag="e" aria-hidden="true" {...dragProps} />
-      <span className="dsk-rs s" data-drag="s" aria-hidden="true" {...dragProps} />
-      <span className="dsk-rs se" data-drag="se" aria-hidden="true" {...dragProps} />
+      {!win.maximized && EDGES.map(edge => <span key={edge} className={`dsk-rs ${edge}`} data-drag={edge} aria-hidden="true" {...dragProps} />)}
     </div>
+    {snapSide && <SnapPreview rect={snapRect(snapSide, area, minSizeFor(win.tabId))} />}
+    </>
   );
 }

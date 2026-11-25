@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
-const h = vi.hoisted(() => ({ uiLayoutFails: false, uiLayout: null as string | null, profileFails: false, appearanceFails: false, appearance: null as unknown }));
+const h = vi.hoisted(() => ({ uiLayoutFails: false, uiLayout: null as string | null, profileFails: false, appearanceFails: false, appearance: null as unknown, pinsFails: false, pins: null as unknown }));
 
 vi.mock('@/lib/admin-auth', () => ({
   getAuthUser: vi.fn(() => ({ username: 'rifal', role: 'super-admin' })),
@@ -24,6 +24,10 @@ vi.mock('@/lib/db', async importOriginal => ({
     if (text.includes('select ui_layout')) {
       if (h.uiLayoutFails) throw new Error('column "ui_layout" does not exist');
       return [{ ui_layout: h.uiLayout }];
+    }
+    if (text.includes('select ui_pins')) {
+      if (h.pinsFails) throw new Error('column "ui_pins" does not exist');
+      return [{ ui_pins: h.pins }];
     }
     if (text.includes('select ui_appearance')) {
       if (h.appearanceFails) throw new Error('column "ui_appearance" does not exist');
@@ -89,6 +93,30 @@ describe('GET /api/me: user.uiAppearance', () => {
     h.appearanceFails = true;
     const { user } = await call();
     expect(user.uiAppearance).toBeNull();
+    expect(user.email).toBe('a@b.c');
+  });
+});
+
+describe('GET /api/me: user.uiPins', () => {
+  beforeEach(() => { h.pinsFails = false; h.pins = null; h.appearanceFails = false; h.appearance = null; vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+
+  it('mengembalikan daftar tersimpan; daftar kosong tetap kosong (bukan null)', async () => {
+    h.pins = ['orders', 'dashboard']; expect((await call()).user.uiPins).toEqual(['orders', 'dashboard']);
+    h.pins = []; expect((await call()).user.uiPins).toEqual([]);
+  });
+  it('belum memilih: null', async () => { expect((await call()).user.uiPins).toBeNull(); });
+  it('string JSON mentah dan terenkode ganda (quirk pooler) tetap di-parse', async () => {
+    h.pins = JSON.stringify(['orders']); expect((await call()).user.uiPins).toEqual(['orders']);
+    h.pins = JSON.stringify(JSON.stringify(['orders'])); expect((await call()).user.uiPins).toEqual(['orders']);
+  });
+  it('nilai rusak: null; id tak dikenal dibuang', async () => {
+    h.pins = { a: 1 }; expect((await call()).user.uiPins).toBeNull();
+    h.pins = ['orders', 'bukan-tab']; expect((await call()).user.uiPins).toEqual(['orders']);
+  });
+  it('kolom belum ada: profil lain tetap termuat, uiPins null', async () => {
+    h.pinsFails = true;
+    const { user } = await call();
+    expect(user.uiPins).toBeNull();
     expect(user.email).toBe('a@b.c');
   });
 });

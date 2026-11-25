@@ -275,3 +275,30 @@ describe('tombol layar penuh tray/menu bar', () => {
     expect(css).toMatch(/\.dsk-mbar \.dsk-tray button\[title\] \{ height: 22px; width: 22px; \}/);
   });
 });
+
+describe('bintang sematkan menu', () => {
+  it('area klik >= 28px, tombol saudara di kiri ikon (absolute di baris), terisi aksen saat disematkan, fokus lewat :focus-visible global', () => {
+    const star = rule('.dsk-star');
+    expect(px(star, 'width')).toBeGreaterThanOrEqual(28);
+    expect(px(star, 'height')).toBeGreaterThanOrEqual(28);
+    expect(star).toMatch(/position:\s*absolute/);
+    expect(css).toMatch(/\.dsk-star\[data-on="true"\] \{ color: var\(--accent\); \}/);
+    expect(css).toMatch(/\.dsk-mrow > \.dsk-mi\[data-star="true"\] \{ padding-left: \d+px; \}/);
+  });
+});
+
+describe('menu klik kanan: lapisan dan tema', () => {
+  it('z-index di atas taskbar/dock (5000), scrim (5500), dan panel menu (6000) tetapi di bawah modal global (9999); memakai token tema (ikut aksen)', () => {
+    const ctx = rule('.dsk-ctx');
+    const z = Number(/z-index:\s*(\d+)/.exec(ctx)![1]);
+    expect(z).toBeGreaterThan(6000);
+    expect(z).toBeLessThan(9999);
+    expect(ctx).toMatch(/var\(--surface\)/);
+    expect(ctx).toMatch(/var\(--border\)/);
+    expect(css).toMatch(/\.dsk-ctx-item:hover:not\(:disabled\), \.dsk-ctx-item:focus-visible \{ background: var\(--accent-bg\)/);
+  });
+  it('semua aturan menu klik kanan dan daftar pintasan di luar blok Personalisasi (blok itu hanya untuk .dsk-root)', () => {
+    expect(css.indexOf('.dsk-ctx {')).toBeLessThan(css.indexOf('/* ── Pengaturan tampilan Desktop'));
+    expect(css.indexOf('.dsk-keys {')).toBeLessThan(css.indexOf('/* ── Pengaturan tampilan Desktop'));
+  });
+});

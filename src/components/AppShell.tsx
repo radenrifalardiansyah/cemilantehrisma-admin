@@ -177,6 +177,8 @@ interface AppShellProps {
   /** Kasir: satu instance yang selalu ter-mount (keranjang awet). `active` = Kasir sedang terlihat (Klasik: tab aktif; Desktop: jendela Kasir terbuka dan tidak dikecilkan). */
   renderPos?: (active: boolean) => React.ReactNode;
   /** Pengaturan tampilan Desktop (hook useAppearance di page.tsx). Hanya dipakai saat mode Desktop tampil. */
+  /** Menu yang disematkan ke ikon meja/dock (efektif, berurutan) dan pengubahnya. Hanya dipakai saat mode Desktop tampil. */
+  pins?: { effective: readonly string[]; toggle: (tab: string) => void };
   appearance?: {
     saved: Appearance; draft: Appearance; busy: boolean;
     preview: (patch: Partial<Appearance>) => void; cancel: () => void; reset: () => void; save: () => Promise<boolean>;
@@ -188,7 +190,7 @@ export default function AppShell({
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
-  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos, appearance,
+  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos, appearance, pins,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
@@ -237,7 +239,7 @@ export default function AppShell({
   // aktif saat itu, sehingga otomatis hilang begitu activeTab berganti.
   const [deskHomeAt, setDeskHomeAt] = useState<string | null>(null);
   const desktopShown = !!renderWindowTab && (isDesktopShown(layout, wide, activeTab) || (isDesktopCapable(layout, wide) && deskHomeAt === activeTab));
-  const { wm, dispatch: wmDispatch } = useWindowManager({ enabled: desktopEnabled, skin: layout === 'mac' ? 'mac' : 'windows', activeTab, navNonce });
+  const { wm, dispatch: wmDispatch } = useWindowManager({ enabled: desktopEnabled, skin: layout === 'mac' ? 'mac' : 'windows', activeTab, navNonce, username });
   const posHostRef = useRef<HTMLDivElement>(null);
   // Slot topbar jendela Kasir; undefined = tidak ada jendela Kasir (TopbarPortal memakai #topbar-slot seperti Klasik).
   const [posTopbarSlot, setPosTopbarSlot] = useState<HTMLElement | null | undefined>(undefined);
@@ -313,6 +315,7 @@ export default function AppShell({
     close: tab => { wmDispatch({ type: 'close', tabId: tab }); if (focusedTabId(wm) === tab || activeTab === tab) syncTab(topTabId(wm, tab)); },
     move: (tab, x, y) => wmDispatch({ type: 'move', tabId: tab, x, y }),
     resize: (tab, r) => wmDispatch({ type: 'resize', tabId: tab, ...r }),
+    dispatch: wmDispatch,
     arrange: () => wmDispatch({ type: 'arrange' }),
     closeAll: () => wmDispatch({ type: 'closeAll' }),
   };
@@ -1051,6 +1054,7 @@ export default function AppShell({
         <Suspense fallback={<DesktopBoot skin={layout === 'mac' ? 'mac' : 'windows'} appearance={appearance?.draft} />}>
         <DesktopShell
           skin={layout === 'mac' ? 'mac' : 'windows'} layout={layout} layoutBusy={layoutBusy}
+          pins={pins?.effective} onTogglePin={pins?.toggle}
           appearance={appearance?.draft} onOpenAppearance={appearance ? () => setAppearanceOpen(true) : undefined}
           wm={wm} groups={desktopGroups} content={windowContent}
           username={username} avatar={avatar} roleLabel={superAdmin ? 'Super Admin' : (role || 'Administrator')} storeUrl={MAIN_APP}

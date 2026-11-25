@@ -30,7 +30,7 @@ const groups: DesktopGroup[] = [{
 const picked: string[] = [];
 const focusedNow = () => document.getElementById('probe')!.dataset.focused || null;
 
-function Harness({ skin, tab, nonce = 0, enabled = true, bell, appearance, onOpenAppearance }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean; bell?: ReactNode; appearance?: Appearance; onOpenAppearance?: () => void }) {
+function Harness({ skin, tab, nonce = 0, enabled = true, bell, appearance, onOpenAppearance, pins, onTogglePin }: { skin: DesktopSkin; tab: string; nonce?: number; enabled?: boolean; bell?: ReactNode; appearance?: Appearance; onOpenAppearance?: () => void; pins?: readonly string[]; onTogglePin?: (tab: string) => void }) {
   const { wm, dispatch } = useWindowManager({ enabled, skin, activeTab: tab, navNonce: nonce });
   const actions: DesktopActions = {
     open: t => dispatch({ type: 'open', tabId: t }), focus: t => dispatch({ type: 'focus', tabId: t }),
@@ -49,7 +49,7 @@ function Harness({ skin, tab, nonce = 0, enabled = true, bell, appearance, onOpe
     <>
       <div id="topbar-slot" />
       <div id="probe" data-focused={focusedTabId(wm) ?? ''} />
-      <DesktopShell appearance={appearance} onOpenAppearance={onOpenAppearance} skin={skin} layout={skin} wm={wm} groups={groups} content={content} username="rifal" avatar={null} roleLabel="Administrator"
+      <DesktopShell appearance={appearance} onOpenAppearance={onOpenAppearance} pins={pins} onTogglePin={onTogglePin} skin={skin} layout={skin} wm={wm} groups={groups} content={content} username="rifal" avatar={null} roleLabel="Administrator"
         storeUrl="https://x" renderBell={() => bell ?? <button aria-label="Notifikasi">bel</button>} actions={actions}
         onPickMenu={i => { picked.push(i.tab); if (i.windowed) actions.open(i.tab); }} onChangeLayout={() => {}}
         onEditProfile={() => {}} onAbout={() => {}} onLogout={() => {}} />
@@ -161,6 +161,27 @@ describe('DesktopShell (skin Mac)', () => {
   });
 });
 
+describe('klik kanan pada scrim panel', () => {
+  const rc = (el: Element) => { const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); act(() => { el.dispatchEvent(ev); }); return ev; };
+
+  it('menu bawaan peramban dicegah, panel tetap terbuka, menu klik kanan kita tidak muncul', () => {
+    mount("mac", "dashboard");
+    click(q('.dsk-dock button[aria-label="Launchpad"]'));
+    const ev = rc(q('.dsk-scrim')!);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(q('.dsk-menu[data-variant="launchpad"]')).not.toBeNull();
+    expect(q('.dsk-ctx')).toBeNull();
+  });
+
+  it('klik kanan di dalam panel tidak dicegat', () => {
+    mount("mac", "dashboard");
+    click(q('.dsk-dock button[aria-label="Launchpad"]'));
+    const ev = rc(q('.dsk-menu input') ?? q('.dsk-menu')!);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(q('.dsk-ctx')).toBeNull();
+  });
+});
+
 describe('sinkronisasi activeTab -> jendela', () => {
   it('permintaan ke tab yang sama (navNonce naik) membuka lagi jendela yang sudah ditutup; tanpa nonce tidak', () => {
     mount("windows", "dashboard");
@@ -229,7 +250,7 @@ describe('desktop mulai kosong', () => {
     render(<Harness skin="mac" tab="dashboard" />);
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
     expect(q('.dsk-dock')).not.toBeNull();
-    expect(q('.dsk-mbar')!.textContent).toContain('Desktop');
+    expect(q('.dsk-mbar')!.textContent).toContain('Cemilan Teh Risma');
   });
   it('aktivasi setelah Klasik (enabled false -> true, mis. resize/ganti tampilan) juga kosong; navigasi sesudahnya membuka', () => {
     render(<Harness skin="windows" tab="dashboard" enabled={false} />);
@@ -318,11 +339,11 @@ describe('panel semua menu: ukuran tetap, footer ikon', () => {
       expect(focusedNow()).toBe('orders');
     });
   }
-  it('footer: tiga tombol ikon saja (tanpa teks), aria-label dan title memuat teks aslinya', () => {
+  it('footer: tombol ikon saja (tanpa teks), aria-label dan title memuat teks aslinya', () => {
     mount('windows', 'dashboard');
     click(q('button[aria-label="Menu Mulai"]'));
     const btns = Array.from(document.querySelectorAll('.dsk-mfoot .row button'));
-    expect(btns.map(b => b.getAttribute('aria-label'))).toEqual(['Ganti tampilan', 'Susun ulang jendela', 'Tutup semua']);
+    expect(btns.map(b => b.getAttribute('aria-label'))).toEqual(['Keluar', 'Ganti tampilan', 'Susun ulang jendela', 'Tutup semua']);
     for (const b of btns) { expect(b.textContent).toBe(''); expect(b.getAttribute('title')).toBe(b.getAttribute('aria-label')); expect(b.querySelector('svg')).not.toBeNull(); }
   });
   it('Susun ulang dan Tutup semua tetap berfungsi dari ikon', () => {
@@ -408,5 +429,179 @@ describe('layar penuh browser (tray Windows dan menu bar Mac)', () => {
     mount('windows', 'dashboard');
     click(q('button[aria-label="Menu akun"]'));
     expect(Array.from(document.querySelectorAll('.dsk-pop button')).some(b => b.textContent?.includes('Layar penuh'))).toBe(true);
+  });
+});
+
+describe('bintang: sematkan menu ke ikon meja / dock', () => {
+  const icons = () => Array.from(document.querySelectorAll('.dsk-ico')).map(b => b.getAttribute('aria-label'));
+  const dockLabels = () => Array.from(document.querySelectorAll('.dsk-dock .dsk-dk')).map(b => b.getAttribute('aria-label'));
+  const star = (label: string) => q(`.dsk-menu .dsk-star[aria-label*="${label}"]`)!;
+
+  it('tanpa pengelola pin: tidak ada bintang; panel tetap memuat semua menu', () => {
+    mount('windows', 'dashboard');
+    click(q('button[aria-label="Menu Mulai"]'));
+    expect(document.querySelectorAll('.dsk-star')).toHaveLength(0);
+    expect(document.querySelectorAll('.dsk-mi').length).toBe(5);
+  });
+
+  it('bintang adalah tombol saudara (bukan di dalam tombol menu); klik hanya memanggil onTogglePin dan TIDAK membuka jendela/menutup panel', () => {
+    const toggle = vi.fn();
+    render(<Harness skin="windows" tab="dashboard" onTogglePin={toggle} />);
+    click(q('button[aria-label="Menu Mulai"]'));
+    const s = star('Pesanan');
+    expect(s.closest('.dsk-mi')).toBeNull();
+    expect(s.tagName).toBe('BUTTON');
+    click(s);
+    expect(toggle).toHaveBeenCalledWith('orders');
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+    expect(q('.dsk-menu')).not.toBeNull();
+  });
+
+  it('status bintang mengikuti pin efektif (aria-pressed, label Sematkan/Lepas); default = pintasan bawaan', () => {
+    render(<Harness skin="windows" tab="dashboard" onTogglePin={() => {}} />);   // pins undefined -> bawaan: dashboard, orders, consignment tersemat
+    click(q('button[aria-label="Menu Mulai"]'));
+    expect(star('Pesanan').getAttribute('aria-pressed')).toBe('true');
+    expect(star('Pesanan').getAttribute('aria-label')).toBe('Lepas Pesanan dari desktop');
+    expect(star('Teruskan Stok WA').getAttribute('aria-pressed')).toBe('false');
+    expect(star('Teruskan Stok WA').getAttribute('aria-label')).toBe('Sematkan Teruskan Stok WA ke desktop');
+  });
+
+  it('Windows: ikon meja = daftar pin berurutan; id tak dikenal/menu hilang diabaikan; menu tak berjendela tanpa bintang', () => {
+    render(<Harness skin="windows" tab="dashboard" pins={['wa-forward', 'bukan-tab', 'dashboard']} onTogglePin={() => {}} />);
+    expect(icons()).toEqual(['Buka Teruskan Stok WA', 'Buka Dashboard']);
+    click(q('button[aria-label="Menu Mulai"]'));
+    expect(q('.dsk-menu .dsk-star[aria-label*="Supplier"]')).toBeNull();
+  });
+
+  it('Windows default (pins tidak diberikan): ikon meja = pintasan bawaan yang ada di nav', () => {
+    render(<Harness skin="windows" tab="dashboard" />);
+    expect(icons()).toEqual(['Buka Dashboard', 'Buka Pesanan', 'Buka Mitra']);
+  });
+
+  it('Mac: dock = Launchpad + pin berurutan + jendela terbuka non-pin; lepas pin menghapus ikon', () => {
+    render(<Harness skin="mac" tab="dashboard" pins={['orders', 'dashboard']} />);
+    expect(dockLabels()).toEqual(['Launchpad', 'Pesanan', 'Dashboard']);
+    render(<Harness skin="mac" tab="dashboard" pins={['dashboard']} />);
+    expect(dockLabels()).toEqual(['Launchpad', 'Dashboard']);
+  });
+
+  it('menyematkan menambah ikon meja (pin baru di akhir) dan melepas menghapusnya', () => {
+    const initial = ['dashboard'];
+    function Stateful() {
+      const [pins, setPins] = useState<string[]>(initial);
+      return <Harness skin="windows" tab="dashboard" pins={pins} onTogglePin={t => setPins(p => (p.includes(t) ? p.filter(x => x !== t) : [...p, t]))} />;
+    }
+    render(<Stateful />);
+    expect(icons()).toEqual(['Buka Dashboard']);
+    click(q('button[aria-label="Menu Mulai"]'));
+    click(star('Pesanan'));
+    expect(icons()).toEqual(['Buka Dashboard', 'Buka Pesanan']);
+    click(star('Dashboard'));
+    expect(icons()).toEqual(['Buka Pesanan']);
+  });
+});
+
+describe('menu klik kanan dan pintasan keyboard', () => {
+  const rclick = (el: Element | null, x = 120, y = 90) => {
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    act(() => { el!.dispatchEvent(e); });
+    return e;
+  };
+  const ctxLabels = () => Array.from(document.querySelectorAll('.dsk-ctx [role^="menuitem"]')).map(i => i.textContent);
+  const ctxItem = (t: string) => Array.from(document.querySelectorAll('.dsk-ctx [role^="menuitem"]')).find(i => i.textContent === t) ?? null;
+
+  it('wallpaper (area kosong): menu desktop dengan item benar; hanya satu menu pada satu waktu', () => {
+    mount('windows', 'dashboard');
+    const e = rclick(q('.dsk-root'));
+    expect(e.defaultPrevented).toBe(true);
+    expect(ctxLabels()).toEqual(['Susun ulang jendela', 'Tutup semua jendela', 'Tampilan Klasik', 'Tampilan Windows', 'Tampilan Mac', 'Pintasan keyboard']);
+    expect(document.querySelectorAll('.dsk-ctx')).toHaveLength(1);
+    rclick(q('.dsk-root'), 300, 200);
+    expect(document.querySelectorAll('.dsk-ctx')).toHaveLength(1);
+  });
+
+  it('wallpaper: Personalisasi hanya bila ada pengelola; Susun ulang/Tutup semua aktif saat ada jendela; Tutup semua menutup jendela', () => {
+    const onAp = vi.fn();
+    render(<Harness skin="windows" tab="dashboard" onOpenAppearance={onAp} />);
+    click(q('button[aria-label="Buka Dashboard"]'));
+    rclick(q('.dsk-root'));
+    expect(ctxLabels()?.[0]).toBe('Personalisasi');
+    expect((ctxItem('Tutup semua jendela') as HTMLButtonElement).disabled).toBe(false);
+    click(ctxItem('Personalisasi')); expect(onAp).toHaveBeenCalledTimes(1);
+    expect(q('.dsk-ctx')).toBeNull();
+    rclick(q('.dsk-root'));
+    click(ctxItem('Tutup semua jendela'));
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+  });
+
+  it('wallpaper: "Pintasan keyboard" membuka dialog daftar pintasan', () => {
+    mount('windows', 'dashboard');
+    rclick(q('.dsk-root')); click(ctxItem('Pintasan keyboard'));
+    expect(document.querySelector('[aria-label="Daftar pintasan"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Alt + J');
+  });
+
+  it('ikon meja Windows: Buka / Sematkan-Lepas; Buka membuka jendela; Lepas memanggil onTogglePin', () => {
+    const toggle = vi.fn();
+    render(<Harness skin="windows" tab="dashboard" onTogglePin={toggle} />);
+    rclick(q('button[aria-label="Buka Pesanan"]'));
+    expect(ctxLabels()).toEqual(['Buka', 'Lepas dari desktop']);
+    click(ctxItem('Buka'));
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+    rclick(q('button[aria-label="Buka Pesanan"]'));
+    expect(ctxLabels()).toEqual(['Fokus', 'Kecilkan', 'Maksimalkan', 'Tutup', 'Lepas dari desktop']);
+    click(ctxItem('Lepas dari desktop'));
+    expect(toggle).toHaveBeenCalledWith('orders');
+  });
+
+  it('tombol jendela di taskbar: Fokus/Kecilkan/Maksimalkan/Tutup; Kecilkan dan Tutup bekerja', () => {
+    mount('windows', 'dashboard');
+    rclick(q('.dsk-tbtn[aria-label="Dashboard"]'));
+    expect(ctxLabels()).toEqual(['Fokus', 'Kecilkan', 'Maksimalkan', 'Tutup']);
+    click(ctxItem('Kecilkan'));
+    expect(q('.dsk-win')!.hasAttribute('hidden')).toBe(true);
+    rclick(q('.dsk-tbtn[aria-label="Dashboard"]'));
+    expect(ctxLabels()?.[0]).toBe('Pulihkan');
+    click(ctxItem('Tutup'));
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(0);
+  });
+
+  it('dock Mac: klik kanan item membuka menu itemnya; pin non-jendela bisa Disematkan dari item terbuka', () => {
+    const toggle = vi.fn();
+    render(<Harness skin="mac" tab="dashboard" pins={['dashboard']} onTogglePin={toggle} />);
+    click(q('.dsk-dock button[aria-label="Dashboard"]'));
+    rclick(q('.dsk-dock button[aria-label="Dashboard"]'));
+    expect(ctxLabels()).toContain('Lepas dari desktop');
+    click(ctxItem('Lepas dari desktop')); expect(toggle).toHaveBeenCalledWith('dashboard');
+  });
+
+  it('klik kanan DI DALAM jendela (titlebar, isi, kolom isian) tidak dicegat: menu bawaan peramban tetap', () => {
+    mount('windows', 'dashboard');
+    for (const target of [q('.dsk-win'), q('.dsk-tb'), q('.dsk-body'), q('[data-testid="dash"]')]) {
+      const e = rclick(target);
+      expect(e.defaultPrevented).toBe(false);
+    }
+    const input = document.createElement('input'); q('.dsk-body')!.appendChild(input);
+    expect(rclick(input).defaultPrevented).toBe(false);
+    expect(q('.dsk-ctx')).toBeNull();
+  });
+
+  it('Esc menutup menu klik kanan', () => {
+    mount('windows', 'dashboard');
+    rclick(q('.dsk-root'));
+    act(() => { q('.dsk-ctx')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(q('.dsk-ctx')).toBeNull();
+  });
+
+  it('pintasan: Alt+W menutup jendela aktif, Alt+J pindah jendela, Alt+K membuka panel menu (Klasik tidak punya DesktopShell)', () => {
+    mount('windows', 'dashboard');
+    click(q('button[aria-label="Buka Pesanan"]'));
+    expect(focusedNow()).toBe('orders');
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', altKey: true, bubbles: true, cancelable: true })); });
+    expect(focusedNow()).toBe('dashboard');
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', altKey: true, bubbles: true, cancelable: true })); });
+    expect(document.querySelectorAll('.dsk-win')).toHaveLength(1);
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', altKey: true, bubbles: true, cancelable: true })); });
+    expect(q('.dsk-menu')).not.toBeNull();
   });
 });

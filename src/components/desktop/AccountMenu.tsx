@@ -9,7 +9,7 @@ interface Props {
   avatar: string | null;
   roleLabel: string;
   storeUrl: string;
-  side: 'up' | 'down';
+  side: 'up' | 'down' | 'panel';
   onEditProfile: () => void;
   onAbout: () => void;
   onLogout: () => void;
@@ -18,6 +18,7 @@ interface Props {
   fullscreen?: { isFullscreen: boolean; onToggle: () => void };
 }
 
+// side 'panel' = dipasang di dalam panel menu Mulai (tanpa scrim sendiri; klik di luar ditangani panel).
 // Tombol avatar + menu akun kecil: Edit Profil, Tentang, Lihat Toko, Keluar (aksi yang di Klasik ada di footer sidebar / header).
 export default function AccountMenu(props: Props) {
   const [open, setOpen] = useState(false);
@@ -34,12 +35,12 @@ export default function AccountMenu(props: Props) {
   );
 }
 
-function AccountPopover({ username, roleLabel, storeUrl, side, onEditProfile, onAbout, onLogout, onAppearance, fullscreen, onClose }: Props & { onClose: () => void }) {
+export function AccountPopover({ username, roleLabel, storeUrl, side, onEditProfile, onAbout, onLogout, onAppearance, fullscreen, onClose }: Props & { onClose: () => void }) {
   useEscapeLayer(onClose);
   const run = (fn: () => void) => () => { onClose(); fn(); };
   return (
     <>
-      <div className="dsk-scrim" onPointerDown={onClose} />
+      {side !== 'panel' && <div className="dsk-scrim" onPointerDown={onClose} />}
       <div className="dsk-pop" data-side={side} role="menu" aria-label="Menu akun">
         <div className="who"><b>{username}</b><small>{roleLabel}</small></div>
         <hr />

@@ -17,7 +17,15 @@ export interface WinState {
   z: number;
   minimized: boolean;
   maximized: boolean;
+  /** Tempel ke tepi (setengah layar): sisi yang ditempel; `restore` = rect sebelum ditempel (untuk dipulihkan saat ditarik). */
+  snapped?: SnapSide;
+  restore?: { x: number; y: number; w: number; h: number };
+  /** Rect "diinginkan" (sebelum dijepit area): hanya berubah oleh aksi pengguna, bukan oleh setArea, sehingga jendela yang disusutkan layar kecil tumbuh kembali di layar besar. */
+  desired?: { x: number; y: number; w: number; h: number };
 }
+
+export type SnapSide = 'left' | 'right' | 'top';
+export type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 export interface WmState {
   windows: WinState[];   // urutan = urutan dibuka (dipakai taskbar)
@@ -26,13 +34,16 @@ export interface WmState {
 }
 
 export type WmAction =
-  | { type: 'open'; tabId: string; size?: { w: number; h: number } }
+  | { type: 'open'; tabId: string; size?: { w: number; h: number }; rect?: { x: number; y: number; w: number; h: number } }
   | { type: 'focus'; tabId: string }
   | { type: 'minimize'; tabId: string }
   | { type: 'maximize'; tabId: string }   // toggle maksimalkan/pulihkan
   | { type: 'close'; tabId: string }
   | { type: 'move'; tabId: string; x: number; y: number }
   | { type: 'resize'; tabId: string; x: number; y: number; w: number; h: number }
+  | { type: 'snap'; tabId: string; side: SnapSide; from?: { x: number; y: number; w: number; h: number } }   // left/right = setengah area kerja; top = maksimal; from = rect SEBELUM digeser (bahan pemulihan)
+  | { type: 'restoreAt'; tabId: string; x: number; y: number }       // lepas dari maksimal/tempel ke ukuran semula, titlebar di (x, y)
+  | { type: 'settle'; tabId: string }                                // geser/ubah ukuran selesai (tanda untuk penyimpan geometri; state tidak berubah isinya)
   | { type: 'arrange' }
   | { type: 'closeAll' }
   | { type: 'setArea'; area: WinArea };
@@ -135,6 +146,41 @@ export function fitRect(r: { x: number; y: number; w: number; h: number }, a: Wi
   };
 }
 
+// Ubah ukuran dari salah satu dari 8 arah. Tepi yang berlawanan tetap di tempat (tepi atas/kiri menggeser posisi sambil mengubah ukuran),
+// ukuran tidak turun di bawah minimum (jendela tidak "terdorong"), dan tepi tidak keluar dari area kerja (bawah taskbar/dock/menu bar).
+// Jendela yang sudah sebagian di luar area tidak melompat: batasnya longgar sebatas posisinya sekarang.
+export function resizeRect(edge: ResizeEdge, o: { x: number; y: number; w: number; h: number }, dx: number, dy: number, a: WinArea, min: { w: number; h: number }) {
+  const minW = Math.min(min.w, a.w), minH = Math.min(min.h, usableHeight(a));
+  let left = o.x, top = o.y, right = o.x + o.w, bottom = o.y + o.h;
+  const bound = (lo: number, v: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  if (edge.includes('e')) right = bound(o.x + minW, o.x + o.w + dx, Math.max(a.w, o.x + o.w));
+  if (edge.includes('w')) left = bound(Math.min(0, o.x), o.x + dx, o.x + o.w - minW);
+  if (edge.includes('s')) bottom = bound(o.y + minH, o.y + o.h + dy, Math.max(a.h - a.bottom, o.y + o.h));
+  if (edge.includes('n')) top = bound(Math.min(a.top, o.y), o.y + dy, o.y + o.h - minH);
+  return { x: Math.round(left), y: Math.round(top), w: Math.round(right - left), h: Math.round(bottom - top) };
+}
+
+// Rect tempel: kiri/kanan = setengah lebar area kerja, tinggi penuh area kerja (di antara menu bar dan taskbar/dock); atas = area penuh.
+export function snapRect(side: SnapSide, a: WinArea, min: { w: number; h: number }) {
+  const h = usableHeight(a);
+  if (side === 'top') return { x: 0, y: a.top, w: a.w, h };
+  const w = Math.min(a.w, Math.max(Math.floor(a.w / 2), Math.min(min.w, a.w)));
+  return { x: side === 'left' ? 0 : a.w - w, y: a.top, w, h };
+}
+
+// Sisi tempel dari posisi pointer saat menyeret titlebar: dalam 8px dari tepi atas area kerja (maksimal) atau tepi kiri/kanan layar.
+export const SNAP_EDGE_PX = 8;
+export function snapSideAt(px: number, py: number, a: WinArea): SnapSide | null {
+  if (py <= a.top + SNAP_EDGE_PX) return 'top';
+  if (px <= SNAP_EDGE_PX) return 'left';
+  if (px >= a.w - SNAP_EDGE_PX) return 'right';
+  return null;
+}
+
+// Rect "normal" jendela (yang dipulihkan): sebelum tempel bila sedang tertempel, selain itu x/y/w/h-nya sendiri (jendela maksimal menyimpannya).
+export const normalRect = (w: WinState) => (w.restore ?? w.desired ?? { x: w.x, y: w.y, w: w.w, h: w.h });
+const desiredOf = (w: WinState) => w.desired ?? { x: w.x, y: w.y, w: w.w, h: w.h };
+
 // Posisi awal berjenjang (cascade) supaya jendela baru tidak menumpuk persis.
 export function cascadeRect(tabId: string, index: number, a: WinArea, size?: { w: number; h: number }) {
   const base = size ?? DEFAULT_SIZES[tabId] ?? FALLBACK_SIZE;
@@ -166,8 +212,8 @@ export function wmReducer(s: WmState, a: WmAction): WmState {
       const existing = byTab(s, a.tabId);
       const z = s.zTop + 1;
       if (existing) return { ...update(s, a.tabId, { minimized: false, z }), zTop: z };
-      const r = cascadeRect(a.tabId, s.windows.length, s.area, a.size);
-      const win: WinState = { tabId: a.tabId, ...r, z, minimized: false, maximized: false };
+      const r = a.rect ? fitRect(a.rect, s.area, minSizeFor(a.tabId)) : cascadeRect(a.tabId, s.windows.length, s.area, a.size);
+      const win: WinState = { tabId: a.tabId, ...r, z, minimized: false, maximized: false, ...(a.rect ? { desired: a.rect } : {}) };
       return { ...s, windows: [...s.windows, win], zTop: z };
     }
     case 'focus': {
@@ -188,6 +234,25 @@ export function wmReducer(s: WmState, a: WmAction): WmState {
       const z = s.zTop + 1;
       return { ...update(s, a.tabId, { maximized: !w.maximized, minimized: false, z }), zTop: z };
     }
+    case 'snap': {
+      const w = byTab(s, a.tabId);
+      if (!w) return s;
+      const z = s.zTop + 1;
+      // Rect pemulihan = rect sebelum drag dimulai bila diberikan (`from`); selama drag jendela sudah ikut bergeser ke tepi, jadi state sekarang bukan acuannya.
+      const base = a.from ?? normalRect(w);
+      if (a.side === 'top') return { ...update(s, a.tabId, { ...fitRect(base, s.area, minSizeFor(a.tabId)), desired: base, restore: undefined, snapped: undefined, maximized: true, minimized: false, z }), zTop: z };
+      const r = snapRect(a.side, s.area, minSizeFor(a.tabId));
+      return { ...update(s, a.tabId, { ...r, restore: base, desired: undefined, snapped: a.side, maximized: false, minimized: false, z }), zTop: z };
+    }
+    case 'restoreAt': {
+      const w = byTab(s, a.tabId);
+      if (!w || (!w.maximized && !w.snapped)) return s;
+      const base = normalRect(w);
+      const r = clampRect({ x: a.x, y: a.y, w: base.w, h: base.h }, s.area, minSizeFor(a.tabId));
+      return update(s, a.tabId, { ...r, desired: { x: r.x, y: r.y, w: base.w, h: base.h }, restore: undefined, snapped: undefined, maximized: false });
+    }
+    case 'settle':
+      return byTab(s, a.tabId) ? { ...s } : s;
     case 'close': {
       if (!byTab(s, a.tabId)) return s;
       return { ...s, windows: s.windows.filter(w => w.tabId !== a.tabId) };
@@ -197,21 +262,23 @@ export function wmReducer(s: WmState, a: WmAction): WmState {
       if (!w || w.maximized) return s;
       const r = clampRect({ x: a.x, y: a.y, w: w.w, h: w.h }, s.area, minSizeFor(a.tabId));
       if (r.x === w.x && r.y === w.y) return s;
-      return update(s, a.tabId, { x: r.x, y: r.y });
+      const dz = desiredOf(w);
+      return update(s, a.tabId, { x: r.x, y: r.y, desired: { x: r.x, y: r.y, w: dz.w, h: dz.h }, snapped: undefined, restore: undefined });
     }
     case 'resize': {
       const w = byTab(s, a.tabId);
       if (!w || w.maximized) return s;
       const r = clampRect({ x: a.x, y: a.y, w: a.w, h: a.h }, s.area, minSizeFor(a.tabId));
       // Tepi bawah tidak boleh masuk ke bawah taskbar/dock (pegangan jadi tak terjangkau).
-      return update(s, a.tabId, { ...r, h: Math.max(Math.min(minSizeFor(a.tabId).h, usableHeight(s.area)), Math.min(r.h, s.area.h - s.area.bottom - r.y)) });
+      const h = Math.max(Math.min(minSizeFor(a.tabId).h, usableHeight(s.area)), Math.min(r.h, s.area.h - s.area.bottom - r.y));
+      return update(s, a.tabId, { ...r, h, desired: { ...r, h }, snapped: undefined, restore: undefined });
     }
     case 'arrange': {
       // Susun ulang semua jendela berjenjang sesuai urutan buka; z mengikuti urutan itu, yang terakhir di atas.
       let z = s.zTop;
       const windows = s.windows.map((w, i) => {
         z += 1;
-        return { ...w, ...cascadeRect(w.tabId, i, s.area), maximized: false, z };
+        return { ...w, ...cascadeRect(w.tabId, i, s.area), maximized: false, snapped: undefined, restore: undefined, desired: undefined, z };
       });
       return { ...s, windows, zTop: z };
     }
@@ -222,7 +289,9 @@ export function wmReducer(s: WmState, a: WmAction): WmState {
       if (n.w === s.area.w && n.h === s.area.h && n.top === s.area.top && n.bottom === s.area.bottom) return s;
       return {
         ...s, area: n,
-        windows: s.windows.map(w => ({ ...w, ...fitRect(w, n, minSizeFor(w.tabId)) })),
+        windows: s.windows.map(w => w.snapped
+          ? { ...w, ...snapRect(w.snapped === 'top' ? 'left' : w.snapped, n, minSizeFor(w.tabId)) }   // restore (rect diinginkan) tidak ikut dijepit
+          : { ...w, ...fitRect(desiredOf(w), n, minSizeFor(w.tabId)) }),
       };
     }
   }

@@ -8,6 +8,7 @@ import { deriveLoginEmail, getSupabaseAdmin } from '@/lib/supabase-admin';
 import { isValidSignatureUrl } from '@/lib/profile-signature';
 import { isUiLayout, type UiLayout } from '@/lib/ui-layout';
 import { parseStrictAppearance, type Appearance } from '@/lib/appearance';
+import { parsePins } from '@/lib/pins';
 import type { Action } from '@/types/rbac';
 
 interface ProfileRow { email: string | null; avatar: string | null; full_name: string | null; signature: string | null }
@@ -40,6 +41,18 @@ async function loadUiAppearance(username: string): Promise<Appearance | null> {
   }
 }
 
+// Menu yang disematkan: query terpisah (kolom ui_pins baru ada setelah migrasi); rusak/tidak ada -> null (= pintasan bawaan). Sama seperti
+// loadUiAppearance, jsonb bisa terbaca sebagai string mentah/terenkode ganda lewat pooler: parsePins mengurai hingga dua lapis.
+async function loadUiPins(username: string): Promise<string[] | null> {
+  try {
+    const [row] = await getSql()<{ ui_pins: unknown }[]>`select ui_pins from profiles where username = ${username}`;
+    return parsePins(row?.ui_pins ?? null);
+  } catch (err) {
+    console.warn('Tidak bisa membaca profiles.ui_pins (migrasi belum dijalankan?) — dianggap bawaan', err);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const authUser = getAuthUser(req);
   if (!authUser) return unauthorized();
@@ -52,6 +65,7 @@ export async function GET(req: NextRequest) {
   const superAdmin = authUser.role === 'super-admin';
   const uiLayoutPromise = loadUiLayout(authUser.username);
   const uiAppearancePromise = loadUiAppearance(authUser.username);
+  const uiPinsPromise = loadUiPins(authUser.username);
 
   // This route fires on every session restore/refresh for every logged-in user. Degrade
   // gracefully instead of failing the whole session bootstrap: fail-closed to empty permissions
@@ -75,7 +89,7 @@ export async function GET(req: NextRequest) {
     ? fullAccessPermissions()
     : permsMap ?? {};
 
-  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '', uiLayout: await uiLayoutPromise, uiAppearance: await uiAppearancePromise };
+  const user = { ...authUser, email: profile?.email ?? null, avatar: profile?.avatar ?? null, fullName: profile?.full_name ?? '', signature: profile?.signature ?? '', uiLayout: await uiLayoutPromise, uiAppearance: await uiAppearancePromise, uiPins: await uiPinsPromise };
 
   return Response.json({ ok: true, user, superAdmin, permissions });
 }

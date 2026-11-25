@@ -7,8 +7,10 @@ import type { DesktopItem } from './types';
 
 // Dock bawah (skin Mac): Launchpad + menu berjendela. Ikon membesar saat kursor mendekat, kecuali
 // pengguna memilih gerakan berkurang (prefers-reduced-motion).
-export default function Dock({ items, openTabs, launchpadOpen, onLaunchpad, onItem }: {
+export default function Dock({ items, openTabs, launchpadOpen, onLaunchpad, onItem, onItemContext }: {
   items: DesktopItem[]; openTabs: ReadonlySet<string>; launchpadOpen: boolean; onLaunchpad: () => void; onItem: (item: DesktopItem) => void;
+  /** Klik kanan / tombol Menu pada item dock: membuka menu konteks. */
+  onItemContext?: (item: DesktopItem, e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const buttons = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('.dsk-dk') ?? []);
@@ -48,7 +50,8 @@ export default function Dock({ items, openTabs, launchpadOpen, onLaunchpad, onIt
       </button>
       <span className="dsk-sep" aria-hidden="true" />
       {items.map(i => (
-        <button key={i.tab} type="button" className="dsk-dk" data-open={openTabs.has(i.tab)} aria-label={i.label} onClick={() => onItem(i)}>
+        <button key={i.tab} type="button" className="dsk-dk" data-open={openTabs.has(i.tab)} aria-label={i.label} onClick={() => onItem(i)}
+          onContextMenu={onItemContext ? e => { e.preventDefault(); onItemContext(i, e); } : undefined}>
           <AppTile Icon={i.Icon} color={i.color} />
           <span className="tip">{i.label}</span>
           <span className="dot" />
