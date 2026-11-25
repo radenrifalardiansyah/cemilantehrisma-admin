@@ -103,7 +103,7 @@ interface FormRow { productId: string; qty: string }
 const EMPTY_ROW: FormRow = { productId: '', qty: '' };
 const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, display: 'block' };
 
-export default function TransferMitraPanel({ creds, can, locations, locationStock, onStockChanged, preset, onPresetHandled, highlightId, onHighlightHandled, active = true }: {
+export default function TransferMitraPanel({ creds, can, locations, locationStock, onStockChanged, preset, onPresetHandled, highlightId, onHighlightHandled, active = true, onWritten }: {
   creds: string;
   can: (a: Action) => boolean;
   locations: TransferLocation[];
@@ -111,6 +111,8 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
   locationStock: Record<string, { stockQty: number }[]>;
   /** Dipanggil setelah aksi yang mengubah stok mitra (approve/batalkan) supaya tab Lokasi ikut segar. */
   onStockChanged: () => void | Promise<void>;
+  /** Dipanggil setelah penulisan transfer BERHASIL (simpan/approve/tolak/batalkan/hapus) supaya jendela lain (mode jendela) menyegar. */
+  onWritten?: () => void;
   /** Tombol cepat dari tab Lokasi: buka form dengan Mitra Asal terisi. `n` berubah tiap klik. */
   preset?: { locationId: string; n: number } | null;
   onPresetHandled?: () => void;
@@ -219,7 +221,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
     setBusyId(t.id);
     try {
       const res = await api(`/${t.id}/approve`, { method: 'POST', body: {} });
-      if (res.ok) toast.success(`${t.docNumber} di-approve; stok berpindah.`);
+      if (res.ok) { onWritten?.(); toast.success(`${t.docNumber} di-approve; stok berpindah.`); }
       else toast.error(res.error);
       await Promise.all([load(), onStockChanged()]);
     } finally { setBusyId(null); }
@@ -234,7 +236,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
     try {
       const reason = rejectReason.trim();
       const res = await api(`/${rejectTarget.id}/reject`, { method: 'POST', body: reason ? { reason } : {} });
-      if (res.ok) { toast.success(`${rejectTarget.docNumber} ditolak.`); setRejectTarget(null); setRejectReason(''); }
+      if (res.ok) { onWritten?.(); toast.success(`${rejectTarget.docNumber} ditolak.`); setRejectTarget(null); setRejectReason(''); }
       else toast.error(res.error);
       await load();
     } finally { setRejecting(false); }
@@ -245,7 +247,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
     setBusyId(t.id);
     try {
       const res = await api(`/${t.id}/cancel`, { method: 'POST', body: {} });
-      if (res.ok) toast.success(`${t.docNumber} dibatalkan; stok dikembalikan ke mitra asal.`);
+      if (res.ok) { onWritten?.(); toast.success(`${t.docNumber} dibatalkan; stok dikembalikan ke mitra asal.`); }
       else toast.error(res.error);
       await Promise.all([load(), onStockChanged()]);
     } finally { setBusyId(null); }
@@ -257,6 +259,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
     try {
       const res = await api(`/${t.id}`, { method: 'DELETE' });
       if (res.ok) {
+        onWritten?.();
         setTransfers(prev => prev.filter(x => x.id !== t.id));
         setSelected(sel => { const n = new Set(sel); n.delete(t.id); return n; });
         toast.success(`${t.docNumber} dihapus.`);
@@ -277,7 +280,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
         const res = await api(`/${d.id}/approve`, { method: 'POST', body: {} });
         if (res.ok) ok++; else failed.push({ label: d.docNumber, reason: res.error });
       }
-      if (ok > 0) toast.success(`${ok} transfer di-approve.`);
+      if (ok > 0) { onWritten?.(); toast.success(`${ok} transfer di-approve.`); }
       if (failed.length > 0) toast.error(`${failed.length} gagal: ` + failed.slice(0, 3).map(f => `${f.label} (${f.reason})`).join(' • ') + (failed.length > 3 ? ` (+${failed.length - 3} lainnya)` : ''));
       setSelected(new Set());
       await Promise.all([load(), onStockChanged()]);
@@ -297,7 +300,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
         const res = await api(`/${d.id}`, { method: 'DELETE' });
         if (res.ok) ok++; else failed.push({ label: d.docNumber, reason: res.error });
       }
-      if (ok > 0) toast.success(`${ok} dokumen dihapus.`);
+      if (ok > 0) { onWritten?.(); toast.success(`${ok} dokumen dihapus.`); }
       if (failed.length > 0) toast.error(`${failed.length} gagal: ` + failed.slice(0, 3).map(f => `${f.label} (${f.reason})`).join(' • '));
       setSelected(new Set());
       await load();
@@ -409,6 +412,7 @@ export default function TransferMitraPanel({ creds, can, locations, locationStoc
         const ar = await api(`/${id}/approve`, { method: 'POST', body: {} });
         if (!ar.ok) approveError = ar.error;
       }
+      onWritten?.();
       if (approveNow && approveError) toast.error(`Draft tersimpan, tetapi approve gagal: ${approveError}`);
       else if (approveNow) toast.success('Transfer disimpan dan di-approve; stok berpindah.');
       else toast.success(editing ? 'Draft transfer diperbarui.' : 'Draft transfer disimpan; perlu di-approve agar stok berpindah.');

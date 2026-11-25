@@ -193,8 +193,11 @@ export default function IncomeTab({ creds }: { creds: string }) {
   // urutan request dikirim. Tanpa penjaga ini, respons periode LAMA yang kebetulan datang
   // belakangan bisa menimpa data periode BARU yang sudah lebih dulu tampil.
   const loadIdRef = useRef(0);
+  // Muat ulang senyap punya nomor SENDIRI (lihat ExpensesTab): tidak membuat muat awal yang berjalan jadi usang sehingga spinner tersangkut.
+  const silentIdRef = useRef(0);
   const load = async (silent = false) => {
-    const myLoadId = ++loadIdRef.current;
+    const myLoadId = silent ? loadIdRef.current : ++loadIdRef.current;
+    const mySilentId = silent ? ++silentIdRef.current : 0;
     if (!silent) setLoading(true);
     // from/to non-kosong juga otomatis bypass limit 50 default di /api/orders & /api/consignment/recap.
     const qs = `from=${from}&to=${to}`;
@@ -205,7 +208,7 @@ export default function IncomeTab({ creds }: { creds: string }) {
     ]);
     if (myLoadId !== loadIdRef.current) return; // request lain (lebih baru) sudah menggantikan ini
     // Muat ulang senyap (dipicu tab lain): bila ada endpoint gagal, pertahankan daftar yang sudah tampil.
-    if (silent && !(iRes.ok && oRes.ok && rRes.ok)) return;
+    if (silent && (mySilentId !== silentIdRef.current || !(iRes.ok && oRes.ok && rRes.ok))) return;
     const manual: Income[] = iRes.ok ? (await iRes.json() as { income: Income[] }).income : [];
     const orders: OrderForIncome[] = oRes.ok ? (await oRes.json() as { orders: OrderForIncome[] }).orders : [];
     const recaps: RecapForIncome[] = rRes.ok ? (await rRes.json() as { recaps: RecapForIncome[] }).recaps : [];

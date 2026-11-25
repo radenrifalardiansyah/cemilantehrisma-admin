@@ -22,6 +22,7 @@ import { DateInput } from '@/components/DateTimeInput';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Modal from '@/components/Modal';
+import { useOnDataRevision } from '@/lib/data-sync';
 
 interface ReportSection extends MitraDailyReportSection {
   code: string; contactName: string; contactPhone: string; isActive: boolean;
@@ -156,8 +157,12 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
 
   // Generasi request — respons periode lama yang datang belakangan tidak boleh menimpa periode baru.
   const loadIdRef = useRef(0);
+  // Penjaga urutan bersama muat biasa dan senyap: respons hanya diterapkan bila belum ada respons bernomor lebih baru yang sudah diterapkan.
+  const issueSeq = useRef(0);
+  const appliedSeq = useRef(0);
   const load = async () => {
     const myLoadId = ++loadIdRef.current;
+    const mySeq = ++issueSeq.current;
     setLoading(true);
     setError('');
     // Batas waktu: tanpa ini, permintaan yang menggantung membuat halaman "memuat" tanpa akhir.
@@ -165,24 +170,44 @@ export default function MitraDailyReportTab({ creds }: { creds: string }) {
     const timer = setTimeout(() => ctrl.abort(), 25000);
     try {
       const r = await fetch(`/api/consignment/daily-report?from=${from}&to=${to}`, { headers, signal: ctrl.signal });
-      if (myLoadId !== loadIdRef.current) return;
+      if (myLoadId !== loadIdRef.current || mySeq < appliedSeq.current) return;
       if (!r.ok) {
         const body = await r.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || 'Gagal memuat laporan.');
       }
       const d = await r.json() as { sections: ReportSection[] };
+      if (mySeq < appliedSeq.current) return;   // respons senyap yang lebih baru sudah diterapkan saat body dibaca
+      appliedSeq.current = mySeq;
       setSections(d.sections);
     } catch (e) {
       const msg = e instanceof DOMException && e.name === 'AbortError'
         ? 'Server tidak merespons dalam 25 detik. Coba lagi.'
         : e instanceof Error ? e.message : 'Gagal memuat laporan.';
-      if (myLoadId === loadIdRef.current) setError(msg);
+      if (myLoadId === loadIdRef.current && mySeq > appliedSeq.current) setError(msg);
     } finally {
       clearTimeout(timer);
       if (myLoadId === loadIdRef.current) setLoading(false);
     }
   };
   useEffect(() => { load(); setSelected(new Set()); setPage(1); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+
+  // Mode jendela: Mitra (kirim/rekap/transfer/pembayaran) menulis data yang dibaca laporan ini -> muat ulang senyap: tanpa spinner/error,
+  // filter/halaman/pilihan tetap, laporan lama dipertahankan bila gagal. Dibuang bila periode berganti (loadIdRef) atau ada respons senyap yang lebih baru.
+  // Klasik: revisi tetap 0, tidak ada fetch.
+  useOnDataRevision('consignment', () => {
+    const mySeq = ++issueSeq.current;
+    const baseLoad = loadIdRef.current;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    fetch(`/api/consignment/daily-report?from=${from}&to=${to}`, { headers, signal: ctrl.signal })
+      .then(async r => {
+        if (!r.ok) return;
+        const d = await r.json() as { sections: ReportSection[] };
+        if (baseLoad === loadIdRef.current && mySeq > appliedSeq.current) { appliedSeq.current = mySeq; setSections(d.sections); }
+      })
+      .catch(() => {})
+      .finally(() => clearTimeout(timer));
+  });
 
   const filtered = sections.filter(s => {
     if (statusFilter === 'aktif' && !s.isActive) return false;

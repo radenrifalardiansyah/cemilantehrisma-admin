@@ -28,6 +28,7 @@ import Tooltip from '@/components/Tooltip';
 import { RecordHistoryButton, RecordHistoryPanel } from '@/components/RecordHistory';
 import type { PosProduct } from '@/lib/pos-types';
 import { useWallets, useWalletBalances, activeWalletOptions } from '@/lib/useWallets';
+import { useBumpData } from '@/lib/data-sync';
 import ShipmentNotePDF, { ShipmentNotePDFPage } from '@/lib/pdf/ShipmentNotePDF';
 import { buildMitraInvoiceData } from '@/lib/mitra-invoice';
 import MitraInvoicePDF, { type MitraInvoiceData } from '@/lib/pdf/MitraInvoicePDF';
@@ -335,6 +336,14 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
   const wallets = useWallets(creds);
+  // Mode jendela: tulisan Mitra memberi tahu jendela lain (Laporan Harian Mitra, Dashboard > Analitik Mitra: 'consignment'; stok produk/gudang: 'products';
+  // uang masuk/keluar dompet toko: 'wallets'). Hanya dipanggil setelah penulisan BERHASIL. Klasik: bump no-op.
+  const bumpData = useBumpData();
+  const bumpMitra = (o: { products?: boolean; wallets?: boolean } = {}) => {
+    bumpData('consignment', 'consignment-tab');
+    if (o.products) bumpData('products', 'consignment-tab');
+    if (o.wallets) bumpData('wallets', 'consignment-tab');
+  };
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
   const walletOptions = activeWalletOptions(wallets, walletBalances);
 
@@ -556,7 +565,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
       const r = editingL
         ? await fetch(`${API}/api/consignment/locations/${editingL.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) })
         : await fetch(`${API}/api/consignment/locations`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(lForm) });
-      if (r.ok) { await loadLocations(); setShowLForm(false); toast.success(editingL ? 'Lokasi berhasil diperbarui.' : 'Lokasi berhasil ditambahkan.'); }
+      if (r.ok) { bumpMitra(); await loadLocations(); setShowLForm(false); toast.success(editingL ? 'Lokasi berhasil diperbarui.' : 'Lokasi berhasil ditambahkan.'); }
       else {
         const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
         toast.error(d.error ?? 'Gagal menyimpan lokasi.');
@@ -573,6 +582,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     try {
       const r = await fetch(`${API}/api/consignment/locations/${l.id}`, { method: 'DELETE', headers });
       if (r.ok) {
+        bumpMitra();
         setLocations(prev => prev.filter(x => x.id !== l.id));
         setSelectedLocations(s => { const n = new Set(s); n.delete(l.id); return n; });
         toast.success(`"${l.name}" berhasil dihapus.`);
@@ -620,6 +630,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     const ids = [...selectedLocations];
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/locations/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
     const okIds = ids.filter((_, i) => results[i]);
+    if (okIds.length > 0) bumpMitra();
     setLocations(prev => prev.filter(l => !okIds.includes(l.id)));
     setSelectedLocations(new Set());
     if (okIds.length === count) toast.success(`${count} lokasi berhasil dihapus.`);
@@ -917,6 +928,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
         });
         if (r.ok) created++;
       }
+      if (created > 0) bumpMitra();
       await loadLocations();
       const failed = rows.length - created;
       toast.success(`${created} lokasi berhasil diimpor.${failed > 0 ? ` ${failed} baris gagal.` : ''}`);
@@ -1108,6 +1120,8 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
           if (!ar.ok) approveError = ((await ar.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal meng-approve pengiriman.';
         } catch { approveError = 'Gagal meng-approve pengiriman — periksa koneksi internet.'; }
       }
+      // Stok produk/gudang berubah bila pengiriman di-approve atau riwayat yang sudah berefek diedit.
+      bumpMitra({ products: !!editingShipment || (approveNow && !approveError) });
       if (approveNow && approveError) toast.error(`Draft ke "${location.name}" tersimpan, tetapi approve gagal: ${approveError}`);
       else if (approveNow) toast.success(`Pengiriman ke "${location.name}" disimpan dan di-approve.`);
       else toast.success(editingShipment ? 'Riwayat kirim berhasil diperbarui.' : `Draft pengiriman ke "${location.name}" disimpan — perlu di-approve agar stok berpindah.`);
@@ -1306,6 +1320,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
         if (res.ok) created++;
         else errors.push(`${g.location.name}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'gagal disimpan'}`);
       }
+      if (created > 0) bumpMitra();
       await Promise.all([loadShipments(), loadLocations()]);
       if (created > 0) toast.success(`${created} draft dibuat, perlu di-approve.${errors.length ? ` ${errors.length} baris/pengiriman dilewati.` : ''}`);
       if (errors.length) toast.error(errors.slice(0, 3).join(' • ') + (errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ''));
@@ -1329,6 +1344,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
       const r = await fetch(`${API}/api/consignment/send/${s.id}/approve`, { method: 'POST', headers });
       const data = await r.json().catch(() => ({} as { error?: string }));
       if (!r.ok) { toast.error((data as { error?: string }).error ?? 'Gagal meng-approve pengiriman.'); await loadShipments(); return; }
+      bumpMitra({ products: true });
       toast.success(`Pengiriman ke "${s.locationName}" di-approve.`);
       await Promise.all([loadShipments(), loadLocations()]);
     } catch {
@@ -1349,6 +1365,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
       });
       const data = await r.json().catch(() => ({} as { error?: string }));
       if (!r.ok) { toast.error((data as { error?: string }).error ?? 'Gagal menolak pengiriman.'); await loadShipments(); return; }
+      bumpMitra();
       toast.success('Pengiriman ditolak.');
       setRejectTarget(null); setRejectReason('');
       await loadShipments();
@@ -1386,7 +1403,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
           break;
         }
       }
-      if (approvedCount > 0) toast.success(`${approvedCount} pengiriman di-approve.`);
+      if (approvedCount > 0) { bumpMitra({ products: true }); toast.success(`${approvedCount} pengiriman di-approve.`); }
       if (failed.length > 0) toast.error(`${failed.length} gagal: ` + failed.slice(0, 3).map(f => `${f.label} (${f.reason})`).join(' • ') + (failed.length > 3 ? ` (+${failed.length - 3} lainnya)` : ''));
       if (aborted) toast.error(`${aborted} Batch berikutnya tidak diproses.`);
       setSelectedShipments(new Set());
@@ -1407,6 +1424,7 @@ export default function ConsignmentTab({ creds, products, can, highlightShipment
     try {
       const r = await fetch(`${API}/api/consignment/send/${s.id}`, { method: 'DELETE', headers });
       if (r.ok) {
+        bumpMitra({ products: true });
         setShipments(prev => prev.filter(x => x.id !== s.id));
         setSelectedShipments(sel => { const n = new Set(sel); n.delete(s.id); return n; });
         toast.success('Riwayat kirim berhasil dihapus.');
@@ -1562,6 +1580,7 @@ _${storeHeader.name}_`.trim();
     const ids = [...selectedShipments];
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/send/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
     const okIds = ids.filter((_, i) => results[i]);
+    if (okIds.length > 0) bumpMitra({ products: true });
     setShipments(prev => prev.filter(s => !okIds.includes(s.id)));
     setSelectedShipments(new Set());
     await loadLocations();
@@ -1874,6 +1893,8 @@ _${storeHeader.name}_`.trim();
         : await fetch(`${API}/api/consignment/recap`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan rekap.'); return; }
+      // Retur/reject mengembalikan stok ke gudang; rekap lunas (atau diedit) menggerakkan dompet toko.
+      bumpMitra({ products: true, wallets: recapPaymentStatus === 'lunas' || !!editingRecap });
       toast.success(editingRecap ? 'Riwayat rekap berhasil diperbarui.' : `Rekap tersimpan — pendapatan ${formatRp(recapNetRevenue)}${recapTotalOtherCosts > 0 ? ' (setelah biaya lain-lain)' : ''} dari "${location.name}".`);
       setShowRecapForm(false); setEditingRecap(null);
       setRecapNote(''); setRecapOtherCosts([]); setRecapPaymentStatus('lunas'); setRecapWalletId(''); setRecapWarehouseId('');
@@ -2115,6 +2136,7 @@ _${storeHeader.name}_`.trim();
         if (res.ok) created++;
         else errors.push(`${g.location.name}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'gagal disimpan'}`);
       }
+      if (created > 0) bumpMitra({ products: true, wallets: true });
       await Promise.all([loadRecaps(), loadLocations()]);
       refetchBalances();
       if (created > 0) toast.success(`${created} rekap berhasil diimpor.${errors.length ? ` ${errors.length} baris/rekap dilewati.` : ''}`);
@@ -2135,6 +2157,7 @@ _${storeHeader.name}_`.trim();
     try {
       const res = await fetch(`${API}/api/consignment/recap/${r.id}`, { method: 'DELETE', headers });
       if (res.ok) {
+        bumpMitra({ products: true, wallets: true });
         setRecaps(prev => prev.filter(x => x.id !== r.id));
         setSelectedRecaps(sel => { const n = new Set(sel); n.delete(r.id); return n; });
         toast.success('Riwayat rekap berhasil dihapus.');
@@ -2297,6 +2320,7 @@ _${storeHeader.name}_`.trim();
     const ids = [...selectedRecaps];
     const results = await Promise.all(ids.map(id => fetch(`${API}/api/consignment/recap/${id}`, { method: 'DELETE', headers }).then(r => r.ok).catch(() => false)));
     const okIds = ids.filter((_, i) => results[i]);
+    if (okIds.length > 0) bumpMitra({ products: true, wallets: true });
     setRecaps(prev => prev.filter(r => !okIds.includes(r.id)));
     setSelectedRecaps(new Set());
     await loadLocations();
@@ -2318,6 +2342,7 @@ _${storeHeader.name}_`.trim();
       body: JSON.stringify({ walletId: bulkMarkLunasWalletId }),
     }).then(r => r.ok).catch(() => false)));
     const okCount = results.filter(Boolean).length;
+    if (okCount > 0) bumpMitra({ wallets: true });
     await loadRecaps();
     refetchBalances();
     setSelectedRecaps(new Set());
@@ -2750,7 +2775,7 @@ _${storeHeader.name}_`.trim();
         {/* ════ TRANSFER MITRA — selalu ter-mount supaya form bisa dibuka dari tab Lokasi tanpa pindah tab; daftar tampil hanya di sub-tab ini ═══ */}
         <TransferMitraPanel creds={creds} can={can} locations={locations} locationStock={locationStock}
           active={subTab === 'transfer'}
-          onStockChanged={loadLocations} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)}
+          onStockChanged={loadLocations} onWritten={() => bumpMitra()} preset={transferPreset} onPresetHandled={() => setTransferPreset(null)}
           highlightId={highlightTransferId} onHighlightHandled={onHighlightHandled} />
 
         {/* ════ LOKASI ═════════════════════════════════════════ */}
@@ -3610,7 +3635,7 @@ _${storeHeader.name}_`.trim();
 
         {/* ════ PIUTANG MITRA ══════════════════════════════════ */}
         {subTab === 'piutang' && (
-          <MitraReceivablesPanel creds={creds} canEdit={can('edit')} onChanged={async () => { await loadRecaps(); refetchBalances(); }} />
+          <MitraReceivablesPanel creds={creds} canEdit={can('edit')} onChanged={async () => { bumpMitra({ wallets: true }); await loadRecaps(); refetchBalances(); }} />
         )}
       </div>
 
@@ -3890,7 +3915,7 @@ _${storeHeader.name}_`.trim();
           recap={{ id: payRecap.id, locationName: payRecap.locationName, total: payRecap.totalRevenue, remaining: payRecap.remaining ?? (payRecap.paymentStatus === 'belum_lunas' ? payRecap.totalRevenue : 0), walletId: payRecap.walletId ?? null }}
           canEdit={can('edit')}
           onClose={() => setPayRecap(null)}
-          onDone={async () => { await loadRecaps(); refetchBalances(); }}
+          onDone={async () => { bumpMitra({ wallets: true }); await loadRecaps(); refetchBalances(); }}
         />
       )}
 

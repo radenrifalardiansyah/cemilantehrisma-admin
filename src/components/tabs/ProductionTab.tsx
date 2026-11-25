@@ -31,6 +31,7 @@ const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Modal from '@/components/Modal';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 function Checkbox({ checked, indeterminate, onChange }: {
   checked: boolean; indeterminate?: boolean; onChange: () => void;
@@ -122,6 +123,14 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  // Mode jendela: produksi mengurangi stok bahan baku ('procurement') dan menambah stok produk ('products').
+  const bumpData = useBumpData();
+  // Batch dengan biaya lain (otherCost > 0) juga menulis/mengubah/menghapus baris Pengeluaran otomatis ('Produksi'), jadi 'wallets' ikut di-bump
+  // supaya jendela Pengeluaran menyegar. `expense` = penulisan ini menyentuh pengeluaran (baru, lama, atau dihapus).
+  const bumpProduction = (expense = false) => {
+    bumpData('procurement', 'production-tab'); bumpData('products', 'production-tab');
+    if (expense) bumpData('wallets', 'production-tab');
+  };
   const storeHeader = useStoreHeader(creds);
 
   const [materials,        setMaterials]        = useState<RawMaterial[]>([]);
@@ -149,6 +158,15 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
   };
 
   useEffect(() => { loadMaterials(); loadBatches(); loadWarehouses(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mode jendela: stok bahan baku berubah di jendela lain (GR di-approve, pembelian, produksi) -> daftar bahan dimuat ulang senyap: tanpa spinner,
+  // tampilan lama dipertahankan bila gagal, hanya respons terbaru yang dipakai, form produksi yang sedang diisi tidak tersentuh.
+  const matSyncSeq = useRef(0);
+  useOnDataRevision('procurement', () => {
+    const seq = ++matSyncSeq.current;
+    fetch(`${API}/api/materials`, { headers })
+      .then(async r => { if (r.ok && seq === matSyncSeq.current) setMaterials((await r.json() as { materials: RawMaterial[] }).materials); })
+      .catch(() => {});
+  }, 'production-tab');
 
   // ── Form tambah/edit (modal) ──────────────────────────────────
   const [showForm,     setShowForm]     = useState(false);
@@ -233,14 +251,14 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       const res = editingBatch
         ? await fetch(`${API}/api/production/${editingBatch.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
         : await fetch(`${API}/api/production`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const dataRes = await res.json() as { id?: string; error?: string };
+      const dataRes = await res.json().catch(() => ({})) as { id?: string; error?: string };   // json gagal pada respons OK tidak boleh melewatkan bump
       if (!res.ok) { toast.error(dataRes.error ?? 'Gagal menyimpan produksi.'); return; }
       const productLabel = usedOutputRows.map(r => `${r.product.name} (${r.qty} pcs)`).join(', ');
       toast.success(editingBatch
         ? `Produksi berhasil diperbarui — HPP ${formatRp(costPerPcs)}/pcs untuk ${productLabel}.`
         : `Produksi tersimpan — HPP ${formatRp(costPerPcs)}/pcs untuk ${productLabel}.`);
       closeForm();
-      await Promise.all([loadMaterials(), loadBatches()]);
+      try { await Promise.all([loadMaterials(), loadBatches()]); } finally { bumpProduction(otherCostNum > 0 || (editingBatch?.otherCost ?? 0) > 0); }
     } finally { setSubmitting(false); }
   };
 
@@ -255,7 +273,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       setBatches(prev => prev.filter(x => x.id !== b.id));
       setSelected(s => { const n = new Set(s); n.delete(b.id); return n; });
       toast.success('Batch produksi berhasil dihapus, stok dikembalikan.');
-      await loadMaterials();
+      try { await loadMaterials(); } finally { bumpProduction((b.otherCost ?? 0) > 0); }
     } else toast.error(dataRes.error ?? 'Gagal menghapus batch produksi.');
     setDeletingId(null);
   };
@@ -283,13 +301,16 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
     if (!await confirm({ message: `Hapus ${selected.size} batch produksi yang dipilih? Stok bahan baku & produk terkait akan dikembalikan/dikurangi lagi.`, danger: true })) return;
     setBulkDeleting(true);
     const ids = [...selected];
-    let okCount = 0, blockedCount = 0;
+    let okCount = 0, blockedCount = 0, okExpense = false;
     for (const id of ids) {
-      const r = await fetch(`${API}/api/production/${id}`, { method: 'DELETE', headers });
-      if (r.ok) okCount++; else blockedCount++;
+      // Per item di try/catch: jaringan putus di tengah tidak memutus loop, jadi bump tetap terjadi untuk yang sudah berhasil.
+      try {
+        const r = await fetch(`${API}/api/production/${id}`, { method: 'DELETE', headers });
+        if (r.ok) { okCount++; if ((batches.find(x => x.id === id)?.otherCost ?? 0) > 0) okExpense = true; } else blockedCount++;
+      } catch { blockedCount++; }
     }
     setSelected(new Set());
-    await Promise.all([loadMaterials(), loadBatches()]);
+    try { await Promise.all([loadMaterials(), loadBatches()]); } finally { if (okCount > 0) bumpProduction(okExpense); }
     if (okCount > 0) toast.success(`${okCount} batch produksi berhasil dihapus.${blockedCount > 0 ? ` ${blockedCount} dilewati karena produknya sudah diproduksi lagi atau stoknya sudah terjual/keluar.` : ''}`);
     else toast.error('Semua batch yang dipilih tidak bisa dihapus (produknya sudah diproduksi lagi atau stoknya sudah terjual/keluar).');
     setBulkDeleting(false);
@@ -504,7 +525,7 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
       if (headerRowNum === -1) { toast.error('Baris header (Tanggal, Gudang, Produk Hasil, dst) tidak ditemukan.'); return; }
 
       const errors: string[] = [];
-      let created = 0;
+      let created = 0, createdExpense = false;
       for (let r = headerRowNum + 1; r <= ws.rowCount; r++) {
         const row = ws.getRow(r);
         const get = (col: number) => cellText(row.getCell(col).value);
@@ -546,15 +567,17 @@ export default function ProductionTab({ creds, products }: { creds: string; prod
           otherCost: cellNumber(row.getCell(5).value) || 0,
           note: catatanRaw,
         };
-        const res = await fetch(`${API}/api/production`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) created++;
+        let res: Response;
+        try { res = await fetch(`${API}/api/production`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); }
+        catch { errors.push(`${rowLabel}: koneksi terputus.`); continue; }   // tidak memutus loop: bump tetap untuk baris yang sudah berhasil
+        if (res.ok) { created++; if (payload.otherCost > 0) createdExpense = true; }
         else {
           const err = await res.json().catch(() => ({})) as { error?: string };
           errors.push(`${rowLabel}: ${err.error ?? 'gagal disimpan'}.`);
         }
       }
 
-      await Promise.all([loadMaterials(), loadBatches()]);
+      try { await Promise.all([loadMaterials(), loadBatches()]); } finally { if (created > 0) bumpProduction(createdExpense); }
       if (created > 0) toast.success(`${created} batch produksi berhasil diimport.${errors.length > 0 ? ` ${errors.length} baris dilewati.` : ''}`);
       if (errors.length > 0) toast.error(errors.slice(0, 3).join(' ') + (errors.length > 3 ? ` (+${errors.length - 3} lainnya)` : ''));
       if (created === 0 && errors.length === 0) toast.error('Tidak ada baris data yang bisa diimport.');

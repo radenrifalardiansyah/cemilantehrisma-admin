@@ -1,7 +1,7 @@
 'use client';
 
 import Pagination from '@/components/Pagination';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Modal from '@/components/Modal';
 import { createPortal } from 'react-dom';
@@ -28,6 +28,7 @@ import EmptyAddCard from '@/components/EmptyAddCard';
 const API = '';
 import { HEADER_BTN_H } from '@/lib/ui-constants';
 import Field from '@/components/Field';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 // Warehouse list's active-count check also re-fetches per-warehouse stock (N+1, uncached) —
 // longer interval than Kasir/Pesanan since this one is pricier per tick.
 const STOCK_POLL_MS = 45_000;
@@ -560,6 +561,8 @@ export default function StockTab({
   const [transferPageSize, setTransferPageSize]   = useState(10);
 
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
+  // Mode jendela: stok masuk/keluar/transfer/kosongkan mengubah stok produk ('products') yang dibaca Produk, Kasir, dan laporan di jendela lain.
+  const bumpData = useBumpData();
 
   // `silent` skips the loading flip so the background auto-refresh poll below doesn't
   // re-trigger the full-page spinner these two gate on every tick.
@@ -591,10 +594,11 @@ export default function StockTab({
     setTxLoading(false);
   };
 
-  const loadStock = async (warehouseId: string, silent = false) => {
+  const loadStock = async (warehouseId: string, silent = false, isCurrent?: () => boolean) => {
     if (!silent) setStockLoading(true);
     const r = await fetch(`${API}/api/warehouses/${warehouseId}/stock`, { headers });
-    if (r.ok) {
+    // Muat ulang latar (silent): respons gudang yang sudah bukan gudang terpilih dibuang (tidak mengisi tampilan gudang lain).
+    if (r.ok && (!isCurrent || isCurrent())) {
       const { stocks: s } = await r.json() as { stocks: ProductStock[] };
       setStocks(s);
     }
@@ -612,6 +616,7 @@ export default function StockTab({
     const r = await fetch(`${API}/api/warehouses/${selectedWarehouse.id}/stock/${productId}`, { method: 'DELETE', headers });
     if (r.ok) {
       await loadStock(selectedWarehouse.id);
+      bumpData('products', 'stock-tab');
       toast.success(`Stok "${productName}" berhasil dikosongkan.`);
     } else {
       toast.error('Gagal mengosongkan stok produk.');
@@ -627,6 +632,7 @@ export default function StockTab({
     if (r.ok) {
       const d = await r.json() as { cleared: number; failed?: { productId: string; error: string }[] };
       await loadStock(selectedWarehouse.id);
+      if (d.cleared > 0) bumpData('products', 'stock-tab');
       if (d.failed && d.failed.length > 0) {
         toast.error(`${d.cleared} produk berhasil dikosongkan, ${d.failed.length} gagal — coba lagi untuk sisanya.`);
       } else {
@@ -640,6 +646,31 @@ export default function StockTab({
 
   useEffect(() => { loadWarehouses(); }, []);
 
+  // Mode jendela: stok berubah dari jendela lain (penjualan Kasir/Pesanan, produksi, GR, kirim/retur lapak) -> daftar gudang dan stok gudang terpilih
+  // dimuat ulang senyap: tanpa spinner, tampilan lama dipertahankan bila gagal, hanya respons terbaru dipakai, form/modal yang terbuka tidak tersentuh.
+  // (Hitungan "gudang aktif" tidak ikut dimuat ulang: perlu satu request per gudang.) Klasik: revisi tetap 0.
+  const stockSyncSeq = useRef(0);
+  // Gudang terpilih TERKINI (dibaca saat respons tiba): respons terlambat untuk gudang lain tidak boleh mengisi tampilan gudang yang sekarang.
+  const selectedWhRef = useRef<string | null>(null);
+  useEffect(() => { selectedWhRef.current = selectedWarehouse?.id ?? null; });
+  const silentStockSync = () => {
+    const seq = ++stockSyncSeq.current;
+    const wh = selectedWarehouse;
+    Promise.all([
+      fetch(`${API}/api/warehouses`, { headers }),
+      wh ? fetch(`${API}/api/warehouses/${wh.id}/stock`, { headers }) : Promise.resolve(null),
+    ]).then(async ([wr, sr]) => {
+      if (!wr.ok || (sr && !sr.ok)) return;
+      const w = (await wr.json() as { warehouses: WarehouseData[] }).warehouses;
+      const s = sr ? (await sr.json() as { stocks: ProductStock[] }).stocks : null;
+      if (seq !== stockSyncSeq.current) return;
+      setWarehouses(w);
+      if (s && wh?.id === selectedWhRef.current) setStocks(s);
+    }).catch(() => {});
+  };
+  useOnDataRevision('products', silentStockSync, 'stock-tab');
+  useOnDataRevision('procurement', silentStockSync, 'stock-tab');
+
   useEffect(() => {
     if (subTab !== 'stok' && subTab !== 'opname') loadTx();
   }, [subTab]);
@@ -650,7 +681,7 @@ export default function StockTab({
   // `&& list.length === 0`, so a background reload there won't flash a full-page loader either.
   const pollActiveView = () => {
     if (subTab === 'stok') {
-      if (stokView === 'stock' && selectedWarehouse) loadStock(selectedWarehouse.id, true);
+      if (stokView === 'stock' && selectedWarehouse) { const id = selectedWarehouse.id; loadStock(id, true, () => selectedWhRef.current === id); }
       else loadWarehouses(true);
     } else if (subTab !== 'opname') {
       loadTx();
@@ -736,6 +767,7 @@ export default function StockTab({
       setTxWId(''); setTxPId(''); setTxQty(''); setTxNote('');
       setShowTxModal(null);
       await loadTx();
+      bumpData('products', 'stock-tab');
       toast.success(type === 'in' ? 'Stok masuk berhasil dicatat.' : 'Stok keluar berhasil dicatat.');
     } else {
       const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };
@@ -764,6 +796,7 @@ export default function StockTab({
       setFromWId(''); setToWId(''); setTrPId(''); setTrQty(''); setTrNote('');
       setShowTransferModal(false);
       await loadTx();
+      bumpData('products', 'stock-tab');
       toast.success('Transfer stok berhasil.');
     } else {
       const { error } = await r.json().catch(() => ({ error: undefined })) as { error?: string };

@@ -13,6 +13,7 @@ import DataList, { DetailPanel, type ExportCol } from '../titip-jual/DataList';
 import { API, Badge, Field, ModalShell, ModalFooter, ErrorBox, HEADER_BTN_H, rupiah, qtyText } from '../titip-jual/shared';
 import { KIND_LABEL, dt, todayKey, type OwnSectionProps, type Shipment, type PriceItem } from './types';
 import { DateInput } from '@/components/DateTimeInput';
+import { useBumpData } from '@/lib/data-sync';
 
 interface Line { productId: string; qty: string; price: string }
 interface Draft { kind: Shipment['kind']; stallId: string; warehouseId: string; docDate: string; note: string; lines: Line[] }
@@ -28,6 +29,8 @@ async function fetchShipments(creds: string): Promise<Shipment[]> {
 // Saldo Awal (mencatat stok yang sudah ada di gudang lapak supaya ikut ditagih).
 export default function ShipmentsSection({ creds, stalls, warehouses, can }: OwnSectionProps) {
   const toast = useToast();
+  // Mode jendela: kirim/retur/opname stok lapak mengubah stok gudang toko (domain 'products') dan katalog Kasir Lapak ('consign').
+  const bumpData = useBumpData();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds, 'Content-Type': 'application/json' };
   const [items, setItems] = useState<Shipment[] | null>(null);
@@ -101,7 +104,7 @@ export default function ShipmentsSection({ creds, stalls, warehouses, can }: Own
       body: JSON.stringify({ kind: draft.kind, stallId: draft.stallId, warehouseId: draft.warehouseId, date: draft.docDate, note: draft.note, items: validLines.map(l => ({ productId: l.productId, qty: Number(l.qty), price: Number(l.price) })) }),
     });
     const d = await r.json().catch(() => ({})) as { shipment?: Shipment; error?: string };
-    if (r.ok && d.shipment) { setDraft(null); await load(); toast.success(`${d.shipment.docNumber} disimpan.`); }
+    if (r.ok && d.shipment) { setDraft(null); await load(); bumpData('products', 'stall-own-tab'); bumpData('consign', 'stall-own-tab'); toast.success(`${d.shipment.docNumber} disimpan.`); }
     else setError(d.error ?? 'Gagal menyimpan dokumen.');
     setSaving(false);
   };
@@ -110,7 +113,7 @@ export default function ShipmentsSection({ creds, stalls, warehouses, can }: Own
     if (!await confirm({ message: `Batalkan ${s.docNumber}? Stok dikembalikan seperti sebelum dokumen ini.`, danger: true })) return;
     setVoidingId(s.id);
     const r = await fetch(`${API}/api/stall-own/shipments/${s.id}`, { method: 'DELETE', headers });
-    if (r.ok) { await load(); toast.success(`${s.docNumber} dibatalkan.`); }
+    if (r.ok) { await load(); bumpData('products', 'stall-own-tab'); bumpData('consign', 'stall-own-tab'); toast.success(`${s.docNumber} dibatalkan.`); }
     else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal membatalkan dokumen.');
     setVoidingId(null);
   };

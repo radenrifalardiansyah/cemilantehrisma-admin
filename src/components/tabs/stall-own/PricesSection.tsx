@@ -9,6 +9,7 @@ import Tooltip from '@/components/Tooltip';
 import { useToast } from '@/components/Toast';
 import { API, Badge, HEADER_BTN_H, rupiah, qtyText } from '../titip-jual/shared';
 import type { OwnSectionProps, PriceItem } from './types';
+import { useBumpData } from '@/lib/data-sync';
 
 // Harga jual produk toko per lapak. Kosong = ikut harga toko. Perubahan berlaku untuk penjualan berikutnya.
 export default function PricesSection({ creds, stalls, can }: OwnSectionProps) {
@@ -34,6 +35,7 @@ export default function PricesSection({ creds, stalls, can }: OwnSectionProps) {
     return () => { alive = false; };
   }, [creds, stallId]);
 
+  const bumpData = useBumpData();   // harga lapak berubah -> katalog Kasir Lapak ('consign') di jendela lain menyegar
   const put = async (productId: string, price: number | null) => {
     setBusyId(productId);
     const r = await fetch(`${API}/api/stall-own/prices`, {
@@ -41,6 +43,7 @@ export default function PricesSection({ creds, stalls, can }: OwnSectionProps) {
     });
     if (r.ok) {
       await load(stallId);
+      bumpData('consign', 'stall-own-tab');
       setEdits(e => { const n = { ...e }; delete n[productId]; return n; });
       toast.success(price === null ? 'Harga kembali mengikuti harga toko.' : 'Harga lapak disimpan.');
     } else toast.error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Gagal menyimpan harga.');

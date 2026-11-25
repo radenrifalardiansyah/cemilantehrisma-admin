@@ -31,7 +31,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
-import { useBumpData } from '@/lib/data-sync';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 
 const EXPENSE_CATEGORIES = ['Sewa', 'Gaji', 'Listrik & Air', 'Transportasi', 'Perlengkapan', 'Bahan Baku', 'Produksi', 'Susut/Rusak', 'Lainnya'];
 
@@ -167,17 +167,25 @@ export default function ExpensesTab({ creds }: { creds: string }) {
   // BARU yang sudah lebih dulu tampil (dua fetch untuk periode berbeda bisa tumpang tindih kalau
   // filter diganti cepat sebelum respons pertama selesai).
   const loadIdRef = useRef(0);
-  const load = async () => {
-    const myLoadId = ++loadIdRef.current;
-    setLoading(true);
+  // Muat ulang senyap (dipicu tab lain) punya nomor SENDIRI: tidak membuat muat awal/ganti periode yang masih berjalan jadi usang (yang bisa
+  // membuatnya keluar tanpa mematikan spinner). Hasil senyap dibuang bila ada muat non-senyap yang lebih baru atau senyap yang lebih baru.
+  const silentIdRef = useRef(0);
+  const load = async (silent = false) => {
+    const myLoadId = silent ? loadIdRef.current : ++loadIdRef.current;
+    const mySilentId = silent ? ++silentIdRef.current : 0;
+    if (!silent) setLoading(true);
     const r = await fetch(`${API}/api/expenses?from=${from}&to=${to}`, { headers });
     if (myLoadId !== loadIdRef.current) return;
+    if (silent && (mySilentId !== silentIdRef.current || !r.ok)) return;   // gagal/basi: pertahankan daftar yang tampil
     if (r.ok) { const { expenses: e } = await r.json() as { expenses: Expense[] }; setExpenses(e); }
     setLoading(false);
   };
   // Kosongkan pilihan saat periode diganti — baris periode lama tidak terlihat lagi, jadi jangan sampai
   // ikut terhapus lewat bulk delete (atau bikin jumlah "dipilih" beda dengan yang diexport).
   useEffect(() => { setSelected(new Set()); load(); }, [period, customFrom, customTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mode jendela: pembayaran hutang/cicilan/penutupan di tab lain menulis pengeluaran dan mem-bump 'wallets' -> daftar periode aktif dimuat ulang senyap
+  // (tanpa spinner penuh; filter/form tidak tersentuh; bump milik ExpensesTab sendiri dilewati). Klasik: revisi tetap 0.
+  useOnDataRevision('wallets', () => { load(true).catch(() => {}); }, 'expenses-tab');
 
   const openNew = () => { setEditing({ id: '', ...emptyForm() }); setIsNew(true); setError(''); };
   const openEdit = (e: Expense) => {

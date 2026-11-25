@@ -648,26 +648,31 @@ export default function AdminPage() {
   }, [authed, activeTab, dashSubView, bizPeriod, bizCustomFrom, bizCustomTo]);
 
   // ── Analitik Mitra — agregasi kirim/rekap per lokasi konsinyasi dari endpoint server-side ──
-  const fetchConsignmentAnalytics = useCallback(async (authHeader?: string): Promise<boolean> => {
+  // Penjaga urutan: hanya respons terbaru yang diterapkan (periode lama yang terlambat tidak menimpa periode baru). `silent` = muat ulang
+  // karena sinkron antar jendela: tanpa menyalakan mitraLoading / mengosongkan error, data lama bertahan bila gagal.
+  const mitraSeq = useRef(0);
+  const fetchConsignmentAnalytics = useCallback(async (authHeader?: string, silent = false): Promise<boolean> => {
     const token = authHeader ?? creds;
     if (!token) return false;
     let ok = false;
-    setMitraLoading(true);
-    setMitraError('');
+    const mySeq = ++mitraSeq.current;
+    if (!silent) { setMitraLoading(true); setMitraError(''); }
     // Batas waktu: tanpa ini, permintaan yang menggantung membuat spinner berputar tanpa akhir.
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 25000);
     try {
       const { from, to } = periodRange(mitraPeriod, mitraCustomFrom, mitraCustomTo);
       const res = await fetch(`/api/analytics/consignment?from=${from}&to=${to}`, { headers: { 'x-admin-auth': token }, signal: ctrl.signal });
-      if (res.ok) { setMitraData(await res.json() as ConsignmentAnalyticsData); ok = true; }
-      else setMitraError('Gagal memuat analitik.');
+      if (res.ok) {
+        const d = await res.json() as ConsignmentAnalyticsData;
+        if (mySeq === mitraSeq.current) { setMitraData(d); ok = true; }
+      } else if (!silent && mySeq === mitraSeq.current) setMitraError('Gagal memuat analitik.');
     } catch (e) {
-      setMitraError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat analitik.');
+      if (!silent && mySeq === mitraSeq.current) setMitraError(e instanceof DOMException && e.name === 'AbortError' ? 'Server tidak merespons dalam 25 detik.' : 'Gagal memuat analitik.');
     } finally {
       clearTimeout(timer);
     }
-    setMitraLoading(false);
+    if (mySeq === mitraSeq.current) setMitraLoading(false);
     return ok;
   }, [creds, mitraPeriod, mitraCustomFrom, mitraCustomTo]);
 
@@ -678,6 +683,19 @@ export default function AdminPage() {
     fetchConsignmentAnalytics().then(ok => { if (ok) mitraFresh.current = { key, at: Date.now() }; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, activeTab, dashSubView, mitraPeriod, mitraCustomFrom, mitraCustomTo]);
+
+  // Mode jendela: Mitra menulis data -> cache analitik tidak berlaku lagi; bila Analitik Mitra sedang tampil, muat ulang senyap
+  // (data lama tetap tampil, hanya redup; gagal = data lama bertahan). Klasik: tidak pernah terpanggil (bump no-op).
+  const mitraSyncRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    mitraSyncRef.current = () => {
+      mitraFresh.current = null;
+      // Hanya muat ulang bila Analitik Mitra benar-benar tampil (Dashboard aktif); selain itu cukup cache dibatalkan: muat berikutnya segar.
+      if (!mitraData || activeTab !== 'dashboard' || dashSubView !== 'analitik-mitra') return;
+      const key = `${mitraPeriod}|${mitraCustomFrom}|${mitraCustomTo}`;
+      void fetchConsignmentAnalytics(undefined, true).then(ok => { if (ok) mitraFresh.current = { key, at: Date.now() }; });
+    };
+  });
 
   // Statistik pengunjung web hanya dimuat saat sub-view Analitik Web dibuka (dulu ikut di tiap login).
   useEffect(() => {
@@ -1842,7 +1860,7 @@ export default function AdminPage() {
   return (
     <>
     <DataSyncProvider enabled={desktopShown}>
-    <DataSyncBridge onCategories={refreshPosCategories} onProducts={refreshPosStock} />
+    <DataSyncBridge onCategories={refreshPosCategories} onProducts={refreshPosStock} onConsignment={() => mitraSyncRef.current()} />
     <AppShell
       activeTab={activeTab}
       setActiveTab={setActiveTab}

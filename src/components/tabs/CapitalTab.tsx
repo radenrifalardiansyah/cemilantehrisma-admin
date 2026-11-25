@@ -31,6 +31,7 @@ import { HEADER_BTN_H } from '@/lib/ui-constants';
 import { formatRp } from '@/lib/format';
 import Field from '@/components/Field';
 import Modal from '@/components/Modal';
+import { useBumpData } from '@/lib/data-sync';
 
 
 function todayISO() {
@@ -81,6 +82,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  const bumpData = useBumpData();   // mode jendela: modal/prive mengubah saldo dompet -> tab Dompet/Pemasukan/Pengeluaran menyegar
   const storeHeader = useStoreHeader(creds);
   const wallets = useWallets(creds);
   const [walletBalances, refetchBalances] = useWalletBalances(creds, wallets);
@@ -137,6 +139,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
     if (r.ok) {
       await load();
       refetchBalances();
+      bumpData('wallets', 'capital-tab');
       closeEdit();
       toast.success(isNew ? 'Tercatat.' : 'Berhasil diperbarui.');
     } else {
@@ -155,6 +158,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
     if (r.ok) {
       await load();
       refetchBalances();
+      bumpData('wallets', 'capital-tab');
       setSelected(s => { const n = new Set(s); n.delete(id); return n; });
       toast.success('Berhasil dihapus.');
     } else {
@@ -176,6 +180,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
     if (r.ok) {
       setEntries(es => es.filter(e => !selected.has(e.id)));
       refetchBalances();
+      bumpData('wallets', 'capital-tab');
       setSelected(new Set());
       toast.success(`${count} catatan berhasil dihapus.`);
     } else {
@@ -219,6 +224,7 @@ export default function CapitalTab({ creds }: { creds: string }) {
     });
     if (r.ok) {
       await load();
+      bumpData('wallets', 'capital-tab');
       toast.success('Saldo modal bersih berhasil dinolkan.');
     } else {
       const d = await r.json().catch(() => ({ error: undefined })) as { error?: string };
