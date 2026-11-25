@@ -11,32 +11,12 @@ export const DEFAULT_LAYOUT: UiLayout = 'classic';
 export const DESKTOP_MIN_WIDTH = 1024;
 export const DESKTOP_MEDIA_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 
-// Tahap 1: hanya menu ini yang bisa dibuka sebagai jendela. Menu lain tetap tampil di menu Mulai /
-// Launchpad (ditandai "Klasik") dan dibuka sementara dengan kerangka Klasik.
-// Tahap 3: keluarga Mitra yang berdiri sendiri sebagai menu — 'consignment' (Mitra; Lokasi/Kirim Stok/Rekap/Transfer Mitra
-// adalah sub-tab DI DALAM tabnya), 'wa-forward' (Teruskan Stok WA, sub-menu Mitra), 'mitra-report' (Laporan Harian Mitra).
-// Tahap 4: 'finance-report' (Laporan Keuangan). Laporan lain yang terkait ('product-report', 'capital', 'stall-report') belum berjendela.
-// Tahap 5: alur pengadaan yang berdiri sendiri sebagai menu: 'suppliers', 'materials' (Bahan Baku; Hutang dll. sub-tab di dalamnya),
-// 'purchase-orders' dan 'goods-receipts' (PurchaseFlowTab, dua jendela terpisah). Laporan ('po-report', 'gr-report', 'opname-report', 'stock-report'),
-// Gudang ('stock') dan Produksi belum berjendela.
-// Tahap 6: Gudang ('stock'), Produksi ('production') dan laporan murni yang berdiri sendiri: 'product-report', 'capital', 'po-report',
-// 'gr-report', 'opname-report', 'stock-report', 'stall-report'. 'stall-sales-report' (keluarga Lapak/Kasir Lapak) tetap non-jendela.
-// Tahap 7: 'settings' (Pengaturan; info toko, bank, voucher, dst. adalah sub-tab DI DALAM SettingsTab). Kategori/Reseller/Pelanggan/Ulasan
-// bukan bagian Pengaturan dan tetap non-jendela.
-// Tahap 8: 'users' (Pengguna). 'roles', 'role-permissions', 'modules', 'menus' (keluarga RBAC_MANAGEMENT_KEYS) sengaja belum berjendela:
-// modul/menu mengubah navigasi itu sendiri (fetchNav) dan izin role mempengaruhi menu yang sedang terbuka.
-// Tahap 9: 'history' (Riwayat; HistoryTab hanya butuh creds, tanpa polling atau tautan keluar).
-// Tahap 10: 'notifications' (NotificationsTab memakai NotificationsProvider yang sama dengan bel: tanpa listener Firestore sendiri).
-// Tahap 11: 'categories' (Kategori). Reseller/Pelanggan/Pelanggan Storefront/Ulasan tetap non-jendela.
-// Tahap 13: 'resellers' (Reseller). Pelanggan, Pelanggan Storefront, dan Ulasan tetap non-jendela.
-// Tahap 14: 'customers' (Pelanggan). Pelanggan Storefront dan Ulasan tetap non-jendela.
-// Tahap 16: 'storefront-customers', 'reviews', serta Biaya Admin ('admin-fee' untuk super-admin dan 'tagihan-admin-fee' untuk role admin:
-// menu pinned, bukan MenuDoc, dua sisi dari satu fitur). Tahap 17: 'roles' (Role). 'role-permissions', 'modules', 'menus' dan
-// Titip Jual/Lapak tetap non-jendela.
-// Tahap 18: 'consign' (Titip Jual; sub-tab Produk/Penitip/Lapak/Stok/Penerimaan/Rekap di DALAM tabnya). Tahap 19: 'consign-opname' (Opname Titipan, mode opname). Tahap 20: 'consign-journal' (Dompet Lapak, mode journal).
-// Tahap 21: 'stall-own' (Produk Toko di Lapak) dan 'stall-sales-report' (Laporan Penjualan per Kasir Lapak). Tahap 22: 'stall-pos' (Kasir Lapak; mount biasa, keranjang tidak bertahan lintas tab di Klasik, held di localStorage).
-// Tahap 24A: 'role-permissions' (Izin Role; matriks izin per role, menu keamanan).
-// Tahap 24B: 'modules' (Modul) dan 'menus' (Struktur Menu). Keduanya mengubah navigasi (page: fetchNav, tanpa remount); jendela yang menunya terhapus tetap terbuka sampai ditutup, activeTab dipindah ke menu pertama yang terlihat seperti Klasik.
+// Daftar tab yang bisa dibuka sebagai jendela di mode Desktop (Windows/Mac). Saat ini SEMUA tab operasional berjendela
+// (kelompok: Dashboard/POS/Pesanan/Produk/Kategori/Reseller/Pelanggan, Dompet/Pemasukan/Pengeluaran, Mitra dan Titip Jual/Lapak,
+// pengadaan/Gudang/Produksi, laporan, Pengaturan, Pengguna/Role/Izin Role/Modul/Menu, Riwayat, Notifikasi, Biaya Admin).
+// Menambah id di sini wajib disertai: cabang di renderTab (page.tsx), ukuran awal/minimum di window-reducer.ts, dan tes
+// pemetaan di ui-layout.test.ts. Id yang tidak ada di daftar ini dibuka sementara lewat kerangka Klasik (chip "Kembali ke
+// mode Desktop"). Catatan per tab (sub-tab di dalam tab, state level page, penyegaran data) ada di tes dan komentar tab itu.
 export const WINDOW_TABS = ['dashboard', 'orders', 'products', 'wallets', 'income', 'expenses', 'pos', 'consignment', 'wa-forward', 'mitra-report', 'finance-report', 'suppliers', 'materials', 'purchase-orders', 'goods-receipts',
   'stock', 'production', 'product-report', 'capital', 'po-report', 'gr-report', 'opname-report', 'stock-report', 'stall-report', 'settings', 'users', 'history', 'notifications', 'categories', 'resellers', 'customers', 'storefront-customers', 'reviews', 'admin-fee', 'tagihan-admin-fee', 'roles', 'consign', 'consign-opname', 'consign-journal', 'stall-own', 'stall-sales-report', 'stall-pos', 'role-permissions', 'modules', 'menus'] as const;
 export type WindowTabId = (typeof WINDOW_TABS)[number];
