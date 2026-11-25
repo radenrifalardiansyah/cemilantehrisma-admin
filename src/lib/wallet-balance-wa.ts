@@ -8,10 +8,11 @@ export interface WalletBalanceItem { name: string; balance: number; isActive?: b
 
 const WEEKDAY = new Intl.DateTimeFormat('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
 
-/** scope 'semua' = seluruh dompet aktif yang diberikan; 'terpilih' = dompet yang dicentang (nonaktif pun ikut, ditandai). */
+/** scope 'semua' = seluruh dompet aktif yang diberikan; 'terpilih' = dompet yang dicentang. Dompet nonaktif (isActive === false) TIDAK pernah ikut dalam pesan. */
 export function buildWalletBalanceWaMessage(
-  wallets: WalletBalanceItem[], opts: { storeName?: string; scope?: 'semua' | 'terpilih'; now?: Date } = {},
+  allWallets: WalletBalanceItem[], opts: { storeName?: string; scope?: 'semua' | 'terpilih'; now?: Date } = {},
 ): string {
+  const wallets = allWallets.filter(w => w.isActive !== false);
   const store = opts.storeName?.trim() || SHOPPING_WA_DEFAULT_STORE;
   const now = opts.now ?? new Date();
   const scope = opts.scope ?? 'semua';
@@ -25,7 +26,7 @@ export function buildWalletBalanceWaMessage(
   let total = 0;
   wallets.forEach((w, i) => {
     total += w.balance;
-    lines.push(`${i + 1}. ${w.name.trim() || '-'}${w.isActive === false ? ' (nonaktif)' : ''}: ${formatRp(w.balance)}`);
+    lines.push(`${i + 1}. ${w.name.trim() || '-'}: ${formatRp(w.balance)}`);
   });
   lines.push('', `*Total saldo: ${formatRp(total)}*`);
   return plainText(lines.join('\n'));

@@ -684,12 +684,18 @@ export default function WalletsTab({ creds }: { creds: string }) {
 
   // Kirim saldo dompet ke WA toko (nomor dari Pengaturan): 'semua' = seluruh dompet aktif, 'terpilih' = yang dicentang.
   const sendBalancesWhatsApp = (scope: 'semua' | 'terpilih') => {
-    const rows = (scope === 'semua' ? wallets.filter(w => w.isActive) : wallets.filter(w => selected.has(w.id)))
-      .map(w => ({ name: w.name, balance: balances[w.id] ?? 0, isActive: w.isActive }));
-    if (rows.length === 0) { toast.error(scope === 'semua' ? 'Belum ada dompet aktif.' : 'Pilih minimal satu dompet.'); return; }
+    // Dompet nonaktif tidak pernah ikut terkirim, juga bila dicentang.
+    const picked = scope === 'semua' ? wallets : wallets.filter(w => selected.has(w.id));
+    const rows = picked.filter(w => w.isActive).map(w => ({ name: w.name, balance: balances[w.id] ?? 0, isActive: true }));
+    const skipped = scope === 'terpilih' ? picked.length - rows.length : 0;
+    if (rows.length === 0) {
+      toast.error(scope === 'semua' ? 'Belum ada dompet aktif.' : picked.length > 0 ? 'Dompet yang dipilih nonaktif, tidak ada yang bisa dikirim.' : 'Pilih minimal satu dompet.');
+      return;
+    }
     const message = buildWalletBalanceWaMessage(rows, { storeName: storeHeader.name, scope });
     if (!shoppingWaFits(message)) { toast.error('Pesan terlalu panjang untuk WhatsApp. Pilih lebih sedikit dompet.'); return; }
     if (!storeHeader.phone) toast.success('Nomor WhatsApp toko belum diisi di Pengaturan — pilih kontak di WhatsApp.');
+    if (skipped > 0) toast.success(`${skipped} dompet nonaktif tidak disertakan.`);
     window.open(shoppingWaUrl(storeHeader.phone, message), '_blank');
     if (scope === 'terpilih') setSelected(new Set());
   };

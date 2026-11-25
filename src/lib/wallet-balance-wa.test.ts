@@ -21,11 +21,26 @@ describe('buildWalletBalanceWaMessage', () => {
     expect(m).toContain('*Total saldo: Rp');
     expect(m).toContain(`*Total saldo: ${plainText(formatRp(319_936))}*`);
   });
-  it('total benar, termasuk saldo negatif dan tanda nonaktif pada pilihan', () => {
-    const m = buildWalletBalanceWaMessage([{ name: 'A', balance: 1000 }, { name: 'B', balance: -250, isActive: false }], { scope: 'terpilih', now });
+  it('total benar, termasuk saldo negatif', () => {
+    const m = buildWalletBalanceWaMessage([{ name: 'A', balance: 1000 }, { name: 'B', balance: -250, isActive: true }], { scope: 'terpilih', now });
     expect(m).toContain('Dompet: 2 dompet terpilih');
-    expect(m).toContain('2. B (nonaktif)');
+    expect(m).toContain('2. B: ');
     expect(m).toMatch(/Total saldo: -?Rp\s?750/);
+  });
+  it('dompet nonaktif tidak ikut: tidak ada barisnya, tidak masuk total, dan jumlah terpilih hanya yang aktif', () => {
+    const m = buildWalletBalanceWaMessage(
+      [{ name: 'Aktif', balance: 1000, isActive: true }, { name: 'Mati', balance: 99_999, isActive: false }],
+      { scope: 'terpilih', now },
+    );
+    expect(m).toContain('Dompet: 1 dompet terpilih');
+    expect(m).toContain('1. Aktif');
+    expect(m).not.toContain('Mati');
+    expect(m).not.toContain('nonaktif');
+    expect(m).toMatch(/Total saldo: -?Rp\s?1\.000/);
+  });
+  it('dompet tanpa penanda isActive dianggap aktif (kompatibel dengan pemanggil lama)', () => {
+    const m = buildWalletBalanceWaMessage([{ name: 'A', balance: 500 }], { scope: 'semua', now });
+    expect(m).toContain('1. A: ');
   });
   it('ASCII murni, tanpa blok monospace, dan muat di batas URL WA', () => {
     const many = Array.from({ length: 40 }, (_, i) => ({ name: `Dompet ${i + 1} – \u{1F600}`, balance: 1_234_567 + i }));
