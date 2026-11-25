@@ -2,6 +2,7 @@
 
 import BulkBar from '@/components/BulkBar';
 import { useEffect, useState } from 'react';
+import { useBumpData } from '@/lib/data-sync';
 import EmptyAddCard from '@/components/EmptyAddCard';
 import {
   Blocks, Plus, Pencil, Trash2, X, Check, Loader2, ChevronUp, ChevronDown, EyeOff,
@@ -62,6 +63,8 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
   const toast   = useToast();
   const confirm = useConfirm();
   const headers = { 'x-admin-auth': creds };
+  // Mode jendela: struktur Modul/Menu berubah -> jendela lain yang memuat daftar modul/menu (Menu, Izin Role) menyegar. Klasik: no-op.
+  const bumpData = useBumpData();
   const storeHeader = useStoreHeader(creds);
 
   const [modules, setModules] = useState<ModuleDoc[]>([]);
@@ -110,6 +113,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
         });
 
     if (r.ok) {
+      bumpData('menus', 'modules-tab');
       await load(true);
       onChanged?.();
       closeEdit();
@@ -126,6 +130,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
     setDeletingId(m.id);
     const r = await fetch(`/api/modules/${m.id}`, { method: 'DELETE', headers });
     if (r.ok) {
+      bumpData('menus', 'modules-tab');
       await load(true);
       onChanged?.();
       setSelected(s => { const n = new Set(s); n.delete(m.id); return n; });
@@ -147,6 +152,7 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
     });
     if (r.ok) {
       const d = await r.json() as { deleted: number; skippedInUse: number };
+      if (d.deleted > 0) bumpData('menus', 'modules-tab');
       await load(true);
       onChanged?.();
       setSelected(new Set());
@@ -332,10 +338,11 @@ export default function ModulesTab({ creds, can, onChanged }: ModulesTabProps) {
     [next[idx], next[target]] = [next[target], next[idx]];
     setModules(next);
     setReordering(true);
-    await fetch('/api/modules/reorder', {
+    const rr = await fetch('/api/modules/reorder', {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ orders: next.map((mm, i) => ({ id: mm.id, order: i })) }),
     });
+    if (rr.ok) bumpData('menus', 'modules-tab');
     onChanged?.();
     setReordering(false);
   };

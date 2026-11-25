@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Lock, Check, Loader2, ShieldAlert, ChevronDown, CornerDownRight, CheckCheck } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import Tooltip from '@/components/Tooltip';
@@ -8,6 +8,7 @@ import { FEATURE_KEYS, getFeatureKeyDef } from '@/lib/permissions';
 import { resolveIcon } from '@/lib/icon-registry';
 import type { Role, Action, ModuleDoc, MenuDoc } from '@/types/rbac';
 import PageLoader from '@/components/PageLoader';
+import { useOnDataRevision } from '@/lib/data-sync';
 
 type Matrix = Record<string, Partial<Record<Action, boolean>>>;
 
@@ -137,6 +138,7 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
   };
 
   const save = async () => {
+    if (!roles.some(r => r.id === selectedRoleId)) return;   // role sudah tidak ada (dihapus di jendela lain): jangan kirim ke role hantu
     setSaving(true);
     const r = await fetch(`/api/role-permissions/${selectedRoleId}`, {
       method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
@@ -151,6 +153,51 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
     }
     setSaving(false);
   };
+
+  // Mode jendela: role ditambah/diubah/dihapus di jendela Role -> daftar role (dropdown) dimuat ulang senyap. Hanya daftar role yang diganti:
+  // role terpilih, matriks yang sedang diedit, dan izin tersimpan tidak tersentuh; bila server gagal daftar lama dipertahankan. Klasik: revisi tetap 0.
+  // (Izin yang disimpan di tab ini tidak dibaca tab lain, jadi tidak ada bump.)
+  const rolesSyncSeq = useRef(0);
+  const selectedRoleRef = useRef('');
+  const allPermsRef = useRef<Record<string, Matrix>>({});
+  useEffect(() => { selectedRoleRef.current = selectedRoleId; allPermsRef.current = allPermissions; });
+  useOnDataRevision('roles', () => {
+    const seq = ++rolesSyncSeq.current;
+    fetch('/api/roles', { headers })
+      .then(async r => {
+        if (!r.ok) return;
+        const list = (await r.json() as { roles: Role[] }).roles;
+        if (seq !== rolesSyncSeq.current) return;
+        setRoles(list);
+        // Role yang sedang dipilih sudah dihapus di jendela lain: pindahkan pilihan ke role non-sistem pertama (matriksnya dari izin tersimpan role itu),
+        // supaya tidak ada PUT ke role hantu. Role yang MASIH ada tidak disentuh (perubahan belum disimpan tetap).
+        const cur = selectedRoleRef.current;
+        if (cur && !list.some(x => x.id === cur)) {
+          const next = list.find(x => !x.isSystem) ?? list[0];
+          setSelectedRoleId(next?.id ?? '');
+          setMatrix(next ? (allPermsRef.current[next.id] ?? {}) : {});
+          toast.error('Role yang dipilih dihapus, pilihan dipindahkan.');
+        }
+      })
+      .catch(() => {});
+  });
+
+  // Mode jendela: Modul/Menu diubah di jendela lain -> hanya daftar modul/menu yang dimuat ulang senyap (tanpa spinner penuh). Matriks izin yang sedang
+  // diedit, role terpilih, dan perubahan belum disimpan tidak disentuh (matriks berkunci featureKey); izin untuk menu yang hilang tetap tampil sebagai
+  // baris cadangan (orphanKeys). Gagal/basi: data lama dipertahankan. Klasik: revisi tetap 0.
+  const menusSyncSeq = useRef(0);
+  useOnDataRevision('menus', () => {
+    const seq = ++menusSyncSeq.current;
+    fetch('/api/menus?scope=manage', { headers })
+      .then(async r => {
+        if (!r.ok) return;
+        const { modules: mods, menus: mns } = await r.json() as { modules: ModuleDoc[]; menus: MenuDoc[] };
+        if (seq !== menusSyncSeq.current) return;
+        setModules(mods.slice().sort((a, b) => a.order - b.order));
+        setMenus(mns);
+      })
+      .catch(() => {});
+  });
 
   if (loading) return <PageLoader />;
 
@@ -345,7 +392,7 @@ export default function RolePermissionsTab({ creds, can }: RolePermissionsTabPro
 
       {!readOnly && (
         <div className="card flex justify-end p-4" style={{ borderColor: 'var(--border-2)' }}>
-          <button onClick={save} disabled={saving} className="btn-primary text-sm">
+          <button onClick={save} disabled={saving || !roles.some(r => r.id === selectedRoleId)} className="btn-primary text-sm">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
             {saving ? 'Menyimpan…' : 'Simpan Hak Akses'}
           </button>

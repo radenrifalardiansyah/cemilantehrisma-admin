@@ -33,6 +33,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 
   const sql = getSql();
+  // Role harus ada (bisa dihapus di tempat lain saat matriks masih terbuka): jangan membuat baris izin untuk role hantu.
+  const [exists] = await sql<{ id: string }[]>`select id from roles where id = ${roleId}`;
+  if (!exists) return Response.json({ error: 'Role tidak ditemukan.' }, { status: 404 });
   await sql`
     insert into role_permissions (role, permissions, updated_at) values (${roleId}, ${JSON.stringify(cleaned)}::jsonb, now())
     on conflict (role) do update set permissions = excluded.permissions, updated_at = excluded.updated_at

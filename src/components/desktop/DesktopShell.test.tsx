@@ -178,7 +178,7 @@ describe('sinkronisasi activeTab -> jendela', () => {
     render(<Harness skin="windows" tab="orders" />);
     expect(focusedNow()).toBe('orders');
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
-    render(<Harness skin="windows" tab="modules" />);   // tab tak berjendela: tidak membuka apa pun
+    render(<Harness skin="windows" tab="bukan-tab" />);   // tab tak berjendela: tidak membuka apa pun
     expect(document.querySelectorAll('.dsk-win')).toHaveLength(2);
   });
 });

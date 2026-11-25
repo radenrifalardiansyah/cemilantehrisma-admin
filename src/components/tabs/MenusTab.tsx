@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useBumpData, useOnDataRevision } from '@/lib/data-sync';
 import EmptyAddCard from '../EmptyAddCard';
 import { ListTree, Plus, Pencil, Trash2, X, Check, Loader2, ChevronUp, ChevronDown, EyeOff, CornerDownRight } from 'lucide-react';
 import { useToast } from '@/components/Toast';
@@ -42,17 +43,39 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,      setError]      = useState('');
 
+  // Penjaga urutan bersama muat biasa, load(true), dan muat senyap: respons hanya diterapkan bila belum ada respons bernomor lebih baru yang diterapkan.
+  const issueSeq = useRef(0);
+  const appliedSeq = useRef(0);
+  const reorderPending = useRef(false);   // urutan optimistik sedang menunggu server: hasil senyap dibuang agar tidak menimpanya
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
+    const mySeq = ++issueSeq.current;
     const r = await fetch('/api/menus?scope=manage', { headers });
     if (r.ok) {
       const { modules, menus } = await r.json() as { modules: ModuleDoc[]; menus: MenuDoc[] };
-      setModules(modules.sort((a, b) => a.order - b.order));
-      setMenus(menus);
+      if (mySeq > appliedSeq.current) {
+        appliedSeq.current = mySeq;
+        setModules(modules.sort((a, b) => a.order - b.order));
+        setMenus(menus);
+      }
     }
     if (!silent) setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mode jendela: Modul (jendela lain) mengubah struktur -> muat ulang senyap (tanpa spinner; form/pilihan terbuka tetap; data lama bertahan bila gagal;
+  // hanya respons terbaru yang dipakai). Bump dari tab ini sendiri dilewati. Klasik: revisi tetap 0, tidak ada fetch.
+  const bumpData = useBumpData();
+  useOnDataRevision('menus', () => {
+    const mySeq = ++issueSeq.current;
+    fetch('/api/menus?scope=manage', { headers })
+      .then(async r => {
+        if (!r.ok) return;
+        const d = await r.json() as { modules: ModuleDoc[]; menus: MenuDoc[] };
+        if (mySeq > appliedSeq.current && !reorderPending.current) { appliedSeq.current = mySeq; setModules(d.modules.slice().sort((a, b) => a.order - b.order)); setMenus(d.menus); }
+      })
+      .catch(() => {});
+  }, 'menus-tab');
 
   const topOf    = (moduleId: string) => menus.filter(m => m.moduleId === moduleId && !m.parentId).sort((a, b) => a.order - b.order);
   const childOf  = (parentId: string) => menus.filter(m => m.parentId === parentId).sort((a, b) => a.order - b.order);
@@ -123,6 +146,7 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
       : await fetch(`/api/menus/${editing.id}`, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
     if (r.ok) {
+      bumpData('menus', 'menus-tab');
       await load(true);
       onChanged?.();
       closeEdit();
@@ -144,6 +168,7 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
     setDeletingId(m.id);
     const r = await fetch(`/api/menus/${m.id}`, { method: 'DELETE', headers });
     if (r.ok) {
+      bumpData('menus', 'menus-tab');
       await load(true);
       onChanged?.();
       toast.success(`Menu "${m.label}" berhasil dihapus.`);
@@ -162,11 +187,15 @@ export default function MenusTab({ creds, can, onChanged }: MenusTabProps) {
     const reordered = next.map((m, i) => ({ ...m, order: i }));
     setMenus(prev => prev.map(m => reordered.find(n => n.id === m.id) ?? m));
     setReordering(true);
-    await fetch('/api/menus/reorder', {
-      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orders: next.map((m, i) => ({ id: m.id, order: i })) }),
-    });
-    await load(true);
+    reorderPending.current = true;
+    try {
+      const rr = await fetch('/api/menus/reorder', {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: next.map((m, i) => ({ id: m.id, order: i })) }),
+      });
+      if (rr.ok) bumpData('menus', 'menus-tab');
+      await load(true);
+    } finally { reorderPending.current = false; }
     onChanged?.();
     setReordering(false);
   };
