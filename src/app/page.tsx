@@ -21,6 +21,7 @@ import { useMediaQuery } from '@/lib/use-media-query';
 import { useBootSkin, useBootAppearance } from '@/lib/use-boot-skin';
 import { useAppearance } from '@/lib/use-appearance';
 import { usePins } from '@/lib/use-pins';
+import { useWidgets } from '@/lib/use-widgets';
 import DesktopBoot from '@/components/desktop/DesktopBoot';
 import { DESKTOP_MEDIA_QUERY, isDesktopShown } from '@/lib/ui-layout';
 import TopbarPortal from '@/components/TopbarPortal';
@@ -371,6 +372,9 @@ export default function AdminPage() {
   // Menu yang disematkan ke tampilan depan Desktop (ikon meja / dock); null = bawaan.
   const pinsApi = usePins(creds);
   const { hydrate: hydratePins } = pinsApi;
+  // Widget di tampilan depan Desktop (jam, catatan, ...); kosong = tanpa widget.
+  const widgetsApi = useWidgets(creds);
+  const { hydrate: hydrateWidgets } = widgetsApi;
   useEffect(() => { if (bootSkin) import('@/components/desktop/DesktopShell').catch(() => {}); }, [bootSkin]);
 
   // ── Tab ──────────────────────────────────────────────────
@@ -770,16 +774,17 @@ export default function AdminPage() {
     if (res.status === 401) return false;
     if (!res.ok) throw new Error(`/api/me ${res.status}`);
     const { user, permissions, superAdmin } = await res.json() as {
-      user: { username: string; role: string; email: string | null; avatar: string | null; uiLayout?: string | null; uiAppearance?: unknown; uiPins?: unknown };
+      user: { username: string; role: string; email: string | null; avatar: string | null; uiLayout?: string | null; uiAppearance?: unknown; uiPins?: unknown; uiWidgets?: unknown };
       permissions: Record<string, Partial<Record<Action, boolean>>>;
       superAdmin: boolean;
     };
     hydrateLayout(user.username, user.uiLayout);
     hydrateAppearance(user.username, user.uiAppearance);
     hydratePins(user.username, user.uiPins);
+    hydrateWidgets(user.username, user.uiWidgets);
     setCreds(token); setAuthUser(user); setPermissions(permissions); setSuperAdmin(superAdmin); setAuthed(true);
     return true;
-  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, hydrateLayout, hydrateAppearance, hydratePins]);
+  }, [fetchDash, fetchSummary, fetchNav, fetchNewOrdersCount, hydrateLayout, hydrateAppearance, hydratePins, hydrateWidgets]);
 
   // ── Session restore ──────────────────────────────────────
   useEffect(() => {
@@ -1892,6 +1897,7 @@ export default function AdminPage() {
       navNonce={navNonce}
       appearance={appearance}
       pins={{ effective: pinsApi.effective, toggle: pinsApi.toggle }}
+      widgets={{ widgets: widgetsApi.widgets, apply: widgetsApi.apply, setConfig: widgetsApi.setConfig, notify: widgetsApi.notifyError, creds, can }}
       renderPos={active => (
         <PosTab
           creds={creds}

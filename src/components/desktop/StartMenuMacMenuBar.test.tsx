@@ -131,6 +131,12 @@ describe('menu Mulai: bagian Disematkan', () => {
     expect(q('.dsk-menu')).toBeNull();
   });
 
+  it('baris menu punya title berisi nama lengkap (tooltip saat label terpotong)', () => {
+    mount('windows', { pins: [] });
+    openStart();
+    expect(qa('.dsk-mi').map(b => b.getAttribute('title'))).toEqual(expect.arrayContaining(['Dashboard', 'Pesanan', 'Supplier (dibuka dengan tampilan Klasik)']));
+  });
+
   it('Esc menutup panel', () => {
     mount('windows', { pins: [] });
     openStart();

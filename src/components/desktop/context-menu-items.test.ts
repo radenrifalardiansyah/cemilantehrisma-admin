@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { desktopMenu, itemMenu, type ItemMenuCtx } from './context-menu-items';
+import { AppWindow } from 'lucide-react';
+import { desktopMenu, itemMenu, widgetMenu, type ItemMenuCtx } from './context-menu-items';
 
 const ctx = (over: Partial<ItemMenuCtx> = {}): ItemMenuCtx => ({
   tab: 'orders', pinned: true, onTogglePin: vi.fn(), open: vi.fn(), focus: vi.fn(), minimize: vi.fn(), maximize: vi.fn(), close: vi.fn(), ...over,
@@ -58,5 +59,29 @@ describe('desktopMenu', () => {
   it('layar penuh tidak didukung dan Personalisasi tidak tersedia: item disembunyikan; label berganti saat layar penuh aktif', () => {
     expect(ids(desktopMenu({ ...base(), onAppearance: undefined }))).toEqual(['arrange', 'closeall', 'layout-classic', 'layout-windows', 'layout-mac', 'shortcuts']);
     expect(desktopMenu({ ...base(), fullscreen: { isFullscreen: true, onToggle: vi.fn() } }).find(i => i.id === 'fullscreen')!.label).toBe('Keluar dari layar penuh');
+  });
+});
+
+describe('widgetMenu dan item "Tambah widget"', () => {
+  it('widgetMenu: hanya ukuran yang diizinkan, centang ukuran saat ini, Hapus berbahaya; memilih ukuran sama tidak memanggil', () => {
+    const onSize = vi.fn(); const onRemove = vi.fn();
+    const items = widgetMenu({ size: 'm', allowedSizes: ['m', 'l'], onSize, onRemove });
+    expect(items.filter(i => !i.separator).map(i => i.label)).toEqual(['Ukuran Sedang', 'Ukuran Lebar', 'Hapus widget']);
+    expect(items.find(i => i.id === 'size-m')!.checked).toBe(true);
+    expect(items.find(i => i.id === 'size-l')!.checked).toBe(false);
+    expect(items.find(i => i.id === 'remove')!.danger).toBe(true);
+    items.find(i => i.id === 'size-m')!.onSelect!(); expect(onSize).not.toHaveBeenCalled();
+    items.find(i => i.id === 'size-l')!.onSelect!(); expect(onSize).toHaveBeenCalledWith('l');
+    items.find(i => i.id === 'remove')!.onSelect!(); expect(onRemove).toHaveBeenCalled();
+  });
+  it('desktopMenu: item tambah widget hanya bila ada pengelola; disabled mengikuti entri', () => {
+    const base = { hasWindows: false, layout: 'windows' as const, arrange: () => {}, closeAll: () => {}, changeLayout: () => {}, showShortcuts: () => {} };
+    expect(desktopMenu(base).some(i => i.id.startsWith('widget-add-'))).toBe(false);
+    expect(desktopMenu({ ...base, widgets: { add: [], onAdd: () => {} } }).some(i => i.id.startsWith('widget-add-'))).toBe(false);
+    const onAdd = vi.fn();
+    const items = desktopMenu({ ...base, widgets: { add: [{ type: 'clock', label: 'Jam & tanggal', Icon: AppWindow }, { type: 'note', label: 'Catatan tempel', Icon: AppWindow, disabled: true }], onAdd } });
+    const a = items.find(i => i.id === 'widget-add-clock')!; const b = items.find(i => i.id === 'widget-add-note')!;
+    expect(a.label).toBe('Tambah widget: Jam & tanggal'); expect(a.disabled).toBeFalsy(); expect(b.disabled).toBe(true);
+    a.onSelect!(); expect(onAdd).toHaveBeenCalledWith('clock');
   });
 });

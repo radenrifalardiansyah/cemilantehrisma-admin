@@ -9,7 +9,10 @@ import { appearanceStyle } from '@/lib/appearance-style';
 import AccountMenu from './AccountMenu';
 import ContextMenu, { menuPointFromEvent, type MenuItem } from './ContextMenu';
 import ShortcutsDialog from './ShortcutsDialog';
-import { desktopMenu, itemMenu } from './context-menu-items';
+import { desktopMenu, itemMenu, widgetMenu } from './context-menu-items';
+import WidgetLayer, { type WidgetContextTarget } from './widgets/WidgetLayer';
+import { getWidgetDefinition, listWidgetDefinitions, widgetAllowed, type DesktopWidgetsApi } from './widgets/registry';
+import { addWidget, canAddWidget, gridDims, resizeWidget } from '@/lib/widget-layout';
 import { useDesktopShortcuts } from './use-desktop-shortcuts';
 import FullscreenButton from './FullscreenButton';
 import { useFullscreen } from '@/lib/use-fullscreen';
@@ -47,6 +50,8 @@ interface Props {
   pins?: readonly string[];
   onTogglePin?: (tab: string) => void;
   onOpenAppearance?: () => void;
+  /** Widget tampilan depan (daftar + pengubah + konteks izin/auth). Tanpa ini (atau tanpa widget) tidak ada lapisan widget. */
+  widgets?: DesktopWidgetsApi;
   wm: WmState;
   groups: DesktopGroup[];
   /** Isi tiap jendela (sudah di-memo oleh pemanggil supaya geser/fokus jendela tidak merender ulang isi tab). */
@@ -122,6 +127,30 @@ export default function DesktopShell(p: Props) {
       items: itemMenu({ tab, win: winState(tab), pinned: pinSet.has(tab), onTogglePin: p.onTogglePin, open: actions.open, focus: actions.focus, minimize: actions.minimize, maximize: actions.maximize, close: actions.close }),
     });
   };
+  // ── Widget: grid dari area kerja; menu tambah (klik kanan wallpaper) dan menu per kartu.
+  const wg = p.widgets;
+  const grid = useMemo(() => gridDims(wm.area), [wm.area]);
+  const addWidgetOfType = (type: string) => {
+    if (!wg) return;
+    const ok = wg.apply(list => { const r = addWidget(list, type, grid.cols, grid.rows); return r.ok ? r.widgets : null; });
+    if (!ok) wg.notify?.('Ruang tidak cukup untuk widget baru.');
+  };
+  const widgetAddEntries = () => (wg
+    ? listWidgetDefinitions().filter(d => widgetAllowed(d, wg.can)).map(d => ({ type: d.type, label: d.label, Icon: d.icon, disabled: !canAddWidget(wg.widgets, d.type, grid.cols, grid.rows) }))
+    : undefined);
+  const openWidgetMenu = (t: WidgetContextTarget) => {
+    const w = wg?.widgets.find(x => x.id === t.id);
+    const def = w ? getWidgetDefinition(w.type) : undefined;
+    if (!wg || !w || !def) return;
+    setCtx({
+      x: t.x, y: t.y, trigger: t.trigger, label: `Menu widget ${def.label}`,
+      items: widgetMenu({
+        size: w.size, allowedSizes: def.allowedSizes,
+        onSize: size => { const ok = wg.apply(list => { const r = resizeWidget(list, t.id, size, grid.cols, grid.rows); return r.ok ? r.widgets : null; }); if (!ok) wg.notify?.('Ruang tidak cukup'); },
+        onRemove: () => { wg.apply(list => list.filter(x => x.id !== t.id)); },
+      }),
+    });
+  };
   const onRootContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
     if (t.classList.contains('dsk-scrim')) { e.preventDefault(); return; }   // scrim panel: tanpa menu bawaan peramban, panel tetap terbuka, tanpa menu kita
@@ -134,6 +163,7 @@ export default function DesktopShell(p: Props) {
         hasWindows: wm.windows.length > 0, layout: p.layout, onAppearance: p.onOpenAppearance, arrange: actions.arrange, closeAll: actions.closeAll,
         changeLayout: p.onChangeLayout, fullscreen: fs.supported ? { isFullscreen: fs.isFullscreen, onToggle: () => { void fs.toggle(); } } : undefined,
         showShortcuts: () => setShowShortcuts(true),
+        widgets: wg ? { add: widgetAddEntries() ?? [], onAdd: addWidgetOfType } : undefined,
       }),
     });
   };
@@ -159,6 +189,8 @@ export default function DesktopShell(p: Props) {
   return (
     <div className="dsk-root" data-skin={skin} data-density={ap.density} data-text={ap.textSize} style={appearanceStyle(ap) as React.CSSProperties}
       onContextMenu={onRootContextMenu}>
+      {wg && wg.widgets.length > 0 && <WidgetLayer api={wg} area={wm.area} covered={wm.windows.some(w => w.maximized && !w.minimized)} onContext={openWidgetMenu} />}
+
       {skin === 'windows' && <DesktopIcons items={shortcutItems} onOpen={i => actions.open(i.tab)} onItemContext={(i, e) => openItemMenu(i.tab, e)} />}
 
       {wm.windows.map(w => (

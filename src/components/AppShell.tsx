@@ -27,6 +27,7 @@ import { useWindowManager } from '@/components/desktop/use-window-manager';
 import { focusedTabId, topTabId } from '@/components/desktop/window-reducer';
 import { moduleColor, PINNED_COLOR, type DesktopGroup } from '@/components/desktop/types';
 import type { DesktopActions } from '@/components/desktop/DesktopShell';
+import type { DesktopWidgetsApi } from '@/components/desktop/widgets/registry';
 import AppearanceDialog from '@/components/desktop/AppearanceDialog';
 import { appearanceStyle } from '@/lib/appearance-style';
 import type { Appearance } from '@/lib/appearance';
@@ -179,6 +180,8 @@ interface AppShellProps {
   /** Pengaturan tampilan Desktop (hook useAppearance di page.tsx). Hanya dipakai saat mode Desktop tampil. */
   /** Menu yang disematkan ke ikon meja/dock (efektif, berurutan) dan pengubahnya. Hanya dipakai saat mode Desktop tampil. */
   pins?: { effective: readonly string[]; toggle: (tab: string) => void };
+  /** Widget tampilan depan Desktop (hook useWidgets di page.tsx + can). Hanya dipakai saat mode Desktop tampil. */
+  widgets?: DesktopWidgetsApi;
   appearance?: {
     saved: Appearance; draft: Appearance; busy: boolean;
     preview: (patch: Partial<Appearance>) => void; cancel: () => void; reset: () => void; save: () => Promise<boolean>;
@@ -190,7 +193,7 @@ export default function AppShell({
   hasCart, cartCount, children, topbarActions,
   username = 'Admin', superAdmin = false, creds, role = '', email = null, avatar = null,
   onProfileUpdated, modules, menus, badges = {}, onOpenNotification,
-  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos, appearance, pins,
+  layout = 'classic', wide = false, layoutBusy = false, onLayoutChange, renderWindowTab, navNonce = 0, renderPos, appearance, pins, widgets,
 }: AppShellProps) {
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [moreQuery,  setMoreQuery]  = useState('');
@@ -1054,7 +1057,7 @@ export default function AppShell({
         <Suspense fallback={<DesktopBoot skin={layout === 'mac' ? 'mac' : 'windows'} appearance={appearance?.draft} />}>
         <DesktopShell
           skin={layout === 'mac' ? 'mac' : 'windows'} layout={layout} layoutBusy={layoutBusy}
-          pins={pins?.effective} onTogglePin={pins?.toggle}
+          pins={pins?.effective} onTogglePin={pins?.toggle} widgets={widgets}
           appearance={appearance?.draft} onOpenAppearance={appearance ? () => setAppearanceOpen(true) : undefined}
           wm={wm} groups={desktopGroups} content={windowContent}
           username={username} avatar={avatar} roleLabel={superAdmin ? 'Super Admin' : (role || 'Administrator')} storeUrl={MAIN_APP}

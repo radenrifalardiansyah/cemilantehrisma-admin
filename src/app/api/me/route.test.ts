@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
-const h = vi.hoisted(() => ({ uiLayoutFails: false, uiLayout: null as string | null, profileFails: false, appearanceFails: false, appearance: null as unknown, pinsFails: false, pins: null as unknown }));
+const h = vi.hoisted(() => ({ uiLayoutFails: false, uiLayout: null as string | null, profileFails: false, appearanceFails: false, appearance: null as unknown, pinsFails: false, pins: null as unknown, widgetsFails: false, widgets: null as unknown }));
 
 vi.mock('@/lib/admin-auth', () => ({
   getAuthUser: vi.fn(() => ({ username: 'rifal', role: 'super-admin' })),
@@ -28,6 +28,10 @@ vi.mock('@/lib/db', async importOriginal => ({
     if (text.includes('select ui_pins')) {
       if (h.pinsFails) throw new Error('column "ui_pins" does not exist');
       return [{ ui_pins: h.pins }];
+    }
+    if (text.includes('select ui_widgets')) {
+      if (h.widgetsFails) throw new Error('column "ui_widgets" does not exist');
+      return [{ ui_widgets: h.widgets }];
     }
     if (text.includes('select ui_appearance')) {
       if (h.appearanceFails) throw new Error('column "ui_appearance" does not exist');
@@ -117,6 +121,32 @@ describe('GET /api/me: user.uiPins', () => {
     h.pinsFails = true;
     const { user } = await call();
     expect(user.uiPins).toBeNull();
+    expect(user.email).toBe('a@b.c');
+  });
+});
+
+describe('GET /api/me: user.uiWidgets', () => {
+  const w = [{ id: 'abcd1234', type: 'clock', col: 0, row: 0, size: 's', config: {} }];
+  beforeEach(() => { h.widgetsFails = false; h.widgets = null; vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+
+  it('mengembalikan daftar tersimpan; [] tetap [] (bukan null)', async () => {
+    h.widgets = w; expect((await call()).user.uiWidgets).toEqual(w);
+    h.widgets = []; expect((await call()).user.uiWidgets).toEqual([]);
+  });
+  it('belum memilih: null', async () => { expect((await call()).user.uiWidgets).toBeNull(); });
+  it('string JSON mentah dan terenkode ganda (quirk pooler) tetap di-parse', async () => {
+    h.widgets = JSON.stringify(w); expect((await call()).user.uiWidgets).toEqual(w);
+    h.widgets = JSON.stringify(JSON.stringify(w)); expect((await call()).user.uiWidgets).toEqual(w);
+  });
+  it('rusak: null; item tak dikenal dibuang', async () => {
+    h.widgets = { a: 1 }; expect((await call()).user.uiWidgets).toBeNull();
+    h.widgets = '{bukan json'; expect((await call()).user.uiWidgets).toBeNull();
+    h.widgets = [...w, { id: 'zzzz9999', type: 'bukan-tipe', col: 0, row: 0, size: 's' }]; expect((await call()).user.uiWidgets).toEqual(w);
+  });
+  it('kolom belum ada: profil lain tetap termuat, uiWidgets null', async () => {
+    h.widgetsFails = true;
+    const { user } = await call();
+    expect(user.uiWidgets).toBeNull();
     expect(user.email).toBe('a@b.c');
   });
 });

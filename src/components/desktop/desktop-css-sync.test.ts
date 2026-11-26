@@ -302,3 +302,38 @@ describe('menu klik kanan: lapisan dan tema', () => {
     expect(css.indexOf('.dsk-keys {')).toBeLessThan(css.indexOf('/* ── Pengaturan tampilan Desktop'));
   });
 });
+
+describe('widget tampilan depan: CSS sinkron dengan layout dan lapisan', () => {
+  const wgBlock = () => { const a = css.indexOf('.dsk-wg-layer {'); const b = css.indexOf('/* ── Pengaturan tampilan Desktop'); expect(a).toBeGreaterThan(-1); expect(b).toBeGreaterThan(a); return css.slice(a, b); };
+
+  it('lapisan memakai inset area kerja yang sama dengan window manager (--dsk-top/--dsk-bot = AREA_INSETS)', () => {
+    const layer = rule('.dsk-wg-layer');
+    expect(layer).toMatch(/top:\s*var\(--dsk-top\)/);
+    expect(layer).toMatch(/bottom:\s*var\(--dsk-bot\)/);
+    expect(px(rule('.dsk-root'), '--dsk-bot')).toBe(AREA_INSETS.windows.bottom);
+    expect(px(rule('.dsk-root'), '--dsk-top')).toBe(AREA_INSETS.windows.top);
+  });
+
+  it('lapisan di bawah jendela (z-index < 1, jendela dirender peringkat 1..n) dan tidak menangkap klik; kartu menangkap', () => {
+    const layer = rule('.dsk-wg-layer');
+    expect(Number(/z-index:\s*(-?\d+)/.exec(layer)![1])).toBeLessThan(1);
+    expect(layer).toMatch(/pointer-events:\s*none/);
+    expect(rule('.dsk-wg')).toMatch(/pointer-events:\s*auto/);
+    expect(rule('.dsk-wg-ghost')).toMatch(/pointer-events:\s*none/);
+  });
+
+  it('ikon meja tetap di atas lapisan widget (tidak diberi z-index lebih rendah; urutan DOM yang menentukan)', () => {
+    expect(rule('.dsk-icons')).not.toMatch(/z-index/);
+    const shell = readFileSync(join(dir, 'DesktopShell.tsx'), 'utf8');
+    expect(shell.indexOf('<WidgetLayer')).toBeGreaterThan(-1);
+    expect(shell.indexOf('<WidgetLayer')).toBeLessThan(shell.indexOf('<DesktopIcons'));
+    expect(shell.indexOf('<WidgetLayer')).toBeLessThan(shell.indexOf('<WindowFrame'));
+  });
+
+  it('tanpa backdrop-filter dan transform di kartu diam (aturan leluhur position:fixed); ada prefers-reduced-motion; sebelum penanda Personalisasi', () => {
+    const block = wgBlock();
+    expect(block).not.toMatch(/backdrop-filter/);
+    expect(rule('.dsk-wg')).not.toMatch(/(^|[\s;{])transform:/);
+    expect(block).toMatch(/prefers-reduced-motion/);
+  });
+});

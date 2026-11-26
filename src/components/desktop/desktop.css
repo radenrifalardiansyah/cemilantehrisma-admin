@@ -174,17 +174,19 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-root[data-skin="mac"] .dsk-scrim[data-kind="launchpad"] { background: rgba(26,12,5,.35); }
 .dsk-menu { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.5); z-index: 6000; display: flex; flex-direction: column; overflow: hidden; }
 /* Tinggi panel TETAP (bukan max-height): hasil pencarian menyusun ulang isi di dalam ukuran yang sama, tidak mengecilkan panel. */
-.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(480px, calc(100% - 16px)); height: min(540px, calc(100% - 66px)); }
-.dsk-menu[data-variant="launchpad"] { left: 0; right: 0; margin-inline: auto; bottom: 72px; width: min(560px, calc(100% - 24px)); height: min(540px, calc(100% - 116px)); }
+.dsk-menu[data-variant="start"] { left: 8px; bottom: 54px; width: min(600px, calc(100% - 16px)); height: min(540px, calc(100% - 66px)); }
+.dsk-menu[data-variant="launchpad"] { left: 0; right: 0; margin-inline: auto; bottom: 72px; width: min(900px, calc(100% - 32px)); height: min(540px, calc(100% - 116px)); }
 .dsk-menu input[type="search"] { margin: 12px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-primary); padding: 0 12px; font: inherit; outline: none; }
 .dsk-menu input[type="search"]:focus { border-color: var(--accent); }
 .dsk-mscroll { overflow: auto; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1 1 0; align-content: flex-start; }
 .dsk-mgrp h4 { margin: 0 0 6px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
-.dsk-mitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+/* kolom min 270px: label terpanjang nyata ('Laporan Penjualan per Kasir', 27 huruf, ~170px @12px/600; dihitung konservatif dengan 33 huruf ~215px) muat satu baris di sebelah bintang + ikon; Launchpad 900px = 3 kolom, Mulai 600px = 2 kolom */
+.dsk-mitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 6px; }
 .dsk-mi { position: relative; display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 9px; border: 0; border-radius: 9px; background: var(--surface-2); color: var(--text-primary); font-size: 12px; font-weight: 600; min-width: 0; }
 .dsk-mi:hover { background: var(--accent-bg); }
 .dsk-mi .dsk-tile { width: 22px; height: 22px; }
-.dsk-mi .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+/* pengaman: label yang tetap kepanjangan (layar sempit/teks Besar) membungkus maks. 2 baris, bukan ellipsis satu baris; baris normal tetap satu baris */
+.dsk-mi .lbl { min-width: 0; flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; line-height: 1.3; }
 .dsk-mi .tag { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 99px; background: var(--border-2); color: var(--text-muted); flex-shrink: 0; }
 .dsk-mi .dsk-badge { top: -4px; right: -4px; }
 .dsk-mrow { position: relative; min-width: 0; }
@@ -283,6 +285,31 @@ body:has(.dsk-root[data-skin="mac"]) .chat-panel { top: 34px; bottom: auto; righ
 .dsk-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .dsk-keys li { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--text-primary); }
 .dsk-keys kbd { flex: 0 0 132px; font: 700 11.5px/1 var(--font-jakarta, system-ui); padding: 5px 8px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 7px; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
+
+/* ── Widget tampilan depan: lapisan di ATAS wallpaper, di BAWAH ikon meja (urutan DOM) dan jendela (z-index inline >= 1).
+   Wadah pointer-events:none (klik ruang kosong tembus ke wallpaper); hanya kartu yang menangkap pointer. Area = area kerja (--dsk-top/--dsk-bot, sama dengan AREA_INSETS).
+   Posisi/ukuran kartu dipasang inline oleh WidgetLayer dari widget-layout.ts (sel 112px, celah 12px, kolom dari kanan). Tanpa backdrop-filter/animasi berat. ── */
+.dsk-wg-layer { position: absolute; left: 0; right: 0; top: var(--dsk-top); bottom: var(--dsk-bot); z-index: 0; pointer-events: none; }
+.dsk-wg { position: absolute; box-sizing: border-box; pointer-events: auto; display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; background: rgba(20,9,3,.74); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 10px 28px rgba(0,0,0,.32); color: #fff; cursor: grab; user-select: none; touch-action: none; transition: box-shadow .15s; }
+.dsk-wg[data-dragging="true"] { z-index: 2; cursor: grabbing; opacity: .92; box-shadow: 0 18px 40px rgba(0,0,0,.45); transition: none; }
+.dsk-wg-ghost { position: absolute; box-sizing: border-box; pointer-events: none; border-radius: 16px; border: 2px dashed color-mix(in srgb, var(--accent) 80%, transparent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.dsk-wg-ghost[data-valid="false"] { border-color: rgba(226,59,48,.85); background: rgba(226,59,48,.16); }
+.dsk-wg-head { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 10px; flex-shrink: 0; color: rgba(255,255,255,.72); font-size: 11px; font-weight: 700; }
+.dsk-wg-head > svg:first-child { color: var(--accent); flex-shrink: 0; }
+.dsk-wg-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-wg-menu { margin-left: auto; flex-shrink: 0; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; opacity: 0; }
+.dsk-wg:hover .dsk-wg-menu, .dsk-wg:focus-within .dsk-wg-menu, .dsk-wg-menu:focus-visible { opacity: 1; }
+.dsk-wg-menu:hover { background: rgba(255,255,255,.14); }
+.dsk-wg-body { flex: 1; min-height: 0; padding: 2px 12px 12px; display: flex; flex-direction: column; }
+.dsk-wg-clock { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.dsk-wg-time { font-weight: 800; font-size: 46px; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dsk-wg-clock[data-size="m"] .dsk-wg-time { font-size: 64px; }
+.dsk-wg-sec { font-size: .4em; opacity: .7; margin-left: 2px; }
+.dsk-wg-date { font-size: 12px; opacity: .85; }
+.dsk-wg-note { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; border-radius: 10px; padding: 8px 10px; background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 13px; line-height: 1.45; user-select: text; cursor: text; touch-action: auto; }
+.dsk-wg-note::placeholder { color: rgba(255,255,255,.5); }
+.dsk-wg-fail { font-size: 12px; opacity: .8; }
+@media (prefers-reduced-motion: reduce) { .dsk-wg { transition: none; } }
 
 /* ── Pengaturan tampilan Desktop (warna dasar, latar, kerapatan, ukuran teks). SEMUA di bawah .dsk-root: tidak bocor ke Klasik. ──
    Warna dasar dan latar dipasang sebagai variabel inline pada .dsk-root (--accent*, --dsk-wallpaper) oleh appearance-style.ts. */

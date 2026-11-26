@@ -22,4 +22,25 @@ describe('CSS menu Mulai (Disematkan) dan menu di menu bar Mac', () => {
     expect(Number(/z-index:\s*(\d+)/.exec(rule('.dsk-mdrop'))![1])).toBeGreaterThanOrEqual(5000);
     expect(rule('.dsk-mdrop')).toMatch(/overflow-y:\s*auto/);
   });
+  // Lebar kolom nyata (setelah auto-fill) harus memuat label terpanjang tanpa ellipsis: bintang(32) + ikon(22) + gap(8) + padding kanan(9) + teks.
+  const LONGEST = 'Laporan Penjualan per Kasir Lapak'; // acuan konservatif (33 huruf); label terpanjang nyata saat ini 'Laporan Penjualan per Kasir' = 27 huruf
+  const NEED = 32 + 22 + 8 + 9 + Math.round(LONGEST.length * 6.2); // ~6.2px/huruf pada 12px/600
+  it.each([['start', 600], ['launchpad', 900]] as const)('panel %s (%i px): kolom Semua menu memuat label terpanjang satu baris', (variant, maxW) => {
+    const r = rule(`.dsk-menu[data-variant="${variant}"]`);
+    expect(Number(/width:\s*min\((\d+)px/.exec(r)![1])).toBe(maxW);
+    const min = Number(/minmax\((\d+)px/.exec(rule('.dsk-mitems'))![1]);
+    const inner = maxW - 2 - 24; // border + padding .dsk-mscroll
+    const cols = Math.floor((inner + 6) / (min + 6));
+    const colW = (inner - (cols - 1) * 6) / cols;
+    expect(cols).toBeGreaterThanOrEqual(2);
+    expect(colW).toBeGreaterThanOrEqual(NEED);
+  });
+  it('panel Mulai muat di layar 1024 (lebar + left 8px); label membungkus maks. 2 baris sebagai pengaman', () => {
+    const r = rule('.dsk-menu[data-variant="start"]');
+    const width = Number(/width:\s*min\((\d+)px/.exec(r)![1]);
+    const left = Number(/[\s;{]left:\s*(\d+)px/.exec(r)![1]);
+    expect(width + left).toBeLessThanOrEqual(1024);   // lebar panel Mulai dari CSS + jarak kiri harus muat di layar minimum desktop (lg)
+    expect(rule('.dsk-mi .lbl')).toMatch(/-webkit-line-clamp:\s*2/);
+    expect(rule('.dsk-mi .lbl')).not.toMatch(/white-space:\s*nowrap/);
+  });
 });

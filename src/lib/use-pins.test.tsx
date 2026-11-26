@@ -65,15 +65,18 @@ describe('usePins', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('sukses usang (simpan lama selesai belakangan) tidak menimpa nilai terkonfirmasi maupun cache', async () => {
+  it('simpan beruntun diserialisasi: yang kedua menunggu yang pertama, cache akhir = state terbaru (tanpa sukses usang menimpa)', async () => {
     act(() => api.hydrate('u', []));
     const first = deferred();
     fetchMock.mockImplementationOnce(() => first.p);
     act(() => { api.toggle('orders'); });                                // simpan pertama tertahan
-    await act(async () => { api.toggle('users'); });                     // simpan kedua selesai lebih dulu: ['orders','users']
-    expect(readCachedPins('u')).toEqual(['orders', 'users']);
+    await act(async () => { api.toggle('users'); });                     // kedua menunggu giliran (tidak dikirim bersamaan)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(readCachedPins('u')).toEqual([]);
     await act(async () => { first.resolve({ ok: true, status: 200 }); await Promise.resolve(); });
-    expect(readCachedPins('u')).toEqual(['orders', 'users']);            // tidak ditimpa ['orders']
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(body(1)).toEqual({ pins: ['orders', 'users'] });
+    expect(readCachedPins('u')).toEqual(['orders', 'users']);
     expect(api.pins).toEqual(['orders', 'users']);
   });
 
